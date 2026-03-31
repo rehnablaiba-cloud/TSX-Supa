@@ -1,6 +1,5 @@
 import React, { useState } from "react";
 import { useAuth } from "./context/AuthContext";
-import { useQuery } from "@apollo/client";
 import { ThemeProvider } from "./context/ThemeContext";
 import LoginPage from "./components/Auth/LoginPage";
 import Sidebar from "./components/Layout/Sidebar";
