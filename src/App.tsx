@@ -11,7 +11,6 @@ import TestReport from "./components/TestReport/TestReport";
 import UsersPanel from "./components/Users/UsersPanel";
 import AuditLog from "./components/AuditLog/AuditLog";
 import Spinner from "./components/UI/Spinner";
-import { GET_MODULES } from "./graphql/queries";
 import { Module } from "./types";
 
 type Page = "dashboard" | "module" | "execution" | "report" | "users" | "auditlog";
