@@ -50,8 +50,11 @@ const TestExecution: React.FC<Props> = ({ moduleId, moduleName, initialTestId, o
   const [showExportModal, setShowExportModal] = useState(false);
   const [lockAcquired, setLockAcquired]       = useState(false);
 
+  // ── FIX 2: scroll target drives auto-scroll after re-render ──
+  const [scrollTarget, setScrollTarget]       = useState<string | null>(null);
+
   const heartbeatRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const stepRefs     = useRef<Record<string, HTMLTableRowElement | null>>({});
+  const stepRefs     = useRef<Record<string, HTMLTableRowElement | HTMLDivElement | null>>({});
 
   useReleaseLockOnUnload(currentTestId, user?.id ?? "");
 
@@ -65,40 +68,38 @@ const TestExecution: React.FC<Props> = ({ moduleId, moduleName, initialTestId, o
   const currentIdx  = tests.findIndex(t => t.id === currentTestId);
   const currentTest = tests[currentIdx];
 
-  // ── Steps ──────────────────────────────────────────────────
-  const [steps, setSteps]     = useState<Step[]>([]);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    setLoading(true);
-    supabase.from("steps").select("*").eq("test_id", currentTestId).order("serial_no")
-      .then(({ data }) => { setSteps(data ?? []); setLoading(false); });
-  }, [currentTestId]);
-
-  // ── Lock ───────────────────────────────────────────────────
-  const [lock, setLock]               = useState<any>(null);
+  // ── FIX 1: Parallel fetch for steps + lock ─────────────────
+  const [steps, setSteps]         = useState<Step[]>([]);
+  const [lock, setLock]           = useState<any>(null);
+  const [loading, setLoading]     = useState(true);
   const [lockLoading, setLockLoading] = useState(true);
 
   useEffect(() => {
+    setLoading(true);
     setLockLoading(true);
-    supabase.from("testlocks").select("*").eq("test_id", currentTestId)
-      .then(({ data }) => { setLock(data?.[0] ?? null); setLockLoading(false); });
 
-    const channel = supabase.channel(`lock:${currentTestId}`)
+    // Fetch steps and lock in parallel instead of two separate effects
+    Promise.all([
+      supabase.from("steps").select("*").eq("test_id", currentTestId).order("serial_no"),
+      supabase.from("testlocks").select("*").eq("test_id", currentTestId),
+    ]).then(([stepsRes, lockRes]) => {
+      setSteps(stepsRes.data ?? []);
+      setLock(lockRes.data?.[0] ?? null);
+      setLoading(false);
+      setLockLoading(false);
+    });
+
+    // Realtime: lock changes
+    const lockChannel = supabase.channel(`lock:${currentTestId}`)
       .on("postgres_changes", { event: "*", schema: "public", table: "testlocks",
         filter: `test_id=eq.${currentTestId}` },
         ({ eventType, new: newRow }: any) => {
           if (eventType === "DELETE") setLock(null); else setLock(newRow);
         })
       .subscribe();
-    return () => { supabase.removeChannel(channel); };
-  }, [currentTestId]);
 
-  const isLockedByOther = !!(lock && lock.user_id !== user?.id);
-
-  // ── Real-time step sync ────────────────────────────────────
-  useEffect(() => {
-    const channel = supabase.channel(`steps:${currentTestId}`)
+    // Realtime: step updates
+    const stepsChannel = supabase.channel(`steps:${currentTestId}`)
       .on("postgres_changes", { event: "UPDATE", schema: "public", table: "steps",
         filter: `test_id=eq.${currentTestId}` },
         ({ new: updated }: any) => {
@@ -107,8 +108,14 @@ const TestExecution: React.FC<Props> = ({ moduleId, moduleName, initialTestId, o
           ));
         })
       .subscribe();
-    return () => { supabase.removeChannel(channel); };
+
+    return () => {
+      supabase.removeChannel(lockChannel);
+      supabase.removeChannel(stepsChannel);
+    };
   }, [currentTestId]);
+
+  const isLockedByOther = !!(lock && lock.user_id !== user?.id);
 
   // ── Heartbeat ──────────────────────────────────────────────
   const startHeartbeat = useCallback(() => {
@@ -144,6 +151,17 @@ const TestExecution: React.FC<Props> = ({ moduleId, moduleName, initialTestId, o
     };
   }, [currentTestId, user?.id]);
 
+  // ── FIX 2: Scroll after render completes ──────────────────
+  // Runs after steps state settles — ref is guaranteed non-null here
+  useEffect(() => {
+    if (!scrollTarget) return;
+    const el = stepRefs.current[scrollTarget];
+    if (el) {
+      el.scrollIntoView({ behavior: "smooth", block: "center" });
+      setScrollTarget(null);
+    }
+  }, [scrollTarget, steps]);
+
   // ── Step update — optimistic ───────────────────────────────
   const handleStepUpdate = useCallback(async (
     stepId: string, status: "pass" | "fail" | "pending", remarks: string
@@ -153,10 +171,9 @@ const TestExecution: React.FC<Props> = ({ moduleId, moduleName, initialTestId, o
 
     setSteps(prev => prev.map(s => s.id === stepId ? { ...s, status, remarks } : s));
 
+    // FIX 2: set scroll target instead of setTimeout
     if (status !== "pending" && nextPending) {
-      setTimeout(() => {
-        stepRefs.current[nextPending.id]?.scrollIntoView({ behavior: "smooth", block: "center" });
-      }, 50);
+      setScrollTarget(nextPending.id);
     }
 
     await supabase.from("steps").update({ status, remarks }).eq("id", stepId);
@@ -333,7 +350,6 @@ const TestExecution: React.FC<Props> = ({ moduleId, moduleName, initialTestId, o
 
             {/* ── Mobile: sticky column header + cards ── */}
             <div className="md:hidden flex flex-col">
-              {/* Sticky column header row */}
               <div className="sticky top-0 z-10 grid grid-cols-[64px_1fr] border-b border-gray-200 dark:border-white/10 bg-white/90 dark:bg-black/80 backdrop-blur-sm">
                 <div className="px-3 py-2 border-r border-gray-200 dark:border-white/10">
                   <span className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider">S.No</span>
@@ -343,7 +359,6 @@ const TestExecution: React.FC<Props> = ({ moduleId, moduleName, initialTestId, o
                 </div>
               </div>
 
-              {/* Step cards */}
               <div className="flex flex-col gap-2 p-3">
                 {filtered.map(step =>
                   step.is_divider ? (
@@ -358,7 +373,8 @@ const TestExecution: React.FC<Props> = ({ moduleId, moduleName, initialTestId, o
                       step={step}
                       readonly={false}
                       onUpdate={handleStepUpdate}
-                      cardRef={(el) => { stepRefs.current[step.id] = el as any; }}
+                      // FIX 2: stable ref setter — not an inline arrow, avoids null-flash on re-render
+                      cardRef={(el) => { stepRefs.current[step.id] = el; }}
                     />
                   )
                 )}
@@ -387,23 +403,15 @@ const TableStepRow: React.FC<{
   return (
     <tr ref={rowRef}
       className={`border-b border-white/5 hover:bg-white/[0.02] transition-colors ${rowBg}`}>
-
-      {/* S.No */}
       <td className="px-2 py-3 text-center">
         <span className="text-xs font-mono text-gray-500">{step.serial_no}</span>
       </td>
-
-      {/* Action */}
       <td className="px-4 py-3">
         <p className="text-sm text-white leading-snug break-words">{step.action}</p>
       </td>
-
-      {/* Expected Result */}
       <td className="px-4 py-3">
         <p className="text-sm text-gray-300 leading-snug break-words">{step.expected_result}</p>
       </td>
-
-      {/* Remarks */}
       <td className="px-3 py-3">
         <textarea
           value={remarks}
@@ -414,8 +422,6 @@ const TableStepRow: React.FC<{
           className="input text-sm resize-none disabled:opacity-50 w-full"
         />
       </td>
-
-      {/* Status — badge only */}
       <td className="px-2 py-3 text-center">
         <span className={`text-xs font-bold px-2 py-0.5 rounded-full capitalize ${
           step.status === "pass" ? "bg-green-500/15 text-green-400"
@@ -424,34 +430,25 @@ const TableStepRow: React.FC<{
           {step.status}
         </span>
       </td>
-
-      {/* Actions — ✓ / ✗ buttons */}
       {!readonly && (
         <td className="px-2 py-3">
           <div className="flex flex-col items-center gap-1">
             <div className="flex gap-1 w-full">
-              <button onClick={() => onUpdate(step.id, "pass", remarks)}
-                title="Pass"
+              <button onClick={() => onUpdate(step.id, "pass", remarks)} title="Pass"
                 className={`flex-1 h-7 rounded-md text-xs font-bold transition-colors flex items-center justify-center ${
                   step.status === "pass"
                     ? "bg-green-500 text-white"
                     : "bg-green-500/10 hover:bg-green-500/25 text-green-400 border border-green-500/20"
-                }`}>
-                ✓
-              </button>
-              <button onClick={() => onUpdate(step.id, "fail", remarks)}
-                title="Fail"
+                }`}>✓</button>
+              <button onClick={() => onUpdate(step.id, "fail", remarks)} title="Fail"
                 className={`flex-1 h-7 rounded-md text-xs font-bold transition-colors flex items-center justify-center ${
                   step.status === "fail"
                     ? "bg-red-500 text-white"
                     : "bg-red-500/10 hover:bg-red-500/25 text-red-400 border border-red-500/20"
-                }`}>
-                ✗
-              </button>
+                }`}>✗</button>
             </div>
             {step.status !== "pending" && (
               <button onClick={() => onUpdate(step.id, "pending", "")}
-                title="Undo"
                 className="w-full h-7 rounded-md text-xs font-bold text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 bg-gray-500/10 hover:bg-gray-500/20 border border-gray-500/20 transition-colors flex items-center justify-center">
                 ↩
               </button>
@@ -459,9 +456,7 @@ const TableStepRow: React.FC<{
           </div>
         </td>
       )}
-      {readonly && (
-        <td className="px-2 py-3" />
-      )}
+      {readonly && <td className="px-2 py-3" />}
     </tr>
   );
 };
@@ -488,7 +483,6 @@ const MobileStepCard: React.FC<{
       className={`rounded-xl overflow-hidden border border-white/10 w-full ${rowBg}`}
       style={{ borderLeftColor: accentColor, borderLeftWidth: 3 }}
     >
-      {/* ── Row 1: S.No + Status badge ── */}
       <div className="flex items-center justify-between px-3 py-2 border-b border-white/10 bg-white/[0.02]">
         <span className="text-xs font-mono text-gray-500 tracking-wide">#{step.serial_no}</span>
         <span className={`text-xs font-bold px-2 py-0.5 rounded-full capitalize ${
@@ -499,7 +493,6 @@ const MobileStepCard: React.FC<{
         </span>
       </div>
 
-      {/* ── Row 2: Action ── */}
       <div className="grid grid-cols-[80px_1fr] border-b border-white/10">
         <div className="px-3 py-2.5 border-r border-white/10 bg-white/[0.02] flex items-start shrink-0">
           <span className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider mt-0.5">Action</span>
@@ -509,7 +502,6 @@ const MobileStepCard: React.FC<{
         </div>
       </div>
 
-      {/* ── Row 3: Expected Result ── */}
       <div className="grid grid-cols-[80px_1fr] border-b border-white/10">
         <div className="px-3 py-2.5 border-r border-white/10 bg-white/[0.02] flex items-start shrink-0">
           <span className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider mt-0.5">Expected</span>
@@ -519,7 +511,6 @@ const MobileStepCard: React.FC<{
         </div>
       </div>
 
-      {/* ── Row 4: Remarks ── */}
       <div className="grid grid-cols-[80px_1fr] border-b border-white/10">
         <div className="px-3 py-2.5 border-r border-white/10 bg-white/[0.02] flex items-start shrink-0">
           <span className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider mt-0.5">Remarks</span>
@@ -536,7 +527,6 @@ const MobileStepCard: React.FC<{
         </div>
       </div>
 
-      {/* ── Row 5: Pass / Fail buttons (interactive only) ── */}
       {!readonly && (
         <div className="flex items-center justify-between px-3 py-2 border-t border-white/10 bg-white/[0.02]">
           <span className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider">Actions</span>
@@ -547,26 +537,18 @@ const MobileStepCard: React.FC<{
                 ↩
               </button>
             )}
-            <button
-              onClick={() => onUpdate(step.id, "pass", remarks)}
-              title="Pass"
+            <button onClick={() => onUpdate(step.id, "pass", remarks)} title="Pass"
               className={`w-8 h-8 rounded-md text-xs font-bold transition-colors flex items-center justify-center ${
                 step.status === "pass"
                   ? "bg-green-500 text-white"
                   : "bg-green-500/10 hover:bg-green-500/25 text-green-400 border border-green-500/20"
-              }`}>
-              ✓
-            </button>
-            <button
-              onClick={() => onUpdate(step.id, "fail", remarks)}
-              title="Fail"
+              }`}>✓</button>
+            <button onClick={() => onUpdate(step.id, "fail", remarks)} title="Fail"
               className={`w-8 h-8 rounded-md text-xs font-bold transition-colors flex items-center justify-center ${
                 step.status === "fail"
                   ? "bg-red-500 text-white"
                   : "bg-red-500/10 hover:bg-red-500/25 text-red-400 border border-red-500/20"
-              }`}>
-              ✗
-            </button>
+              }`}>✗</button>
           </div>
         </div>
       )}
