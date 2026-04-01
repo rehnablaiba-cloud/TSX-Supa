@@ -12,7 +12,7 @@ import TestReport from "./components/TestReport/TestReport";
 import UsersPanel from "./components/Users/UsersPanel";
 import AuditLog from "./components/AuditLog/AuditLog";
 import Spinner from "./components/UI/Spinner";
-import { supabase } from "./lib/supabaseClient"; // ← your supabase singleton
+import { supabase } from "./supabase";
 import { Module } from "./types";
 
 type Page = "dashboard" | "module" | "execution" | "report" | "users" | "auditlog";
