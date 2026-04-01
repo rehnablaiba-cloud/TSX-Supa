@@ -458,7 +458,7 @@ const TestRow: React.FC<{
           {isLockedByOther && (
             <span className="flex items-center gap-1 text-xs font-semibold text-amber-500 bg-amber-500/15 border border-amber-500/40 rounded-full px-2.5 py-0.5">
               <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse inline-block" />
-              🔒 {lockedByName} is executing. For Access contact user to finish.
+              🔒 {lockedByName} is executing.      For Access contact user to finish.
             </span>
           )}
           {isLockedByMe && (
