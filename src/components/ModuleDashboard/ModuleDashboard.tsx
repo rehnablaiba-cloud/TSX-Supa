@@ -444,37 +444,40 @@ const TestRow: React.FC<{
   return (
     <div
       className={`card flex flex-col sm:flex-row sm:items-center gap-4 transition-all ${
-        isLockedByOther ? "opacity-50 select-none" : "opacity-100"
+        isLockedByOther ? "select-none" : ""
       }`}
       style={{ borderLeft: `3px solid ${borderColor}` }}
     >
       <div className="flex-1">
         {/* Name + lock badges */}
         <div className="flex items-center gap-2 flex-wrap">
-          <p className="font-medium text-white">{test.name}</p>
+          {/* Test name dimmed when locked */}
+          <p className={`font-medium text-white ${isLockedByOther ? "opacity-40" : ""}`}>
+            {test.name}
+          </p>
           {isLockedByOther && (
-            <span className="flex items-center gap-1 text-xs font-semibold text-amber-400 bg-amber-500/10 border border-amber-500/20 rounded-full px-2.5 py-0.5">
-              <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse inline-block" />
+            <span className="flex items-center gap-1 text-xs font-semibold text-amber-500 bg-amber-500/15 border border-amber-500/40 rounded-full px-2.5 py-0.5">
+              <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse inline-block" />
               🔒 {lockedByName} is executing
             </span>
           )}
           {isLockedByMe && (
-            <span className="flex items-center gap-1 text-xs font-semibold text-blue-400 bg-blue-500/10 border border-blue-500/20 rounded-full px-2.5 py-0.5">
-              <span className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-pulse inline-block" />
+            <span className="flex items-center gap-1 text-xs font-semibold text-blue-500 bg-blue-500/15 border border-blue-500/40 rounded-full px-2.5 py-0.5">
+              <span className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-pulse inline-block" />
               ✏️ You are executing
             </span>
           )}
         </div>
 
-        {/* Status badges */}
+        {/* Status badges — always full opacity */}
         <div className="flex gap-2 mt-1.5 flex-wrap">
           <span className="badge-pass">{passed} Pass</span>
           <span className="badge-fail">{failed} Fail</span>
           <span className="badge-pend">{pending} Pend</span>
         </div>
 
-        {/* Progress bar */}
-        <div className="mt-2 h-1.5 bg-gray-800 rounded-full overflow-hidden">
+        {/* Progress bar — dimmed when locked */}
+        <div className={`mt-2 h-1.5 bg-gray-800 rounded-full overflow-hidden ${isLockedByOther ? "opacity-40" : ""}`}>
           <div
             className="h-full rounded-full transition-all duration-500"
             style={{ width: `${rate}%`, backgroundColor: isLockedByOther ? "#6b7280" : "#22c55e" }}
@@ -491,7 +494,7 @@ const TestRow: React.FC<{
         disabled={isLockedByOther}
         className={`whitespace-nowrap shrink-0 px-4 py-2 rounded-xl font-semibold transition-all text-sm ${
           isLockedByOther
-            ? "bg-gray-700/50 text-gray-500 cursor-not-allowed pointer-events-none border border-gray-600/30"
+            ? "bg-gray-500/20 text-gray-500 cursor-not-allowed pointer-events-none border border-gray-500/30"
             : "btn-primary cursor-pointer"
         }`}
       >
