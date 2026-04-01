@@ -51,7 +51,7 @@ const TestExecution: React.FC<Props> = ({ moduleId, moduleName, initialTestId, o
   const [lockAcquired, setLockAcquired]       = useState(false);
 
   const heartbeatRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const stepRefs     = useRef<Record<string, HTMLDivElement | null>>({});
+  const stepRefs     = useRef<Record<string, HTMLTableRowElement | null>>({});
 
   useReleaseLockOnUnload(currentTestId, user?.id ?? "");
 
@@ -91,7 +91,6 @@ const TestExecution: React.FC<Props> = ({ moduleId, moduleName, initialTestId, o
           if (eventType === "DELETE") setLock(null); else setLock(newRow);
         })
       .subscribe();
-
     return () => { supabase.removeChannel(channel); };
   }, [currentTestId]);
 
@@ -197,7 +196,7 @@ const TestExecution: React.FC<Props> = ({ moduleId, moduleName, initialTestId, o
     return true;
   });
 
-  // ── Progress stats ─────────────────────────────────────────
+  // ── Progress ───────────────────────────────────────────────
   const nonDividers = steps.filter(s => !s.is_divider);
   const passCount   = nonDividers.filter(s => s.status === "pass").length;
   const failCount   = nonDividers.filter(s => s.status === "fail").length;
@@ -258,9 +257,9 @@ const TestExecution: React.FC<Props> = ({ moduleId, moduleName, initialTestId, o
       />
 
       {/* ── Progress bar ── */}
-      <div className="px-4 pt-3 pb-1">
+      <div className="px-4 pt-3 pb-2">
         <div className="flex items-center justify-between mb-1.5">
-          <div className="flex items-center gap-3 text-xs text-gray-500">
+          <div className="flex items-center gap-4 text-xs text-gray-500">
             <span><span className="text-green-400 font-semibold">{passCount}</span> pass</span>
             <span><span className="text-red-400 font-semibold">{failCount}</span> fail</span>
             <span><span className="text-gray-400 font-semibold">{totalCount - doneCount}</span> pending</span>
@@ -269,17 +268,12 @@ const TestExecution: React.FC<Props> = ({ moduleId, moduleName, initialTestId, o
         </div>
         <div className="h-1.5 bg-white/5 rounded-full overflow-hidden">
           <div className="h-full rounded-full transition-all duration-500"
-            style={{
-              width: `${progressPct}%`,
-              background: failCount > 0
-                ? "linear-gradient(90deg, #22c55e, #ef4444)"
-                : "#22c55e"
-            }} />
+            style={{ width: `${progressPct}%`, background: failCount > 0 ? "linear-gradient(90deg,#22c55e,#ef4444)" : "#22c55e" }} />
         </div>
       </div>
 
       {lockAcquired && (
-        <div className="mx-4 mt-2 px-3 py-1.5 bg-green-500/10 border border-green-500/20 rounded-lg text-green-400 text-xs flex items-center gap-2">
+        <div className="mx-4 mb-2 px-3 py-1.5 bg-green-500/10 border border-green-500/20 rounded-lg text-green-400 text-xs flex items-center gap-2">
           <span className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse inline-block" />
           You have an active lock on this test
         </div>
@@ -297,47 +291,168 @@ const TestExecution: React.FC<Props> = ({ moduleId, moduleName, initialTestId, o
           ))}
         </div>
         <input value={search} onChange={e => setSearch(e.target.value)}
-          placeholder="Search steps…" className="input text-xs py-1.5 flex-1 min-w-0 max-w-xs" />
+          placeholder="Search steps…" className="input text-xs py-1.5 w-48" />
       </div>
 
-      {/* ── Steps list ── */}
-      <div className="flex-1 overflow-y-auto p-3 md:p-4 pb-24 md:pb-4">
+      {/* ── Table (desktop) / Cards (mobile) ── */}
+      <div className="flex-1 overflow-auto pb-24 md:pb-4">
         {loading ? (
           <div className="flex items-center justify-center py-20"><Spinner /></div>
         ) : filtered.length === 0 ? (
           <div className="text-center text-gray-500 py-20 text-sm">No steps match your filter.</div>
         ) : (
-          // ✅ Desktop: 2-column grid. Mobile: single column
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-2 md:gap-3">
-            {filtered.map(step =>
-              step.is_divider ? (
-                // Dividers always span full width
-                <div key={step.id} className="col-span-1 md:col-span-2 flex items-center gap-3 py-1">
-                  <div className="flex-1 h-px bg-white/10" />
-                  <span className="text-xs font-semibold text-blue-400 uppercase tracking-widest">
-                    {step.action}
-                  </span>
-                  <div className="flex-1 h-px bg-white/10" />
-                </div>
-              ) : (
-                <StepCard
-                  key={step.id}
-                  step={step}
-                  readonly={false}
-                  onUpdate={handleStepUpdate}
-                  cardRef={(el) => { stepRefs.current[step.id] = el; }}
-                />
-              )
-            )}
-          </div>
+          <>
+            {/* ── Desktop table ── */}
+            <table className="hidden md:table w-full text-sm border-collapse">
+              <thead>
+                <tr className="border-b border-white/10">
+                  <th className="text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wider w-14">S.No</th>
+                  <th className="text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wider w-[28%]">Action</th>
+                  <th className="text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wider w-[28%]">Expected Result</th>
+                  <th className="text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wider">Remarks</th>
+                  <th className="text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wider w-32">Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filtered.map(step =>
+                  step.is_divider ? (
+                    <tr key={step.id} className="border-b border-white/5">
+                      <td colSpan={5} className="px-4 py-2 bg-blue-500/5">
+                        <div className="flex items-center gap-2">
+                          <span className="w-1.5 h-1.5 rounded-full bg-blue-400 inline-block" />
+                          <span className="text-xs font-bold text-blue-400 uppercase tracking-widest">{step.action}</span>
+                        </div>
+                      </td>
+                    </tr>
+                  ) : (
+                    <TableStepRow
+                      key={step.id}
+                      step={step}
+                      readonly={false}
+                      onUpdate={handleStepUpdate}
+                      rowRef={(el) => { stepRefs.current[step.id] = el; }}
+                    />
+                  )
+                )}
+              </tbody>
+            </table>
+
+            {/* ── Mobile cards ── */}
+            <div className="md:hidden flex flex-col gap-2 p-3">
+              {filtered.map(step =>
+                step.is_divider ? (
+                  <div key={step.id} className="flex items-center gap-3 py-1">
+                    <div className="flex-1 h-px bg-white/10" />
+                    <span className="text-xs font-semibold text-blue-400 uppercase tracking-widest">{step.action}</span>
+                    <div className="flex-1 h-px bg-white/10" />
+                  </div>
+                ) : (
+                  <MobileStepCard
+                    key={step.id}
+                    step={step}
+                    readonly={false}
+                    onUpdate={handleStepUpdate}
+                    cardRef={(el) => { stepRefs.current[step.id] = el as any; }}
+                  />
+                )
+              )}
+            </div>
+          </>
         )}
       </div>
     </div>
   );
 };
 
-// ── Step Card ──────────────────────────────────────────────────
-const StepCard: React.FC<{
+// ── Desktop Table Row ──────────────────────────────────────────
+const TableStepRow: React.FC<{
+  step: Step;
+  readonly: boolean;
+  onUpdate: (id: string, status: "pass" | "fail" | "pending", remarks: string) => void;
+  rowRef?: (el: HTMLTableRowElement | null) => void;
+}> = ({ step, readonly, onUpdate, rowRef }) => {
+  const [remarks, setRemarks] = useState(step.remarks || "");
+  useEffect(() => { setRemarks(step.remarks || ""); }, [step.remarks]);
+
+  const rowBg = step.status === "pass" ? "bg-green-500/5"
+    : step.status === "fail" ? "bg-red-500/5" : "";
+
+  return (
+    <tr ref={rowRef}
+      className={`border-b border-white/5 hover:bg-white/[0.02] transition-colors ${rowBg}`}>
+
+      {/* S.No */}
+      <td className="px-4 py-3 text-center">
+        <span className="text-xs font-mono text-gray-500">{step.serial_no}</span>
+      </td>
+
+      {/* Action */}
+      <td className="px-4 py-3">
+        <p className="text-sm text-white leading-snug">{step.action}</p>
+      </td>
+
+      {/* Expected Result */}
+      <td className="px-4 py-3">
+        <p className="text-sm text-gray-300 leading-snug">{step.expected_result}</p>
+      </td>
+
+      {/* Remarks */}
+      <td className="px-4 py-3">
+        <textarea
+          value={remarks}
+          onChange={e => setRemarks(e.target.value)}
+          disabled={readonly}
+          placeholder="Remarks…"
+          rows={2}
+          className="input text-sm resize-none disabled:opacity-50 w-full min-w-[160px]"
+        />
+      </td>
+
+      {/* Status + Actions */}
+      <td className="px-4 py-3">
+        <div className="flex flex-col gap-1.5">
+          {!readonly && (
+            <>
+              <button onClick={() => onUpdate(step.id, "pass", remarks)}
+                className={`w-full py-1.5 rounded-lg text-xs font-bold transition-colors flex items-center justify-center gap-1 ${
+                  step.status === "pass"
+                    ? "bg-green-500 text-white"
+                    : "bg-green-500/10 hover:bg-green-500/20 text-green-400 border border-green-500/20"
+                }`}>
+                ✓ Pass
+              </button>
+              <button onClick={() => onUpdate(step.id, "fail", remarks)}
+                className={`w-full py-1.5 rounded-lg text-xs font-bold transition-colors flex items-center justify-center gap-1 ${
+                  step.status === "fail"
+                    ? "bg-red-500 text-white"
+                    : "bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/20"
+                }`}>
+                ✗ Fail
+              </button>
+              {step.status !== "pending" && (
+                <button onClick={() => onUpdate(step.id, "pending", "")}
+                  className="w-full py-1 rounded-lg text-xs text-gray-500 hover:text-gray-300 bg-white/5 hover:bg-white/10 border border-white/10 transition-colors">
+                  ↩ Undo
+                </button>
+              )}
+            </>
+          )}
+          {readonly && (
+            <span className={`text-xs font-bold px-2 py-0.5 rounded-full capitalize text-center ${
+              step.status === "pass" ? "bg-green-500/15 text-green-400"
+              : step.status === "fail" ? "bg-red-500/15 text-red-400"
+              : "bg-gray-500/15 text-gray-400"}`}>
+              {step.status}
+            </span>
+          )}
+        </div>
+      </td>
+    </tr>
+  );
+};
+
+// ── Mobile Step Card ───────────────────────────────────────────
+const MobileStepCard: React.FC<{
   step: Step;
   readonly: boolean;
   onUpdate: (id: string, status: "pass" | "fail" | "pending", remarks: string) => void;
@@ -350,16 +465,14 @@ const StepCard: React.FC<{
     : step.status === "fail" ? "#ef4444" : "#374151";
 
   return (
-    <div ref={cardRef} className="card flex flex-col gap-2 md:gap-2.5 p-3 md:p-3.5"
+    <div ref={cardRef} className="card flex flex-col gap-2.5 p-3"
       style={{ borderLeftColor: borderColor, borderLeftWidth: 3 }}>
-
-      {/* Header row */}
       <div className="flex items-start justify-between gap-2">
         <p className="text-xs text-gray-500 font-mono">#{step.serial_no}</p>
         <div className="flex items-center gap-1.5 shrink-0">
           {!readonly && step.status !== "pending" && (
             <button onClick={() => onUpdate(step.id, "pending", "")}
-              className="text-xs px-2 py-0.5 rounded-md bg-white/5 hover:bg-white/10 text-gray-500 hover:text-gray-300 transition-colors border border-white/10">
+              className="text-xs px-2 py-0.5 rounded-md bg-white/5 hover:bg-white/10 text-gray-500 hover:text-gray-300 border border-white/10 transition-colors">
               ↩ Undo
             </button>
           )}
@@ -371,34 +484,27 @@ const StepCard: React.FC<{
           </span>
         </div>
       </div>
-
-      {/* Action */}
       <div>
         <p className="text-xs text-gray-500 mb-0.5">Action</p>
         <p className="text-sm text-white font-medium leading-snug">{step.action}</p>
       </div>
-
-      {/* Expected */}
       <div>
         <p className="text-xs text-gray-500 mb-0.5">Expected Result</p>
         <p className="text-sm text-gray-300 leading-snug">{step.expected_result}</p>
       </div>
-
-      {/* Remarks */}
       <textarea value={remarks} onChange={e => setRemarks(e.target.value)}
-        disabled={readonly} placeholder="Add remarks…"
-        rows={2}
+        disabled={readonly} placeholder="Add remarks…" rows={2}
         className="input text-sm resize-none disabled:opacity-50 w-full" />
-
-      {/* Actions */}
       {!readonly && (
-        <div className="flex gap-2 pt-0.5">
+        <div className="flex gap-2">
           <button onClick={() => onUpdate(step.id, "pass", remarks)}
-            className="flex-1 py-1.5 rounded-lg bg-green-500/10 hover:bg-green-500/20 text-green-400 font-semibold text-xs transition-colors border border-green-500/20">
+            className={`flex-1 py-1.5 rounded-lg text-xs font-bold transition-colors ${
+              step.status === "pass" ? "bg-green-500 text-white" : "bg-green-500/10 hover:bg-green-500/20 text-green-400 border border-green-500/20"}`}>
             ✓ Pass
           </button>
           <button onClick={() => onUpdate(step.id, "fail", remarks)}
-            className="flex-1 py-1.5 rounded-lg bg-red-500/10 hover:bg-red-500/20 text-red-400 font-semibold text-xs transition-colors border border-red-500/20">
+            className={`flex-1 py-1.5 rounded-lg text-xs font-bold transition-colors ${
+              step.status === "fail" ? "bg-red-500 text-white" : "bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/20"}`}>
             ✗ Fail
           </button>
         </div>
