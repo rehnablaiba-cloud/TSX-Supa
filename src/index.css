@@ -1,7 +1,6 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
-
 /* ── Theme tokens ── */
 :root {
   --bg-base:       #f1f5f9;
@@ -14,7 +13,6 @@
   --text-muted:    #94a3b8;
   --input-bg:      #f1f5f9;
 }
-
 .dark {
   --bg-base:       #030712;
   --bg-surface:    #111827;
@@ -26,42 +24,53 @@
   --text-muted:    #6b7280;
   --input-bg:      #1f2937;
 }
-
 /* ── Apply tokens globally ── */
 body {
   background-color: var(--bg-base);
   color: var(--text-primary);
 }
-
 /* Override hardcoded whites in light mode */
 .text-white        { color: var(--text-primary) !important; }
 .text-gray-400     { color: var(--text-secondary) !important; }
 .text-gray-500     { color: var(--text-muted) !important; }
 .text-gray-300     { color: var(--text-secondary) !important; }
-
 /* Backgrounds */
 .bg-gray-950,
 .bg-gray-900       { background-color: var(--bg-surface) !important; }
 .bg-gray-800       { background-color: var(--bg-card) !important; }
-
 /* Sidebar & nav */
 aside              { background-color: var(--bg-nav) !important;
                      border-color: var(--border-color) !important; }
-
 /* Cards */
 .card, [class*="bg-gray-9"], [class*="bg-gray-8"] {
   background-color: var(--bg-card);
 }
-
 /* Inputs */
 .input {
   background-color: var(--input-bg);
   color: var(--text-primary);
   border-color: var(--border-color);
 }
-
 /* Borders */
 .border-white\/5   { border-color: var(--border-color) !important; }
+
+/* ── btn-primary: toned down for light mode ── */
+:root .btn-primary {
+  background-color: #1d4ed8 !important;   /* blue-700 — deeper, less glaring */
+  color: #ffffff !important;              /* keep text white regardless of global override */
+}
+:root .btn-primary:hover {
+  background-color: #1e40af !important;   /* blue-800 on hover */
+}
+
+/* ── ghost/export buttons in light mode ── */
+:root .bg-white\/10,
+:root .hover\:bg-white\/20:hover {
+  background-color: rgba(0,0,0,0.06) !important;
+}
+:root .border-white\/10 {
+  border-color: rgba(0,0,0,0.1) !important;
+}
 
 @layer base {
   * { box-sizing: border-box; }
@@ -70,7 +79,6 @@ aside              { background-color: var(--bg-nav) !important;
   ::-webkit-scrollbar-track { @apply bg-gray-900; }
   ::-webkit-scrollbar-thumb { @apply bg-gray-700 rounded-full; }
 }
-
 @layer utilities {
   .glass { @apply bg-white/5 backdrop-blur-md border border-white/10; }
   .card  { @apply glass rounded-2xl p-5; }
@@ -91,7 +99,6 @@ aside              { background-color: var(--bg-nav) !important;
   .badge-admin { @apply inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-purple-500/20 text-purple-400; }
   .badge-tester{ @apply inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-blue-500/20 text-blue-400; }
 }
-
 @keyframes shimmer {
   0%   { background-position: -200% 0; }
   100% { background-position:  200% 0; }
@@ -101,7 +108,6 @@ aside              { background-color: var(--bg-nav) !important;
   background-size: 200% 100%;
   animation: shimmer 2s infinite;
 }
-
 @keyframes gradMove {
   0%,100% { background-position: 0% 50%; }
   50%      { background-position: 100% 50%; }
