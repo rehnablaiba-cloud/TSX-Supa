@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { useAuth } from "./context/AuthContext";  // Update this to Supabase auth context
+import { useSession, useSupabaseClient } from "@supabase/auth-helpers-react";
 import { ThemeProvider } from "./context/ThemeContext";
 import LoginPage from "./components/Auth/LoginPage";
 import Sidebar from "./components/Layout/Sidebar";
@@ -12,47 +12,48 @@ import UsersPanel from "./components/Users/UsersPanel";
 import AuditLog from "./components/AuditLog/AuditLog";
 import Spinner from "./components/UI/Spinner";
 import { Module } from "./types";
-import { supabase } from "./lib/supabase";  // Your Supabase client [web:31]
 
 type Page = "dashboard" | "module" | "execution" | "report" | "users" | "auditlog";
 
-// ─── Inner app (needs ThemeProvider above it) ─────────────────────────────────
+// ─── Inner app ────────────────────────────────────────────────────────────────
 const AppInner: React.FC = () => {
-  const { isLoading, isAuthenticated } = useAuth();  // Now from Supabase auth context
-  const [page, setPage] = useState<Page>("dashboard");
-  const [selectedModuleId, setSelectedModuleId] = useState<string | null>(null);
-  const [selectedTestId, setSelectedTestId] = useState<string | null>(null);
-  
-  // Supabase modules query replacement
-  const [modules, setModules] = useState<Module[]>([]);
-  const [modulesLoading, setModulesLoading] = useState(true);
-  const selectedModule = modules.find(m => m.id === selectedModuleId);
+  const session = useSession();
+  const supabase = useSupabaseClient();
 
-  // Fetch modules with Supabase (runs only when authenticated)
+  const isAuthenticated = session !== null;
+  const [isLoading, setIsLoading]               = useState(true);
+  const [modules, setModules]                   = useState<Module[]>([]);
+  const [page, setPage]                         = useState<Page>("dashboard");
+  const [selectedModuleId, setSelectedModuleId] = useState<string | null>(null);
+  const [selectedTestId, setSelectedTestId]     = useState<string | null>(null);
+
+  // Fetch modules when authenticated
   useEffect(() => {
     if (!isAuthenticated) {
-      setModulesLoading(false);
+      setIsLoading(false);
       return;
     }
 
     const fetchModules = async () => {
-      setModulesLoading(true);
+      setIsLoading(true);
       const { data, error } = await supabase
-        .from('modules')  // Assumes 'modules' table in Supabase
-        .select('*');     // Match your Module type [web:31]
+        .from("modules")
+        .select("*");
 
-      if (error) {
-        console.error('Error fetching modules:', error);
-      } else {
-        setModules(data || []);
+      if (!error && data) {
+        setModules(data as Module[]);
+      } else if (error) {
+        console.error("Error fetching modules:", error.message);
       }
-      setModulesLoading(false);
+      setIsLoading(false);
     };
 
     fetchModules();
-  }, [isAuthenticated]);
+  }, [isAuthenticated, supabase]);
 
-  if (isLoading || modulesLoading) {
+  const selectedModule = modules.find((m) => m.id === selectedModuleId);
+
+  if (isLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-950">
         <Spinner size={48} />
@@ -63,9 +64,9 @@ const AppInner: React.FC = () => {
   if (!isAuthenticated) return <LoginPage />;
 
   const navigate = (p: string, moduleId?: string) => {
-    if (p === "module" && moduleId) { 
-      setSelectedModuleId(moduleId); 
-      setPage("module"); 
+    if (p === "module" && moduleId) {
+      setSelectedModuleId(moduleId);
+      setPage("module");
     } else {
       setPage(p as Page);
     }
@@ -74,17 +75,20 @@ const AppInner: React.FC = () => {
   const renderPage = () => {
     switch (page) {
       case "dashboard":
-        return <Dashboard onNavigate={navigate} modules={modules} />;  // Pass modules prop
+        return <Dashboard onNavigate={navigate} />;
       case "module":
         return selectedModule ? (
           <ModuleDashboard
             moduleId={selectedModule.id}
             moduleName={selectedModule.name}
             onBack={() => setPage("dashboard")}
-            onExecute={(testId) => { setSelectedTestId(testId); setPage("execution"); }}
+            onExecute={(testId) => {
+              setSelectedTestId(testId);
+              setPage("execution");
+            }}
           />
         ) : (
-          <Dashboard onNavigate={navigate} modules={modules} />
+          <Dashboard onNavigate={navigate} />
         );
       case "execution":
         return selectedModule && selectedTestId ? (
@@ -95,7 +99,7 @@ const AppInner: React.FC = () => {
             onBack={() => setPage("module")}
           />
         ) : (
-          <Dashboard onNavigate={navigate} modules={modules} />
+          <Dashboard onNavigate={navigate} />
         );
       case "report":
         return <TestReport />;
@@ -104,7 +108,7 @@ const AppInner: React.FC = () => {
       case "auditlog":
         return <AuditLog />;
       default:
-        return <Dashboard onNavigate={navigate} modules={modules} />;
+        return <Dashboard onNavigate={navigate} />;
     }
   };
 
