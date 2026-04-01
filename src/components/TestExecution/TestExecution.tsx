@@ -49,12 +49,12 @@ const TestExecution: React.FC<Props> = ({ moduleId, moduleName, initialTestId, o
   const [search, setSearch]                   = useState("");
   const [showExportModal, setShowExportModal] = useState(false);
   const [lockAcquired, setLockAcquired]       = useState(false);
-
-  // ── FIX 2: scroll target drives auto-scroll after re-render ──
   const [scrollTarget, setScrollTarget]       = useState<string | null>(null);
 
-  const heartbeatRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const stepRefs     = useRef<Record<string, HTMLTableRowElement | HTMLDivElement | null>>({});
+  const heartbeatRef      = useRef<ReturnType<typeof setInterval> | null>(null);
+  const stepRefs          = useRef<Record<string, HTMLTableRowElement | HTMLDivElement | null>>({});
+  // FIX 1: ref on the scrollable container for reliable cross-browser scrolling
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
 
   useReleaseLockOnUnload(currentTestId, user?.id ?? "");
 
@@ -68,17 +68,16 @@ const TestExecution: React.FC<Props> = ({ moduleId, moduleName, initialTestId, o
   const currentIdx  = tests.findIndex(t => t.id === currentTestId);
   const currentTest = tests[currentIdx];
 
-  // ── FIX 1: Parallel fetch for steps + lock ─────────────────
-  const [steps, setSteps]         = useState<Step[]>([]);
-  const [lock, setLock]           = useState<any>(null);
-  const [loading, setLoading]     = useState(true);
+  // ── Steps + lock (parallel fetch) ─────────────────────────
+  const [steps, setSteps]             = useState<Step[]>([]);
+  const [lock, setLock]               = useState<any>(null);
+  const [loading, setLoading]         = useState(true);
   const [lockLoading, setLockLoading] = useState(true);
 
   useEffect(() => {
     setLoading(true);
     setLockLoading(true);
 
-    // Fetch steps and lock in parallel instead of two separate effects
     Promise.all([
       supabase.from("steps").select("*").eq("test_id", currentTestId).order("serial_no"),
       supabase.from("testlocks").select("*").eq("test_id", currentTestId),
@@ -151,13 +150,19 @@ const TestExecution: React.FC<Props> = ({ moduleId, moduleName, initialTestId, o
     };
   }, [currentTestId, user?.id]);
 
-  // ── FIX 2: Scroll after render completes ──────────────────
-  // Runs after steps state settles — ref is guaranteed non-null here
+  // ── FIX 1: Container-aware auto-scroll ────────────────────
+  // scrollIntoView on <tr> is unreliable inside overflow:auto containers in some browsers.
+  // Instead we compute the offset manually against the container's bounding rect.
   useEffect(() => {
     if (!scrollTarget) return;
-    const el = stepRefs.current[scrollTarget];
-    if (el) {
-      el.scrollIntoView({ behavior: "smooth", block: "center" });
+    const el        = stepRefs.current[scrollTarget];
+    const container = scrollContainerRef.current;
+    if (el && container) {
+      const elRect        = el.getBoundingClientRect();
+      const containerRect = container.getBoundingClientRect();
+      const scrollTo      = elRect.top - containerRect.top + container.scrollTop
+                            - container.clientHeight / 2 + el.clientHeight / 2;
+      container.scrollTo({ top: scrollTo, behavior: "smooth" });
       setScrollTarget(null);
     }
   }, [scrollTarget, steps]);
@@ -171,7 +176,6 @@ const TestExecution: React.FC<Props> = ({ moduleId, moduleName, initialTestId, o
 
     setSteps(prev => prev.map(s => s.id === stepId ? { ...s, status, remarks } : s));
 
-    // FIX 2: set scroll target instead of setTimeout
     if (status !== "pending" && nextPending) {
       setScrollTarget(nextPending.id);
     }
@@ -304,8 +308,8 @@ const TestExecution: React.FC<Props> = ({ moduleId, moduleName, initialTestId, o
           placeholder="Search steps…" className="input text-xs py-1.5 w-48" />
       </div>
 
-      {/* ── Table (desktop) / Cards (mobile) ── */}
-      <div className="flex-1 overflow-auto pb-24 md:pb-4">
+      {/* ── FIX 1: ref attached to scroll container ── */}
+      <div ref={scrollContainerRef} className="flex-1 overflow-auto pb-24 md:pb-4">
         {loading ? (
           <div className="flex items-center justify-center py-20"><Spinner /></div>
         ) : filtered.length === 0 ? (
@@ -373,7 +377,6 @@ const TestExecution: React.FC<Props> = ({ moduleId, moduleName, initialTestId, o
                       step={step}
                       readonly={false}
                       onUpdate={handleStepUpdate}
-                      // FIX 2: stable ref setter — not an inline arrow, avoids null-flash on re-render
                       cardRef={(el) => { stepRefs.current[step.id] = el; }}
                     />
                   )
@@ -413,11 +416,18 @@ const TableStepRow: React.FC<{
         <p className="text-sm text-gray-300 leading-snug break-words">{step.expected_result}</p>
       </td>
       <td className="px-3 py-3">
+        {/* FIX 2: Enter = pass, Shift+Enter = newline */}
         <textarea
           value={remarks}
           onChange={e => setRemarks(e.target.value)}
+          onKeyDown={e => {
+            if (e.key === "Enter" && !e.shiftKey) {
+              e.preventDefault();
+              onUpdate(step.id, "pass", remarks);
+            }
+          }}
           disabled={readonly}
-          placeholder="Remarks…"
+          placeholder="Remarks… (Enter to pass)"
           rows={2}
           className="input text-sm resize-none disabled:opacity-50 w-full"
         />
@@ -516,11 +526,18 @@ const MobileStepCard: React.FC<{
           <span className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider mt-0.5">Remarks</span>
         </div>
         <div className="px-3 py-2 min-w-0">
+          {/* FIX 2: Enter = pass, Shift+Enter = newline (mobile too) */}
           <textarea
             value={remarks}
             onChange={e => setRemarks(e.target.value)}
+            onKeyDown={e => {
+              if (e.key === "Enter" && !e.shiftKey) {
+                e.preventDefault();
+                onUpdate(step.id, "pass", remarks);
+              }
+            }}
             disabled={readonly}
-            placeholder="Remarks…"
+            placeholder="Remarks… (Enter to pass)"
             rows={2}
             className="input text-sm resize-none disabled:opacity-50 w-full"
           />
