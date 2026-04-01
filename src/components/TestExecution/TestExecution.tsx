@@ -270,9 +270,15 @@ const TestExecution: React.FC<Props> = ({ moduleId, moduleName, initialTestId, o
       <div className="flex items-center gap-2 px-4 py-2 border-b border-white/10 flex-wrap">
         <div className="flex gap-1">
           {(["all", "pass", "fail", "pending"] as Filter[]).map(f => (
-            <button key={f} onClick={() => setFilter(f)}
+            <button
+              key={f}
+              onClick={() => setFilter(f)}
+              style={filter === f ? { color: "#ffffff" } : undefined}
               className={`px-2.5 py-1 rounded-lg text-xs font-medium transition-colors capitalize ${
-                filter === f ? "bg-blue-700 text-white" : "text-gray-400 hover:text-gray-700 dark:hover:text-white"}`}>
+                filter === f
+                  ? "bg-blue-700"
+                  : "text-gray-400 hover:text-gray-700 dark:hover:text-white"
+              }`}>
               {f}
             </button>
           ))}
@@ -503,7 +509,7 @@ const MobileStepCard: React.FC<{
         </div>
       </div>
 
-      {/* ── Row 3: Expected Result ── */}
+      {/* ── Row 3: Expected Result ── */>}
       <div className="grid grid-cols-[80px_1fr] border-b border-white/10">
         <div className="px-3 py-2.5 border-r border-white/10 bg-white/[0.02] flex items-start shrink-0">
           <span className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider mt-0.5">Expected</span>
