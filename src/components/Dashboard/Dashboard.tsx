@@ -14,9 +14,9 @@ function getModuleStats(tests: any[]) {
   for (const t of tests ?? []) {
     for (const s of t.steps ?? []) {
       total++;
-      if (s.status === "pass")       pass++;
-      else if (s.status === "fail")  fail++;
-      else                           pending++;
+      if (s.status === "pass")      pass++;
+      else if (s.status === "fail") fail++;
+      else                          pending++;
     }
   }
   const passRate = total > 0 ? Math.round((pass / total) * 100) : 0;
@@ -33,40 +33,38 @@ function buildSummaries(modules: any[]): ModuleSummary[] {
 const Dashboard: React.FC<Props> = ({ onNavigate }) => {
   const [showExportModal, setShowExportModal] = useState(false);
   const [modules, setModules]                 = useState<any[]>([]);
-  const [loading, setLoading]                 = useState(true);
+  const [initialLoad, setInitialLoad]         = useState(true); // ← separate initial load flag
   const [error, setError]                     = useState<string | null>(null);
 
-  const containerRef = useRef<HTMLDivElement>(null);
+  const gridRef = useRef<HTMLDivElement>(null); // ← scoped to the card grid only
 
-  // ── Fetch modules with nested tests → steps ───────────────
-  const fetchModules = async () => {
-    setLoading(true);
+  const fetchModules = async (isInitial = false) => {
     const { data, error: err } = await supabase
       .from("modules")
       .select("*, tests(steps(status))")
       .order("name");
     if (err) setError(err.message);
     else { setModules(data ?? []); setError(null); }
-    setLoading(false);
+    if (isInitial) setInitialLoad(false); // ← only clears on first load
   };
 
   useEffect(() => {
-    fetchModules();
+    fetchModules(true); // initial load
 
-    // Poll every 30 s (mirrors original pollInterval)
-    const timer = setInterval(fetchModules, 30000);
+    const timer = setInterval(() => fetchModules(false), 30000); // silent polls
     return () => clearInterval(timer);
   }, []);
 
+  // Animate cards only on initial load, not on every poll
   useEffect(() => {
-    if (!loading && containerRef.current) {
+    if (!initialLoad && gridRef.current) {
       gsap.fromTo(
-        containerRef.current.children,
+        gridRef.current.children,
         { opacity: 0, y: 20 },
         { opacity: 1, y: 0, stagger: 0.08, duration: 0.5, ease: "power2.out" }
       );
     }
-  }, [loading]);
+  }, [initialLoad]); // ← only fires when initialLoad flips to false
 
   const globalStats = () => {
     const s = buildSummaries(modules);
@@ -91,7 +89,7 @@ const Dashboard: React.FC<Props> = ({ onNavigate }) => {
   }
 
   return (
-    <div ref={containerRef} className="p-6 flex flex-col gap-6 pb-24 md:pb-6">
+    <div className="p-6 flex flex-col gap-6 pb-24 md:pb-6"> {/* ← no ref here */}
 
       {/* ── Export Modal ── */}
       <ExportModal
@@ -143,12 +141,12 @@ const Dashboard: React.FC<Props> = ({ onNavigate }) => {
       </div>
 
       {/* ── Module Grid ── */}
-      {loading ? (
+      {initialLoad ? (
         <div className="flex items-center justify-center py-20">
           <Spinner />
         </div>
       ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
+        <div ref={gridRef} className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4"> {/* ← ref here */}
           {modules.map((m: any) => {
             const { total, pass, fail, pending, passRate } = getModuleStats(m.tests);
             const accent = m.accent_color || "#3b82f6";
