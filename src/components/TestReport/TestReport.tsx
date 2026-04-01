@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useRef } from "react";
 import { supabase } from "../../supabase";
 import Topbar from "../Layout/Topbar";
 import Spinner from "../UI/Spinner";
@@ -15,10 +15,37 @@ import {
   XAxis, YAxis, CartesianGrid, Tooltip, Legend,
 } from "recharts";
 
-// ── Constants ──────────────────────────────────────────────────────────────────
+// ── Animation keyframes (injected once into <head>) ───────────────────────────
+const ANIM_STYLE = `
+@keyframes fadeSlideIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to   { opacity: 1; transform: translateY(0);    }
+}
+`;
+
+function useInjectStyle() {
+  const injected = useRef(false);
+  useEffect(() => {
+    if (injected.current) return;
+    injected.current = true;
+    const el = document.createElement("style");
+    el.textContent = ANIM_STYLE;
+    document.head.appendChild(el);
+  }, []);
+}
+
+// ── FadeWrapper ───────────────────────────────────────────────────────────────
+// Changing `animKey` causes React to remount the div, re-firing the CSS animation
+const FadeWrapper: React.FC<{ animKey: string | number; children: React.ReactNode }> = ({ animKey, children }) => (
+  <div key={animKey} style={{ animation: "fadeSlideIn 0.28s cubic-bezier(0.22,1,0.36,1) both" }}>
+    {children}
+  </div>
+);
+
+// ── Constants ─────────────────────────────────────────────────────────────────
 const COLORS = { pass: "#22c55e", fail: "#ef4444", pending: "#f59e0b" };
 
-// ── Types ──────────────────────────────────────────────────────────────────────
+// ── Types ─────────────────────────────────────────────────────────────────────
 interface Step {
   serial_no: number; action: string; expected_result: string;
   remarks: string; status: string; is_divider: boolean;
@@ -43,12 +70,12 @@ const CHART_TYPES: { type: ChartType; label: string }[] = [
 ];
 
 const FONT_SIZES = [
-  { label: "S",  value: 10 },
-  { label: "M",  value: 12 },
-  { label: "L",  value: 14 },
+  { label: "S", value: 10 },
+  { label: "M", value: 12 },
+  { label: "L", value: 14 },
 ];
 
-// ── Custom Tooltip ─────────────────────────────────────────────────────────────
+// ── Custom Tooltip ────────────────────────────────────────────────────────────
 const CustomTooltip: React.FC<{
   active?: boolean; payload?: any[]; label?: string; ct: ChartTheme; fontSize: number;
 }> = ({ active, payload, label, ct, fontSize }) => {
@@ -67,7 +94,7 @@ const CustomTooltip: React.FC<{
   );
 };
 
-// ── Custom Pie Tooltip ─────────────────────────────────────────────────────────
+// ── Custom Pie Tooltip ────────────────────────────────────────────────────────
 const PieTooltip: React.FC<{
   active?: boolean; payload?: any[]; ct: ChartTheme; fontSize: number;
 }> = ({ active, payload, ct, fontSize }) => {
@@ -85,11 +112,10 @@ const PieTooltip: React.FC<{
   );
 };
 
-// ── Bar Chart ──────────────────────────────────────────────────────────────────
+// ── Bar Chart ─────────────────────────────────────────────────────────────────
 const RBarChart: React.FC<{ data: ChartRow[]; ct: ChartTheme; fontSize: number }> = ({ data, ct, fontSize }) => (
   <ResponsiveContainer width="100%" height={240}>
-    <BarChart data={data} margin={{ top: 8, right: 16, left: -16, bottom: 8 }}
-      barCategoryGap="28%" barGap={3}>
+    <BarChart data={data} margin={{ top: 8, right: 16, left: -16, bottom: 8 }} barCategoryGap="28%" barGap={3}>
       <CartesianGrid strokeDasharray="4 3" stroke={ct.grid} vertical={false} />
       <XAxis dataKey="name" tick={{ fill: ct.muted, fontSize }} axisLine={false} tickLine={false}
         tickFormatter={(v) => v.length > 10 ? v.slice(0, 9) + "…" : v} />
@@ -97,22 +123,22 @@ const RBarChart: React.FC<{ data: ChartRow[]; ct: ChartTheme; fontSize: number }
       <Tooltip content={<CustomTooltip ct={ct} fontSize={fontSize} />} cursor={{ fill: "rgba(255,255,255,0.04)" }} />
       <Legend iconType="square" iconSize={10}
         formatter={(v) => <span style={{ color: ct.muted, fontSize, textTransform: "capitalize" }}>{v}</span>} />
-      <Bar dataKey="pass"    fill={COLORS.pass}    radius={[3, 3, 0, 0]} maxBarSize={18} />
-      <Bar dataKey="fail"    fill={COLORS.fail}    radius={[3, 3, 0, 0]} maxBarSize={18} />
-      <Bar dataKey="pending" fill={COLORS.pending} radius={[3, 3, 0, 0]} maxBarSize={18} />
+      <Bar dataKey="pass"    fill={COLORS.pass}    radius={[3, 3, 0, 0]} maxBarSize={18} isAnimationActive />
+      <Bar dataKey="fail"    fill={COLORS.fail}    radius={[3, 3, 0, 0]} maxBarSize={18} isAnimationActive />
+      <Bar dataKey="pending" fill={COLORS.pending} radius={[3, 3, 0, 0]} maxBarSize={18} isAnimationActive />
     </BarChart>
   </ResponsiveContainer>
 );
 
-// ── Area Chart ─────────────────────────────────────────────────────────────────
+// ── Area Chart ────────────────────────────────────────────────────────────────
 const RAreaChart: React.FC<{ data: ChartRow[]; ct: ChartTheme; fontSize: number }> = ({ data, ct, fontSize }) => (
   <ResponsiveContainer width="100%" height={240}>
     <AreaChart data={data} margin={{ top: 8, right: 16, left: -16, bottom: 8 }}>
       <defs>
         {(["pass", "fail", "pending"] as const).map(k => (
           <linearGradient key={k} id={`rg-${k}`} x1="0" y1="0" x2="0" y2="1">
-            <stop offset="5%"   stopColor={COLORS[k]} stopOpacity={0.35} />
-            <stop offset="95%"  stopColor={COLORS[k]} stopOpacity={0.02} />
+            <stop offset="5%"  stopColor={COLORS[k]} stopOpacity={0.35} />
+            <stop offset="95%" stopColor={COLORS[k]} stopOpacity={0.02} />
           </linearGradient>
         ))}
       </defs>
@@ -123,14 +149,15 @@ const RAreaChart: React.FC<{ data: ChartRow[]; ct: ChartTheme; fontSize: number 
       <Tooltip content={<CustomTooltip ct={ct} fontSize={fontSize} />} />
       <Legend iconType="square" iconSize={10}
         formatter={(v) => <span style={{ color: ct.muted, fontSize, textTransform: "capitalize" }}>{v}</span>} />
-      <Area type="monotone" dataKey="pending" stroke={COLORS.pending} fill={`url(#rg-pending)`} strokeWidth={2.5} dot={false} />
-      <Area type="monotone" dataKey="fail"    stroke={COLORS.fail}    fill={`url(#rg-fail)`}    strokeWidth={2.5} dot={false} />
-      <Area type="monotone" dataKey="pass"    stroke={COLORS.pass}    fill={`url(#rg-pass)`}    strokeWidth={2.5} dot={{ r: 3.5, strokeWidth: 1.5, fill: COLORS.pass }} />
+      <Area type="monotone" dataKey="pending" stroke={COLORS.pending} fill="url(#rg-pending)" strokeWidth={2.5} dot={false} isAnimationActive />
+      <Area type="monotone" dataKey="fail"    stroke={COLORS.fail}    fill="url(#rg-fail)"    strokeWidth={2.5} dot={false} isAnimationActive />
+      <Area type="monotone" dataKey="pass"    stroke={COLORS.pass}    fill="url(#rg-pass)"    strokeWidth={2.5}
+        dot={{ r: 3.5, strokeWidth: 1.5, fill: COLORS.pass }} isAnimationActive />
     </AreaChart>
   </ResponsiveContainer>
 );
 
-// ── Line Chart ─────────────────────────────────────────────────────────────────
+// ── Line Chart ────────────────────────────────────────────────────────────────
 const RLineChart: React.FC<{ data: ChartRow[]; ct: ChartTheme; fontSize: number }> = ({ data, ct, fontSize }) => (
   <ResponsiveContainer width="100%" height={240}>
     <LineChart data={data} margin={{ top: 8, right: 16, left: -16, bottom: 8 }}>
@@ -141,14 +168,17 @@ const RLineChart: React.FC<{ data: ChartRow[]; ct: ChartTheme; fontSize: number 
       <Tooltip content={<CustomTooltip ct={ct} fontSize={fontSize} />} />
       <Legend iconType="square" iconSize={10}
         formatter={(v) => <span style={{ color: ct.muted, fontSize, textTransform: "capitalize" }}>{v}</span>} />
-      <Line type="monotone" dataKey="pass"    stroke={COLORS.pass}    strokeWidth={2.5} dot={{ r: 3.5, strokeWidth: 1.5, fill: ct.panel }} activeDot={{ r: 5 }} />
-      <Line type="monotone" dataKey="fail"    stroke={COLORS.fail}    strokeWidth={2.5} dot={{ r: 3.5, strokeWidth: 1.5, fill: ct.panel }} activeDot={{ r: 5 }} />
-      <Line type="monotone" dataKey="pending" stroke={COLORS.pending} strokeWidth={2.5} dot={{ r: 3.5, strokeWidth: 1.5, fill: ct.panel }} activeDot={{ r: 5 }} />
+      <Line type="monotone" dataKey="pass"    stroke={COLORS.pass}    strokeWidth={2.5}
+        dot={{ r: 3.5, strokeWidth: 1.5, fill: ct.panel }} activeDot={{ r: 5 }} isAnimationActive />
+      <Line type="monotone" dataKey="fail"    stroke={COLORS.fail}    strokeWidth={2.5}
+        dot={{ r: 3.5, strokeWidth: 1.5, fill: ct.panel }} activeDot={{ r: 5 }} isAnimationActive />
+      <Line type="monotone" dataKey="pending" stroke={COLORS.pending} strokeWidth={2.5}
+        dot={{ r: 3.5, strokeWidth: 1.5, fill: ct.panel }} activeDot={{ r: 5 }} isAnimationActive />
     </LineChart>
   </ResponsiveContainer>
 );
 
-// ── Pie Chart ──────────────────────────────────────────────────────────────────
+// ── Pie Chart ─────────────────────────────────────────────────────────────────
 const RPieChart: React.FC<{ data: ChartRow[]; ct: ChartTheme; fontSize: number }> = ({ data, ct, fontSize }) => {
   const totals = data.reduce(
     (acc, d) => ({ pass: acc.pass + d.pass, fail: acc.fail + d.fail, pending: acc.pending + d.pending }),
@@ -161,7 +191,7 @@ const RPieChart: React.FC<{ data: ChartRow[]; ct: ChartTheme; fontSize: number }
 
   if (total === 0) return (
     <div className="flex items-center justify-center h-40">
-      <span style={{ color: ct.muted, fontSize }} className="text-sm">No data to display</span>
+      <span style={{ color: ct.muted, fontSize }}>No data to display</span>
     </div>
   );
 
@@ -171,49 +201,51 @@ const RPieChart: React.FC<{ data: ChartRow[]; ct: ChartTheme; fontSize: number }
         <Pie data={pieData} cx="50%" cy="50%" innerRadius="46%" outerRadius="72%"
           paddingAngle={3} dataKey="value" nameKey="name"
           label={({ name, percent }) => percent > 0.05 ? `${Math.round(percent * 100)}%` : ""}
-          labelLine={false}
-          style={{ fontSize }}>
+          labelLine={false} style={{ fontSize }} isAnimationActive>
           {pieData.map((entry) => (
             <Cell key={entry.name} fill={COLORS[entry.name as keyof typeof COLORS]} opacity={0.88} />
           ))}
         </Pie>
         <Tooltip content={<PieTooltip ct={ct} fontSize={fontSize} />} />
         <Legend iconType="circle" iconSize={10}
-          formatter={(v) => <span style={{ color: ct.muted, fontSize, textTransform: "capitalize" }}>{v} · {totals[v as keyof typeof totals]}</span>} />
+          formatter={(v) => (
+            <span style={{ color: ct.muted, fontSize, textTransform: "capitalize" }}>
+              {v} · {totals[v as keyof typeof totals]}
+            </span>
+          )} />
       </PieChart>
     </ResponsiveContainer>
   );
 };
 
-// ── Radar Chart ────────────────────────────────────────────────────────────────
+// ── Radar Chart ───────────────────────────────────────────────────────────────
 const RRadarChart: React.FC<{ data: ChartRow[]; ct: ChartTheme; fontSize: number }> = ({ data, ct, fontSize }) => {
   if (data.length === 0) return (
     <div className="flex items-center justify-center h-40">
       <span style={{ color: ct.muted, fontSize }}>No data to display</span>
     </div>
   );
-
   return (
     <ResponsiveContainer width="100%" height={240}>
       <RadarChart cx="50%" cy="50%" outerRadius="72%" data={data}>
         <PolarGrid stroke={ct.grid} />
-        <PolarAngleAxis dataKey="name"
-          tick={{ fill: ct.muted, fontSize }}
+        <PolarAngleAxis dataKey="name" tick={{ fill: ct.muted, fontSize }}
           tickFormatter={(v) => v.length > 10 ? v.slice(0, 9) + "…" : v} />
         <PolarRadiusAxis tick={{ fill: ct.muted, fontSize: fontSize - 1 }} axisLine={false} />
         <Tooltip content={<CustomTooltip ct={ct} fontSize={fontSize} />} />
         <Legend iconType="square" iconSize={10}
           formatter={(v) => <span style={{ color: ct.muted, fontSize, textTransform: "capitalize" }}>{v}</span>} />
-        <Radar name="pass"    dataKey="pass"    stroke={COLORS.pass}    fill={COLORS.pass}    fillOpacity={0.18} strokeWidth={2} />
-        <Radar name="fail"    dataKey="fail"    stroke={COLORS.fail}    fill={COLORS.fail}    fillOpacity={0.18} strokeWidth={2} />
-        <Radar name="pending" dataKey="pending" stroke={COLORS.pending} fill={COLORS.pending} fillOpacity={0.18} strokeWidth={2} />
+        <Radar name="pass"    dataKey="pass"    stroke={COLORS.pass}    fill={COLORS.pass}    fillOpacity={0.18} strokeWidth={2} isAnimationActive />
+        <Radar name="fail"    dataKey="fail"    stroke={COLORS.fail}    fill={COLORS.fail}    fillOpacity={0.18} strokeWidth={2} isAnimationActive />
+        <Radar name="pending" dataKey="pending" stroke={COLORS.pending} fill={COLORS.pending} fillOpacity={0.18} strokeWidth={2} isAnimationActive />
       </RadarChart>
     </ResponsiveContainer>
   );
 };
 
-// ── Main Component ─────────────────────────────────────────────────────────────
+// ── Main Component ────────────────────────────────────────────────────────────
 const TestReport: React.FC = () => {
+  useInjectStyle();
   const { theme } = useTheme();
   const [modules, setModules]                   = useState<ModuleWithTests[]>([]);
   const [loading, setLoading]                   = useState(true);
@@ -226,14 +258,10 @@ const TestReport: React.FC = () => {
 
   useEffect(() => {
     const fetchData = async () => {
-      setLoading(true);
-      setError(null);
+      setLoading(true); setError(null);
       try {
         const { data: modulesData, error: modulesError } = await supabase
-          .from("modules")
-          .select("id, name, description, accent_color")
-          .order("name", { ascending: true });
-
+          .from("modules").select("id, name, description, accent_color").order("name", { ascending: true });
         if (modulesError) throw new Error(modulesError.message);
 
         const modulesWithTests = await Promise.all(
@@ -241,17 +269,13 @@ const TestReport: React.FC = () => {
             const { data: testsData, error: testsError } = await supabase
               .from("tests")
               .select("id, name, steps(serial_no, action, expected_result, remarks, status, is_divider)")
-              .eq("module_id", mod.id)
-              .order("name", { ascending: true });
-
+              .eq("module_id", mod.id).order("name", { ascending: true });
             if (testsError) throw new Error(`Failed to load tests for "${mod.name}": ${testsError.message}`);
             return { ...mod, tests: (testsData ?? []) as Test[] };
           })
         );
-
         setModules(modulesWithTests);
       } catch (err: any) {
-        console.error("TestReport fetch error:", err);
         setError(err.message ?? "Failed to load report data.");
       } finally {
         setLoading(false);
@@ -302,15 +326,10 @@ const TestReport: React.FC = () => {
     ];
   };
 
-  const renderChart = () => {
-    switch (chartType) {
-      case "bar":   return <RBarChart   data={chartData} ct={chartTheme} fontSize={fontSize} />;
-      case "area":  return <RAreaChart  data={chartData} ct={chartTheme} fontSize={fontSize} />;
-      case "line":  return <RLineChart  data={chartData} ct={chartTheme} fontSize={fontSize} />;
-      case "pie":   return <RPieChart   data={chartData} ct={chartTheme} fontSize={fontSize} />;
-      case "radar": return <RRadarChart data={chartData} ct={chartTheme} fontSize={fontSize} />;
-    }
-  };
+  // Animate chart when module filter OR chart type changes
+  const chartAnimKey = `${selectedModuleId ?? "all"}-${chartType}`;
+  // Animate outer content when view tab (graph/table) switches
+  const viewAnimKey  = view;
 
   return (
     <>
@@ -374,101 +393,110 @@ const TestReport: React.FC = () => {
             </div>
           </div>
 
-          {/* ── Graph view ── */}
-          {view === "graph" ? (
-            <div className="p-4 rounded-xl border"
-              style={{ backgroundColor: chartTheme.panel, borderColor: chartTheme.border }}>
+          {/* ── View panel — animates when graph ↔ table switches ── */}
+          <FadeWrapper animKey={viewAnimKey}>
+            {view === "graph" ? (
+              <div className="p-4 rounded-xl border"
+                style={{ backgroundColor: chartTheme.panel, borderColor: chartTheme.border }}>
 
-              {/* Title + chart type + font size switcher */}
-              <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
-                <h3 className="text-sm font-semibold" style={{ color: chartTheme.text }}>
-                  Execution Graph
-                </h3>
-
-                <div className="flex items-center gap-2">
-                  {/* Font size toggle */}
-                  <div className="flex items-center gap-0.5 rounded-lg p-0.5 border"
-                    style={{ backgroundColor: theme === "dark" ? "rgba(255,255,255,0.04)" : "rgba(0,0,0,0.04)",
-                      borderColor: chartTheme.border }}>
-                    {FONT_SIZES.map(({ label, value }) => (
-                      <button key={value} onClick={() => setFontSize(value)}
-                        title={`Font size ${value}px`}
-                        style={fontSize === value
-                          ? { backgroundColor: "#1d4ed8", color: "#ffffff" }
-                          : { color: chartTheme.muted }}
-                        className="px-2.5 py-1 rounded-md text-xs font-semibold transition-all w-7">
-                        {label}
-                      </button>
-                    ))}
-                  </div>
-
-                  {/* Chart type toggle */}
-                  <div className="flex items-center gap-0.5 rounded-lg p-0.5 border"
-                    style={{ backgroundColor: theme === "dark" ? "rgba(255,255,255,0.04)" : "rgba(0,0,0,0.04)",
-                      borderColor: chartTheme.border }}>
-                    {CHART_TYPES.map(({ type, label }) => (
-                      <button key={type} onClick={() => setChartType(type)}
-                        style={chartType === type
-                          ? { backgroundColor: "#1d4ed8", color: "#ffffff" }
-                          : { color: chartTheme.muted }}
-                        className="px-2.5 py-1 rounded-md text-xs font-medium transition-all">
-                        {label}
-                      </button>
-                    ))}
+                {/* Controls row */}
+                <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+                  <h3 className="text-sm font-semibold" style={{ color: chartTheme.text }}>Execution Graph</h3>
+                  <div className="flex items-center gap-2">
+                    {/* Font size */}
+                    <div className="flex items-center gap-0.5 rounded-lg p-0.5 border"
+                      style={{ backgroundColor: theme === "dark" ? "rgba(255,255,255,0.04)" : "rgba(0,0,0,0.04)",
+                        borderColor: chartTheme.border }}>
+                      {FONT_SIZES.map(({ label, value }) => (
+                        <button key={value} onClick={() => setFontSize(value)}
+                          title={`Font size ${value}px`}
+                          style={fontSize === value
+                            ? { backgroundColor: "#1d4ed8", color: "#ffffff" }
+                            : { color: chartTheme.muted }}
+                          className="px-2.5 py-1 rounded-md text-xs font-semibold transition-all w-7">
+                          {label}
+                        </button>
+                      ))}
+                    </div>
+                    {/* Chart type */}
+                    <div className="flex items-center gap-0.5 rounded-lg p-0.5 border"
+                      style={{ backgroundColor: theme === "dark" ? "rgba(255,255,255,0.04)" : "rgba(0,0,0,0.04)",
+                        borderColor: chartTheme.border }}>
+                      {CHART_TYPES.map(({ type, label }) => (
+                        <button key={type} onClick={() => setChartType(type)}
+                          style={chartType === type
+                            ? { backgroundColor: "#1d4ed8", color: "#ffffff" }
+                            : { color: chartTheme.muted }}
+                          className="px-2.5 py-1 rounded-md text-xs font-medium transition-all">
+                          {label}
+                        </button>
+                      ))}
+                    </div>
                   </div>
                 </div>
+
+                {/* Chart area — animates on chartType OR module filter change */}
+                <FadeWrapper animKey={chartAnimKey}>
+                  {(() => {
+                    switch (chartType) {
+                      case "bar":   return <RBarChart   data={chartData} ct={chartTheme} fontSize={fontSize} />;
+                      case "area":  return <RAreaChart  data={chartData} ct={chartTheme} fontSize={fontSize} />;
+                      case "line":  return <RLineChart  data={chartData} ct={chartTheme} fontSize={fontSize} />;
+                      case "pie":   return <RPieChart   data={chartData} ct={chartTheme} fontSize={fontSize} />;
+                      case "radar": return <RRadarChart data={chartData} ct={chartTheme} fontSize={fontSize} />;
+                    }
+                  })()}
+                </FadeWrapper>
               </div>
 
-              {renderChart()}
-            </div>
-
-          ) : (
-            /* ── Table view ── */
-            <div className="overflow-x-auto rounded-xl border border-white/10">
-              <table className="w-full" style={{ fontSize }}>
-                <thead>
-                  <tr className="bg-white/5 text-gray-400 uppercase" style={{ fontSize: fontSize - 1 }}>
-                    <th className="px-4 py-3 text-left">Module</th>
-                    <th className="px-4 py-3 text-center">Tests</th>
-                    <th className="px-4 py-3 text-center">Total Steps</th>
-                    <th className="px-4 py-3 text-center text-green-400">Pass</th>
-                    <th className="px-4 py-3 text-center text-red-400">Fail</th>
-                    <th className="px-4 py-3 text-center text-amber-400">Pending</th>
-                    <th className="px-4 py-3 text-center">Pass Rate</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-white/5">
-                  {filtered.map((m) => {
-                    const allSteps = (m.tests ?? []).flatMap((t) => (t.steps ?? []).filter((s) => !s.is_divider));
-                    const total   = allSteps.length;
-                    const pass    = allSteps.filter((s) => s.status === "pass").length;
-                    const fail    = allSteps.filter((s) => s.status === "fail").length;
-                    const pending = allSteps.filter((s) => s.status === "pending").length;
-                    const rate    = total > 0 ? Math.round((pass / total) * 100) : 0;
-                    return (
-                      <tr key={m.id} className="hover:bg-white/5 transition-colors">
-                        <td className="px-4 py-3 font-semibold text-white">{m.name}</td>
-                        <td className="px-4 py-3 text-center text-gray-300">{m.tests?.length ?? 0}</td>
-                        <td className="px-4 py-3 text-center font-bold text-white">{total}</td>
-                        <td className="px-4 py-3 text-center font-semibold text-green-400">{pass}</td>
-                        <td className="px-4 py-3 text-center font-semibold text-red-400">{fail}</td>
-                        <td className="px-4 py-3 text-center font-semibold text-amber-400">{pending}</td>
-                        <td className="px-4 py-3 text-center">
-                          <div className="flex items-center gap-2 justify-center">
-                            <div className="w-20 h-1.5 bg-gray-700 rounded-full overflow-hidden">
-                              <div className="h-full rounded-full"
-                                style={{ width: `${rate}%`, backgroundColor: COLORS.pass }} />
+            ) : (
+              /* ── Table view ── */
+              <div className="overflow-x-auto rounded-xl border border-white/10">
+                <table className="w-full" style={{ fontSize }}>
+                  <thead>
+                    <tr className="bg-white/5 text-gray-400 uppercase" style={{ fontSize: fontSize - 1 }}>
+                      <th className="px-4 py-3 text-left">Module</th>
+                      <th className="px-4 py-3 text-center">Tests</th>
+                      <th className="px-4 py-3 text-center">Total Steps</th>
+                      <th className="px-4 py-3 text-center text-green-400">Pass</th>
+                      <th className="px-4 py-3 text-center text-red-400">Fail</th>
+                      <th className="px-4 py-3 text-center text-amber-400">Pending</th>
+                      <th className="px-4 py-3 text-center">Pass Rate</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-white/5">
+                    {filtered.map((m) => {
+                      const allSteps = (m.tests ?? []).flatMap((t) => (t.steps ?? []).filter((s) => !s.is_divider));
+                      const total   = allSteps.length;
+                      const pass    = allSteps.filter((s) => s.status === "pass").length;
+                      const fail    = allSteps.filter((s) => s.status === "fail").length;
+                      const pending = allSteps.filter((s) => s.status === "pending").length;
+                      const rate    = total > 0 ? Math.round((pass / total) * 100) : 0;
+                      return (
+                        <tr key={m.id} className="hover:bg-white/5 transition-colors">
+                          <td className="px-4 py-3 font-semibold text-white">{m.name}</td>
+                          <td className="px-4 py-3 text-center text-gray-300">{m.tests?.length ?? 0}</td>
+                          <td className="px-4 py-3 text-center font-bold text-white">{total}</td>
+                          <td className="px-4 py-3 text-center font-semibold text-green-400">{pass}</td>
+                          <td className="px-4 py-3 text-center font-semibold text-red-400">{fail}</td>
+                          <td className="px-4 py-3 text-center font-semibold text-amber-400">{pending}</td>
+                          <td className="px-4 py-3 text-center">
+                            <div className="flex items-center gap-2 justify-center">
+                              <div className="w-20 h-1.5 bg-gray-700 rounded-full overflow-hidden">
+                                <div className="h-full rounded-full"
+                                  style={{ width: `${rate}%`, backgroundColor: COLORS.pass }} />
+                              </div>
+                              <span className="font-bold text-white">{rate}%</span>
                             </div>
-                            <span className="font-bold text-white">{rate}%</span>
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          )}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </FadeWrapper>
         </div>
       )}
     </>

@@ -1,10 +1,51 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useRef } from "react";
 import { supabase } from "../../supabase";
 import Spinner from "../UI/Spinner";
 import Topbar from "../Layout/Topbar";
 import { Step, Test } from "../../types";
 import { useAuth } from "../../context/AuthContext";
 
+// ── Animation keyframes (injected once into <head>) ───────────────────────────
+const ANIM_STYLE = `
+@keyframes fadeSlideIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to   { opacity: 1; transform: translateY(0);    }
+}
+@keyframes fadeSlideInRow {
+  from { opacity: 0; transform: translateX(-6px); }
+  to   { opacity: 1; transform: translateX(0);    }
+}
+`;
+
+function useInjectStyle() {
+  const injected = useRef(false);
+  useEffect(() => {
+    if (injected.current) return;
+    injected.current = true;
+    const el = document.createElement("style");
+    el.textContent = ANIM_STYLE;
+    document.head.appendChild(el);
+  }, []);
+}
+
+// ── FadeWrapper ───────────────────────────────────────────────────────────────
+const FadeWrapper: React.FC<{ animKey: string | number; children: React.ReactNode }> = ({ animKey, children }) => (
+  <div key={animKey} style={{ animation: "fadeSlideIn 0.28s cubic-bezier(0.22,1,0.36,1) both" }}>
+    {children}
+  </div>
+);
+
+// ── StaggerRow — each row fades in with a slight delay offset ─────────────────
+const StaggerRow: React.FC<{ index: number; children: React.ReactNode }> = ({ index, children }) => (
+  <div style={{
+    animation: "fadeSlideInRow 0.25s cubic-bezier(0.22,1,0.36,1) both",
+    animationDelay: `${index * 45}ms`,
+  }}>
+    {children}
+  </div>
+);
+
+// ── Types ─────────────────────────────────────────────────────────────────────
 interface Props {
   moduleId: string;
   moduleName: string;
@@ -18,14 +59,16 @@ const FONT_SIZES = [
   { label: "L", value: 16 },
 ];
 
+// ── Main Component ────────────────────────────────────────────────────────────
 const ModuleDashboard: React.FC<Props> = ({ moduleId, moduleName, onBack, onExecute }) => {
+  useInjectStyle();
   const { user } = useAuth();
 
-  const [tests, setTests]               = useState<Test[]>([]);
-  const [loading, setLoading]           = useState(true);
-  const [locks, setLocks]               = useState<any[]>([]);
+  const [tests, setTests]                   = useState<Test[]>([]);
+  const [loading, setLoading]               = useState(true);
+  const [locks, setLocks]                   = useState<any[]>([]);
   const [selectedTestId, setSelectedTestId] = useState<string | null>(null);
-  const [fontSize, setFontSize]         = useState(14);
+  const [fontSize, setFontSize]             = useState(14);
 
   // ── Tests ──────────────────────────────────────────────────
   useEffect(() => {
@@ -50,7 +93,7 @@ const ModuleDashboard: React.FC<Props> = ({ moduleId, moduleName, onBack, onExec
     return () => { supabase.removeChannel(channel); };
   }, []);
 
-  // ── HARD BLOCK: intercept onExecute before it fires ───────
+  // ── HARD BLOCK ────────────────────────────────────────────
   const handleExecute = (testId: string) => {
     const lock = locks.find(l => l.test_id === testId);
     if (lock && lock.user_id !== user?.id) return;
@@ -61,6 +104,9 @@ const ModuleDashboard: React.FC<Props> = ({ moduleId, moduleName, onBack, onExec
     ? tests.filter(t => t.id === selectedTestId)
     : tests;
 
+  // animKey changes whenever filter changes → triggers FadeWrapper remount
+  const listAnimKey = selectedTestId ?? "all";
+
   if (loading) return <div className="flex-1 flex items-center justify-center"><Spinner /></div>;
 
   return (
@@ -69,9 +115,9 @@ const ModuleDashboard: React.FC<Props> = ({ moduleId, moduleName, onBack, onExec
 
       <div className="p-6 flex flex-col gap-6 pb-24 md:pb-6">
 
-        {/* ── Filter + Font Size toolbar ── */}
+        {/* ── Toolbar: filter + font size ── */}
         <div className="flex flex-wrap items-center justify-between gap-3">
-          {/* Test filter dropdown */}
+          {/* Test filter */}
           <div className="flex items-center gap-3">
             <label className="text-sm text-gray-400">Filter by Test</label>
             <select
@@ -87,10 +133,7 @@ const ModuleDashboard: React.FC<Props> = ({ moduleId, moduleName, onBack, onExec
           </div>
 
           {/* Font size toggle */}
-          <div
-            className="flex items-center gap-0.5 rounded-lg p-0.5 border bg-white/5"
-            style={{ borderColor: "rgba(255,255,255,0.1)" }}
-          >
+          <div className="flex items-center gap-0.5 rounded-lg p-0.5 border bg-white/5 border-white/10">
             {FONT_SIZES.map(({ label, value }) => (
               <button
                 key={value}
@@ -109,36 +152,43 @@ const ModuleDashboard: React.FC<Props> = ({ moduleId, moduleName, onBack, onExec
           </div>
         </div>
 
-        {/* ── Test list ── */}
-        <div className="flex flex-col gap-3">
-          <h3 className="font-semibold text-gray-300" style={{ fontSize }}>Test Cases</h3>
-          {filteredTests.length === 0 ? (
-            <p className="text-sm text-gray-500">No tests found.</p>
-          ) : (
-            filteredTests.map(test => {
-              const lock            = locks.find(l => l.test_id === test.id);
-              const isLockedByOther = !!(lock && lock.user_id !== user?.id);
-              const isLockedByMe    = !!(lock && lock.user_id === user?.id);
-              return (
-                <TestRow
-                  key={test.id}
-                  test={test}
-                  onExecute={() => handleExecute(test.id)}
-                  isLockedByOther={isLockedByOther}
-                  isLockedByMe={isLockedByMe}
-                  lockedByName={lock?.locked_by_name ?? ""}
-                  fontSize={fontSize}
-                />
-              );
-            })
-          )}
+        {/* ── Test list — outer wrapper animates on filter change ── */}
+        <div className="flex flex-col gap-1">
+          <h3 className="font-semibold text-gray-300 mb-2" style={{ fontSize }}>Test Cases</h3>
+
+          <FadeWrapper animKey={listAnimKey}>
+            <div className="flex flex-col gap-3">
+              {filteredTests.length === 0 ? (
+                <p className="text-sm text-gray-500">No tests found.</p>
+              ) : (
+                filteredTests.map((test, index) => {
+                  const lock            = locks.find(l => l.test_id === test.id);
+                  const isLockedByOther = !!(lock && lock.user_id !== user?.id);
+                  const isLockedByMe    = !!(lock && lock.user_id === user?.id);
+                  return (
+                    // Each row staggers in with a delay based on its index
+                    <StaggerRow key={test.id} index={index}>
+                      <TestRow
+                        test={test}
+                        onExecute={() => handleExecute(test.id)}
+                        isLockedByOther={isLockedByOther}
+                        isLockedByMe={isLockedByMe}
+                        lockedByName={lock?.locked_by_name ?? ""}
+                        fontSize={fontSize}
+                      />
+                    </StaggerRow>
+                  );
+                })
+              )}
+            </div>
+          </FadeWrapper>
         </div>
       </div>
     </div>
   );
 };
 
-// ── Test Row ───────────────────────────────────────────────────
+// ── Test Row ──────────────────────────────────────────────────────────────────
 const TestRow: React.FC<{
   test: Test;
   onExecute: () => void;
@@ -173,45 +223,46 @@ const TestRow: React.FC<{
       style={{ borderLeft: `3px solid ${borderColor}`, fontSize }}
     >
       <div className="flex-1">
-        {/* ── Name + lock badge ── */}
+        {/* Name + lock badges */}
         <div className="flex items-center gap-2 flex-wrap">
           <p className="font-medium text-white">{test.name}</p>
           {isLockedByOther && (
-            <span className="flex items-center gap-1 font-semibold text-amber-400 bg-amber-500/10 border border-amber-500/20 rounded-full px-2.5 py-0.5"
-              style={{ fontSize: fontSize - 2 }}>
+            <span
+              className="flex items-center gap-1 font-semibold text-amber-400 bg-amber-500/10 border border-amber-500/20 rounded-full px-2.5 py-0.5"
+              style={{ fontSize: fontSize - 2 }}
+            >
               <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse inline-block" />
               🔒 {lockedByName} is executing
             </span>
           )}
           {isLockedByMe && (
-            <span className="flex items-center gap-1 font-semibold text-blue-400 bg-blue-500/10 border border-blue-500/20 rounded-full px-2.5 py-0.5"
-              style={{ fontSize: fontSize - 2 }}>
+            <span
+              className="flex items-center gap-1 font-semibold text-blue-400 bg-blue-500/10 border border-blue-500/20 rounded-full px-2.5 py-0.5"
+              style={{ fontSize: fontSize - 2 }}
+            >
               <span className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-pulse inline-block" />
               ✏️ You are executing
             </span>
           )}
         </div>
 
-        {/* ── Badges ── */}
+        {/* Status badges */}
         <div className="flex gap-2 mt-1.5 flex-wrap">
           <span className="badge-pass">{passed} Pass</span>
           <span className="badge-fail">{failed} Fail</span>
           <span className="badge-pend">{pending} Pend</span>
         </div>
 
-        {/* ── Progress bar ── */}
+        {/* Progress bar */}
         <div className="mt-2 h-1.5 bg-gray-800 rounded-full overflow-hidden">
           <div
             className="h-full rounded-full transition-all duration-500"
-            style={{
-              width: `${rate}%`,
-              backgroundColor: isLockedByOther ? "#6b7280" : "#22c55e",
-            }}
+            style={{ width: `${rate}%`, backgroundColor: isLockedByOther ? "#6b7280" : "#22c55e" }}
           />
         </div>
       </div>
 
-      {/* ── Button ── */}
+      {/* Execute button */}
       <button
         onClick={(e) => {
           if (isLockedByOther) { e.preventDefault(); e.stopPropagation(); return; }
@@ -225,11 +276,7 @@ const TestRow: React.FC<{
             : "btn-primary cursor-pointer"
         }`}
       >
-        {isLockedByOther
-          ? "🔒 Locked"
-          : isLockedByMe
-          ? "▶ Resume Test"
-          : "Execute Tests"}
+        {isLockedByOther ? "🔒 Locked" : isLockedByMe ? "▶ Resume Test" : "Execute Tests"}
       </button>
     </div>
   );
