@@ -1,4 +1,3 @@
-// TestExecution.tsx
 import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useAuth } from "../../context/AuthContext";
 import { supabase } from "../../supabase";
@@ -21,18 +20,24 @@ const LockedScreen: React.FC<{ lockedByName: string; testName: string; onBack: (
   <div className="flex flex-col h-full items-center justify-center gap-6 p-8 text-center">
     <div className="w-16 h-16 rounded-full bg-amber-500/10 border-2 border-amber-500/30 flex items-center justify-center text-3xl">🔒</div>
     <div>
-      <h2 className="text-lg font-bold text-white mb-1">Test In Progress</h2>
-      <p className="text-gray-400 text-sm max-w-sm">
-        <span className="text-amber-400 font-semibold">{lockedByName}</span> is currently executing{" "}
-        <span className="text-white font-semibold">"{testName}"</span>. You cannot enter until they finish.
+      {/* ✅ light mode */}
+      <h2 className="text-lg font-bold text-gray-900 dark:text-white mb-1">Test In Progress</h2>
+      <p className="text-gray-600 dark:text-gray-400 text-sm max-w-sm">
+        <span className="text-amber-600 dark:text-amber-400 font-semibold">{lockedByName}</span> is currently executing{" "}
+        <span className="text-gray-900 dark:text-white font-semibold">"{testName}"</span>. You cannot enter until they finish.
       </p>
     </div>
     <div className="flex items-center gap-2 px-4 py-2 bg-amber-500/10 border border-amber-500/20 rounded-full">
       <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse inline-block" />
-      <span className="text-xs text-amber-400 font-medium">You'll be unblocked instantly when they finish.</span>
+      <span className="text-xs text-amber-600 dark:text-amber-400 font-medium">You'll be unblocked instantly when they finish.</span>
     </div>
     <button onClick={onBack}
-      className="px-6 py-2 rounded-xl border border-white/10 text-gray-300 hover:text-white hover:border-white/20 text-sm font-medium transition-colors">
+      className="px-6 py-2 rounded-xl
+        border border-gray-200 dark:border-white/10
+        text-gray-600 dark:text-gray-300
+        hover:text-gray-900 dark:hover:text-white
+        hover:border-gray-300 dark:hover:border-white/20
+        text-sm font-medium transition-colors">
       ← Go Back
     </button>
   </div>
@@ -148,10 +153,6 @@ const TestExecution: React.FC<Props> = ({ moduleId, moduleName, initialTestId, o
   }, [currentTestId, user?.id]);
 
   // ── Auto-scroll ────────────────────────────────────────────
-  // useLayoutEffect fires synchronously after DOM mutations —
-  // refs are guaranteed populated before we read them.
-  // Only depends on scrollTarget (not steps) to avoid re-running
-  // on every step state change.
   useLayoutEffect(() => {
     if (!scrollTarget) return;
     const el        = stepRefs.current[scrollTarget];
@@ -281,14 +282,16 @@ const TestExecution: React.FC<Props> = ({ moduleId, moduleName, initialTestId, o
           </div>
           <span className="text-xs text-gray-500 font-medium">{progressPct}%</span>
         </div>
-        <div className="h-1.5 bg-white/5 rounded-full overflow-hidden">
+        {/* ✅ light mode track */}
+        <div className="h-1.5 bg-gray-200 dark:bg-white/5 rounded-full overflow-hidden">
           <div className="h-full rounded-full transition-all duration-500"
             style={{ width: `${progressPct}%`, background: failCount > 0 ? "linear-gradient(90deg,#22c55e,#ef4444)" : "#22c55e" }} />
         </div>
       </div>
 
       {/* ── Filters ── */}
-      <div className="flex items-center gap-2 px-4 py-2 border-b border-white/10 flex-wrap">
+      {/* ✅ light mode border */}
+      <div className="flex items-center gap-2 px-4 py-2 border-b border-gray-200 dark:border-white/10 flex-wrap">
         <div className="flex gap-1">
           {(["all", "pass", "fail", "pending"] as Filter[]).map(f => (
             <button
@@ -319,7 +322,8 @@ const TestExecution: React.FC<Props> = ({ moduleId, moduleName, initialTestId, o
             {/* ── Desktop table ── */}
             <table className="hidden md:table w-full text-sm border-collapse table-fixed">
               <thead>
-                <tr className="border-b border-white/10">
+                {/* ✅ light mode border */}
+                <tr className="border-b border-gray-200 dark:border-white/10">
                   <th className="text-left px-2 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wider w-[6%]">S.No</th>
                   <th className="text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wider w-[32%]">Action</th>
                   <th className="text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wider w-[32%]">Expected Result</th>
@@ -404,16 +408,19 @@ const TableStepRow: React.FC<{
     : step.status === "fail" ? "bg-red-500/5" : "";
 
   return (
+    // ✅ light mode row border + hover
     <tr ref={rowRef}
-      className={`border-b border-white/5 hover:bg-white/[0.02] transition-colors ${rowBg}`}>
+      className={`border-b border-gray-100 dark:border-white/5 hover:bg-gray-50 dark:hover:bg-white/[0.02] transition-colors ${rowBg}`}>
       <td className="px-2 py-3 text-center">
         <span className="text-xs font-mono text-gray-500">{step.serial_no}</span>
       </td>
       <td className="px-4 py-3">
-        <p className="text-sm text-white leading-snug break-words">{step.action}</p>
+        {/* ✅ light mode text */}
+        <p className="text-sm text-gray-900 dark:text-white leading-snug break-words">{step.action}</p>
       </td>
       <td className="px-4 py-3">
-        <p className="text-sm text-gray-300 leading-snug break-words">{step.expected_result}</p>
+        {/* ✅ light mode text */}
+        <p className="text-sm text-gray-600 dark:text-gray-300 leading-snug break-words">{step.expected_result}</p>
       </td>
       <td className="px-3 py-3">
         <textarea
@@ -487,12 +494,14 @@ const MobileStepCard: React.FC<{
     : step.status === "fail" ? "#ef4444" : "#374151";
 
   return (
+    // ✅ light mode card border
     <div
       ref={cardRef}
-      className={`rounded-xl overflow-hidden border border-white/10 w-full ${rowBg}`}
+      className={`rounded-xl overflow-hidden border border-gray-200 dark:border-white/10 w-full ${rowBg}`}
       style={{ borderLeftColor: accentColor, borderLeftWidth: 3 }}
     >
-      <div className="flex items-center justify-between px-3 py-2 border-b border-white/10 bg-white/[0.02]">
+      {/* ✅ light mode header bg + border */}
+      <div className="flex items-center justify-between px-3 py-2 border-b border-gray-200 dark:border-white/10 bg-gray-50 dark:bg-white/[0.02]">
         <span className="text-xs font-mono text-gray-500 tracking-wide">#{step.serial_no}</span>
         <span className={`text-xs font-bold px-2 py-0.5 rounded-full capitalize ${
           step.status === "pass" ? "bg-green-500/15 text-green-400"
@@ -502,26 +511,28 @@ const MobileStepCard: React.FC<{
         </span>
       </div>
 
-      <div className="grid grid-cols-[80px_1fr] border-b border-white/10">
-        <div className="px-3 py-2.5 border-r border-white/10 bg-white/[0.02] flex items-start shrink-0">
+      <div className="grid grid-cols-[80px_1fr] border-b border-gray-200 dark:border-white/10">
+        <div className="px-3 py-2.5 border-r border-gray-200 dark:border-white/10 bg-gray-50 dark:bg-white/[0.02] flex items-start shrink-0">
           <span className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider mt-0.5">Action</span>
         </div>
         <div className="px-3 py-2.5 min-w-0">
-          <p className="text-sm text-white leading-snug break-words">{step.action}</p>
+          {/* ✅ light mode text */}
+          <p className="text-sm text-gray-900 dark:text-white leading-snug break-words">{step.action}</p>
         </div>
       </div>
 
-      <div className="grid grid-cols-[80px_1fr] border-b border-white/10">
-        <div className="px-3 py-2.5 border-r border-white/10 bg-white/[0.02] flex items-start shrink-0">
+      <div className="grid grid-cols-[80px_1fr] border-b border-gray-200 dark:border-white/10">
+        <div className="px-3 py-2.5 border-r border-gray-200 dark:border-white/10 bg-gray-50 dark:bg-white/[0.02] flex items-start shrink-0">
           <span className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider mt-0.5">Expected</span>
         </div>
         <div className="px-3 py-2.5 min-w-0">
-          <p className="text-sm text-gray-300 leading-snug break-words">{step.expected_result}</p>
+          {/* ✅ light mode text */}
+          <p className="text-sm text-gray-600 dark:text-gray-300 leading-snug break-words">{step.expected_result}</p>
         </div>
       </div>
 
-      <div className="grid grid-cols-[80px_1fr] border-b border-white/10">
-        <div className="px-3 py-2.5 border-r border-white/10 bg-white/[0.02] flex items-start shrink-0">
+      <div className="grid grid-cols-[80px_1fr] border-b border-gray-200 dark:border-white/10">
+        <div className="px-3 py-2.5 border-r border-gray-200 dark:border-white/10 bg-gray-50 dark:bg-white/[0.02] flex items-start shrink-0">
           <span className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider mt-0.5">Remarks</span>
         </div>
         <div className="px-3 py-2 min-w-0">
@@ -543,7 +554,7 @@ const MobileStepCard: React.FC<{
       </div>
 
       {!readonly && (
-        <div className="flex items-center justify-between px-3 py-2 border-t border-white/10 bg-white/[0.02]">
+        <div className="flex items-center justify-between px-3 py-2 border-t border-gray-200 dark:border-white/10 bg-gray-50 dark:bg-white/[0.02]">
           <span className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider">Actions</span>
           <div className="flex items-center gap-2">
             {step.status !== "pending" && (
