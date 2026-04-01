@@ -82,7 +82,7 @@ const AppInner: React.FC = () => {
 
   return (
     <div className="flex min-h-screen bg-gray-950">
-      <Sidebar activePage={page} onNavigate={navigate} />
+      <Sidebar activePage={page} onNavigate={navigate} modules={modules} />
       <main className="flex-1 flex flex-col overflow-hidden min-w-0">{renderPage()}</main>
       <MobileNav activePage={page} onNavigate={(p) => navigate(p)} />
     </div>
