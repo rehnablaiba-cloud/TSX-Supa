@@ -16,7 +16,7 @@ import {
 } from "recharts";
 import { PieLabelRenderProps } from "recharts";
 
-// ── Animation keyframes (injected once into <head>) ───────────────────────────
+// ── Animation keyframes ───────────────────────────────────────────────────────
 const ANIM_STYLE = `
 @keyframes fadeSlideIn {
   from { opacity: 0; transform: translateY(10px); }
@@ -263,7 +263,7 @@ const ModuleDashboard: React.FC<Props> = ({ moduleId, moduleName, onBack, onExec
   const [selectedTestId, setSelectedTestId] = useState<string | null>(null);
   const [chartType, setChartType]           = useState<ChartType>("bar");
 
-  // ── Debounced lock refetch — prevents spam on busy executions ─────────────
+  // ── Debounced lock refetch ─────────────────────────────────────────────────
   const lockRefetchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const refetchLocks = useCallback(() => {
     if (lockRefetchTimer.current) clearTimeout(lockRefetchTimer.current);
@@ -272,7 +272,7 @@ const ModuleDashboard: React.FC<Props> = ({ moduleId, moduleName, onBack, onExec
     }, 300);
   }, []);
 
-  // ── Tests + steps + locks — all in parallel, steps via join ───────────────
+  // ── Tests + steps + locks — parallel ──────────────────────────────────────
   useEffect(() => {
     const load = async () => {
       setLoading(true);
@@ -280,7 +280,7 @@ const ModuleDashboard: React.FC<Props> = ({ moduleId, moduleName, onBack, onExec
       const [testsRes, locksRes] = await Promise.all([
         supabase
           .from("tests")
-          .select("*, steps(*)")          // one round trip for tests + steps
+          .select("*, steps(*)")
           .eq("module_id", moduleId)
           .order("order_index"),
         supabase.from("testlocks").select("*"),
@@ -296,7 +296,7 @@ const ModuleDashboard: React.FC<Props> = ({ moduleId, moduleName, onBack, onExec
     load();
   }, [moduleId]);
 
-  // ── Locks — real-time subscription with debounce ──────────────────────────
+  // ── Locks — real-time ──────────────────────────────────────────────────────
   useEffect(() => {
     const channel = supabase.channel("all-locks")
       .on("postgres_changes", { event: "*", schema: "public", table: "testlocks" }, refetchLocks)
@@ -317,7 +317,6 @@ const ModuleDashboard: React.FC<Props> = ({ moduleId, moduleName, onBack, onExec
 
   const filteredTests = selectedTestId ? tests.filter(t => t.id === selectedTestId) : tests;
 
-  // ── Chart data: one bar per test (respects filter) ────────────────────────
   const chartData = useMemo<ChartRow[]>(() =>
     filteredTests.map(t => {
       const steps = allSteps.filter(s => s.test_id === t.id && !s.is_divider);
@@ -397,7 +396,8 @@ const ModuleDashboard: React.FC<Props> = ({ moduleId, moduleName, onBack, onExec
 
         {/* ── Test list ── */}
         <div className="flex flex-col gap-1">
-          <h3 className="font-semibold text-gray-300 mb-2">Test Cases</h3>
+          {/* ✅ light mode heading */}
+          <h3 className="font-semibold text-gray-700 dark:text-gray-300 mb-2">Test Cases</h3>
 
           <FadeWrapper animKey={listAnimKey}>
             <div className="flex flex-col gap-3">
@@ -458,34 +458,35 @@ const TestRow: React.FC<{
       style={{ borderLeft: `3px solid ${borderColor}` }}
     >
       <div className="flex-1">
-        {/* Name + lock badges */}
         <div className="flex items-center gap-2 flex-wrap">
-          <p className={`font-medium text-white ${isLockedByOther ? "opacity-40" : ""}`}>
+          {/* ✅ light mode test name */}
+          <p className={`font-medium text-gray-900 dark:text-white ${isLockedByOther ? "opacity-40" : ""}`}>
             {test.name}
           </p>
+          {/* ✅ light mode amber badge */}
           {isLockedByOther && (
-            <span className="flex items-center gap-1 text-xs font-semibold text-amber-500 bg-amber-500/15 border border-amber-500/40 rounded-full px-2.5 py-0.5">
+            <span className="flex items-center gap-1 text-xs font-semibold text-amber-600 dark:text-amber-500 bg-amber-500/15 border border-amber-500/40 rounded-full px-2.5 py-0.5">
               <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse inline-block" />
               🔒 {lockedByName} is executing. For access, contact user to finish.
             </span>
           )}
+          {/* ✅ light mode blue badge */}
           {isLockedByMe && (
-            <span className="flex items-center gap-1 text-xs font-semibold text-blue-500 bg-blue-500/15 border border-blue-500/40 rounded-full px-2.5 py-0.5">
+            <span className="flex items-center gap-1 text-xs font-semibold text-blue-600 dark:text-blue-500 bg-blue-500/15 border border-blue-500/40 rounded-full px-2.5 py-0.5">
               <span className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-pulse inline-block" />
               ✏️ You are executing
             </span>
           )}
         </div>
 
-        {/* Status badges */}
         <div className="flex gap-2 mt-1.5 flex-wrap">
           <span className="badge-pass">{passed} Pass</span>
           <span className="badge-fail">{failed} Fail</span>
           <span className="badge-pend">{pending} Pend</span>
         </div>
 
-        {/* Progress bar */}
-        <div className={`mt-2 h-1.5 bg-gray-800 rounded-full overflow-hidden ${isLockedByOther ? "opacity-40" : ""}`}>
+        {/* ✅ light mode progress bar track */}
+        <div className={`mt-2 h-1.5 bg-gray-200 dark:bg-gray-800 rounded-full overflow-hidden ${isLockedByOther ? "opacity-40" : ""}`}>
           <div
             className="h-full rounded-full transition-all duration-500"
             style={{ width: `${rate}%`, backgroundColor: isLockedByOther ? "#6b7280" : "#22c55e" }}
@@ -493,7 +494,7 @@ const TestRow: React.FC<{
         </div>
       </div>
 
-      {/* Execute button */}
+      {/* ✅ light mode locked button state */}
       <button
         onClick={(e) => {
           if (isLockedByOther) { e.preventDefault(); e.stopPropagation(); return; }
@@ -502,7 +503,7 @@ const TestRow: React.FC<{
         disabled={isLockedByOther}
         className={`whitespace-nowrap shrink-0 px-4 py-2 rounded-xl font-semibold transition-all text-sm ${
           isLockedByOther
-            ? "bg-gray-500/20 text-gray-500 cursor-not-allowed pointer-events-none border border-gray-500/30"
+            ? "bg-gray-200 dark:bg-gray-500/20 text-gray-400 dark:text-gray-500 cursor-not-allowed pointer-events-none border border-gray-300 dark:border-gray-500/30"
             : "btn-primary cursor-pointer"
         }`}
       >
