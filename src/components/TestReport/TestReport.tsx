@@ -200,7 +200,7 @@ const RPieChart: React.FC<{ data: ChartRow[]; ct: ChartTheme; fontSize: number }
       <PieChart>
         <Pie data={pieData} cx="50%" cy="50%" innerRadius="46%" outerRadius="72%"
           paddingAngle={3} dataKey="value" nameKey="name"
-          label={({ name, percent }) => percent > 0.05 ? `${Math.round(percent * 100)}%` : ""}
+          label={({ name, percent }: { name: string; percent?: number }) => (percent ?? 0) > 0.05 ? `${Math.round((percent ?? 0) * 100)}%` : ""}
           labelLine={false} style={{ fontSize }} isAnimationActive>
           {pieData.map((entry) => (
             <Cell key={entry.name} fill={COLORS[entry.name as keyof typeof COLORS]} opacity={0.88} />
