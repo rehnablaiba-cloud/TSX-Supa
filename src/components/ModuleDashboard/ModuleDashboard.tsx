@@ -307,9 +307,11 @@ const ModuleDashboard: React.FC<Props> = ({ moduleId, moduleName, onBack, onExec
     : { panel: "#ffffff", text: "#0f172a", muted: "#475569", grid: "#cbd5e1",
         border: "#cbd5e1", tooltipBg: "#ffffff", tooltipText: "#0f172a", tooltipName: "#475569" };
 
-  // ── Chart data: one bar per test ───────────────────────────────────────────
+  const filteredTests = selectedTestId ? tests.filter(t => t.id === selectedTestId) : tests;
+
+  // ── Chart data: one bar per test (respects filter) ────────────────────────
   const chartData = useMemo<ChartRow[]>(() =>
-    tests.map(t => {
+    filteredTests.map(t => {
       const steps = allSteps.filter(s => s.test_id === t.id && !s.is_divider);
       return {
         name:    t.name,
@@ -317,7 +319,7 @@ const ModuleDashboard: React.FC<Props> = ({ moduleId, moduleName, onBack, onExec
         fail:    steps.filter(s => s.status === "fail").length,
         pending: steps.filter(s => s.status === "pending").length,
       };
-    }), [tests, allSteps]);
+    }), [filteredTests, allSteps]);
 
   // ── Execute guard ──────────────────────────────────────────────────────────
   const handleExecute = (testId: string) => {
@@ -325,8 +327,6 @@ const ModuleDashboard: React.FC<Props> = ({ moduleId, moduleName, onBack, onExec
     if (lock && lock.user_id !== user?.id) return;
     onExecute(testId);
   };
-
-  const filteredTests = selectedTestId ? tests.filter(t => t.id === selectedTestId) : tests;
   const listAnimKey   = selectedTestId ?? "all";
   const chartAnimKey  = `${selectedTestId ?? "all"}-${chartType}`;
 
