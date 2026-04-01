@@ -365,12 +365,18 @@ const TestReport: React.FC = () => {
         subtitle="Module-wise execution summary"
         actions={
           <button
-            onClick={() => setShowExportModal(true)}
-            disabled={filtered.length === 0}
-            className="flex items-center gap-1.5 px-4 py-2 bg-white/10 hover:bg-white/20 disabled:opacity-40 disabled:cursor-not-allowed text-white text-sm font-semibold rounded-lg transition border border-white/10"
-          >
-            📤 Export
-          </button>
+  onClick={() => setShowExportModal(true)}
+  disabled={filtered.length === 0}
+  className="flex items-center gap-1.5 px-4 py-2
+    bg-gray-100 dark:bg-white/10
+    hover:bg-gray-200 dark:hover:bg-white/20
+    disabled:opacity-40 disabled:cursor-not-allowed
+    text-gray-700 dark:text-white
+    text-sm font-semibold rounded-lg transition
+    border border-gray-200 dark:border-white/10"
+>
+  📤 Export
+</button>
         }
       />
 
