@@ -337,25 +337,38 @@ const TestExecution: React.FC<Props> = ({ moduleId, moduleName, initialTestId, o
               </tbody>
             </table>
 
-            {/* ── Mobile cards ── */}
-            <div className="md:hidden flex flex-col gap-2 p-3">
-              {filtered.map(step =>
-                step.is_divider ? (
-                  <div key={step.id} className="flex items-center gap-3 py-1">
-                    <div className="flex-1 h-px bg-white/10" />
-                    <span className="text-xs font-semibold text-blue-400 uppercase tracking-widest">{step.action}</span>
-                    <div className="flex-1 h-px bg-white/10" />
-                  </div>
-                ) : (
-                  <MobileStepCard
-                    key={step.id}
-                    step={step}
-                    readonly={false}
-                    onUpdate={handleStepUpdate}
-                    cardRef={(el) => { stepRefs.current[step.id] = el as any; }}
-                  />
-                )
-              )}
+            {/* ── Mobile: sticky column header + cards ── */}
+            <div className="md:hidden flex flex-col">
+              {/* Sticky column header row */}
+              <div className="sticky top-0 z-10 grid grid-cols-[64px_1fr] border-b border-white/10 bg-black/80 backdrop-blur-sm">
+                <div className="px-3 py-2 border-r border-white/10">
+                  <span className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider">S.No</span>
+                </div>
+                <div className="px-3 py-2">
+                  <span className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider">Step Details</span>
+                </div>
+              </div>
+
+              {/* Step cards */}
+              <div className="flex flex-col gap-2 p-3">
+                {filtered.map(step =>
+                  step.is_divider ? (
+                    <div key={step.id} className="flex items-center gap-3 py-1">
+                      <div className="flex-1 h-px bg-white/10" />
+                      <span className="text-xs font-semibold text-blue-400 uppercase tracking-widest">{step.action}</span>
+                      <div className="flex-1 h-px bg-white/10" />
+                    </div>
+                  ) : (
+                    <MobileStepCard
+                      key={step.id}
+                      step={step}
+                      readonly={false}
+                      onUpdate={handleStepUpdate}
+                      cardRef={(el) => { stepRefs.current[step.id] = el as any; }}
+                    />
+                  )
+                )}
+              </div>
             </div>
           </>
         )}
@@ -461,17 +474,25 @@ const MobileStepCard: React.FC<{
   const [remarks, setRemarks] = useState(step.remarks || "");
   useEffect(() => { setRemarks(step.remarks || ""); }, [step.remarks]);
 
-  const borderColor = step.status === "pass" ? "#22c55e"
+  const rowBg = step.status === "pass" ? "bg-green-500/5"
+    : step.status === "fail" ? "bg-red-500/5" : "";
+
+  const accentColor = step.status === "pass" ? "#22c55e"
     : step.status === "fail" ? "#ef4444" : "#374151";
 
   return (
-    <div ref={cardRef} className="card flex flex-col gap-2.5 p-3"
-      style={{ borderLeftColor: borderColor, borderLeftWidth: 3 }}>
-      <div className="flex items-start justify-between gap-2">
-        <p className="text-xs text-gray-500 font-mono">#{step.serial_no}</p>
-        <div className="flex items-center gap-1.5 shrink-0">
+    <div
+      ref={cardRef}
+      className={`rounded-xl overflow-hidden border border-white/10 ${rowBg}`}
+      style={{ borderLeftColor: accentColor, borderLeftWidth: 3 }}
+    >
+      {/* ── Row 1: S.No + Status badge + Undo ── */}
+      <div className="flex items-center justify-between px-3 py-2 border-b border-white/10 bg-white/[0.02]">
+        <span className="text-xs font-mono text-gray-500 tracking-wide">#{step.serial_no}</span>
+        <div className="flex items-center gap-1.5">
           {!readonly && step.status !== "pending" && (
-            <button onClick={() => onUpdate(step.id, "pending", "")}
+            <button
+              onClick={() => onUpdate(step.id, "pending", "")}
               className="text-xs px-2 py-0.5 rounded-md bg-white/5 hover:bg-white/10 text-gray-500 hover:text-gray-300 border border-white/10 transition-colors">
               ↩ Undo
             </button>
@@ -484,27 +505,63 @@ const MobileStepCard: React.FC<{
           </span>
         </div>
       </div>
-      <div>
-        <p className="text-xs text-gray-500 mb-0.5">Action</p>
-        <p className="text-sm text-white font-medium leading-snug">{step.action}</p>
+
+      {/* ── Row 2: Action ── */}
+      <div className="grid grid-cols-[80px_1fr] border-b border-white/10">
+        <div className="px-3 py-2.5 border-r border-white/10 bg-white/[0.02] flex items-start">
+          <span className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider mt-0.5">Action</span>
+        </div>
+        <div className="px-3 py-2.5">
+          <p className="text-sm text-white leading-snug">{step.action}</p>
+        </div>
       </div>
-      <div>
-        <p className="text-xs text-gray-500 mb-0.5">Expected Result</p>
-        <p className="text-sm text-gray-300 leading-snug">{step.expected_result}</p>
+
+      {/* ── Row 3: Expected Result ── */}
+      <div className="grid grid-cols-[80px_1fr] border-b border-white/10">
+        <div className="px-3 py-2.5 border-r border-white/10 bg-white/[0.02] flex items-start">
+          <span className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider mt-0.5">Expected</span>
+        </div>
+        <div className="px-3 py-2.5">
+          <p className="text-sm text-gray-300 leading-snug">{step.expected_result}</p>
+        </div>
       </div>
-      <textarea value={remarks} onChange={e => setRemarks(e.target.value)}
-        disabled={readonly} placeholder="Add remarks…" rows={2}
-        className="input text-sm resize-none disabled:opacity-50 w-full" />
+
+      {/* ── Row 4: Remarks ── */}
+      <div className="grid grid-cols-[80px_1fr] border-b border-white/10">
+        <div className="px-3 py-2.5 border-r border-white/10 bg-white/[0.02] flex items-start">
+          <span className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider mt-0.5">Remarks</span>
+        </div>
+        <div className="px-3 py-2">
+          <textarea
+            value={remarks}
+            onChange={e => setRemarks(e.target.value)}
+            disabled={readonly}
+            placeholder="Remarks…"
+            rows={2}
+            className="input text-sm resize-none disabled:opacity-50 w-full"
+          />
+        </div>
+      </div>
+
+      {/* ── Row 5: Pass / Fail buttons (interactive only) ── */}
       {!readonly && (
-        <div className="flex gap-2">
-          <button onClick={() => onUpdate(step.id, "pass", remarks)}
-            className={`flex-1 py-1.5 rounded-lg text-xs font-bold transition-colors ${
-              step.status === "pass" ? "bg-green-500 text-white" : "bg-green-500/10 hover:bg-green-500/20 text-green-400 border border-green-500/20"}`}>
+        <div className="grid grid-cols-2 divide-x divide-white/10">
+          <button
+            onClick={() => onUpdate(step.id, "pass", remarks)}
+            className={`py-2 text-xs font-bold transition-colors flex items-center justify-center gap-1 ${
+              step.status === "pass"
+                ? "bg-green-500 text-white"
+                : "bg-green-500/10 hover:bg-green-500/20 text-green-400 border-t border-green-500/20"
+            }`}>
             ✓ Pass
           </button>
-          <button onClick={() => onUpdate(step.id, "fail", remarks)}
-            className={`flex-1 py-1.5 rounded-lg text-xs font-bold transition-colors ${
-              step.status === "fail" ? "bg-red-500 text-white" : "bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/20"}`}>
+          <button
+            onClick={() => onUpdate(step.id, "fail", remarks)}
+            className={`py-2 text-xs font-bold transition-colors flex items-center justify-center gap-1 ${
+              step.status === "fail"
+                ? "bg-red-500 text-white"
+                : "bg-red-500/10 hover:bg-red-500/20 text-red-400 border-t border-red-500/20"
+            }`}>
             ✗ Fail
           </button>
         </div>
