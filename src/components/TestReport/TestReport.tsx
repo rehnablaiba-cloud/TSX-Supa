@@ -480,7 +480,7 @@ const TestReport: React.FC = () => {
 
             ) : (
               /* ── Table view ── */
-              {/* ✅ CHANGED: all table classes now have light + dark:dark variants */}
+              /* ✅ CHANGED: all table classes now have light + dark:dark variants */
               <div className="overflow-x-auto rounded-xl border border-gray-200 dark:border-white/10">
                 <table className="w-full text-sm">
                   <thead>
