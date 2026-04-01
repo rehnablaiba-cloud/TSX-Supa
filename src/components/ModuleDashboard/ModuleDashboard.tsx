@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef, useMemo } from "react";
+import React, { useEffect, useState, useRef, useMemo, useCallback } from "react";
 import { supabase } from "../../supabase";
 import Spinner from "../UI/Spinner";
 import Topbar from "../Layout/Topbar";
@@ -263,42 +263,50 @@ const ModuleDashboard: React.FC<Props> = ({ moduleId, moduleName, onBack, onExec
   const [selectedTestId, setSelectedTestId] = useState<string | null>(null);
   const [chartType, setChartType]           = useState<ChartType>("bar");
 
-  // ── Tests + steps in one go ────────────────────────────────────────────────
+  // ── Debounced lock refetch — prevents spam on busy executions ─────────────
+  const lockRefetchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const refetchLocks = useCallback(() => {
+    if (lockRefetchTimer.current) clearTimeout(lockRefetchTimer.current);
+    lockRefetchTimer.current = setTimeout(() => {
+      supabase.from("testlocks").select("*").then(({ data }) => setLocks(data ?? []));
+    }, 300);
+  }, []);
+
+  // ── Tests + steps + locks — all in parallel, steps via join ───────────────
   useEffect(() => {
     const load = async () => {
       setLoading(true);
-      const { data: testsData } = await supabase
-        .from("tests").select("*")
-        .eq("module_id", moduleId).order("order_index");
 
-      const fetchedTests = testsData ?? [];
+      const [testsRes, locksRes] = await Promise.all([
+        supabase
+          .from("tests")
+          .select("*, steps(*)")          // one round trip for tests + steps
+          .eq("module_id", moduleId)
+          .order("order_index"),
+        supabase.from("testlocks").select("*"),
+      ]);
+
+      const fetchedTests = (testsRes.data ?? []) as (Test & { steps: (Step & { test_id: string })[] })[];
+
       setTests(fetchedTests);
-
-      if (fetchedTests.length > 0) {
-        const ids = fetchedTests.map((t: Test) => t.id);
-        const { data: stepsData } = await supabase
-          .from("steps").select("*")
-          .in("test_id", ids);
-        setAllSteps(stepsData ?? []);
-      }
-
+      setAllSteps(fetchedTests.flatMap(t => (t.steps ?? []).map(s => ({ ...s, test_id: t.id }))));
+      setLocks(locksRes.data ?? []);
       setLoading(false);
     };
     load();
   }, [moduleId]);
 
-  // ── Locks — initial fetch + real-time subscription ────────────────────────
+  // ── Locks — real-time subscription with debounce ──────────────────────────
   useEffect(() => {
-    supabase.from("testlocks").select("*")
-      .then(({ data }) => setLocks(data ?? []));
-
     const channel = supabase.channel("all-locks")
-      .on("postgres_changes", { event: "*", schema: "public", table: "testlocks" },
-        () => { supabase.from("testlocks").select("*").then(({ data }) => setLocks(data ?? [])); })
+      .on("postgres_changes", { event: "*", schema: "public", table: "testlocks" }, refetchLocks)
       .subscribe();
 
-    return () => { supabase.removeChannel(channel); };
-  }, []);
+    return () => {
+      if (lockRefetchTimer.current) clearTimeout(lockRefetchTimer.current);
+      supabase.removeChannel(channel);
+    };
+  }, [refetchLocks]);
 
   // ── Chart theme ────────────────────────────────────────────────────────────
   const chartTheme: ChartTheme = theme === "dark"
@@ -327,8 +335,9 @@ const ModuleDashboard: React.FC<Props> = ({ moduleId, moduleName, onBack, onExec
     if (lock && lock.user_id !== user?.id) return;
     onExecute(testId);
   };
-  const listAnimKey   = selectedTestId ?? "all";
-  const chartAnimKey  = `${selectedTestId ?? "all"}-${chartType}`;
+
+  const listAnimKey  = selectedTestId ?? "all";
+  const chartAnimKey = `${selectedTestId ?? "all"}-${chartType}`;
 
   if (loading) return <div className="flex-1 flex items-center justify-center"><Spinner /></div>;
 
@@ -451,14 +460,13 @@ const TestRow: React.FC<{
       <div className="flex-1">
         {/* Name + lock badges */}
         <div className="flex items-center gap-2 flex-wrap">
-          {/* Test name dimmed when locked */}
           <p className={`font-medium text-white ${isLockedByOther ? "opacity-40" : ""}`}>
             {test.name}
           </p>
           {isLockedByOther && (
             <span className="flex items-center gap-1 text-xs font-semibold text-amber-500 bg-amber-500/15 border border-amber-500/40 rounded-full px-2.5 py-0.5">
               <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse inline-block" />
-              🔒 {lockedByName} is executing.      For Access contact user to finish.
+              🔒 {lockedByName} is executing. For access, contact user to finish.
             </span>
           )}
           {isLockedByMe && (
@@ -469,14 +477,14 @@ const TestRow: React.FC<{
           )}
         </div>
 
-        {/* Status badges — always full opacity */}
+        {/* Status badges */}
         <div className="flex gap-2 mt-1.5 flex-wrap">
           <span className="badge-pass">{passed} Pass</span>
           <span className="badge-fail">{failed} Fail</span>
           <span className="badge-pend">{pending} Pend</span>
         </div>
 
-        {/* Progress bar — dimmed when locked */}
+        {/* Progress bar */}
         <div className={`mt-2 h-1.5 bg-gray-800 rounded-full overflow-hidden ${isLockedByOther ? "opacity-40" : ""}`}>
           <div
             className="h-full rounded-full transition-all duration-500"
