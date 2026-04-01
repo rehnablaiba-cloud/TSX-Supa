@@ -5,7 +5,17 @@ import Spinner from "../UI/Spinner";
 import ExportModal from "../UI/ExportModal";
 import { exportReportCSV, exportReportPDF, FlatData } from "../../utils/export";
 import { useTheme } from "../../context/ThemeContext";
+import {
+  ResponsiveContainer,
+  BarChart, Bar,
+  AreaChart, Area,
+  LineChart, Line,
+  PieChart, Pie, Cell,
+  RadarChart, Radar, PolarGrid, PolarAngleAxis, PolarRadiusAxis,
+  XAxis, YAxis, CartesianGrid, Tooltip, Legend,
+} from "recharts";
 
+// ── Constants ──────────────────────────────────────────────────────────────────
 const COLORS = { pass: "#22c55e", fail: "#ef4444", pending: "#f59e0b" };
 
 // ── Types ──────────────────────────────────────────────────────────────────────
@@ -32,295 +42,173 @@ const CHART_TYPES: { type: ChartType; label: string }[] = [
   { type: "radar", label: "Radar" },
 ];
 
-// ── SVG layout constants ───────────────────────────────────────────────────────
-const W = 560; const H = 220;
-const PAD = { top: 14, right: 16, bottom: 44, left: 38 };
-const CW = W - PAD.left - PAD.right;
-const CH = H - PAD.top - PAD.bottom;
+const FONT_SIZES = [
+  { label: "S",  value: 10 },
+  { label: "M",  value: 12 },
+  { label: "L",  value: 14 },
+];
 
-function yScale(val: number, maxVal: number) {
-  return PAD.top + CH - (val / maxVal) * CH;
-}
-function makeYTicks(maxVal: number) {
-  return Array.from({ length: 5 }, (_, i) => ({
-    y: PAD.top + (i / 4) * CH,
-    val: Math.round(maxVal * (1 - i / 4)),
-  }));
-}
-function shortName(name: string) {
-  return name.length > 10 ? name.slice(0, 9) + "…" : name;
-}
+// ── Custom Tooltip ─────────────────────────────────────────────────────────────
+const CustomTooltip: React.FC<{
+  active?: boolean; payload?: any[]; label?: string; ct: ChartTheme; fontSize: number;
+}> = ({ active, payload, label, ct, fontSize }) => {
+  if (!active || !payload?.length) return null;
+  return (
+    <div className="px-3 py-2 rounded-xl border shadow-xl"
+      style={{ backgroundColor: ct.tooltipBg, borderColor: ct.border, color: ct.tooltipText, fontSize }}>
+      <div className="font-semibold mb-1" style={{ fontSize: fontSize + 1 }}>{label}</div>
+      {payload.map((p: any) => (
+        <div key={p.dataKey} className="flex items-center justify-between gap-4">
+          <span style={{ color: ct.tooltipName }} className="capitalize">{p.dataKey}</span>
+          <span style={{ color: p.fill || p.stroke, fontWeight: 700 }}>{p.value}</span>
+        </div>
+      ))}
+    </div>
+  );
+};
 
-// ── Tooltip ───────────────────────────────────────────────────────────────────
-const SVGTooltip: React.FC<{ tip: { x: number; y: number; row: ChartRow }; ct: ChartTheme }> = ({ tip, ct }) => (
-  <div className="fixed z-50 pointer-events-none px-3 py-2 rounded-xl border shadow-xl text-xs"
-    style={{ left: tip.x + 12, top: tip.y - 44,
-      backgroundColor: ct.tooltipBg, borderColor: ct.border, color: ct.tooltipText }}>
-    <div className="font-semibold mb-1">{tip.row.name}</div>
-    {(["pass", "fail", "pending"] as const).map(k => (
-      <div key={k} className="flex items-center justify-between gap-4">
-        <span style={{ color: ct.tooltipName }} className="capitalize">{k}</span>
-        <span style={{ color: COLORS[k], fontWeight: 700 }}>{tip.row[k]}</span>
+// ── Custom Pie Tooltip ─────────────────────────────────────────────────────────
+const PieTooltip: React.FC<{
+  active?: boolean; payload?: any[]; ct: ChartTheme; fontSize: number;
+}> = ({ active, payload, ct, fontSize }) => {
+  if (!active || !payload?.length) return null;
+  const { name, value, payload: inner } = payload[0];
+  const total = (inner?.pass ?? 0) + (inner?.fail ?? 0) + (inner?.pending ?? 0);
+  return (
+    <div className="px-3 py-2 rounded-xl border shadow-xl"
+      style={{ backgroundColor: ct.tooltipBg, borderColor: ct.border, color: ct.tooltipText, fontSize }}>
+      <div className="font-semibold capitalize mb-1" style={{ fontSize: fontSize + 1 }}>{name}</div>
+      <div style={{ color: COLORS[name as keyof typeof COLORS], fontWeight: 700 }}>
+        {value} ({total > 0 ? Math.round((value / total) * 100) : 0}%)
       </div>
-    ))}
-  </div>
-);
-
-// ── Empty state ───────────────────────────────────────────────────────────────
-const EmptyChart: React.FC<{ ct: ChartTheme }> = ({ ct }) => (
-  <div className="flex items-center justify-center h-40">
-    <span style={{ color: ct.muted }} className="text-sm">No data to display</span>
-  </div>
-);
-
-// ── Legend ────────────────────────────────────────────────────────────────────
-const ChartLegend: React.FC<{ ct: ChartTheme }> = ({ ct }) => (
-  <div className="flex items-center gap-5 mb-3">
-    {(["pass", "fail", "pending"] as const).map(k => (
-      <div key={k} className="flex items-center gap-1.5">
-        <span className="w-2.5 h-2.5 rounded-sm inline-block" style={{ backgroundColor: COLORS[k] }} />
-        <span className="text-xs capitalize" style={{ color: ct.muted }}>{k}</span>
-      </div>
-    ))}
-  </div>
-);
-
-// ── Bar Chart ─────────────────────────────────────────────────────────────────
-const BarChart: React.FC<{ data: ChartRow[]; ct: ChartTheme }> = ({ data, ct }) => {
-  const [tip, setTip] = useState<{ x: number; y: number; row: ChartRow } | null>(null);
-  const maxVal = Math.max(...data.flatMap(d => [d.pass, d.fail, d.pending]), 1);
-  const groupW = data.length > 0 ? CW / data.length : CW;
-  const bw = Math.min(13, groupW / 4.5);
-  const keys: (keyof typeof COLORS)[] = ["pass", "fail", "pending"];
-
-  return (
-    <div className="relative" onMouseLeave={() => setTip(null)}>
-      <svg viewBox={`0 0 ${W} ${H}`} className="w-full">
-        {makeYTicks(maxVal).map(({ y, val }) => (
-          <g key={y}>
-            <line x1={PAD.left} x2={W - PAD.right} y1={y} y2={y} stroke={ct.grid} strokeWidth={0.5} strokeDasharray="4 3" />
-            <text x={PAD.left - 5} y={y + 4} textAnchor="end" fontSize={9} fill={ct.muted}>{val}</text>
-          </g>
-        ))}
-        {data.map((row, i) => {
-          const cx = PAD.left + i * groupW + groupW / 2;
-          return (
-            <g key={i} onMouseEnter={(e) => setTip({ x: e.clientX, y: e.clientY, row })} style={{ cursor: "default" }}>
-              {keys.map((k, ki) => {
-                const x = cx - (1.5 * bw + bw * 0.4) + ki * (bw + bw * 0.4);
-                const bh = Math.max((row[k] / maxVal) * CH, 0);
-                return <rect key={k} x={x} y={PAD.top + CH - bh} width={bw} height={bh} rx={2} fill={COLORS[k]} opacity={0.85} />;
-              })}
-              <text x={cx} y={H - PAD.bottom + 14} textAnchor="middle" fontSize={9} fill={ct.muted}>{shortName(row.name)}</text>
-            </g>
-          );
-        })}
-        <line x1={PAD.left} x2={PAD.left} y1={PAD.top} y2={PAD.top + CH} stroke={ct.grid} strokeWidth={1} />
-        <line x1={PAD.left} x2={W - PAD.right} y1={PAD.top + CH} y2={PAD.top + CH} stroke={ct.grid} strokeWidth={1} />
-      </svg>
-      {tip && <SVGTooltip tip={tip} ct={ct} />}
     </div>
   );
 };
 
-// ── Area Chart ────────────────────────────────────────────────────────────────
-const AreaChart: React.FC<{ data: ChartRow[]; ct: ChartTheme }> = ({ data, ct }) => {
-  const [tip, setTip] = useState<{ x: number; y: number; row: ChartRow } | null>(null);
-  const maxVal = Math.max(...data.flatMap(d => [d.pass, d.fail, d.pending]), 1);
-  const keys: (keyof typeof COLORS)[] = ["pending", "fail", "pass"];
-  if (data.length === 0) return <EmptyChart ct={ct} />;
+// ── Bar Chart ──────────────────────────────────────────────────────────────────
+const RBarChart: React.FC<{ data: ChartRow[]; ct: ChartTheme; fontSize: number }> = ({ data, ct, fontSize }) => (
+  <ResponsiveContainer width="100%" height={240}>
+    <BarChart data={data} margin={{ top: 8, right: 16, left: -16, bottom: 8 }}
+      barCategoryGap="28%" barGap={3}>
+      <CartesianGrid strokeDasharray="4 3" stroke={ct.grid} vertical={false} />
+      <XAxis dataKey="name" tick={{ fill: ct.muted, fontSize }} axisLine={false} tickLine={false}
+        tickFormatter={(v) => v.length > 10 ? v.slice(0, 9) + "…" : v} />
+      <YAxis tick={{ fill: ct.muted, fontSize }} axisLine={false} tickLine={false} />
+      <Tooltip content={<CustomTooltip ct={ct} fontSize={fontSize} />} cursor={{ fill: "rgba(255,255,255,0.04)" }} />
+      <Legend iconType="square" iconSize={10}
+        formatter={(v) => <span style={{ color: ct.muted, fontSize, textTransform: "capitalize" }}>{v}</span>} />
+      <Bar dataKey="pass"    fill={COLORS.pass}    radius={[3, 3, 0, 0]} maxBarSize={18} />
+      <Bar dataKey="fail"    fill={COLORS.fail}    radius={[3, 3, 0, 0]} maxBarSize={18} />
+      <Bar dataKey="pending" fill={COLORS.pending} radius={[3, 3, 0, 0]} maxBarSize={18} />
+    </BarChart>
+  </ResponsiveContainer>
+);
 
-  const xAt = (i: number) => PAD.left + (data.length > 1 ? (i / (data.length - 1)) * CW : CW / 2);
-  const areaPath = (key: keyof ChartRow) => {
-    const pts = data.map((d, i) => `${xAt(i)},${yScale(d[key] as number, maxVal)}`).join(" L");
-    return `M${pts} L${xAt(data.length - 1)},${PAD.top + CH} L${xAt(0)},${PAD.top + CH} Z`;
-  };
-  const linePath = (key: keyof ChartRow) =>
-    data.map((d, i) => `${i === 0 ? "M" : "L"}${xAt(i)},${yScale(d[key] as number, maxVal)}`).join(" ");
+// ── Area Chart ─────────────────────────────────────────────────────────────────
+const RAreaChart: React.FC<{ data: ChartRow[]; ct: ChartTheme; fontSize: number }> = ({ data, ct, fontSize }) => (
+  <ResponsiveContainer width="100%" height={240}>
+    <AreaChart data={data} margin={{ top: 8, right: 16, left: -16, bottom: 8 }}>
+      <defs>
+        {(["pass", "fail", "pending"] as const).map(k => (
+          <linearGradient key={k} id={`rg-${k}`} x1="0" y1="0" x2="0" y2="1">
+            <stop offset="5%"   stopColor={COLORS[k]} stopOpacity={0.35} />
+            <stop offset="95%"  stopColor={COLORS[k]} stopOpacity={0.02} />
+          </linearGradient>
+        ))}
+      </defs>
+      <CartesianGrid strokeDasharray="4 3" stroke={ct.grid} vertical={false} />
+      <XAxis dataKey="name" tick={{ fill: ct.muted, fontSize }} axisLine={false} tickLine={false}
+        tickFormatter={(v) => v.length > 10 ? v.slice(0, 9) + "…" : v} />
+      <YAxis tick={{ fill: ct.muted, fontSize }} axisLine={false} tickLine={false} />
+      <Tooltip content={<CustomTooltip ct={ct} fontSize={fontSize} />} />
+      <Legend iconType="square" iconSize={10}
+        formatter={(v) => <span style={{ color: ct.muted, fontSize, textTransform: "capitalize" }}>{v}</span>} />
+      <Area type="monotone" dataKey="pending" stroke={COLORS.pending} fill={`url(#rg-pending)`} strokeWidth={2.5} dot={false} />
+      <Area type="monotone" dataKey="fail"    stroke={COLORS.fail}    fill={`url(#rg-fail)`}    strokeWidth={2.5} dot={false} />
+      <Area type="monotone" dataKey="pass"    stroke={COLORS.pass}    fill={`url(#rg-pass)`}    strokeWidth={2.5} dot={{ r: 3.5, strokeWidth: 1.5, fill: COLORS.pass }} />
+    </AreaChart>
+  </ResponsiveContainer>
+);
 
-  return (
-    <div className="relative" onMouseLeave={() => setTip(null)}>
-      <svg viewBox={`0 0 ${W} ${H}`} className="w-full">
-        <defs>
-          {keys.map(k => (
-            <linearGradient key={k} id={`ag-${k}`} x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%"   stopColor={COLORS[k]} stopOpacity={0.4} />
-              <stop offset="100%" stopColor={COLORS[k]} stopOpacity={0.02} />
-            </linearGradient>
-          ))}
-        </defs>
-        {makeYTicks(maxVal).map(({ y, val }) => (
-          <g key={y}>
-            <line x1={PAD.left} x2={W - PAD.right} y1={y} y2={y} stroke={ct.grid} strokeWidth={0.5} strokeDasharray="4 3" />
-            <text x={PAD.left - 5} y={y + 4} textAnchor="end" fontSize={9} fill={ct.muted}>{val}</text>
-          </g>
-        ))}
-        {keys.map(k => (
-          <g key={k}>
-            <path d={areaPath(k)} fill={`url(#ag-${k})`} />
-            <path d={linePath(k)} fill="none" stroke={COLORS[k]} strokeWidth={2.5} strokeLinejoin="round" />
-          </g>
-        ))}
-        {data.map((row, i) => (
-          <g key={i} onMouseEnter={(e) => setTip({ x: e.clientX, y: e.clientY, row })} style={{ cursor: "default" }}>
-            <circle cx={xAt(i)} cy={yScale(row.pass, maxVal)} r={4} fill={COLORS.pass} />
-            <text x={xAt(i)} y={H - PAD.bottom + 14} textAnchor="middle" fontSize={9} fill={ct.muted}>{shortName(row.name)}</text>
-          </g>
-        ))}
-        <line x1={PAD.left} x2={PAD.left} y1={PAD.top} y2={PAD.top + CH} stroke={ct.grid} strokeWidth={1} />
-        <line x1={PAD.left} x2={W - PAD.right} y1={PAD.top + CH} y2={PAD.top + CH} stroke={ct.grid} strokeWidth={1} />
-      </svg>
-      {tip && <SVGTooltip tip={tip} ct={ct} />}
-    </div>
-  );
-};
+// ── Line Chart ─────────────────────────────────────────────────────────────────
+const RLineChart: React.FC<{ data: ChartRow[]; ct: ChartTheme; fontSize: number }> = ({ data, ct, fontSize }) => (
+  <ResponsiveContainer width="100%" height={240}>
+    <LineChart data={data} margin={{ top: 8, right: 16, left: -16, bottom: 8 }}>
+      <CartesianGrid strokeDasharray="4 3" stroke={ct.grid} vertical={false} />
+      <XAxis dataKey="name" tick={{ fill: ct.muted, fontSize }} axisLine={false} tickLine={false}
+        tickFormatter={(v) => v.length > 10 ? v.slice(0, 9) + "…" : v} />
+      <YAxis tick={{ fill: ct.muted, fontSize }} axisLine={false} tickLine={false} />
+      <Tooltip content={<CustomTooltip ct={ct} fontSize={fontSize} />} />
+      <Legend iconType="square" iconSize={10}
+        formatter={(v) => <span style={{ color: ct.muted, fontSize, textTransform: "capitalize" }}>{v}</span>} />
+      <Line type="monotone" dataKey="pass"    stroke={COLORS.pass}    strokeWidth={2.5} dot={{ r: 3.5, strokeWidth: 1.5, fill: ct.panel }} activeDot={{ r: 5 }} />
+      <Line type="monotone" dataKey="fail"    stroke={COLORS.fail}    strokeWidth={2.5} dot={{ r: 3.5, strokeWidth: 1.5, fill: ct.panel }} activeDot={{ r: 5 }} />
+      <Line type="monotone" dataKey="pending" stroke={COLORS.pending} strokeWidth={2.5} dot={{ r: 3.5, strokeWidth: 1.5, fill: ct.panel }} activeDot={{ r: 5 }} />
+    </LineChart>
+  </ResponsiveContainer>
+);
 
-// ── Line Chart ────────────────────────────────────────────────────────────────
-const LineChart: React.FC<{ data: ChartRow[]; ct: ChartTheme }> = ({ data, ct }) => {
-  const [tip, setTip] = useState<{ x: number; y: number; row: ChartRow } | null>(null);
-  const maxVal = Math.max(...data.flatMap(d => [d.pass, d.fail, d.pending]), 1);
-  const keys: (keyof typeof COLORS)[] = ["pass", "fail", "pending"];
-  if (data.length === 0) return <EmptyChart ct={ct} />;
-
-  const xAt = (i: number) => PAD.left + (data.length > 1 ? (i / (data.length - 1)) * CW : CW / 2);
-  const linePath = (key: keyof ChartRow) =>
-    data.map((d, i) => `${i === 0 ? "M" : "L"}${xAt(i)},${yScale(d[key] as number, maxVal)}`).join(" ");
-
-  return (
-    <div className="relative" onMouseLeave={() => setTip(null)}>
-      <svg viewBox={`0 0 ${W} ${H}`} className="w-full">
-        {makeYTicks(maxVal).map(({ y, val }) => (
-          <g key={y}>
-            <line x1={PAD.left} x2={W - PAD.right} y1={y} y2={y} stroke={ct.grid} strokeWidth={0.5} strokeDasharray="4 3" />
-            <text x={PAD.left - 5} y={y + 4} textAnchor="end" fontSize={9} fill={ct.muted}>{val}</text>
-          </g>
-        ))}
-        {keys.map(k => (
-          <path key={k} d={linePath(k)} fill="none" stroke={COLORS[k]} strokeWidth={2.5} strokeLinejoin="round" strokeLinecap="round" />
-        ))}
-        {data.map((row, i) => (
-          <g key={i} onMouseEnter={(e) => setTip({ x: e.clientX, y: e.clientY, row })} style={{ cursor: "default" }}>
-            {keys.map(k => (
-              <circle key={k} cx={xAt(i)} cy={yScale(row[k] as number, maxVal)} r={3.5}
-                fill={COLORS[k]} stroke={ct.panel} strokeWidth={1.5} />
-            ))}
-            <text x={xAt(i)} y={H - PAD.bottom + 14} textAnchor="middle" fontSize={9} fill={ct.muted}>{shortName(row.name)}</text>
-          </g>
-        ))}
-        <line x1={PAD.left} x2={PAD.left} y1={PAD.top} y2={PAD.top + CH} stroke={ct.grid} strokeWidth={1} />
-        <line x1={PAD.left} x2={W - PAD.right} y1={PAD.top + CH} y2={PAD.top + CH} stroke={ct.grid} strokeWidth={1} />
-      </svg>
-      {tip && <SVGTooltip tip={tip} ct={ct} />}
-    </div>
-  );
-};
-
-// ── Pie Chart ─────────────────────────────────────────────────────────────────
-const PieChart: React.FC<{ data: ChartRow[]; ct: ChartTheme }> = ({ data, ct }) => {
+// ── Pie Chart ──────────────────────────────────────────────────────────────────
+const RPieChart: React.FC<{ data: ChartRow[]; ct: ChartTheme; fontSize: number }> = ({ data, ct, fontSize }) => {
   const totals = data.reduce(
     (acc, d) => ({ pass: acc.pass + d.pass, fail: acc.fail + d.fail, pending: acc.pending + d.pending }),
     { pass: 0, fail: 0, pending: 0 }
   );
   const total = totals.pass + totals.fail + totals.pending;
-  const slices = (["pass", "fail", "pending"] as const).map(k => ({ key: k, val: totals[k] }));
-  const cx = W / 2; const cy = H / 2 + 4;
-  const r = Math.min(CH, CW) / 2 - 6; const ir = r * 0.52;
+  const pieData = (["pass", "fail", "pending"] as const)
+    .map(k => ({ name: k, value: totals[k], ...totals }))
+    .filter(d => d.value > 0);
 
-  if (total === 0) return <EmptyChart ct={ct} />;
-
-  const arc = (a0: number, a1: number) => {
-    const cos0 = Math.cos(a0); const sin0 = Math.sin(a0);
-    const cos1 = Math.cos(a1); const sin1 = Math.sin(a1);
-    const large = a1 - a0 > Math.PI ? 1 : 0;
-    return [
-      `M${cx + ir * cos0},${cy + ir * sin0}`,
-      `L${cx + r * cos0},${cy + r * sin0}`,
-      `A${r},${r} 0 ${large} 1 ${cx + r * cos1},${cy + r * sin1}`,
-      `L${cx + ir * cos1},${cy + ir * sin1}`,
-      `A${ir},${ir} 0 ${large} 0 ${cx + ir * cos0},${cy + ir * sin0} Z`,
-    ].join(" ");
-  };
-
-  let angle = -Math.PI / 2;
-  return (
-    <div>
-      <svg viewBox={`0 0 ${W} ${H}`} className="w-full">
-        {slices.map(({ key, val }) => {
-          if (val === 0) return null;
-          const sweep = (val / total) * 2 * Math.PI;
-          const mid = angle + sweep / 2;
-          const d = arc(angle, angle + sweep);
-          const lx = cx + (r + 16) * Math.cos(mid);
-          const ly = cy + (r + 16) * Math.sin(mid);
-          angle += sweep;
-          return (
-            <g key={key}>
-              <path d={d} fill={COLORS[key]} opacity={0.88} />
-              {sweep > 0.35 && (
-                <text x={lx} y={ly} textAnchor="middle" dominantBaseline="middle"
-                  fontSize={9} fill={ct.muted} fontWeight={600}>
-                  {Math.round((val / total) * 100)}%
-                </text>
-              )}
-            </g>
-          );
-        })}
-        <text x={cx} y={cy - 8} textAnchor="middle" fontSize={20} fontWeight={700} fill={ct.text}>{total}</text>
-        <text x={cx} y={cy + 11} textAnchor="middle" fontSize={9} fill={ct.muted}>total steps</text>
-      </svg>
-      <div className="flex justify-center gap-6 -mt-1">
-        {slices.map(({ key, val }) => (
-          <div key={key} className="flex items-center gap-1.5">
-            <span className="w-2.5 h-2.5 rounded-full inline-block" style={{ backgroundColor: COLORS[key] }} />
-            <span className="text-xs capitalize" style={{ color: ct.muted }}>{key} · {val}</span>
-          </div>
-        ))}
-      </div>
+  if (total === 0) return (
+    <div className="flex items-center justify-center h-40">
+      <span style={{ color: ct.muted, fontSize }} className="text-sm">No data to display</span>
     </div>
+  );
+
+  return (
+    <ResponsiveContainer width="100%" height={240}>
+      <PieChart>
+        <Pie data={pieData} cx="50%" cy="50%" innerRadius="46%" outerRadius="72%"
+          paddingAngle={3} dataKey="value" nameKey="name"
+          label={({ name, percent }) => percent > 0.05 ? `${Math.round(percent * 100)}%` : ""}
+          labelLine={false}
+          style={{ fontSize }}>
+          {pieData.map((entry) => (
+            <Cell key={entry.name} fill={COLORS[entry.name as keyof typeof COLORS]} opacity={0.88} />
+          ))}
+        </Pie>
+        <Tooltip content={<PieTooltip ct={ct} fontSize={fontSize} />} />
+        <Legend iconType="circle" iconSize={10}
+          formatter={(v) => <span style={{ color: ct.muted, fontSize, textTransform: "capitalize" }}>{v} · {totals[v as keyof typeof totals]}</span>} />
+      </PieChart>
+    </ResponsiveContainer>
   );
 };
 
-// ── Radar Chart ───────────────────────────────────────────────────────────────
-const RadarChart: React.FC<{ data: ChartRow[]; ct: ChartTheme }> = ({ data, ct }) => {
-  const cx = W / 2; const cy = H / 2 + 4;
-  const r = Math.min(CH, CW) / 2 - 12;
-  const keys: (keyof typeof COLORS)[] = ["pass", "fail", "pending"];
-  const n = data.length;
-  if (n === 0) return <EmptyChart ct={ct} />;
-
-  const maxVal = Math.max(...data.flatMap(d => [d.pass, d.fail, d.pending]), 1);
-  const ang = (i: number) => (2 * Math.PI * i) / n - Math.PI / 2;
-  const pt = (i: number, val: number) => ({
-    x: cx + (val / maxVal) * r * Math.cos(ang(i)),
-    y: cy + (val / maxVal) * r * Math.sin(ang(i)),
-  });
+// ── Radar Chart ────────────────────────────────────────────────────────────────
+const RRadarChart: React.FC<{ data: ChartRow[]; ct: ChartTheme; fontSize: number }> = ({ data, ct, fontSize }) => {
+  if (data.length === 0) return (
+    <div className="flex items-center justify-center h-40">
+      <span style={{ color: ct.muted, fontSize }}>No data to display</span>
+    </div>
+  );
 
   return (
-    <svg viewBox={`0 0 ${W} ${H}`} className="w-full">
-      {[0.25, 0.5, 0.75, 1].map(frac => (
-        <polygon key={frac}
-          points={data.map((_, i) => `${cx + frac * r * Math.cos(ang(i))},${cy + frac * r * Math.sin(ang(i))}`).join(" ")}
-          fill="none" stroke={ct.grid} strokeWidth={0.7} />
-      ))}
-      {data.map((_, i) => (
-        <line key={i} x1={cx} y1={cy} x2={cx + r * Math.cos(ang(i))} y2={cy + r * Math.sin(ang(i))}
-          stroke={ct.grid} strokeWidth={0.7} />
-      ))}
-      {keys.map(k => (
-        <polygon key={k}
-          points={data.map((row, i) => { const p = pt(i, row[k] as number); return `${p.x},${p.y}`; }).join(" ")}
-          fill={COLORS[k]} fillOpacity={0.18} stroke={COLORS[k]} strokeWidth={2} />
-      ))}
-      {data.map((row, i) => {
-        const lx = cx + (r + 18) * Math.cos(ang(i));
-        const ly = cy + (r + 18) * Math.sin(ang(i));
-        return (
-          <text key={i} x={lx} y={ly} textAnchor="middle" dominantBaseline="middle" fontSize={9} fill={ct.muted}>
-            {shortName(row.name)}
-          </text>
-        );
-      })}
-    </svg>
+    <ResponsiveContainer width="100%" height={240}>
+      <RadarChart cx="50%" cy="50%" outerRadius="72%" data={data}>
+        <PolarGrid stroke={ct.grid} />
+        <PolarAngleAxis dataKey="name"
+          tick={{ fill: ct.muted, fontSize }}
+          tickFormatter={(v) => v.length > 10 ? v.slice(0, 9) + "…" : v} />
+        <PolarRadiusAxis tick={{ fill: ct.muted, fontSize: fontSize - 1 }} axisLine={false} />
+        <Tooltip content={<CustomTooltip ct={ct} fontSize={fontSize} />} />
+        <Legend iconType="square" iconSize={10}
+          formatter={(v) => <span style={{ color: ct.muted, fontSize, textTransform: "capitalize" }}>{v}</span>} />
+        <Radar name="pass"    dataKey="pass"    stroke={COLORS.pass}    fill={COLORS.pass}    fillOpacity={0.18} strokeWidth={2} />
+        <Radar name="fail"    dataKey="fail"    stroke={COLORS.fail}    fill={COLORS.fail}    fillOpacity={0.18} strokeWidth={2} />
+        <Radar name="pending" dataKey="pending" stroke={COLORS.pending} fill={COLORS.pending} fillOpacity={0.18} strokeWidth={2} />
+      </RadarChart>
+    </ResponsiveContainer>
   );
 };
 
@@ -334,6 +222,7 @@ const TestReport: React.FC = () => {
   const [showExportModal, setShowExportModal]   = useState(false);
   const [view, setView]                         = useState<"graph" | "table">("graph");
   const [chartType, setChartType]               = useState<ChartType>("bar");
+  const [fontSize, setFontSize]                 = useState(12);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -415,11 +304,11 @@ const TestReport: React.FC = () => {
 
   const renderChart = () => {
     switch (chartType) {
-      case "bar":   return <BarChart   data={chartData} ct={chartTheme} />;
-      case "area":  return <AreaChart  data={chartData} ct={chartTheme} />;
-      case "line":  return <LineChart  data={chartData} ct={chartTheme} />;
-      case "pie":   return <PieChart   data={chartData} ct={chartTheme} />;
-      case "radar": return <RadarChart data={chartData} ct={chartTheme} />;
+      case "bar":   return <RBarChart   data={chartData} ct={chartTheme} fontSize={fontSize} />;
+      case "area":  return <RAreaChart  data={chartData} ct={chartTheme} fontSize={fontSize} />;
+      case "line":  return <RLineChart  data={chartData} ct={chartTheme} fontSize={fontSize} />;
+      case "pie":   return <RPieChart   data={chartData} ct={chartTheme} fontSize={fontSize} />;
+      case "radar": return <RRadarChart data={chartData} ct={chartTheme} fontSize={fontSize} />;
     }
   };
 
@@ -463,7 +352,7 @@ const TestReport: React.FC = () => {
       ) : (
         <div className="p-6 flex flex-col gap-6 pb-24 md:pb-6">
 
-          {/* ── Filter + Graph/Table toggle ── */}
+          {/* ── Filter + View toggle ── */}
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="flex items-center gap-3">
               <label className="text-sm text-gray-400">Filter by Module</label>
@@ -490,36 +379,55 @@ const TestReport: React.FC = () => {
             <div className="p-4 rounded-xl border"
               style={{ backgroundColor: chartTheme.panel, borderColor: chartTheme.border }}>
 
-              {/* Title + chart type switcher */}
+              {/* Title + chart type + font size switcher */}
               <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
                 <h3 className="text-sm font-semibold" style={{ color: chartTheme.text }}>
                   Execution Graph
                 </h3>
-                <div className="flex items-center gap-0.5 rounded-lg p-0.5 border"
-                  style={{ backgroundColor: theme === "dark" ? "rgba(255,255,255,0.04)" : "rgba(0,0,0,0.04)",
-                    borderColor: chartTheme.border }}>
-                  {CHART_TYPES.map(({ type, label }) => (
-                    <button key={type} onClick={() => setChartType(type)}
-                      style={chartType === type
-                        ? { backgroundColor: "#1d4ed8", color: "#ffffff" }
-                        : { color: chartTheme.muted }}
-                      className="px-2.5 py-1 rounded-md text-xs font-medium transition-all">
-                      {label}
-                    </button>
-                  ))}
+
+                <div className="flex items-center gap-2">
+                  {/* Font size toggle */}
+                  <div className="flex items-center gap-0.5 rounded-lg p-0.5 border"
+                    style={{ backgroundColor: theme === "dark" ? "rgba(255,255,255,0.04)" : "rgba(0,0,0,0.04)",
+                      borderColor: chartTheme.border }}>
+                    {FONT_SIZES.map(({ label, value }) => (
+                      <button key={value} onClick={() => setFontSize(value)}
+                        title={`Font size ${value}px`}
+                        style={fontSize === value
+                          ? { backgroundColor: "#1d4ed8", color: "#ffffff" }
+                          : { color: chartTheme.muted }}
+                        className="px-2.5 py-1 rounded-md text-xs font-semibold transition-all w-7">
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+
+                  {/* Chart type toggle */}
+                  <div className="flex items-center gap-0.5 rounded-lg p-0.5 border"
+                    style={{ backgroundColor: theme === "dark" ? "rgba(255,255,255,0.04)" : "rgba(0,0,0,0.04)",
+                      borderColor: chartTheme.border }}>
+                    {CHART_TYPES.map(({ type, label }) => (
+                      <button key={type} onClick={() => setChartType(type)}
+                        style={chartType === type
+                          ? { backgroundColor: "#1d4ed8", color: "#ffffff" }
+                          : { color: chartTheme.muted }}
+                        className="px-2.5 py-1 rounded-md text-xs font-medium transition-all">
+                        {label}
+                      </button>
+                    ))}
+                  </div>
                 </div>
               </div>
 
-              {chartType !== "pie" && <ChartLegend ct={chartTheme} />}
               {renderChart()}
             </div>
 
           ) : (
             /* ── Table view ── */
             <div className="overflow-x-auto rounded-xl border border-white/10">
-              <table className="w-full text-sm">
+              <table className="w-full" style={{ fontSize }}>
                 <thead>
-                  <tr className="bg-white/5 text-gray-400 text-xs uppercase">
+                  <tr className="bg-white/5 text-gray-400 uppercase" style={{ fontSize: fontSize - 1 }}>
                     <th className="px-4 py-3 text-left">Module</th>
                     <th className="px-4 py-3 text-center">Tests</th>
                     <th className="px-4 py-3 text-center">Total Steps</th>
@@ -551,7 +459,7 @@ const TestReport: React.FC = () => {
                               <div className="h-full rounded-full"
                                 style={{ width: `${rate}%`, backgroundColor: COLORS.pass }} />
                             </div>
-                            <span className="font-bold text-white text-xs">{rate}%</span>
+                            <span className="font-bold text-white">{rate}%</span>
                           </div>
                         </td>
                       </tr>
