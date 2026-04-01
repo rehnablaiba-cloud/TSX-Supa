@@ -509,7 +509,7 @@ const MobileStepCard: React.FC<{
         </div>
       </div>
 
-      {/* ── Row 3: Expected Result ── */>}
+      {/* ── Row 3: Expected Result ── */}
       <div className="grid grid-cols-[80px_1fr] border-b border-white/10">
         <div className="px-3 py-2.5 border-r border-white/10 bg-white/[0.02] flex items-start shrink-0">
           <span className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider mt-0.5">Expected</span>
