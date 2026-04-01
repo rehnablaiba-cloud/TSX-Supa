@@ -29,18 +29,9 @@
 export const palette = {
 
   // ✏️  Change this entire block to rebrand the whole app instantly
-  brand: {
-    50:  "#eff6ff",
-    100: "#dbeafe",
-    200: "#bfdbfe",
-    300: "#93c5fd",
-    400: "#60a5fa",
-    500: "#3b82f6",   // ← primary accent (dark mode)
-    600: "#2563eb",   // ← primary accent (light mode / buttons)
-    700: "#1d4ed8",
-    800: "#1e40af",
-    900: "#1e3a8a",
-  },
+  
+  brand: { 500: "#8b5cf6", 600: "#7c3aed", 700: "#6d28d9", ... },
+  
 
   /** Status colours — used for pass/fail/pending badges & charts */
   pass: "#22c55e",
