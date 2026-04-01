@@ -203,7 +203,7 @@ const RPieChart: React.FC<{ data: ChartRow[]; ct: ChartTheme; fontSize: number }
           paddingAngle={3} dataKey="value" nameKey="name"
       label={({ name, percent }: PieLabelRenderProps): string =>
   `${name ?? ''}: ${(((percent as number) ?? 0) * 100).toFixed(0)}%`
-} ""}
+} }
           labelLine={false} style={{ fontSize }} isAnimationActive>
           {pieData.map((entry) => (
             <Cell key={entry.name} fill={COLORS[entry.name as keyof typeof COLORS]} opacity={0.88} />
