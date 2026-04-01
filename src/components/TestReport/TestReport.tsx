@@ -1,40 +1,91 @@
-import React, { useState } from "react";
-import { useQuery, gql } from "@apollo/client";
+import React, { useState, useEffect } from "react";
+import { supabase } from "../../supabase";
 import Topbar from "../Layout/Topbar";
 import Spinner from "../UI/Spinner";
 import ExportModal from "../UI/ExportModal";
-import { Module } from "../../types";
 import { exportReportCSV, exportReportPDF, FlatData } from "../../utils/export";
-
-const GET_REPORT_DATA = gql`
-  query GetReportData {
-    modules(order_by: { name: asc }) {
-      id name description accent_color
-      tests {
-        id name
-        steps {
-          serial_no action expected_result remarks status is_divider
-        }
-      }
-    }
-  }
-`;
 
 const COLORS = { pass: "#22c55e", fail: "#ef4444", pending: "#f59e0b" };
 
+// ── Types ──────────────────────────────────────────────────────────────────────
+interface Step {
+  serial_no: number;
+  action: string;
+  expected_result: string;
+  remarks: string;
+  status: string;
+  is_divider: boolean;
+}
+
+interface Test {
+  id: string;
+  name: string;
+  steps: Step[];
+}
+
+interface ModuleWithTests {
+  id: string;
+  name: string;
+  description: string;
+  accent_color: string;
+  tests: Test[];
+}
+
+// ── Component ─────────────────────────────────────────────────────────────────
 const TestReport: React.FC = () => {
+  const [modules, setModules]               = useState<ModuleWithTests[]>([]);
+  const [loading, setLoading]               = useState(true);
   const [selectedModuleId, setSelectedModuleId] = useState<string | null>(null);
-  const [showExportModal, setShowExportModal] = useState(false);
+  const [showExportModal, setShowExportModal]   = useState(false);
 
-  const { data, loading } = useQuery(GET_REPORT_DATA, { fetchPolicy: "network-only" });
-  const modules: any[] = data?.modules ?? [];
-  const filtered = selectedModuleId ? modules.filter(m => m.id === selectedModuleId) : modules;
+  useEffect(() => {
+    const fetchData = async () => {
+      setLoading(true);
 
-  const buildFlatData = (mods: any[]): FlatData[] => {
+      // Fetch modules
+      const { data: modulesData, error: modulesError } = await supabase
+        .from("modules")
+        .select("id, name, description, accent_color")
+        .order("name", { ascending: true });
+
+      if (modulesError) {
+        console.error("Error fetching modules:", modulesError.message);
+        setLoading(false);
+        return;
+      }
+
+      // Fetch tests with steps for each module
+      const modulesWithTests = await Promise.all(
+        (modulesData ?? []).map(async (mod) => {
+          const { data: testsData } = await supabase
+            .from("tests")
+            .select("id, name, steps(serial_no, action, expected_result, remarks, status, is_divider)")
+            .eq("module_id", mod.id)
+            .order("name", { ascending: true });
+
+          return {
+            ...mod,
+            tests: (testsData ?? []) as Test[],
+          };
+        })
+      );
+
+      setModules(modulesWithTests);
+      setLoading(false);
+    };
+
+    fetchData();
+  }, []);
+
+  const filtered = selectedModuleId
+    ? modules.filter((m) => m.id === selectedModuleId)
+    : modules;
+
+  const buildFlatData = (mods: ModuleWithTests[]): FlatData[] => {
     const flat: FlatData[] = [];
-    mods.forEach(m => {
-      (m.tests ?? []).forEach((t: any) => {
-        (t.steps ?? []).filter((s: any) => !s.is_divider).forEach((s: any) => {
+    mods.forEach((m) => {
+      (m.tests ?? []).forEach((t) => {
+        (t.steps ?? []).filter((s) => !s.is_divider).forEach((s) => {
           flat.push({
             module: m.name, test: t.name, serial: s.serial_no,
             action: s.action, expected: s.expected_result,
@@ -48,13 +99,10 @@ const TestReport: React.FC = () => {
 
   const exportStats = () => {
     const flat = buildFlatData(filtered);
-    const pass    = flat.filter(s => s.status === "pass").length;
-    const fail    = flat.filter(s => s.status === "fail").length;
-    const pending = flat.filter(s => s.status === "pending").length;
     return [
       { label: "Total Steps", value: flat.length },
-      { label: "Pass",        value: pass         },
-      { label: "Fail",        value: fail          },
+      { label: "Pass",        value: flat.filter((s) => s.status === "pass").length },
+      { label: "Fail",        value: flat.filter((s) => s.status === "fail").length },
     ];
   };
 
@@ -74,12 +122,11 @@ const TestReport: React.FC = () => {
         }
       />
 
-      {/* ── Export Modal ── */}
       <ExportModal
         isOpen={showExportModal}
         onClose={() => setShowExportModal(false)}
         title="Export Report"
-        subtitle={selectedModuleId ? modules.find(m => m.id === selectedModuleId)?.name : "All Modules"}
+        subtitle={selectedModuleId ? modules.find((m) => m.id === selectedModuleId)?.name : "All Modules"}
         stats={exportStats()}
         options={[
           {
@@ -109,11 +156,11 @@ const TestReport: React.FC = () => {
             <label className="text-sm text-gray-400">Filter by Module</label>
             <select
               value={selectedModuleId ?? ""}
-              onChange={e => setSelectedModuleId(e.target.value || null)}
+              onChange={(e) => setSelectedModuleId(e.target.value || null)}
               className="input text-sm"
             >
               <option value="">All Modules</option>
-              {modules.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
+              {modules.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
             </select>
           </div>
 
@@ -132,14 +179,14 @@ const TestReport: React.FC = () => {
                 </tr>
               </thead>
               <tbody className="divide-y divide-white/5">
-                {filtered.map((m: any) => {
-                  const allSteps = (m.tests ?? []).flatMap((t: any) =>
-                    (t.steps ?? []).filter((s: any) => !s.is_divider)
+                {filtered.map((m) => {
+                  const allSteps = (m.tests ?? []).flatMap((t) =>
+                    (t.steps ?? []).filter((s) => !s.is_divider)
                   );
                   const total   = allSteps.length;
-                  const pass    = allSteps.filter((s: any) => s.status === "pass").length;
-                  const fail    = allSteps.filter((s: any) => s.status === "fail").length;
-                  const pending = allSteps.filter((s: any) => s.status === "pending").length;
+                  const pass    = allSteps.filter((s) => s.status === "pass").length;
+                  const fail    = allSteps.filter((s) => s.status === "fail").length;
+                  const pending = allSteps.filter((s) => s.status === "pending").length;
                   const rate    = total > 0 ? Math.round((pass / total) * 100) : 0;
 
                   return (

@@ -1,9 +1,8 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { useAuth } from "../../context/AuthContext";
-import { useQuery } from "@apollo/client";
-import { GET_MODULES } from "../../graphql/queries";
+import { supabase } from "../../supabase";
 import { Module } from "../../types";
-import ThemeToggle from "../UI/ThemeToggle"; 
+import ThemeToggle from "../UI/ThemeToggle";
 
 interface Props { activePage: string; onNavigate: (page: string, moduleId?: string) => void; }
 
@@ -16,11 +15,24 @@ const navItems = [
 const Sidebar: React.FC<Props> = ({ activePage, onNavigate }) => {
   const [collapsed, setCollapsed] = useState(false);
   const [search, setSearch]       = useState("");
+  const [modules, setModules]     = useState<Module[]>([]);
   const { user, signOut } = useAuth();
   const isAdmin = user?.defaultRole === "admin";
-  const { data } = useQuery(GET_MODULES, { fetchPolicy: "network-only" });
-  const modules: Module[] = data?.modules ?? [];
-  const filtered = modules.filter(m => m.name.toLowerCase().includes(search.toLowerCase()));
+
+  useEffect(() => {
+    supabase
+      .from("modules")
+      .select("*")
+      .order("name", { ascending: true })
+      .then(({ data, error }) => {
+        if (data) setModules(data as Module[]);
+        if (error) console.error("Sidebar modules error:", error.message);
+      });
+  }, []);
+
+  const filtered = modules.filter(m =>
+    m.name.toLowerCase().includes(search.toLowerCase())
+  );
 
   return (
     <aside className={`hidden md:flex flex-col bg-gray-900/80 backdrop-blur border-r border-white/5
@@ -37,12 +49,14 @@ const Sidebar: React.FC<Props> = ({ activePage, onNavigate }) => {
           {collapsed ? "→" : "←"}
         </button>
       </div>
+
       {!collapsed && (
         <div className="px-3 pt-3">
           <input value={search} onChange={e => setSearch(e.target.value)}
             placeholder="Search modules…" className="input text-sm py-2" />
         </div>
       )}
+
       <nav className="flex-1 overflow-y-auto py-3 px-2 flex flex-col gap-1">
         {navItems.map(item => (
           <button key={item.id} onClick={() => onNavigate(item.id)}
@@ -53,6 +67,7 @@ const Sidebar: React.FC<Props> = ({ activePage, onNavigate }) => {
             {!collapsed && <span>{item.label}</span>}
           </button>
         ))}
+
         {isAdmin && (
           <button onClick={() => onNavigate("users")}
             className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium
@@ -62,6 +77,7 @@ const Sidebar: React.FC<Props> = ({ activePage, onNavigate }) => {
             {!collapsed && <span>Users</span>}
           </button>
         )}
+
         {!collapsed && filtered.length > 0 && (
           <div className="mt-4">
             <p className="text-xs text-gray-600 uppercase tracking-wider px-3 mb-2">Modules</p>
@@ -80,10 +96,8 @@ const Sidebar: React.FC<Props> = ({ activePage, onNavigate }) => {
 
       {/* ── Bottom bar ── */}
       <div className="border-t border-white/5 p-3 flex flex-col gap-2">
-
-        {/* 🌙 Theme Toggle */}
         <div className={`flex ${collapsed ? "justify-center" : "justify-start"}`}>
-          <ThemeToggle />  {/* ← THIS is the actual component, not a comment */}
+          <ThemeToggle />
         </div>
 
         {!collapsed ? (
@@ -108,4 +122,5 @@ const Sidebar: React.FC<Props> = ({ activePage, onNavigate }) => {
     </aside>
   );
 };
+
 export default Sidebar;
