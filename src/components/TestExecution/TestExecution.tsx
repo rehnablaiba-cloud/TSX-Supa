@@ -1,3 +1,4 @@
+// TestExecution.tsx
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useAuth } from "../../context/AuthContext";
 import { supabase } from "../../supabase";
@@ -59,6 +60,7 @@ const TestExecution: React.FC<Props> = ({ moduleId, moduleName, initialTestId, o
   const [lockAcquired, setLockAcquired]       = useState(false);
 
   const heartbeatRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const stepRefs     = useRef<Record<string, HTMLDivElement | null>>({});
 
   // ── keepalive release on tab/window close ─────────────────
   useReleaseLockOnUnload(currentTestId, user?.id ?? "");
@@ -94,21 +96,19 @@ const TestExecution: React.FC<Props> = ({ moduleId, moduleName, initialTestId, o
 
   useEffect(() => { fetchSteps(); }, [fetchSteps]);
 
-  const refetch = fetchSteps; // keep existing refetch calls working
+  const refetch = fetchSteps;
 
   // ── Lock — real-time subscription ─────────────────────────
   const [lock, setLock] = useState<any>(null);
   const [lockLoading, setLockLoading] = useState(true);
 
   useEffect(() => {
-    // Fetch initial lock state
     supabase
       .from("testlocks")
       .select("*")
       .eq("test_id", currentTestId)
       .then(({ data }) => { setLock(data?.[0] ?? null); setLockLoading(false); });
 
-    // Subscribe to lock changes
     const channel = supabase
       .channel(`lock:${currentTestId}`)
       .on("postgres_changes", {
@@ -168,7 +168,7 @@ const TestExecution: React.FC<Props> = ({ moduleId, moduleName, initialTestId, o
     }
   }, []);
 
-  // ── Lock lifecycle — runs once per test ───────────────────
+  // ── Lock lifecycle ─────────────────────────────────────────
   useEffect(() => {
     if (!user) return;
     let cancelled = false;
@@ -185,7 +185,6 @@ const TestExecution: React.FC<Props> = ({ moduleId, moduleName, initialTestId, o
       ).select().single();
 
       if (cancelled) return;
-      // upsert with ignoreDuplicates: only start heartbeat if lock is actually ours
       if (!error && data?.user_id === user.id) {
         setLockAcquired(true);
         startHeartbeat();
@@ -196,13 +195,11 @@ const TestExecution: React.FC<Props> = ({ moduleId, moduleName, initialTestId, o
       cancelled = true;
       stopHeartbeat();
       setLockAcquired(false);
-      // Normal unmount — back button / navigate away
       supabase.from("testlocks")
         .delete()
         .eq("test_id", currentTestId)
         .eq("user_id", user.id);
     };
-  // Intentionally minimal deps — only re-run when test or user changes
   }, [currentTestId, user?.id]);
 
   // ── Handlers ───────────────────────────────────────────────
@@ -211,7 +208,16 @@ const TestExecution: React.FC<Props> = ({ moduleId, moduleName, initialTestId, o
       .update({ status, remarks })
       .eq("id", stepId);
     refetch();
-  }, [refetch]);
+
+    // ✅ Auto-scroll to next pending step
+    setTimeout(() => {
+      const currentIndex = steps.findIndex(s => s.id === stepId);
+      const nextPending = steps.slice(currentIndex + 1).find(s => !s.is_divider && s.status === "pending");
+      if (nextPending && stepRefs.current[nextPending.id]) {
+        stepRefs.current[nextPending.id]?.scrollIntoView({ behavior: "smooth", block: "center" });
+      }
+    }, 150);
+  }, [refetch, steps]);
 
   const handleFinish = async () => {
     stopHeartbeat();
@@ -252,7 +258,7 @@ const TestExecution: React.FC<Props> = ({ moduleId, moduleName, initialTestId, o
     return true;
   });
 
-  // ── Spinner while subscription first connects ─────────────
+  // ── Spinner while lock loads ───────────────────────────────
   if (lockLoading) {
     return (
       <div className="flex flex-col h-full">
@@ -379,7 +385,13 @@ const TestExecution: React.FC<Props> = ({ moduleId, moduleName, initialTestId, o
                 <div className="flex-1 h-px bg-white/10" />
               </div>
             ) : (
-              <StepCard key={step.id} step={step} readonly={false} onUpdate={handleStepUpdate} />
+              <StepCard
+                key={step.id}
+                step={step}
+                readonly={false}
+                onUpdate={handleStepUpdate}
+                cardRef={(el) => { stepRefs.current[step.id] = el; }}
+              />
             )
           )
         )}
@@ -390,9 +402,11 @@ const TestExecution: React.FC<Props> = ({ moduleId, moduleName, initialTestId, o
 
 // ── Step Card ──────────────────────────────────────────────────
 const StepCard: React.FC<{
-  step: Step; readonly: boolean;
+  step: Step;
+  readonly: boolean;
   onUpdate: (id: string, status: "pass" | "fail", remarks: string) => void;
-}> = ({ step, readonly, onUpdate }) => {
+  cardRef?: (el: HTMLDivElement | null) => void;
+}> = ({ step, readonly, onUpdate, cardRef }) => {
   const [remarks, setRemarks] = useState(step.remarks || "");
   useEffect(() => { setRemarks(step.remarks || ""); }, [step.remarks]);
 
@@ -400,7 +414,11 @@ const StepCard: React.FC<{
     : step.status === "fail" ? "#ef4444" : "#374151";
 
   return (
-    <div className="card flex flex-col gap-3" style={{ borderLeftColor: borderColor, borderLeftWidth: 3 }}>
+    <div
+      ref={cardRef}
+      className="card flex flex-col gap-3"
+      style={{ borderLeftColor: borderColor, borderLeftWidth: 3 }}
+    >
       <div className="flex items-start justify-between gap-3">
         <div className="flex-1">
           <p className="text-xs text-gray-500 mb-1">#{step.serial_no} · Action</p>
