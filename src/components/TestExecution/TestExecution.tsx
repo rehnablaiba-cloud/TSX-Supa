@@ -272,7 +272,7 @@ const TestExecution: React.FC<Props> = ({ moduleId, moduleName, initialTestId, o
           {(["all", "pass", "fail", "pending"] as Filter[]).map(f => (
             <button key={f} onClick={() => setFilter(f)}
               className={`px-2.5 py-1 rounded-lg text-xs font-medium transition-colors capitalize ${
-                filter === f ? "bg-blue-600 text-white" : "text-gray-400 hover:text-white"}`}>
+                filter === f ? "bg-blue-700 text-white" : "text-gray-400 hover:text-gray-700 dark:hover:text-white"}`}>
               {f}
             </button>
           ))}
@@ -328,8 +328,8 @@ const TestExecution: React.FC<Props> = ({ moduleId, moduleName, initialTestId, o
             {/* ── Mobile: sticky column header + cards ── */}
             <div className="md:hidden flex flex-col">
               {/* Sticky column header row */}
-              <div className="sticky top-0 z-10 grid grid-cols-[64px_1fr] border-b border-white/10 bg-black/80 backdrop-blur-sm">
-                <div className="px-3 py-2 border-r border-white/10">
+              <div className="sticky top-0 z-10 grid grid-cols-[64px_1fr] border-b border-gray-200 dark:border-white/10 bg-white/90 dark:bg-black/80 backdrop-blur-sm">
+                <div className="px-3 py-2 border-r border-gray-200 dark:border-white/10">
                   <span className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider">S.No</span>
                 </div>
                 <div className="px-3 py-2">
@@ -446,7 +446,7 @@ const TableStepRow: React.FC<{
             {step.status !== "pending" && (
               <button onClick={() => onUpdate(step.id, "pending", "")}
                 title="Undo"
-                className="w-full h-7 rounded-md text-xs font-bold text-gray-500 hover:text-gray-300 bg-white/5 hover:bg-white/10 border border-white/10 transition-colors flex items-center justify-center">
+                className="w-full h-7 rounded-md text-xs font-bold text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 bg-gray-500/10 hover:bg-gray-500/20 border border-gray-500/20 transition-colors flex items-center justify-center">
                 ↩
               </button>
             )}
@@ -537,7 +537,7 @@ const MobileStepCard: React.FC<{
           <div className="flex items-center gap-2">
             {step.status !== "pending" && (
               <button onClick={() => onUpdate(step.id, "pending", "")}
-                className="w-8 h-8 rounded-md text-xs font-bold text-gray-500 hover:text-gray-300 bg-white/5 hover:bg-white/10 border border-white/10 transition-colors flex items-center justify-center">
+                className="w-8 h-8 rounded-md text-xs font-bold text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 bg-gray-500/10 hover:bg-gray-500/20 border border-gray-500/20 transition-colors flex items-center justify-center">
                 ↩
               </button>
             )}
