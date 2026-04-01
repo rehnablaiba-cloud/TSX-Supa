@@ -309,15 +309,16 @@ const TestExecution: React.FC<Props> = ({ moduleId, moduleName, initialTestId, o
                   <th className="text-left px-2 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wider w-[6%]">S.No</th>
                   <th className="text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wider w-[32%]">Action</th>
                   <th className="text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wider w-[32%]">Expected Result</th>
-                  <th className="text-left px-3 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wider w-[17%]">Remarks</th>
-                  <th className="text-left px-2 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wider w-[13%]">Status</th>
+                  <th className="text-left px-3 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wider w-[14%]">Remarks</th>
+                  <th className="text-center px-2 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wider w-[9%]">Status</th>
+                  <th className="text-center px-2 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wider w-[7%]">Actions</th>
                 </tr>
               </thead>
               <tbody>
                 {filtered.map(step =>
                   step.is_divider ? (
                     <tr key={step.id} className="border-b border-white/5">
-                      <td colSpan={5} className="px-4 py-2 bg-blue-500/5">
+                      <td colSpan={6} className="px-4 py-2 bg-blue-500/5">
                         <div className="flex items-center gap-2">
                           <span className="w-1.5 h-1.5 rounded-full bg-blue-400 inline-block" />
                           <span className="text-xs font-bold text-blue-400 uppercase tracking-widest">{step.action}</span>
@@ -421,45 +422,53 @@ const TableStepRow: React.FC<{
         />
       </td>
 
-      {/* Status + Actions */}
-      <td className="px-2 py-3">
-        <div className="flex flex-col gap-1.5">
-          {!readonly && (
-            <>
+      {/* Status — badge only */}
+      <td className="px-2 py-3 text-center">
+        <span className={`text-xs font-bold px-2 py-0.5 rounded-full capitalize ${
+          step.status === "pass" ? "bg-green-500/15 text-green-400"
+          : step.status === "fail" ? "bg-red-500/15 text-red-400"
+          : "bg-gray-500/15 text-gray-400"}`}>
+          {step.status}
+        </span>
+      </td>
+
+      {/* Actions — ✓ / ✗ buttons */}
+      {!readonly && (
+        <td className="px-2 py-3">
+          <div className="flex flex-col items-center gap-1">
+            <div className="flex gap-1">
               <button onClick={() => onUpdate(step.id, "pass", remarks)}
-                className={`w-full py-1.5 rounded-lg text-xs font-bold transition-colors flex items-center justify-center gap-1 ${
+                title="Pass"
+                className={`w-7 h-7 rounded-md text-xs font-bold transition-colors flex items-center justify-center ${
                   step.status === "pass"
                     ? "bg-green-500 text-white"
-                    : "bg-green-500/10 hover:bg-green-500/20 text-green-400 border border-green-500/20"
+                    : "bg-green-500/10 hover:bg-green-500/25 text-green-400 border border-green-500/20"
                 }`}>
-                ✓ Pass
+                ✓
               </button>
               <button onClick={() => onUpdate(step.id, "fail", remarks)}
-                className={`w-full py-1.5 rounded-lg text-xs font-bold transition-colors flex items-center justify-center gap-1 ${
+                title="Fail"
+                className={`w-7 h-7 rounded-md text-xs font-bold transition-colors flex items-center justify-center ${
                   step.status === "fail"
                     ? "bg-red-500 text-white"
-                    : "bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/20"
+                    : "bg-red-500/10 hover:bg-red-500/25 text-red-400 border border-red-500/20"
                 }`}>
-                ✗ Fail
+                ✗
               </button>
-              {step.status !== "pending" && (
-                <button onClick={() => onUpdate(step.id, "pending", "")}
-                  className="w-full py-1 rounded-lg text-xs text-gray-500 hover:text-gray-300 bg-white/5 hover:bg-white/10 border border-white/10 transition-colors">
-                  ↩ Undo
-                </button>
-              )}
-            </>
-          )}
-          {readonly && (
-            <span className={`text-xs font-bold px-2 py-0.5 rounded-full capitalize text-center ${
-              step.status === "pass" ? "bg-green-500/15 text-green-400"
-              : step.status === "fail" ? "bg-red-500/15 text-red-400"
-              : "bg-gray-500/15 text-gray-400"}`}>
-              {step.status}
-            </span>
-          )}
-        </div>
-      </td>
+            </div>
+            {step.status !== "pending" && (
+              <button onClick={() => onUpdate(step.id, "pending", "")}
+                title="Undo"
+                className="w-full py-0.5 rounded-md text-[10px] text-gray-500 hover:text-gray-300 bg-white/5 hover:bg-white/10 border border-white/10 transition-colors">
+                ↩
+              </button>
+            )}
+          </div>
+        </td>
+      )}
+      {readonly && (
+        <td className="px-2 py-3" />
+      )}
     </tr>
   );
 };
@@ -486,24 +495,15 @@ const MobileStepCard: React.FC<{
       className={`rounded-xl overflow-hidden border border-white/10 ${rowBg}`}
       style={{ borderLeftColor: accentColor, borderLeftWidth: 3 }}
     >
-      {/* ── Row 1: S.No + Status badge + Undo ── */}
+      {/* ── Row 1: S.No + Status badge ── */}
       <div className="flex items-center justify-between px-3 py-2 border-b border-white/10 bg-white/[0.02]">
         <span className="text-xs font-mono text-gray-500 tracking-wide">#{step.serial_no}</span>
-        <div className="flex items-center gap-1.5">
-          {!readonly && step.status !== "pending" && (
-            <button
-              onClick={() => onUpdate(step.id, "pending", "")}
-              className="text-xs px-2 py-0.5 rounded-md bg-white/5 hover:bg-white/10 text-gray-500 hover:text-gray-300 border border-white/10 transition-colors">
-              ↩ Undo
-            </button>
-          )}
-          <span className={`text-xs font-bold px-2 py-0.5 rounded-full capitalize ${
-            step.status === "pass" ? "bg-green-500/15 text-green-400"
-            : step.status === "fail" ? "bg-red-500/15 text-red-400"
-            : "bg-gray-500/15 text-gray-400"}`}>
-            {step.status}
-          </span>
-        </div>
+        <span className={`text-xs font-bold px-2 py-0.5 rounded-full capitalize ${
+          step.status === "pass" ? "bg-green-500/15 text-green-400"
+          : step.status === "fail" ? "bg-red-500/15 text-red-400"
+          : "bg-gray-500/15 text-gray-400"}`}>
+          {step.status}
+        </span>
       </div>
 
       {/* ── Row 2: Action ── */}
@@ -545,25 +545,36 @@ const MobileStepCard: React.FC<{
 
       {/* ── Row 5: Pass / Fail buttons (interactive only) ── */}
       {!readonly && (
-        <div className="grid grid-cols-2 divide-x divide-white/10">
-          <button
-            onClick={() => onUpdate(step.id, "pass", remarks)}
-            className={`py-2 text-xs font-bold transition-colors flex items-center justify-center gap-1 ${
-              step.status === "pass"
-                ? "bg-green-500 text-white"
-                : "bg-green-500/10 hover:bg-green-500/20 text-green-400 border-t border-green-500/20"
-            }`}>
-            ✓ Pass
-          </button>
-          <button
-            onClick={() => onUpdate(step.id, "fail", remarks)}
-            className={`py-2 text-xs font-bold transition-colors flex items-center justify-center gap-1 ${
-              step.status === "fail"
-                ? "bg-red-500 text-white"
-                : "bg-red-500/10 hover:bg-red-500/20 text-red-400 border-t border-red-500/20"
-            }`}>
-            ✗ Fail
-          </button>
+        <div className="flex items-center justify-between px-3 py-2 border-t border-white/10 bg-white/[0.02]">
+          <span className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider">Actions</span>
+          <div className="flex items-center gap-2">
+            {step.status !== "pending" && (
+              <button onClick={() => onUpdate(step.id, "pending", "")}
+                className="px-2 py-0.5 rounded-md text-[10px] text-gray-500 hover:text-gray-300 bg-white/5 hover:bg-white/10 border border-white/10 transition-colors">
+                ↩ Undo
+              </button>
+            )}
+            <button
+              onClick={() => onUpdate(step.id, "pass", remarks)}
+              title="Pass"
+              className={`w-8 h-8 rounded-md text-xs font-bold transition-colors flex items-center justify-center ${
+                step.status === "pass"
+                  ? "bg-green-500 text-white"
+                  : "bg-green-500/10 hover:bg-green-500/25 text-green-400 border border-green-500/20"
+              }`}>
+              ✓
+            </button>
+            <button
+              onClick={() => onUpdate(step.id, "fail", remarks)}
+              title="Fail"
+              className={`w-8 h-8 rounded-md text-xs font-bold transition-colors flex items-center justify-center ${
+                step.status === "fail"
+                  ? "bg-red-500 text-white"
+                  : "bg-red-500/10 hover:bg-red-500/25 text-red-400 border border-red-500/20"
+              }`}>
+              ✗
+            </button>
+          </div>
         </div>
       )}
     </div>
