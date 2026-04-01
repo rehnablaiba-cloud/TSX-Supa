@@ -303,14 +303,14 @@ const TestExecution: React.FC<Props> = ({ moduleId, moduleName, initialTestId, o
         ) : (
           <>
             {/* ── Desktop table ── */}
-            <table className="hidden md:table w-full text-sm border-collapse">
+            <table className="hidden md:table w-full text-sm border-collapse table-fixed">
               <thead>
                 <tr className="border-b border-white/10">
-                  <th className="text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wider w-14">S.No</th>
-                  <th className="text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wider w-[28%]">Action</th>
-                  <th className="text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wider w-[28%]">Expected Result</th>
-                  <th className="text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wider">Remarks</th>
-                  <th className="text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wider w-32">Status</th>
+                  <th className="text-left px-2 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wider w-[6%]">S.No</th>
+                  <th className="text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wider w-[32%]">Action</th>
+                  <th className="text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wider w-[32%]">Expected Result</th>
+                  <th className="text-left px-3 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wider w-[17%]">Remarks</th>
+                  <th className="text-left px-2 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wider w-[13%]">Status</th>
                 </tr>
               </thead>
               <tbody>
@@ -395,34 +395,34 @@ const TableStepRow: React.FC<{
       className={`border-b border-white/5 hover:bg-white/[0.02] transition-colors ${rowBg}`}>
 
       {/* S.No */}
-      <td className="px-4 py-3 text-center">
+      <td className="px-2 py-3 text-center">
         <span className="text-xs font-mono text-gray-500">{step.serial_no}</span>
       </td>
 
       {/* Action */}
       <td className="px-4 py-3">
-        <p className="text-sm text-white leading-snug">{step.action}</p>
+        <p className="text-sm text-white leading-snug break-words">{step.action}</p>
       </td>
 
       {/* Expected Result */}
       <td className="px-4 py-3">
-        <p className="text-sm text-gray-300 leading-snug">{step.expected_result}</p>
+        <p className="text-sm text-gray-300 leading-snug break-words">{step.expected_result}</p>
       </td>
 
       {/* Remarks */}
-      <td className="px-4 py-3">
+      <td className="px-3 py-3">
         <textarea
           value={remarks}
           onChange={e => setRemarks(e.target.value)}
           disabled={readonly}
           placeholder="Remarks…"
           rows={2}
-          className="input text-sm resize-none disabled:opacity-50 w-full min-w-[160px]"
+          className="input text-sm resize-none disabled:opacity-50 w-full"
         />
       </td>
 
       {/* Status + Actions */}
-      <td className="px-4 py-3">
+      <td className="px-2 py-3">
         <div className="flex flex-col gap-1.5">
           {!readonly && (
             <>
