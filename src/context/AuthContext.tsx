@@ -1,3 +1,4 @@
+// AuthContext.tsx
 import React, { createContext, useContext, useEffect, useState } from "react";
 import { supabase } from "../supabase";
 
@@ -18,40 +19,54 @@ interface AuthCtx {
 
 const Ctx = createContext<AuthCtx>({} as AuthCtx);
 
+const loadProfile = async (userId: string, email: string): Promise<AuthUser> => {
+  const { data } = await supabase
+    .from("profiles")
+    .select("display_name, role")
+    .eq("id", userId)
+    .single();
+  return {
+    id: userId,
+    email,
+    displayName: data?.display_name ?? email,
+    defaultRole: data?.role ?? "tester",
+  };
+};
+
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [isLoading, setIsLoading] = useState(true);
   const [user, setUser] = useState<AuthUser | null>(null);
 
-  const loadProfile = async (userId: string, email: string): Promise<AuthUser> => {
-    const { data } = await supabase
-      .from("profiles")
-      .select("display_name, role")
-      .eq("id", userId)
-      .single();
-    return {
-      id: userId,
-      email,
-      displayName: data?.display_name ?? email,
-      defaultRole: data?.role ?? "tester",
-    };
-  };
-
   useEffect(() => {
-    // Check existing session on mount
-    supabase.auth.getSession().then(async ({ data: { session } }) => {
+    // ✅ getSession is local (reads from storage) — no network call
+    supabase.auth.getSession().then(({ data: { session } }) => {
       if (session?.user) {
-        const profile = await loadProfile(session.user.id, session.user.email ?? "");
-        setUser(profile);
+        // ✅ Unblock render immediately with basic info
+        setUser({
+          id: session.user.id,
+          email: session.user.email ?? "",
+          displayName: session.user.email ?? "",
+          defaultRole: "tester",
+        });
+        setIsLoading(false); // ✅ App renders now, don't wait for profile
+
+        // ✅ Enrich with profile data in background
+        loadProfile(session.user.id, session.user.email ?? "").then(setUser);
+      } else {
+        setIsLoading(false);
       }
-      setIsLoading(false);
     });
 
-    // Listen for auth state changes (login, logout, token refresh)
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (event, session) => {
+      (event, session) => {
         if (session?.user) {
-          const profile = await loadProfile(session.user.id, session.user.email ?? "");
-          setUser(profile);
+          setUser({
+            id: session.user.id,
+            email: session.user.email ?? "",
+            displayName: session.user.email ?? "",
+            defaultRole: "tester",
+          });
+          loadProfile(session.user.id, session.user.email ?? "").then(setUser);
         } else {
           setUser(null);
         }
@@ -70,6 +85,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const signOut = async () => {
     await supabase.auth.signOut();
+    setUser(null);
   };
 
   return (
