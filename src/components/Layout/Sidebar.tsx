@@ -1,10 +1,14 @@
-import React, { useState, useEffect } from "react";
+// Sidebar.tsx
+import React, { useState } from "react";
 import { useAuth } from "../../context/AuthContext";
-import { supabase } from "../../supabase";
 import { Module } from "../../types";
 import ThemeToggle from "../UI/ThemeToggle";
 
-interface Props { activePage: string; onNavigate: (page: string, moduleId?: string) => void; }
+interface Props {
+  activePage: string;
+  onNavigate: (page: string, moduleId?: string) => void;
+  modules: Module[]; // ✅ receive from App instead of fetching
+}
 
 const navItems = [
   { id: "dashboard", label: "Dashboard",  icon: "📊" },
@@ -12,30 +16,19 @@ const navItems = [
   { id: "auditlog",  label: "Audit Log",   icon: "📜" },
 ];
 
-const Sidebar: React.FC<Props> = ({ activePage, onNavigate }) => {
+const Sidebar: React.FC<Props> = ({ activePage, onNavigate, modules }) => {
   const [collapsed, setCollapsed] = useState(false);
   const [search, setSearch]       = useState("");
-  const [modules, setModules]     = useState<Module[]>([]);
   const { user, signOut } = useAuth();
   const isAdmin = user?.defaultRole === "admin";
-
-  useEffect(() => {
-    supabase
-      .from("modules")
-      .select("*")
-      .order("name", { ascending: true })
-      .then(({ data, error }) => {
-        if (data) setModules(data as Module[]);
-        if (error) console.error("Sidebar modules error:", error.message);
-      });
-  }, []);
 
   const filtered = modules.filter(m =>
     m.name.toLowerCase().includes(search.toLowerCase())
   );
 
   return (
-    <aside className={`hidden md:flex flex-col bg-gray-900/80 backdrop-blur border-r border-white/5
+    // ✅ removed backdrop-blur — it's the main desktop perf killer
+    <aside className={`hidden md:flex flex-col bg-gray-900 border-r border-white/5
       transition-all duration-300 ${collapsed ? "w-16" : "w-64"} h-screen sticky top-0 shrink-0`}>
       <div className="flex items-center justify-between px-4 py-4 border-b border-white/5">
         {!collapsed && (
@@ -94,7 +87,6 @@ const Sidebar: React.FC<Props> = ({ activePage, onNavigate }) => {
         )}
       </nav>
 
-      {/* ── Bottom bar ── */}
       <div className="border-t border-white/5 p-3 flex flex-col gap-2">
         <div className={`flex ${collapsed ? "justify-center" : "justify-start"}`}>
           <ThemeToggle />
