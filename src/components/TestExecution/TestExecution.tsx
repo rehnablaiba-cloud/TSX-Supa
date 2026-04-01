@@ -242,15 +242,9 @@ const TestExecution: React.FC<Props> = ({ moduleId, moduleName, initialTestId, o
         actions={
           <div className="flex items-center gap-2">
             <button onClick={() => setShowExportModal(true)} disabled={steps.length === 0}
-              className="flex items-center gap-1.5 px-3 py-1.5 bg-white/10 hover:bg-white/20 disabled:opacity-40 disabled:cursor-not-allowed text-white text-xs font-semibold rounded-lg transition border border-white/10">
+              className="flex items-center gap-1.5 px-4 py-2 bg-white/10 hover:bg-white/20 disabled:opacity-40 disabled:cursor-not-allowed text-white text-sm font-semibold rounded-lg transition border border-white/10">
               📤 Export
             </button>
-            <button disabled={currentIdx === 0}
-              onClick={() => setCurrentTestId(tests[currentIdx - 1].id)}
-              className="btn-ghost text-sm disabled:opacity-30">← Prev</button>
-            <button disabled={currentIdx >= tests.length - 1}
-              onClick={() => setCurrentTestId(tests[currentIdx + 1].id)}
-              className="btn-ghost text-sm disabled:opacity-30">Next →</button>
             <button onClick={handleFinish} className="btn-primary text-sm">Finish Test</button>
           </div>
         }
@@ -271,13 +265,6 @@ const TestExecution: React.FC<Props> = ({ moduleId, moduleName, initialTestId, o
             style={{ width: `${progressPct}%`, background: failCount > 0 ? "linear-gradient(90deg,#22c55e,#ef4444)" : "#22c55e" }} />
         </div>
       </div>
-
-      {lockAcquired && (
-        <div className="mx-4 mb-2 px-3 py-1.5 bg-green-500/10 border border-green-500/20 rounded-lg text-green-400 text-xs flex items-center gap-2">
-          <span className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse inline-block" />
-          You have an active lock on this test
-        </div>
-      )}
 
       {/* ── Filters ── */}
       <div className="flex items-center gap-2 px-4 py-2 border-b border-white/10 flex-wrap">
@@ -436,10 +423,10 @@ const TableStepRow: React.FC<{
       {!readonly && (
         <td className="px-2 py-3">
           <div className="flex flex-col items-center gap-1">
-            <div className="flex gap-1">
+            <div className="flex gap-1 w-full">
               <button onClick={() => onUpdate(step.id, "pass", remarks)}
                 title="Pass"
-                className={`w-7 h-7 rounded-md text-xs font-bold transition-colors flex items-center justify-center ${
+                className={`flex-1 h-7 rounded-md text-xs font-bold transition-colors flex items-center justify-center ${
                   step.status === "pass"
                     ? "bg-green-500 text-white"
                     : "bg-green-500/10 hover:bg-green-500/25 text-green-400 border border-green-500/20"
@@ -448,7 +435,7 @@ const TableStepRow: React.FC<{
               </button>
               <button onClick={() => onUpdate(step.id, "fail", remarks)}
                 title="Fail"
-                className={`w-7 h-7 rounded-md text-xs font-bold transition-colors flex items-center justify-center ${
+                className={`flex-1 h-7 rounded-md text-xs font-bold transition-colors flex items-center justify-center ${
                   step.status === "fail"
                     ? "bg-red-500 text-white"
                     : "bg-red-500/10 hover:bg-red-500/25 text-red-400 border border-red-500/20"
@@ -459,7 +446,7 @@ const TableStepRow: React.FC<{
             {step.status !== "pending" && (
               <button onClick={() => onUpdate(step.id, "pending", "")}
                 title="Undo"
-                className="w-full py-0.5 rounded-md text-[10px] text-gray-500 hover:text-gray-300 bg-white/5 hover:bg-white/10 border border-white/10 transition-colors">
+                className="w-full h-7 rounded-md text-xs font-bold text-gray-500 hover:text-gray-300 bg-white/5 hover:bg-white/10 border border-white/10 transition-colors flex items-center justify-center">
                 ↩
               </button>
             )}
@@ -550,8 +537,8 @@ const MobileStepCard: React.FC<{
           <div className="flex items-center gap-2">
             {step.status !== "pending" && (
               <button onClick={() => onUpdate(step.id, "pending", "")}
-                className="px-2 py-0.5 rounded-md text-[10px] text-gray-500 hover:text-gray-300 bg-white/5 hover:bg-white/10 border border-white/10 transition-colors">
-                ↩ Undo
+                className="w-8 h-8 rounded-md text-xs font-bold text-gray-500 hover:text-gray-300 bg-white/5 hover:bg-white/10 border border-white/10 transition-colors flex items-center justify-center">
+                ↩
               </button>
             )}
             <button
