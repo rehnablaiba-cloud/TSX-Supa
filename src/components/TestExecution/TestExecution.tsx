@@ -1,5 +1,5 @@
 // TestExecution.tsx
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useAuth } from "../../context/AuthContext";
 import { supabase } from "../../supabase";
 import Topbar from "../Layout/Topbar";
@@ -51,9 +51,8 @@ const TestExecution: React.FC<Props> = ({ moduleId, moduleName, initialTestId, o
   const [lockAcquired, setLockAcquired]       = useState(false);
   const [scrollTarget, setScrollTarget]       = useState<string | null>(null);
 
-  const heartbeatRef      = useRef<ReturnType<typeof setInterval> | null>(null);
-  const stepRefs          = useRef<Record<string, HTMLTableRowElement | HTMLDivElement | null>>({});
-  // FIX 1: ref on the scrollable container for reliable cross-browser scrolling
+  const heartbeatRef       = useRef<ReturnType<typeof setInterval> | null>(null);
+  const stepRefs           = useRef<Record<string, HTMLTableRowElement | HTMLDivElement | null>>({});
   const scrollContainerRef = useRef<HTMLDivElement>(null);
 
   useReleaseLockOnUnload(currentTestId, user?.id ?? "");
@@ -88,7 +87,6 @@ const TestExecution: React.FC<Props> = ({ moduleId, moduleName, initialTestId, o
       setLockLoading(false);
     });
 
-    // Realtime: lock changes
     const lockChannel = supabase.channel(`lock:${currentTestId}`)
       .on("postgres_changes", { event: "*", schema: "public", table: "testlocks",
         filter: `test_id=eq.${currentTestId}` },
@@ -97,7 +95,6 @@ const TestExecution: React.FC<Props> = ({ moduleId, moduleName, initialTestId, o
         })
       .subscribe();
 
-    // Realtime: step updates
     const stepsChannel = supabase.channel(`steps:${currentTestId}`)
       .on("postgres_changes", { event: "UPDATE", schema: "public", table: "steps",
         filter: `test_id=eq.${currentTestId}` },
@@ -150,22 +147,25 @@ const TestExecution: React.FC<Props> = ({ moduleId, moduleName, initialTestId, o
     };
   }, [currentTestId, user?.id]);
 
-  // ── FIX 1: Container-aware auto-scroll ────────────────────
-  // scrollIntoView on <tr> is unreliable inside overflow:auto containers in some browsers.
-  // Instead we compute the offset manually against the container's bounding rect.
-  useEffect(() => {
+  // ── Auto-scroll ────────────────────────────────────────────
+  // useLayoutEffect fires synchronously after DOM mutations —
+  // refs are guaranteed populated before we read them.
+  // Only depends on scrollTarget (not steps) to avoid re-running
+  // on every step state change.
+  useLayoutEffect(() => {
     if (!scrollTarget) return;
     const el        = stepRefs.current[scrollTarget];
     const container = scrollContainerRef.current;
     if (el && container) {
       const elRect        = el.getBoundingClientRect();
       const containerRect = container.getBoundingClientRect();
-      const scrollTo      = elRect.top - containerRect.top + container.scrollTop
-                            - container.clientHeight / 2 + el.clientHeight / 2;
+      const scrollTo      =
+        elRect.top - containerRect.top + container.scrollTop
+        - container.clientHeight / 2 + elRect.height / 2;
       container.scrollTo({ top: scrollTo, behavior: "smooth" });
       setScrollTarget(null);
     }
-  }, [scrollTarget, steps]);
+  }, [scrollTarget]);
 
   // ── Step update — optimistic ───────────────────────────────
   const handleStepUpdate = useCallback(async (
@@ -308,7 +308,7 @@ const TestExecution: React.FC<Props> = ({ moduleId, moduleName, initialTestId, o
           placeholder="Search steps…" className="input text-xs py-1.5 w-48" />
       </div>
 
-      {/* ── FIX 1: ref attached to scroll container ── */}
+      {/* ── Scroll container ── */}
       <div ref={scrollContainerRef} className="flex-1 overflow-auto pb-24 md:pb-4">
         {loading ? (
           <div className="flex items-center justify-center py-20"><Spinner /></div>
@@ -352,7 +352,7 @@ const TestExecution: React.FC<Props> = ({ moduleId, moduleName, initialTestId, o
               </tbody>
             </table>
 
-            {/* ── Mobile: sticky column header + cards ── */}
+            {/* ── Mobile ── */}
             <div className="md:hidden flex flex-col">
               <div className="sticky top-0 z-10 grid grid-cols-[64px_1fr] border-b border-gray-200 dark:border-white/10 bg-white/90 dark:bg-black/80 backdrop-blur-sm">
                 <div className="px-3 py-2 border-r border-gray-200 dark:border-white/10">
@@ -416,7 +416,6 @@ const TableStepRow: React.FC<{
         <p className="text-sm text-gray-300 leading-snug break-words">{step.expected_result}</p>
       </td>
       <td className="px-3 py-3">
-        {/* FIX 2: Enter = pass, Shift+Enter = newline */}
         <textarea
           value={remarks}
           onChange={e => setRemarks(e.target.value)}
@@ -526,7 +525,6 @@ const MobileStepCard: React.FC<{
           <span className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider mt-0.5">Remarks</span>
         </div>
         <div className="px-3 py-2 min-w-0">
-          {/* FIX 2: Enter = pass, Shift+Enter = newline (mobile too) */}
           <textarea
             value={remarks}
             onChange={e => setRemarks(e.target.value)}
