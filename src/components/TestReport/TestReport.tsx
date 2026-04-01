@@ -25,7 +25,6 @@ const ANIM_STYLE = `
 }
 `;
 
-
 function useInjectStyle() {
   const injected = useRef(false);
   useEffect(() => {
@@ -37,7 +36,6 @@ function useInjectStyle() {
   }, []);
 }
 
-
 // ── FadeWrapper ───────────────────────────────────────────────────────────────
 const FadeWrapper: React.FC<{ animKey: string | number; children: React.ReactNode }> = ({ animKey, children }) => (
   <div key={animKey} style={{ animation: "fadeSlideIn 0.28s cubic-bezier(0.22,1,0.36,1) both" }}>
@@ -45,17 +43,20 @@ const FadeWrapper: React.FC<{ animKey: string | number; children: React.ReactNod
   </div>
 );
 
-
 // ── Constants ─────────────────────────────────────────────────────────────────
 const COLORS = { pass: "#22c55e", fail: "#ef4444", pending: "#f59e0b" };
 
-
 // ── Types ─────────────────────────────────────────────────────────────────────
 interface Step {
-  serial_no: number; action: string; expected_result: string;
-  remarks: string; status: string; is_divider: boolean;
+  test_id: string;
+  serial_no: number;
+  action: string;
+  expected_result: string;
+  remarks: string;
+  status: string;
+  is_divider: boolean;
 }
-interface Test { id: string; name: string; steps: Step[]; }
+interface Test { id: string; name: string; module_id: string; steps: Step[]; }
 interface ModuleWithTests {
   id: string; name: string; description: string; accent_color: string; tests: Test[];
 }
@@ -66,7 +67,6 @@ interface ChartTheme {
 }
 type ChartType = "bar" | "area" | "line" | "pie" | "radar";
 
-
 const CHART_TYPES: { type: ChartType; label: string }[] = [
   { type: "bar",   label: "Bar"   },
   { type: "area",  label: "Area"  },
@@ -74,7 +74,6 @@ const CHART_TYPES: { type: ChartType; label: string }[] = [
   { type: "pie",   label: "Pie"   },
   { type: "radar", label: "Radar" },
 ];
-
 
 // ── Custom Tooltip ────────────────────────────────────────────────────────────
 const CustomTooltip: React.FC<{
@@ -95,7 +94,6 @@ const CustomTooltip: React.FC<{
   );
 };
 
-
 // ── Custom Pie Tooltip ────────────────────────────────────────────────────────
 const PieTooltip: React.FC<{
   active?: boolean; payload?: any[]; ct: ChartTheme;
@@ -114,7 +112,6 @@ const PieTooltip: React.FC<{
   );
 };
 
-
 // ── Bar Chart ─────────────────────────────────────────────────────────────────
 const RBarChart: React.FC<{ data: ChartRow[]; ct: ChartTheme }> = ({ data, ct }) => (
   <ResponsiveContainer width="100%" height={240}>
@@ -132,7 +129,6 @@ const RBarChart: React.FC<{ data: ChartRow[]; ct: ChartTheme }> = ({ data, ct })
     </BarChart>
   </ResponsiveContainer>
 );
-
 
 // ── Area Chart ────────────────────────────────────────────────────────────────
 const RAreaChart: React.FC<{ data: ChartRow[]; ct: ChartTheme }> = ({ data, ct }) => (
@@ -161,7 +157,6 @@ const RAreaChart: React.FC<{ data: ChartRow[]; ct: ChartTheme }> = ({ data, ct }
   </ResponsiveContainer>
 );
 
-
 // ── Line Chart ────────────────────────────────────────────────────────────────
 const RLineChart: React.FC<{ data: ChartRow[]; ct: ChartTheme }> = ({ data, ct }) => (
   <ResponsiveContainer width="100%" height={240}>
@@ -182,7 +177,6 @@ const RLineChart: React.FC<{ data: ChartRow[]; ct: ChartTheme }> = ({ data, ct }
     </LineChart>
   </ResponsiveContainer>
 );
-
 
 // ── Pie Chart ─────────────────────────────────────────────────────────────────
 const RPieChart: React.FC<{ data: ChartRow[]; ct: ChartTheme }> = ({ data, ct }) => {
@@ -230,7 +224,6 @@ const RPieChart: React.FC<{ data: ChartRow[]; ct: ChartTheme }> = ({ data, ct })
   );
 };
 
-
 // ── Radar Chart ───────────────────────────────────────────────────────────────
 const RRadarChart: React.FC<{ data: ChartRow[]; ct: ChartTheme }> = ({ data, ct }) => {
   if (data.length === 0) return (
@@ -256,7 +249,6 @@ const RRadarChart: React.FC<{ data: ChartRow[]; ct: ChartTheme }> = ({ data, ct 
   );
 };
 
-
 // ── Main Component ────────────────────────────────────────────────────────────
 const TestReport: React.FC = () => {
   useInjectStyle();
@@ -269,25 +261,50 @@ const TestReport: React.FC = () => {
   const [view, setView]                         = useState<"graph" | "table">("graph");
   const [chartType, setChartType]               = useState<ChartType>("bar");
 
+  // ── 3 parallel queries instead of 1 + N ────────────────────────────────────
   useEffect(() => {
     const fetchData = async () => {
       setLoading(true); setError(null);
       try {
-        const { data: modulesData, error: modulesError } = await supabase
-          .from("modules").select("id, name, description, accent_color").order("name", { ascending: true });
-        if (modulesError) throw new Error(modulesError.message);
+        const [modulesRes, testsRes, stepsRes] = await Promise.all([
+          supabase
+            .from("modules")
+            .select("id, name, description, accent_color")
+            .order("name", { ascending: true }),
+          supabase
+            .from("tests")
+            .select("id, name, module_id")
+            .order("name", { ascending: true }),
+          supabase
+            .from("steps")
+            .select("test_id, serial_no, action, expected_result, remarks, status, is_divider"),
+        ]);
 
-        const modulesWithTests = await Promise.all(
-          (modulesData ?? []).map(async (mod) => {
-            const { data: testsData, error: testsError } = await supabase
-              .from("tests")
-              .select("id, name, steps(serial_no, action, expected_result, remarks, status, is_divider)")
-              .eq("module_id", mod.id).order("name", { ascending: true });
-            if (testsError) throw new Error(`Failed to load tests for "${mod.name}": ${testsError.message}`);
-            return { ...mod, tests: (testsData ?? []) as Test[] };
-          })
+        if (modulesRes.error) throw new Error(modulesRes.error.message);
+        if (testsRes.error)   throw new Error(testsRes.error.message);
+        if (stepsRes.error)   throw new Error(stepsRes.error.message);
+
+        // ── Client-side join — zero extra round trips ─────────────────────
+        const stepsByTest = new Map<string, Step[]>();
+        for (const s of (stepsRes.data ?? []) as Step[]) {
+          const arr = stepsByTest.get(s.test_id) ?? [];
+          arr.push(s);
+          stepsByTest.set(s.test_id, arr);
+        }
+
+        const testsByModule = new Map<string, Test[]>();
+        for (const t of (testsRes.data ?? []) as Omit<Test, "steps">[] & { module_id: string }[]) {
+          const arr = testsByModule.get(t.module_id) ?? [];
+          arr.push({ id: t.id, name: t.name, module_id: t.module_id, steps: stepsByTest.get(t.id) ?? [] });
+          testsByModule.set(t.module_id, arr);
+        }
+
+        setModules(
+          (modulesRes.data ?? []).map((m) => ({
+            ...m,
+            tests: testsByModule.get(m.id) ?? [],
+          }))
         );
-        setModules(modulesWithTests);
       } catch (err: any) {
         setError(err.message ?? "Failed to load report data.");
       } finally {
@@ -322,8 +339,10 @@ const TestReport: React.FC = () => {
     mods.forEach((m) => {
       (m.tests ?? []).forEach((t) => {
         (t.steps ?? []).filter((s) => !s.is_divider).forEach((s) => {
-          flat.push({ module: m.name, test: t.name, serial: s.serial_no,
-            action: s.action, expected: s.expected_result, remarks: s.remarks || "", status: s.status });
+          flat.push({
+            module: m.name, test: t.name, serial: s.serial_no,
+            action: s.action, expected: s.expected_result, remarks: s.remarks || "", status: s.status,
+          });
         });
       });
     });
@@ -348,8 +367,11 @@ const TestReport: React.FC = () => {
         title="Test Report"
         subtitle="Module-wise execution summary"
         actions={
-          <button onClick={() => setShowExportModal(true)} disabled={filtered.length === 0}
-            className="flex items-center gap-1.5 px-4 py-2 bg-white/10 hover:bg-white/20 disabled:opacity-40 disabled:cursor-not-allowed text-white text-sm font-semibold rounded-lg transition border border-white/10">
+          <button
+            onClick={() => setShowExportModal(true)}
+            disabled={filtered.length === 0}
+            className="flex items-center gap-1.5 px-4 py-2 bg-white/10 hover:bg-white/20 disabled:opacity-40 disabled:cursor-not-allowed text-white text-sm font-semibold rounded-lg transition border border-white/10"
+          >
             📤 Export
           </button>
         }
@@ -374,8 +396,10 @@ const TestReport: React.FC = () => {
         <div className="flex flex-col items-center justify-center py-20 gap-3">
           <span className="text-2xl">⚠️</span>
           <p className="text-sm text-red-400 font-medium">{error}</p>
-          <button onClick={() => window.location.reload()}
-            className="px-4 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-sm text-gray-300 border border-white/10 transition">
+          <button
+            onClick={() => window.location.reload()}
+            className="px-4 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-sm text-gray-300 border border-white/10 transition"
+          >
             Retry
           </button>
         </div>
@@ -386,8 +410,11 @@ const TestReport: React.FC = () => {
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="flex items-center gap-3">
               <label className="text-sm text-gray-400">Filter by Module</label>
-              <select value={selectedModuleId ?? ""} onChange={(e) => setSelectedModuleId(e.target.value || null)}
-                className="input text-sm">
+              <select
+                value={selectedModuleId ?? ""}
+                onChange={(e) => setSelectedModuleId(e.target.value || null)}
+                className="input text-sm"
+              >
                 <option value="">All Modules</option>
                 {modules.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
               </select>
@@ -397,7 +424,8 @@ const TestReport: React.FC = () => {
                 <button key={v} onClick={() => setView(v)}
                   style={view === v ? { color: "#ffffff" } : undefined}
                   className={`px-4 py-2 rounded-lg text-sm font-semibold transition capitalize ${
-                    view === v ? "bg-blue-700" : "text-gray-400 hover:text-gray-700 dark:hover:text-white"}`}>
+                    view === v ? "bg-blue-700" : "text-gray-400 hover:text-gray-700 dark:hover:text-white"
+                  }`}>
                   {v}
                 </button>
               ))}
@@ -410,7 +438,7 @@ const TestReport: React.FC = () => {
               <div className="p-4 rounded-xl border"
                 style={{ backgroundColor: chartTheme.panel, borderColor: chartTheme.border }}>
 
-                {/* Controls row — chart type only */}
+                {/* Controls row */}
                 <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
                   <h3 className="text-sm font-semibold" style={{ color: chartTheme.text }}>Execution Graph</h3>
                   <div className="flex items-center gap-0.5 rounded-lg p-0.5 border"
@@ -497,6 +525,5 @@ const TestReport: React.FC = () => {
     </>
   );
 };
-
 
 export default TestReport;
