@@ -1,6 +1,6 @@
 // App.tsx
 import React, { useState, useEffect } from "react";
-import { useAuth } from "./context/AuthContext"; // ← keep using your existing AuthContext
+import { useAuth } from "./context/AuthContext";
 import { ThemeProvider } from "./context/ThemeContext";
 import LoginPage from "./components/Auth/LoginPage";
 import Sidebar from "./components/Layout/Sidebar";
@@ -20,27 +20,24 @@ type Page = "dashboard" | "module" | "execution" | "report" | "users" | "auditlo
 const AppInner: React.FC = () => {
   const { isLoading: authLoading, isAuthenticated } = useAuth();
   const [modules, setModules]                       = useState<Module[]>([]);
-  const [modulesLoading, setModulesLoading]         = useState(false);
   const [page, setPage]                             = useState<Page>("dashboard");
   const [selectedModuleId, setSelectedModuleId]     = useState<string | null>(null);
   const [selectedTestId, setSelectedTestId]         = useState<string | null>(null);
 
   useEffect(() => {
     if (!isAuthenticated) return;
-    setModulesLoading(true);
+    // ✅ No modulesLoading state — fetch quietly in background
     supabase
       .from("modules")
       .select("*")
       .then(({ data, error }) => {
         if (!error && data) setModules(data as Module[]);
         else if (error) console.error("Error fetching modules:", error.message);
-        setModulesLoading(false);
       });
   }, [isAuthenticated]);
 
-  const selectedModule = modules.find((m) => m.id === selectedModuleId);
-
-  if (authLoading || modulesLoading) {
+  // ✅ Only block on auth — one spinner, one wait
+  if (authLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-950">
         <Spinner size={48} />
@@ -49,6 +46,8 @@ const AppInner: React.FC = () => {
   }
 
   if (!isAuthenticated) return <LoginPage />;
+
+  const selectedModule = modules.find((m) => m.id === selectedModuleId);
 
   const navigate = (p: string, moduleId?: string) => {
     if (p === "module" && moduleId) { setSelectedModuleId(moduleId); setPage("module"); }
