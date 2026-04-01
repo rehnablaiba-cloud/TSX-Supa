@@ -16,8 +16,7 @@ import {
 } from "recharts";
 import { PieLabelRenderProps } from "recharts";
 
-
-// ── Animation keyframes (injected once into <head>) ───────────────────────────
+// ── Animation keyframes ───────────────────────────────────────────────────────
 const ANIM_STYLE = `
 @keyframes fadeSlideIn {
   from { opacity: 0; transform: translateY(10px); }
@@ -261,7 +260,6 @@ const TestReport: React.FC = () => {
   const [view, setView]                         = useState<"graph" | "table">("graph");
   const [chartType, setChartType]               = useState<ChartType>("bar");
 
-  // ── 3 parallel queries instead of 1 + N ────────────────────────────────────
   useEffect(() => {
     const fetchData = async () => {
       setLoading(true); setError(null);
@@ -284,7 +282,6 @@ const TestReport: React.FC = () => {
         if (testsRes.error)   throw new Error(testsRes.error.message);
         if (stepsRes.error)   throw new Error(stepsRes.error.message);
 
-        // ── Client-side join — zero extra round trips ─────────────────────
         const stepsByTest = new Map<string, Step[]>();
         for (const s of (stepsRes.data ?? []) as Step[]) {
           const arr = stepsByTest.get(s.test_id) ?? [];
@@ -396,9 +393,14 @@ const TestReport: React.FC = () => {
         <div className="flex flex-col items-center justify-center py-20 gap-3">
           <span className="text-2xl">⚠️</span>
           <p className="text-sm text-red-400 font-medium">{error}</p>
+          {/* ✅ CHANGED: added light mode classes */}
           <button
             onClick={() => window.location.reload()}
-            className="px-4 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-sm text-gray-300 border border-white/10 transition"
+            className="px-4 py-2 rounded-xl
+              bg-gray-100 dark:bg-white/10
+              hover:bg-gray-200 dark:hover:bg-white/20
+              text-sm text-gray-700 dark:text-gray-300
+              border border-gray-200 dark:border-white/10 transition"
           >
             Retry
           </button>
@@ -419,12 +421,16 @@ const TestReport: React.FC = () => {
                 {modules.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
               </select>
             </div>
-            <div className="flex items-center gap-2 rounded-xl p-1 bg-white/5 border border-white/10 w-fit">
+            {/* ✅ CHANGED: added light mode bg/border + removed style prop from button */}
+            <div className="flex items-center gap-2 rounded-xl p-1
+              bg-gray-100 dark:bg-white/5
+              border border-gray-200 dark:border-white/10 w-fit">
               {(["graph", "table"] as const).map(v => (
                 <button key={v} onClick={() => setView(v)}
-                  style={view === v ? { color: "#ffffff" } : undefined}
                   className={`px-4 py-2 rounded-lg text-sm font-semibold transition capitalize ${
-                    view === v ? "bg-blue-700" : "text-gray-400 hover:text-gray-700 dark:hover:text-white"
+                    view === v
+                      ? "bg-blue-700 text-white"
+                      : "text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white"
                   }`}>
                   {v}
                 </button>
@@ -474,20 +480,21 @@ const TestReport: React.FC = () => {
 
             ) : (
               /* ── Table view ── */
-              <div className="overflow-x-auto rounded-xl border border-white/10">
+              {/* ✅ CHANGED: all table classes now have light + dark:dark variants */}
+              <div className="overflow-x-auto rounded-xl border border-gray-200 dark:border-white/10">
                 <table className="w-full text-sm">
                   <thead>
-                    <tr className="bg-white/5 text-gray-400 uppercase text-xs">
+                    <tr className="bg-gray-50 dark:bg-white/5 text-gray-500 dark:text-gray-400 uppercase text-xs">
                       <th className="px-4 py-3 text-left">Module</th>
                       <th className="px-4 py-3 text-center">Tests</th>
                       <th className="px-4 py-3 text-center">Total Steps</th>
-                      <th className="px-4 py-3 text-center text-green-400">Pass</th>
-                      <th className="px-4 py-3 text-center text-red-400">Fail</th>
-                      <th className="px-4 py-3 text-center text-amber-400">Pending</th>
+                      <th className="px-4 py-3 text-center text-green-600 dark:text-green-400">Pass</th>
+                      <th className="px-4 py-3 text-center text-red-600 dark:text-red-400">Fail</th>
+                      <th className="px-4 py-3 text-center text-amber-600 dark:text-amber-400">Pending</th>
                       <th className="px-4 py-3 text-center">Pass Rate</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-white/5">
+                  <tbody className="divide-y divide-gray-100 dark:divide-white/5">
                     {filtered.map((m) => {
                       const allSteps = (m.tests ?? []).flatMap((t) => (t.steps ?? []).filter((s) => !s.is_divider));
                       const total   = allSteps.length;
@@ -496,20 +503,21 @@ const TestReport: React.FC = () => {
                       const pending = allSteps.filter((s) => s.status === "pending").length;
                       const rate    = total > 0 ? Math.round((pass / total) * 100) : 0;
                       return (
-                        <tr key={m.id} className="hover:bg-white/5 transition-colors">
-                          <td className="px-4 py-3 font-semibold text-white">{m.name}</td>
-                          <td className="px-4 py-3 text-center text-gray-300">{m.tests?.length ?? 0}</td>
-                          <td className="px-4 py-3 text-center font-bold text-white">{total}</td>
-                          <td className="px-4 py-3 text-center font-semibold text-green-400">{pass}</td>
-                          <td className="px-4 py-3 text-center font-semibold text-red-400">{fail}</td>
-                          <td className="px-4 py-3 text-center font-semibold text-amber-400">{pending}</td>
+                        <tr key={m.id} className="hover:bg-gray-50 dark:hover:bg-white/5 transition-colors">
+                          <td className="px-4 py-3 font-semibold text-gray-900 dark:text-white">{m.name}</td>
+                          <td className="px-4 py-3 text-center text-gray-600 dark:text-gray-300">{m.tests?.length ?? 0}</td>
+                          <td className="px-4 py-3 text-center font-bold text-gray-900 dark:text-white">{total}</td>
+                          <td className="px-4 py-3 text-center font-semibold text-green-600 dark:text-green-400">{pass}</td>
+                          <td className="px-4 py-3 text-center font-semibold text-red-600 dark:text-red-400">{fail}</td>
+                          <td className="px-4 py-3 text-center font-semibold text-amber-600 dark:text-amber-400">{pending}</td>
                           <td className="px-4 py-3 text-center">
                             <div className="flex items-center gap-2 justify-center">
-                              <div className="w-20 h-1.5 bg-gray-700 rounded-full overflow-hidden">
+                              {/* ✅ CHANGED: bg-gray-200 dark:bg-gray-700 */}
+                              <div className="w-20 h-1.5 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
                                 <div className="h-full rounded-full"
                                   style={{ width: `${rate}%`, backgroundColor: COLORS.pass }} />
                               </div>
-                              <span className="font-bold text-white">{rate}%</span>
+                              <span className="font-bold text-gray-900 dark:text-white">{rate}%</span>
                             </div>
                           </td>
                         </tr>
