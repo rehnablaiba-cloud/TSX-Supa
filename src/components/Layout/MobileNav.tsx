@@ -19,7 +19,6 @@ const MobileNav: React.FC<Props> = ({ activePage, onNavigate }) => {
     ...(isAdmin ? [{ id: "users", icon: "👥", label: "Users" }] : []),
   ];
 
-  // Close sheet when tapping outside
   useEffect(() => {
     if (!showMore) return;
     const handler = (e: MouseEvent | TouchEvent) => {
@@ -43,35 +42,46 @@ const MobileNav: React.FC<Props> = ({ activePage, onNavigate }) => {
           {/* Scrim */}
           <div className="absolute inset-0 bg-black/40" onClick={() => setShowMore(false)} />
 
-          {/* Sheet */}
+          {/* Sheet — light/dark surface */}
           <div
             ref={sheetRef}
-            className="relative w-full bg-gray-900 border-t border-white/10 rounded-t-2xl px-6 pt-4 pb-10 flex flex-col gap-3 z-10"
+            className="relative w-full
+              bg-white dark:bg-gray-900
+              border-t border-gray-200 dark:border-white/10
+              rounded-t-2xl px-6 pt-4 pb-10 flex flex-col gap-3 z-10"
           >
             {/* Handle */}
-            <div className="w-10 h-1 bg-white/20 rounded-full mx-auto mb-2" />
+            <div className="w-10 h-1 bg-gray-300 dark:bg-white/20 rounded-full mx-auto mb-2" />
 
             {/* Theme toggle row */}
             <button
               onClick={() => { toggleTheme(); setShowMore(false); }}
-              className="flex items-center gap-4 px-4 py-3.5 rounded-xl bg-white/5 hover:bg-white/10 transition-colors text-gray-200"
+              className="flex items-center gap-4 px-4 py-3.5 rounded-xl
+                bg-gray-100 dark:bg-white/5
+                hover:bg-gray-200 dark:hover:bg-white/10
+                transition-colors
+                text-gray-800 dark:text-gray-200"
             >
               <span className="text-2xl">{theme === "dark" ? "☀️" : "🌙"}</span>
               <div className="text-left">
                 <p className="text-sm font-semibold">
                   {theme === "dark" ? "Light Mode" : "Dark Mode"}
                 </p>
-                <p className="text-xs text-gray-500">Switch appearance</p>
+                <p className="text-xs text-gray-500 dark:text-gray-500">Switch appearance</p>
               </div>
             </button>
 
             {/* Divider */}
-            <div className="border-t border-white/5" />
+            <div className="border-t border-gray-200 dark:border-white/5" />
 
-            {/* Sign out row — visually separated + red tint to signal destructive */}
+            {/* Sign out row */}
             <button
               onClick={() => { signOut(); setShowMore(false); }}
-              className="flex items-center gap-4 px-4 py-3.5 rounded-xl bg-red-500/10 hover:bg-red-500/20 transition-colors text-red-400 border border-red-500/20"
+              className="flex items-center gap-4 px-4 py-3.5 rounded-xl
+                bg-red-50 dark:bg-red-500/10
+                hover:bg-red-100 dark:hover:bg-red-500/20
+                transition-colors text-red-600 dark:text-red-400
+                border border-red-200 dark:border-red-500/20"
             >
               <span className="text-2xl">⎋</span>
               <div className="text-left">
@@ -84,24 +94,32 @@ const MobileNav: React.FC<Props> = ({ activePage, onNavigate }) => {
       )}
 
       {/* ── Bottom nav ── */}
-      <nav className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-gray-900/95 backdrop-blur border-t border-white/5 flex items-center justify-around px-2 py-2">
+      <nav className="md:hidden fixed bottom-0 left-0 right-0 z-40
+        bg-white/95 dark:bg-gray-900/95
+        backdrop-blur
+        border-t border-gray-200 dark:border-white/5
+        flex items-center justify-around px-2 py-2">
         {items.map(item => (
           <button
             key={item.id}
             onClick={() => onNavigate(item.id)}
             className={`flex flex-col items-center gap-0.5 px-4 py-1.5 rounded-xl transition-colors
-              ${activePage === item.id ? "text-blue-400" : "text-gray-500"}`}
+              ${activePage === item.id
+                ? "text-blue-600 dark:text-blue-400"
+                : "text-gray-400 dark:text-gray-500"}`}
           >
             <span className="text-xl">{item.icon}</span>
             <span className="text-[10px] font-medium">{item.label}</span>
           </button>
         ))}
 
-        {/* More — replaces Theme + Logout in the nav bar */}
+        {/* More button */}
         <button
           onClick={() => setShowMore(true)}
           className={`flex flex-col items-center gap-0.5 px-4 py-1.5 rounded-xl transition-colors
-            ${showMore ? "text-blue-400" : "text-gray-500"}`}
+            ${showMore
+              ? "text-blue-600 dark:text-blue-400"
+              : "text-gray-400 dark:text-gray-500"}`}
         >
           <span className="text-xl">•••</span>
           <span className="text-[10px] font-medium">More</span>
