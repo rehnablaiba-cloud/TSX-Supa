@@ -62,7 +62,6 @@ const TestExecution: React.FC<Props> = ({ moduleId, moduleName, initialTestId, o
   const heartbeatRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const stepRefs     = useRef<Record<string, HTMLDivElement | null>>({});
 
-  // ── keepalive release on tab/window close ─────────────────
   useReleaseLockOnUnload(currentTestId, user?.id ?? "");
 
   // ── Tests ──────────────────────────────────────────────────
@@ -79,30 +78,29 @@ const TestExecution: React.FC<Props> = ({ moduleId, moduleName, initialTestId, o
   const currentIdx  = tests.findIndex(t => t.id === currentTestId);
   const currentTest = tests[currentIdx];
 
-  // ── Steps ──────────────────────────────────────────────────
-  const [steps, setSteps] = useState<Step[]>([]);
+  // ── Steps — initial load only ──────────────────────────────
+  const [steps, setSteps]   = useState<Step[]>([]);
   const [loading, setLoading] = useState(true);
 
-  const fetchSteps = useCallback(async () => {
+  useEffect(() => {
     setLoading(true);
-    const { data } = await supabase
+    supabase
       .from("steps")
       .select("*")
       .eq("test_id", currentTestId)
-      .order("serial_no");
-    setSteps(data ?? []);
-    setLoading(false);
+      .order("serial_no")
+      .then(({ data }) => {
+        setSteps(data ?? []);
+        setLoading(false);
+      });
   }, [currentTestId]);
 
-  useEffect(() => { fetchSteps(); }, [fetchSteps]);
-
-  const refetch = fetchSteps;
-
   // ── Lock — real-time subscription ─────────────────────────
-  const [lock, setLock] = useState<any>(null);
+  const [lock, setLock]           = useState<any>(null);
   const [lockLoading, setLockLoading] = useState(true);
 
   useEffect(() => {
+    setLockLoading(true);
     supabase
       .from("testlocks")
       .select("*")
@@ -127,7 +125,7 @@ const TestExecution: React.FC<Props> = ({ moduleId, moduleName, initialTestId, o
 
   const isLockedByOther = !!(lock && lock.user_id !== user?.id);
 
-  // ── Real-time step sync ────────────────────────────────────
+  // ── Real-time step sync (other users) ─────────────────────
   useEffect(() => {
     const channel = supabase
       .channel(`steps:${currentTestId}`)
@@ -202,22 +200,38 @@ const TestExecution: React.FC<Props> = ({ moduleId, moduleName, initialTestId, o
     };
   }, [currentTestId, user?.id]);
 
-  // ── Handlers ───────────────────────────────────────────────
-  const handleStepUpdate = useCallback(async (stepId: string, status: "pass" | "fail", remarks: string) => {
+  // ── Step update — optimistic, no refetch ───────────────────
+  const handleStepUpdate = useCallback(async (
+    stepId: string,
+    status: "pass" | "fail",
+    remarks: string
+  ) => {
+    // ✅ 1. Find next pending BEFORE optimistic update
+    const currentIndex = steps.findIndex(s => s.id === stepId);
+    const nextPending  = steps
+      .slice(currentIndex + 1)
+      .find(s => !s.is_divider && s.status === "pending");
+
+    // ✅ 2. Optimistic local update — no spinner, no refetch
+    setSteps(prev =>
+      prev.map(s => s.id === stepId ? { ...s, status, remarks } : s)
+    );
+
+    // ✅ 3. Scroll to next pending immediately
+    if (nextPending) {
+      setTimeout(() => {
+        stepRefs.current[nextPending.id]?.scrollIntoView({
+          behavior: "smooth",
+          block: "center",
+        });
+      }, 50);
+    }
+
+    // ✅ 4. Persist to DB in background
     await supabase.from("steps")
       .update({ status, remarks })
       .eq("id", stepId);
-    refetch();
-
-    // ✅ Auto-scroll to next pending step
-    setTimeout(() => {
-      const currentIndex = steps.findIndex(s => s.id === stepId);
-      const nextPending = steps.slice(currentIndex + 1).find(s => !s.is_divider && s.status === "pending");
-      if (nextPending && stepRefs.current[nextPending.id]) {
-        stepRefs.current[nextPending.id]?.scrollIntoView({ behavior: "smooth", block: "center" });
-      }
-    }, 150);
-  }, [refetch, steps]);
+  }, [steps]);
 
   const handleFinish = async () => {
     stopHeartbeat();
