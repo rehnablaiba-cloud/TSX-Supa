@@ -242,7 +242,7 @@ const TestExecution: React.FC<Props> = ({ moduleId, moduleName, initialTestId, o
         actions={
           <div className="flex items-center gap-2">
             <button onClick={() => setShowExportModal(true)} disabled={steps.length === 0}
-              className="flex items-center gap-1.5 px-4 py-2 bg-white/10 hover:bg-white/20 disabled:opacity-40 disabled:cursor-not-allowed text-white text-sm font-semibold rounded-lg transition border border-white/10">
+              className="flex items-center gap-1.5 px-4 py-2 bg-white/10 hover:bg-white/20 disabled:opacity-40 disabled:cursor-not-allowed text-white text-sm font-semibold rounded-xl transition border border-white/10">
               📤 Export
             </button>
             <button onClick={handleFinish} className="btn-primary text-sm">Finish Test</button>
@@ -479,7 +479,7 @@ const MobileStepCard: React.FC<{
   return (
     <div
       ref={cardRef}
-      className={`rounded-xl overflow-hidden border border-white/10 ${rowBg}`}
+      className={`rounded-xl overflow-hidden border border-white/10 w-full ${rowBg}`}
       style={{ borderLeftColor: accentColor, borderLeftWidth: 3 }}
     >
       {/* ── Row 1: S.No + Status badge ── */}
@@ -495,30 +495,30 @@ const MobileStepCard: React.FC<{
 
       {/* ── Row 2: Action ── */}
       <div className="grid grid-cols-[80px_1fr] border-b border-white/10">
-        <div className="px-3 py-2.5 border-r border-white/10 bg-white/[0.02] flex items-start">
+        <div className="px-3 py-2.5 border-r border-white/10 bg-white/[0.02] flex items-start shrink-0">
           <span className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider mt-0.5">Action</span>
         </div>
-        <div className="px-3 py-2.5">
-          <p className="text-sm text-white leading-snug">{step.action}</p>
+        <div className="px-3 py-2.5 min-w-0">
+          <p className="text-sm text-white leading-snug break-words">{step.action}</p>
         </div>
       </div>
 
       {/* ── Row 3: Expected Result ── */}
       <div className="grid grid-cols-[80px_1fr] border-b border-white/10">
-        <div className="px-3 py-2.5 border-r border-white/10 bg-white/[0.02] flex items-start">
+        <div className="px-3 py-2.5 border-r border-white/10 bg-white/[0.02] flex items-start shrink-0">
           <span className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider mt-0.5">Expected</span>
         </div>
-        <div className="px-3 py-2.5">
-          <p className="text-sm text-gray-300 leading-snug">{step.expected_result}</p>
+        <div className="px-3 py-2.5 min-w-0">
+          <p className="text-sm text-gray-300 leading-snug break-words">{step.expected_result}</p>
         </div>
       </div>
 
       {/* ── Row 4: Remarks ── */}
       <div className="grid grid-cols-[80px_1fr] border-b border-white/10">
-        <div className="px-3 py-2.5 border-r border-white/10 bg-white/[0.02] flex items-start">
+        <div className="px-3 py-2.5 border-r border-white/10 bg-white/[0.02] flex items-start shrink-0">
           <span className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider mt-0.5">Remarks</span>
         </div>
-        <div className="px-3 py-2">
+        <div className="px-3 py-2 min-w-0">
           <textarea
             value={remarks}
             onChange={e => setRemarks(e.target.value)}
