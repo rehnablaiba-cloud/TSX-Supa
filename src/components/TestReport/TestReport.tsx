@@ -14,6 +14,7 @@ import {
   RadarChart, Radar, PolarGrid, PolarAngleAxis, PolarRadiusAxis,
   XAxis, YAxis, CartesianGrid, Tooltip, Legend,
 } from "recharts";
+import { PieLabelRenderProps } from 'recharts';
 
 // ── Animation keyframes (injected once into <head>) ───────────────────────────
 const ANIM_STYLE = `
@@ -200,12 +201,9 @@ const RPieChart: React.FC<{ data: ChartRow[]; ct: ChartTheme; fontSize: number }
       <PieChart>
         <Pie data={pieData} cx="50%" cy="50%" innerRadius="46%" outerRadius="72%"
           paddingAngle={3} dataKey="value" nameKey="name"
-      
-label={(props: PieLabelRenderProps) => {
-  const name = props.name ?? '';
-  const percent = (props.percent ?? 0) * 100;
-  return `${name}: ${percent.toFixed(0)}%`;
-}} : ""}
+      label={({ name, percent }: PieLabelRenderProps): string =>
+  `${name ?? ''}: ${(((percent as number) ?? 0) * 100).toFixed(0)}%`
+} ""}
           labelLine={false} style={{ fontSize }} isAnimationActive>
           {pieData.map((entry) => (
             <Cell key={entry.name} fill={COLORS[entry.name as keyof typeof COLORS]} opacity={0.88} />
