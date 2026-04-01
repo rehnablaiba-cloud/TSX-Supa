@@ -76,22 +76,15 @@ const CHART_TYPES: { type: ChartType; label: string }[] = [
 ];
 
 
-const FONT_SIZES = [
-  { label: "S", value: 10 },
-  { label: "M", value: 12 },
-  { label: "L", value: 14 },
-];
-
-
 // ── Custom Tooltip ────────────────────────────────────────────────────────────
 const CustomTooltip: React.FC<{
-  active?: boolean; payload?: any[]; label?: string; ct: ChartTheme; fontSize: number;
-}> = ({ active, payload, label, ct, fontSize }) => {
+  active?: boolean; payload?: any[]; label?: string; ct: ChartTheme;
+}> = ({ active, payload, label, ct }) => {
   if (!active || !payload?.length) return null;
   return (
-    <div className="px-3 py-2 rounded-xl border shadow-xl"
-      style={{ backgroundColor: ct.tooltipBg, borderColor: ct.border, color: ct.tooltipText, fontSize }}>
-      <div className="font-semibold mb-1" style={{ fontSize: fontSize + 1 }}>{label}</div>
+    <div className="px-3 py-2 rounded-xl border shadow-xl text-xs"
+      style={{ backgroundColor: ct.tooltipBg, borderColor: ct.border, color: ct.tooltipText }}>
+      <div className="font-semibold mb-1">{label}</div>
       {payload.map((p: any) => (
         <div key={p.dataKey} className="flex items-center justify-between gap-4">
           <span style={{ color: ct.tooltipName }} className="capitalize">{p.dataKey}</span>
@@ -105,15 +98,15 @@ const CustomTooltip: React.FC<{
 
 // ── Custom Pie Tooltip ────────────────────────────────────────────────────────
 const PieTooltip: React.FC<{
-  active?: boolean; payload?: any[]; ct: ChartTheme; fontSize: number;
-}> = ({ active, payload, ct, fontSize }) => {
+  active?: boolean; payload?: any[]; ct: ChartTheme;
+}> = ({ active, payload, ct }) => {
   if (!active || !payload?.length) return null;
   const { name, value, payload: inner } = payload[0];
   const total = (inner?.pass ?? 0) + (inner?.fail ?? 0) + (inner?.pending ?? 0);
   return (
-    <div className="px-3 py-2 rounded-xl border shadow-xl"
-      style={{ backgroundColor: ct.tooltipBg, borderColor: ct.border, color: ct.tooltipText, fontSize }}>
-      <div className="font-semibold capitalize mb-1" style={{ fontSize: fontSize + 1 }}>{name}</div>
+    <div className="px-3 py-2 rounded-xl border shadow-xl text-xs"
+      style={{ backgroundColor: ct.tooltipBg, borderColor: ct.border, color: ct.tooltipText }}>
+      <div className="font-semibold capitalize mb-1">{name}</div>
       <div style={{ color: COLORS[name as keyof typeof COLORS], fontWeight: 700 }}>
         {value} ({total > 0 ? Math.round((value / total) * 100) : 0}%)
       </div>
@@ -123,16 +116,16 @@ const PieTooltip: React.FC<{
 
 
 // ── Bar Chart ─────────────────────────────────────────────────────────────────
-const RBarChart: React.FC<{ data: ChartRow[]; ct: ChartTheme; fontSize: number }> = ({ data, ct, fontSize }) => (
+const RBarChart: React.FC<{ data: ChartRow[]; ct: ChartTheme }> = ({ data, ct }) => (
   <ResponsiveContainer width="100%" height={240}>
     <BarChart data={data} margin={{ top: 8, right: 16, left: -16, bottom: 8 }} barCategoryGap="28%" barGap={3}>
       <CartesianGrid strokeDasharray="4 3" stroke={ct.grid} vertical={false} />
-      <XAxis dataKey="name" tick={{ fill: ct.muted, fontSize }} axisLine={false} tickLine={false}
+      <XAxis dataKey="name" tick={{ fill: ct.muted, fontSize: 11 }} axisLine={false} tickLine={false}
         tickFormatter={(v) => v.length > 10 ? v.slice(0, 9) + "…" : v} />
-      <YAxis tick={{ fill: ct.muted, fontSize }} axisLine={false} tickLine={false} />
-      <Tooltip content={<CustomTooltip ct={ct} fontSize={fontSize} />} cursor={{ fill: "rgba(255,255,255,0.04)" }} />
+      <YAxis tick={{ fill: ct.muted, fontSize: 11 }} axisLine={false} tickLine={false} />
+      <Tooltip content={<CustomTooltip ct={ct} />} cursor={{ fill: "rgba(255,255,255,0.04)" }} />
       <Legend iconType="square" iconSize={10}
-        formatter={(v) => <span style={{ color: ct.muted, fontSize, textTransform: "capitalize" }}>{v}</span>} />
+        formatter={(v) => <span style={{ color: ct.muted, fontSize: 11, textTransform: "capitalize" }}>{v}</span>} />
       <Bar dataKey="pass"    fill={COLORS.pass}    radius={[3, 3, 0, 0]} maxBarSize={18} isAnimationActive />
       <Bar dataKey="fail"    fill={COLORS.fail}    radius={[3, 3, 0, 0]} maxBarSize={18} isAnimationActive />
       <Bar dataKey="pending" fill={COLORS.pending} radius={[3, 3, 0, 0]} maxBarSize={18} isAnimationActive />
@@ -142,7 +135,7 @@ const RBarChart: React.FC<{ data: ChartRow[]; ct: ChartTheme; fontSize: number }
 
 
 // ── Area Chart ────────────────────────────────────────────────────────────────
-const RAreaChart: React.FC<{ data: ChartRow[]; ct: ChartTheme; fontSize: number }> = ({ data, ct, fontSize }) => (
+const RAreaChart: React.FC<{ data: ChartRow[]; ct: ChartTheme }> = ({ data, ct }) => (
   <ResponsiveContainer width="100%" height={240}>
     <AreaChart data={data} margin={{ top: 8, right: 16, left: -16, bottom: 8 }}>
       <defs>
@@ -154,12 +147,12 @@ const RAreaChart: React.FC<{ data: ChartRow[]; ct: ChartTheme; fontSize: number 
         ))}
       </defs>
       <CartesianGrid strokeDasharray="4 3" stroke={ct.grid} vertical={false} />
-      <XAxis dataKey="name" tick={{ fill: ct.muted, fontSize }} axisLine={false} tickLine={false}
+      <XAxis dataKey="name" tick={{ fill: ct.muted, fontSize: 11 }} axisLine={false} tickLine={false}
         tickFormatter={(v) => v.length > 10 ? v.slice(0, 9) + "…" : v} />
-      <YAxis tick={{ fill: ct.muted, fontSize }} axisLine={false} tickLine={false} />
-      <Tooltip content={<CustomTooltip ct={ct} fontSize={fontSize} />} />
+      <YAxis tick={{ fill: ct.muted, fontSize: 11 }} axisLine={false} tickLine={false} />
+      <Tooltip content={<CustomTooltip ct={ct} />} />
       <Legend iconType="square" iconSize={10}
-        formatter={(v) => <span style={{ color: ct.muted, fontSize, textTransform: "capitalize" }}>{v}</span>} />
+        formatter={(v) => <span style={{ color: ct.muted, fontSize: 11, textTransform: "capitalize" }}>{v}</span>} />
       <Area type="monotone" dataKey="pending" stroke={COLORS.pending} fill="url(#rg-pending)" strokeWidth={2.5} dot={false} isAnimationActive />
       <Area type="monotone" dataKey="fail"    stroke={COLORS.fail}    fill="url(#rg-fail)"    strokeWidth={2.5} dot={false} isAnimationActive />
       <Area type="monotone" dataKey="pass"    stroke={COLORS.pass}    fill="url(#rg-pass)"    strokeWidth={2.5}
@@ -170,16 +163,16 @@ const RAreaChart: React.FC<{ data: ChartRow[]; ct: ChartTheme; fontSize: number 
 
 
 // ── Line Chart ────────────────────────────────────────────────────────────────
-const RLineChart: React.FC<{ data: ChartRow[]; ct: ChartTheme; fontSize: number }> = ({ data, ct, fontSize }) => (
+const RLineChart: React.FC<{ data: ChartRow[]; ct: ChartTheme }> = ({ data, ct }) => (
   <ResponsiveContainer width="100%" height={240}>
     <LineChart data={data} margin={{ top: 8, right: 16, left: -16, bottom: 8 }}>
       <CartesianGrid strokeDasharray="4 3" stroke={ct.grid} vertical={false} />
-      <XAxis dataKey="name" tick={{ fill: ct.muted, fontSize }} axisLine={false} tickLine={false}
+      <XAxis dataKey="name" tick={{ fill: ct.muted, fontSize: 11 }} axisLine={false} tickLine={false}
         tickFormatter={(v) => v.length > 10 ? v.slice(0, 9) + "…" : v} />
-      <YAxis tick={{ fill: ct.muted, fontSize }} axisLine={false} tickLine={false} />
-      <Tooltip content={<CustomTooltip ct={ct} fontSize={fontSize} />} />
+      <YAxis tick={{ fill: ct.muted, fontSize: 11 }} axisLine={false} tickLine={false} />
+      <Tooltip content={<CustomTooltip ct={ct} />} />
       <Legend iconType="square" iconSize={10}
-        formatter={(v) => <span style={{ color: ct.muted, fontSize, textTransform: "capitalize" }}>{v}</span>} />
+        formatter={(v) => <span style={{ color: ct.muted, fontSize: 11, textTransform: "capitalize" }}>{v}</span>} />
       <Line type="monotone" dataKey="pass"    stroke={COLORS.pass}    strokeWidth={2.5}
         dot={{ r: 3.5, strokeWidth: 1.5, fill: ct.panel }} activeDot={{ r: 5 }} isAnimationActive />
       <Line type="monotone" dataKey="fail"    stroke={COLORS.fail}    strokeWidth={2.5}
@@ -192,7 +185,7 @@ const RLineChart: React.FC<{ data: ChartRow[]; ct: ChartTheme; fontSize: number 
 
 
 // ── Pie Chart ─────────────────────────────────────────────────────────────────
-const RPieChart: React.FC<{ data: ChartRow[]; ct: ChartTheme; fontSize: number }> = ({ data, ct, fontSize }) => {
+const RPieChart: React.FC<{ data: ChartRow[]; ct: ChartTheme }> = ({ data, ct }) => {
   const totals = data.reduce(
     (acc, d) => ({ pass: acc.pass + d.pass, fail: acc.fail + d.fail, pending: acc.pending + d.pending }),
     { pass: 0, fail: 0, pending: 0 }
@@ -204,7 +197,7 @@ const RPieChart: React.FC<{ data: ChartRow[]; ct: ChartTheme; fontSize: number }
 
   if (total === 0) return (
     <div className="flex items-center justify-center h-40">
-      <span style={{ color: ct.muted, fontSize }}>No data to display</span>
+      <span className="text-sm" style={{ color: ct.muted }}>No data to display</span>
     </div>
   );
 
@@ -212,31 +205,23 @@ const RPieChart: React.FC<{ data: ChartRow[]; ct: ChartTheme; fontSize: number }
     <ResponsiveContainer width="100%" height={240}>
       <PieChart>
         <Pie
-          data={pieData}
-          cx="50%"
-          cy="50%"
-          innerRadius="46%"
-          outerRadius="72%"
-          paddingAngle={3}
-          dataKey="value"
-          nameKey="name"
+          data={pieData} cx="50%" cy="50%" innerRadius="46%" outerRadius="72%"
+          paddingAngle={3} dataKey="value" nameKey="name"
           label={(props: PieLabelRenderProps): string => {
             const name = props.name ?? "";
             const percent = ((props.percent as number) ?? 0) * 100;
             return `${name}: ${percent.toFixed(0)}%`;
           }}
-          labelLine={false}
-          style={{ fontSize }}
-          isAnimationActive
+          labelLine={false} style={{ fontSize: 11 }} isAnimationActive
         >
           {pieData.map((entry) => (
             <Cell key={entry.name} fill={COLORS[entry.name as keyof typeof COLORS]} opacity={0.88} />
           ))}
         </Pie>
-        <Tooltip content={<PieTooltip ct={ct} fontSize={fontSize} />} />
+        <Tooltip content={<PieTooltip ct={ct} />} />
         <Legend iconType="circle" iconSize={10}
           formatter={(v) => (
-            <span style={{ color: ct.muted, fontSize, textTransform: "capitalize" }}>
+            <span style={{ color: ct.muted, fontSize: 11, textTransform: "capitalize" }}>
               {v} · {totals[v as keyof typeof totals]}
             </span>
           )} />
@@ -247,22 +232,22 @@ const RPieChart: React.FC<{ data: ChartRow[]; ct: ChartTheme; fontSize: number }
 
 
 // ── Radar Chart ───────────────────────────────────────────────────────────────
-const RRadarChart: React.FC<{ data: ChartRow[]; ct: ChartTheme; fontSize: number }> = ({ data, ct, fontSize }) => {
+const RRadarChart: React.FC<{ data: ChartRow[]; ct: ChartTheme }> = ({ data, ct }) => {
   if (data.length === 0) return (
     <div className="flex items-center justify-center h-40">
-      <span style={{ color: ct.muted, fontSize }}>No data to display</span>
+      <span className="text-sm" style={{ color: ct.muted }}>No data to display</span>
     </div>
   );
   return (
     <ResponsiveContainer width="100%" height={240}>
       <RadarChart cx="50%" cy="50%" outerRadius="72%" data={data}>
         <PolarGrid stroke={ct.grid} />
-        <PolarAngleAxis dataKey="name" tick={{ fill: ct.muted, fontSize }}
+        <PolarAngleAxis dataKey="name" tick={{ fill: ct.muted, fontSize: 11 }}
           tickFormatter={(v) => v.length > 10 ? v.slice(0, 9) + "…" : v} />
-        <PolarRadiusAxis tick={{ fill: ct.muted, fontSize: fontSize - 1 }} axisLine={false} />
-        <Tooltip content={<CustomTooltip ct={ct} fontSize={fontSize} />} />
+        <PolarRadiusAxis tick={{ fill: ct.muted, fontSize: 10 }} axisLine={false} />
+        <Tooltip content={<CustomTooltip ct={ct} />} />
         <Legend iconType="square" iconSize={10}
-          formatter={(v) => <span style={{ color: ct.muted, fontSize, textTransform: "capitalize" }}>{v}</span>} />
+          formatter={(v) => <span style={{ color: ct.muted, fontSize: 11, textTransform: "capitalize" }}>{v}</span>} />
         <Radar name="pass"    dataKey="pass"    stroke={COLORS.pass}    fill={COLORS.pass}    fillOpacity={0.18} strokeWidth={2} isAnimationActive />
         <Radar name="fail"    dataKey="fail"    stroke={COLORS.fail}    fill={COLORS.fail}    fillOpacity={0.18} strokeWidth={2} isAnimationActive />
         <Radar name="pending" dataKey="pending" stroke={COLORS.pending} fill={COLORS.pending} fillOpacity={0.18} strokeWidth={2} isAnimationActive />
@@ -283,7 +268,6 @@ const TestReport: React.FC = () => {
   const [showExportModal, setShowExportModal]   = useState(false);
   const [view, setView]                         = useState<"graph" | "table">("graph");
   const [chartType, setChartType]               = useState<ChartType>("bar");
-  const [fontSize, setFontSize]                 = useState(12);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -426,39 +410,23 @@ const TestReport: React.FC = () => {
               <div className="p-4 rounded-xl border"
                 style={{ backgroundColor: chartTheme.panel, borderColor: chartTheme.border }}>
 
-                {/* Controls row */}
+                {/* Controls row — chart type only */}
                 <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
                   <h3 className="text-sm font-semibold" style={{ color: chartTheme.text }}>Execution Graph</h3>
-                  <div className="flex items-center gap-2">
-                    {/* Font size */}
-                    <div className="flex items-center gap-0.5 rounded-lg p-0.5 border"
-                      style={{ backgroundColor: theme === "dark" ? "rgba(255,255,255,0.04)" : "rgba(0,0,0,0.04)",
-                        borderColor: chartTheme.border }}>
-                      {FONT_SIZES.map(({ label, value }) => (
-                        <button key={value} onClick={() => setFontSize(value)}
-                          title={`Font size ${value}px`}
-                          style={fontSize === value
-                            ? { backgroundColor: "#1d4ed8", color: "#ffffff" }
-                            : { color: chartTheme.muted }}
-                          className="px-2.5 py-1 rounded-md text-xs font-semibold transition-all w-7">
-                          {label}
-                        </button>
-                      ))}
-                    </div>
-                    {/* Chart type */}
-                    <div className="flex items-center gap-0.5 rounded-lg p-0.5 border"
-                      style={{ backgroundColor: theme === "dark" ? "rgba(255,255,255,0.04)" : "rgba(0,0,0,0.04)",
-                        borderColor: chartTheme.border }}>
-                      {CHART_TYPES.map(({ type, label }) => (
-                        <button key={type} onClick={() => setChartType(type)}
-                          style={chartType === type
-                            ? { backgroundColor: "#1d4ed8", color: "#ffffff" }
-                            : { color: chartTheme.muted }}
-                          className="px-2.5 py-1 rounded-md text-xs font-medium transition-all">
-                          {label}
-                        </button>
-                      ))}
-                    </div>
+                  <div className="flex items-center gap-0.5 rounded-lg p-0.5 border"
+                    style={{
+                      backgroundColor: theme === "dark" ? "rgba(255,255,255,0.04)" : "rgba(0,0,0,0.04)",
+                      borderColor: chartTheme.border,
+                    }}>
+                    {CHART_TYPES.map(({ type, label }) => (
+                      <button key={type} onClick={() => setChartType(type)}
+                        style={chartType === type
+                          ? { backgroundColor: "#1d4ed8", color: "#ffffff" }
+                          : { color: chartTheme.muted }}
+                        className="px-2.5 py-1 rounded-md text-xs font-medium transition-all">
+                        {label}
+                      </button>
+                    ))}
                   </div>
                 </div>
 
@@ -466,11 +434,11 @@ const TestReport: React.FC = () => {
                 <FadeWrapper animKey={chartAnimKey}>
                   {(() => {
                     switch (chartType) {
-                      case "bar":   return <RBarChart   data={chartData} ct={chartTheme} fontSize={fontSize} />;
-                      case "area":  return <RAreaChart  data={chartData} ct={chartTheme} fontSize={fontSize} />;
-                      case "line":  return <RLineChart  data={chartData} ct={chartTheme} fontSize={fontSize} />;
-                      case "pie":   return <RPieChart   data={chartData} ct={chartTheme} fontSize={fontSize} />;
-                      case "radar": return <RRadarChart data={chartData} ct={chartTheme} fontSize={fontSize} />;
+                      case "bar":   return <RBarChart   data={chartData} ct={chartTheme} />;
+                      case "area":  return <RAreaChart  data={chartData} ct={chartTheme} />;
+                      case "line":  return <RLineChart  data={chartData} ct={chartTheme} />;
+                      case "pie":   return <RPieChart   data={chartData} ct={chartTheme} />;
+                      case "radar": return <RRadarChart data={chartData} ct={chartTheme} />;
                     }
                   })()}
                 </FadeWrapper>
@@ -479,9 +447,9 @@ const TestReport: React.FC = () => {
             ) : (
               /* ── Table view ── */
               <div className="overflow-x-auto rounded-xl border border-white/10">
-                <table className="w-full" style={{ fontSize }}>
+                <table className="w-full text-sm">
                   <thead>
-                    <tr className="bg-white/5 text-gray-400 uppercase" style={{ fontSize: fontSize - 1 }}>
+                    <tr className="bg-white/5 text-gray-400 uppercase text-xs">
                       <th className="px-4 py-3 text-left">Module</th>
                       <th className="px-4 py-3 text-center">Tests</th>
                       <th className="px-4 py-3 text-center">Total Steps</th>
