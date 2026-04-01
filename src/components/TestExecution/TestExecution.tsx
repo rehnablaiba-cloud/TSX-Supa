@@ -79,7 +79,7 @@ const TestExecution: React.FC<Props> = ({ moduleId, moduleName, initialTestId, o
   const currentTest = tests[currentIdx];
 
   // ── Steps — initial load only ──────────────────────────────
-  const [steps, setSteps]   = useState<Step[]>([]);
+  const [steps, setSteps]     = useState<Step[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -96,7 +96,7 @@ const TestExecution: React.FC<Props> = ({ moduleId, moduleName, initialTestId, o
   }, [currentTestId]);
 
   // ── Lock — real-time subscription ─────────────────────────
-  const [lock, setLock]           = useState<any>(null);
+  const [lock, setLock]               = useState<any>(null);
   const [lockLoading, setLockLoading] = useState(true);
 
   useEffect(() => {
@@ -200,25 +200,24 @@ const TestExecution: React.FC<Props> = ({ moduleId, moduleName, initialTestId, o
     };
   }, [currentTestId, user?.id]);
 
-  // ── Step update — optimistic, no refetch ───────────────────
+  // ── Step update — optimistic, no refetch ──────────────────
   const handleStepUpdate = useCallback(async (
     stepId: string,
-    status: "pass" | "fail",
+    status: "pass" | "fail" | "pending",
     remarks: string
   ) => {
-    // ✅ 1. Find next pending BEFORE optimistic update
     const currentIndex = steps.findIndex(s => s.id === stepId);
     const nextPending  = steps
       .slice(currentIndex + 1)
       .find(s => !s.is_divider && s.status === "pending");
 
-    // ✅ 2. Optimistic local update — no spinner, no refetch
+    // Optimistic local update — no spinner, no refetch
     setSteps(prev =>
       prev.map(s => s.id === stepId ? { ...s, status, remarks } : s)
     );
 
-    // ✅ 3. Scroll to next pending immediately
-    if (nextPending) {
+    // Only scroll on pass/fail, not undo
+    if (status !== "pending" && nextPending) {
       setTimeout(() => {
         stepRefs.current[nextPending.id]?.scrollIntoView({
           behavior: "smooth",
@@ -227,7 +226,7 @@ const TestExecution: React.FC<Props> = ({ moduleId, moduleName, initialTestId, o
       }, 50);
     }
 
-    // ✅ 4. Persist to DB in background
+    // Persist to DB in background
     await supabase.from("steps")
       .update({ status, remarks })
       .eq("id", stepId);
@@ -418,7 +417,7 @@ const TestExecution: React.FC<Props> = ({ moduleId, moduleName, initialTestId, o
 const StepCard: React.FC<{
   step: Step;
   readonly: boolean;
-  onUpdate: (id: string, status: "pass" | "fail", remarks: string) => void;
+  onUpdate: (id: string, status: "pass" | "fail" | "pending", remarks: string) => void;
   cardRef?: (el: HTMLDivElement | null) => void;
 }> = ({ step, readonly, onUpdate, cardRef }) => {
   const [remarks, setRemarks] = useState(step.remarks || "");
@@ -438,13 +437,24 @@ const StepCard: React.FC<{
           <p className="text-xs text-gray-500 mb-1">#{step.serial_no} · Action</p>
           <p className="text-sm text-white font-medium">{step.action}</p>
         </div>
-        <span className={`text-xs font-bold px-2.5 py-1 rounded-full capitalize shrink-0 ${
-          step.status === "pass" ? "bg-green-500/15 text-green-400"
-          : step.status === "fail" ? "bg-red-500/15 text-red-400"
-          : "bg-gray-500/15 text-gray-400"
-        }`}>
-          {step.status}
-        </span>
+        <div className="flex items-center gap-2 shrink-0">
+          {!readonly && step.status !== "pending" && (
+            <button
+              onClick={() => onUpdate(step.id, "pending", "")}
+              className="text-xs px-2 py-1 rounded-lg bg-white/5 hover:bg-white/10 text-gray-500 hover:text-gray-300 transition-colors border border-white/10"
+              title="Undo"
+            >
+              ↩ Undo
+            </button>
+          )}
+          <span className={`text-xs font-bold px-2.5 py-1 rounded-full capitalize ${
+            step.status === "pass" ? "bg-green-500/15 text-green-400"
+            : step.status === "fail" ? "bg-red-500/15 text-red-400"
+            : "bg-gray-500/15 text-gray-400"
+          }`}>
+            {step.status}
+          </span>
+        </div>
       </div>
       <div>
         <p className="text-xs text-gray-500 mb-1">Expected Result</p>
