@@ -14,7 +14,8 @@ import {
   RadarChart, Radar, PolarGrid, PolarAngleAxis, PolarRadiusAxis,
   XAxis, YAxis, CartesianGrid, Tooltip, Legend,
 } from "recharts";
-import { PieLabelRenderProps } from 'recharts';
+import { PieLabelRenderProps } from "recharts";
+
 
 // ── Animation keyframes (injected once into <head>) ───────────────────────────
 const ANIM_STYLE = `
@@ -23,6 +24,7 @@ const ANIM_STYLE = `
   to   { opacity: 1; transform: translateY(0);    }
 }
 `;
+
 
 function useInjectStyle() {
   const injected = useRef(false);
@@ -35,16 +37,18 @@ function useInjectStyle() {
   }, []);
 }
 
+
 // ── FadeWrapper ───────────────────────────────────────────────────────────────
-// Changing `animKey` causes React to remount the div, re-firing the CSS animation
 const FadeWrapper: React.FC<{ animKey: string | number; children: React.ReactNode }> = ({ animKey, children }) => (
   <div key={animKey} style={{ animation: "fadeSlideIn 0.28s cubic-bezier(0.22,1,0.36,1) both" }}>
     {children}
   </div>
 );
 
+
 // ── Constants ─────────────────────────────────────────────────────────────────
 const COLORS = { pass: "#22c55e", fail: "#ef4444", pending: "#f59e0b" };
+
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 interface Step {
@@ -62,6 +66,7 @@ interface ChartTheme {
 }
 type ChartType = "bar" | "area" | "line" | "pie" | "radar";
 
+
 const CHART_TYPES: { type: ChartType; label: string }[] = [
   { type: "bar",   label: "Bar"   },
   { type: "area",  label: "Area"  },
@@ -70,11 +75,13 @@ const CHART_TYPES: { type: ChartType; label: string }[] = [
   { type: "radar", label: "Radar" },
 ];
 
+
 const FONT_SIZES = [
   { label: "S", value: 10 },
   { label: "M", value: 12 },
   { label: "L", value: 14 },
 ];
+
 
 // ── Custom Tooltip ────────────────────────────────────────────────────────────
 const CustomTooltip: React.FC<{
@@ -95,6 +102,7 @@ const CustomTooltip: React.FC<{
   );
 };
 
+
 // ── Custom Pie Tooltip ────────────────────────────────────────────────────────
 const PieTooltip: React.FC<{
   active?: boolean; payload?: any[]; ct: ChartTheme; fontSize: number;
@@ -113,6 +121,7 @@ const PieTooltip: React.FC<{
   );
 };
 
+
 // ── Bar Chart ─────────────────────────────────────────────────────────────────
 const RBarChart: React.FC<{ data: ChartRow[]; ct: ChartTheme; fontSize: number }> = ({ data, ct, fontSize }) => (
   <ResponsiveContainer width="100%" height={240}>
@@ -130,6 +139,7 @@ const RBarChart: React.FC<{ data: ChartRow[]; ct: ChartTheme; fontSize: number }
     </BarChart>
   </ResponsiveContainer>
 );
+
 
 // ── Area Chart ────────────────────────────────────────────────────────────────
 const RAreaChart: React.FC<{ data: ChartRow[]; ct: ChartTheme; fontSize: number }> = ({ data, ct, fontSize }) => (
@@ -158,6 +168,7 @@ const RAreaChart: React.FC<{ data: ChartRow[]; ct: ChartTheme; fontSize: number 
   </ResponsiveContainer>
 );
 
+
 // ── Line Chart ────────────────────────────────────────────────────────────────
 const RLineChart: React.FC<{ data: ChartRow[]; ct: ChartTheme; fontSize: number }> = ({ data, ct, fontSize }) => (
   <ResponsiveContainer width="100%" height={240}>
@@ -179,6 +190,7 @@ const RLineChart: React.FC<{ data: ChartRow[]; ct: ChartTheme; fontSize: number 
   </ResponsiveContainer>
 );
 
+
 // ── Pie Chart ─────────────────────────────────────────────────────────────────
 const RPieChart: React.FC<{ data: ChartRow[]; ct: ChartTheme; fontSize: number }> = ({ data, ct, fontSize }) => {
   const totals = data.reduce(
@@ -199,12 +211,24 @@ const RPieChart: React.FC<{ data: ChartRow[]; ct: ChartTheme; fontSize: number }
   return (
     <ResponsiveContainer width="100%" height={240}>
       <PieChart>
-        <Pie data={pieData} cx="50%" cy="50%" innerRadius="46%" outerRadius="72%"
-          paddingAngle={3} dataKey="value" nameKey="name"
-      label={({ name, percent }: PieLabelRenderProps): string =>
-  `${name ?? ''}: ${(((percent as number) ?? 0) * 100).toFixed(0)}%`
-} }
-          labelLine={false} style={{ fontSize }} isAnimationActive>
+        <Pie
+          data={pieData}
+          cx="50%"
+          cy="50%"
+          innerRadius="46%"
+          outerRadius="72%"
+          paddingAngle={3}
+          dataKey="value"
+          nameKey="name"
+          label={(props: PieLabelRenderProps): string => {
+            const name = props.name ?? "";
+            const percent = ((props.percent as number) ?? 0) * 100;
+            return `${name}: ${percent.toFixed(0)}%`;
+          }}
+          labelLine={false}
+          style={{ fontSize }}
+          isAnimationActive
+        >
           {pieData.map((entry) => (
             <Cell key={entry.name} fill={COLORS[entry.name as keyof typeof COLORS]} opacity={0.88} />
           ))}
@@ -220,6 +244,7 @@ const RPieChart: React.FC<{ data: ChartRow[]; ct: ChartTheme; fontSize: number }
     </ResponsiveContainer>
   );
 };
+
 
 // ── Radar Chart ───────────────────────────────────────────────────────────────
 const RRadarChart: React.FC<{ data: ChartRow[]; ct: ChartTheme; fontSize: number }> = ({ data, ct, fontSize }) => {
@@ -245,6 +270,7 @@ const RRadarChart: React.FC<{ data: ChartRow[]; ct: ChartTheme; fontSize: number
     </ResponsiveContainer>
   );
 };
+
 
 // ── Main Component ────────────────────────────────────────────────────────────
 const TestReport: React.FC = () => {
@@ -329,9 +355,7 @@ const TestReport: React.FC = () => {
     ];
   };
 
-  // Animate chart when module filter OR chart type changes
   const chartAnimKey = `${selectedModuleId ?? "all"}-${chartType}`;
-  // Animate outer content when view tab (graph/table) switches
   const viewAnimKey  = view;
 
   return (
@@ -396,7 +420,7 @@ const TestReport: React.FC = () => {
             </div>
           </div>
 
-          {/* ── View panel — animates when graph ↔ table switches ── */}
+          {/* ── View panel ── */}
           <FadeWrapper animKey={viewAnimKey}>
             {view === "graph" ? (
               <div className="p-4 rounded-xl border"
@@ -438,7 +462,7 @@ const TestReport: React.FC = () => {
                   </div>
                 </div>
 
-                {/* Chart area — animates on chartType OR module filter change */}
+                {/* Chart area */}
                 <FadeWrapper animKey={chartAnimKey}>
                   {(() => {
                     switch (chartType) {
@@ -505,5 +529,6 @@ const TestReport: React.FC = () => {
     </>
   );
 };
+
 
 export default TestReport;
