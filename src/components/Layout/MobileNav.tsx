@@ -1,13 +1,15 @@
 import React, { useRef, useEffect, useState } from "react";
 import { useAuth } from "../../context/AuthContext";
 import { useTheme } from "../../context/ThemeContext";
+import ThemeEditor from "../ThemeEditor/ThemeEditorPanel";
 
 interface Props { activePage: string; onNavigate: (page: string) => void; }
 
 const MobileNav: React.FC<Props> = ({ activePage, onNavigate }) => {
   const { user, signOut } = useAuth();
   const { theme, toggleTheme } = useTheme();
-  const [showMore, setShowMore] = useState(false);
+  const [showMore, setShowMore]       = useState(false);
+  const [showThemeEditor, setShowThemeEditor] = useState(false);
   const sheetRef = useRef<HTMLDivElement>(null);
 
   const isAdmin = user?.defaultRole === "admin";
@@ -36,6 +38,11 @@ const MobileNav: React.FC<Props> = ({ activePage, onNavigate }) => {
 
   return (
     <>
+      {/* ── Theme Editor (password-gated, full panel) ── */}
+      {showThemeEditor && (
+        <ThemeEditor onClose={() => setShowThemeEditor(false)} />
+      )}
+
       {/* ── More sheet ── */}
       {showMore && (
         <div className="md:hidden fixed inset-0 z-50 flex items-end">
@@ -52,6 +59,24 @@ const MobileNav: React.FC<Props> = ({ activePage, onNavigate }) => {
           >
             {/* Handle */}
             <div className="w-10 h-1 bg-bg-card rounded-full mx-auto mb-2" />
+
+            {/* 🎨 Theme Editor button — password gated */}
+            <button
+              onClick={() => { setShowMore(false); setShowThemeEditor(true); }}
+              className="flex items-center gap-4 px-4 py-3.5 rounded-xl
+                bg-bg-card hover:bg-bg-base
+                border border-[var(--border-color)]
+                transition-colors text-t-primary"
+            >
+              <span className="text-2xl">🎨</span>
+              <div className="text-left">
+                <p className="text-sm font-semibold">Theme Editor</p>
+                <p className="text-xs text-t-muted">Customize colors & palette</p>
+              </div>
+              <span className="ml-auto text-[10px] font-bold px-2 py-0.5 rounded-full bg-c-brand-bg text-c-brand border border-c-brand/20">
+                🔒 Admin
+              </span>
+            </button>
 
             {/* Theme toggle row */}
             <button
