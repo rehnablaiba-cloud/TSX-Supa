@@ -295,7 +295,7 @@ const TestReport: React.FC = () => {
           .order("name", { ascending: true });
 
         if (err) throw new Error(err.message);
-        setModules((data ?? []) as ModuleRow[]);
+        setModules((data ?? []) as unknown as ModuleRow[]);
       } catch (err: any) {
         setError(err.message ?? "Failed to load report data.");
       } finally {

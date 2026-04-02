@@ -184,7 +184,7 @@ const AppInner: React.FC = () => {
         : <Dashboard onNavigate={navigate} />;
       case "execution": return selectedModule && selectedTestId
         ? <TestExecution moduleId={selectedModule.id} moduleName={selectedModule.name}
-            initialTestId={selectedTestId} onBack={() => setPage("module")} />
+            initialModuleTestId={selectedTestId} onBack={() => setPage("module")} />
         : <Dashboard onNavigate={navigate} />;
       case "report":   return <TestReport />;
       case "users":    return <UsersPanel />;

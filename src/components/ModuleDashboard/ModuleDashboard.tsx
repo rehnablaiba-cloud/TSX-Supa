@@ -301,7 +301,7 @@ const ModuleDashboard: React.FC<Props> = ({ moduleId, moduleName, onBack, onExec
         supabase.from("testlocks").select("*"),
       ]);
 
-      setModuleTests((mtRes.data ?? []) as ModuleTestRow[]);
+      setModuleTests((mtRes.data ?? []) as unknown as ModuleTestRow[]);
       setLocks(locksRes.data ?? []);
       setLoading(false);
     };

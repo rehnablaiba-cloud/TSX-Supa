@@ -88,7 +88,7 @@ const TestExecution: React.FC<Props> = ({ moduleId, moduleName, initialModuleTes
       .select("id, order_index, test:tests(id, serial_no, name)")
       .eq("module_id", moduleId)
       .order("order_index")
-      .then(({ data }) => setModuleTests((data ?? []) as ModuleTestItem[]));
+      .then(({ data }) => setModuleTests((data ?? []) as unknown as ModuleTestItem[]));
   }, [moduleId]);
 
   const currentMt   = moduleTests.find(mt => mt.id === currentMtId);
