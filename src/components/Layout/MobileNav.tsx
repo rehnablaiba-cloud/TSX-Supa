@@ -327,9 +327,6 @@ const ImportModulesModal: React.FC<{ onClose: () => void; onBack: () => void }> 
 };
 
 // ─────────────────────────────────────────────────────────────────────────
-// IMPORT TESTS MODAL — CSV with sn (float) + name columns
-// ─────────────────────────────────────────────────────────────────────────
-// ─────────────────────────────────────────────────────────────────────────
 // IMPORT TESTS MODAL — manual: create / update / delete
 // ─────────────────────────────────────────────────────────────────────────
 type TestOp = "create" | "update" | "delete";
@@ -392,7 +389,6 @@ const ImportTestsModal: React.FC<{ onClose: () => void; onBack: () => void }> = 
 
       {(stage === "form" || stage === "error") && (
         <div className="flex flex-col gap-4">
-          {/* Op selector */}
           <div className="flex flex-col gap-1.5">
             <label className="text-xs font-semibold text-t-muted uppercase tracking-wider">Operation</label>
             <div className="grid grid-cols-3 gap-2">
@@ -406,7 +402,6 @@ const ImportTestsModal: React.FC<{ onClose: () => void; onBack: () => void }> = 
             </div>
           </div>
 
-          {/* Serial No */}
           <div className="flex flex-col gap-1.5">
             <label className="text-xs font-semibold text-t-muted uppercase tracking-wider">Serial No (SN)</label>
             <input type="number" step="0.1" value={sn} onChange={e => { setSn(e.target.value); setErrMsg(""); }}
@@ -414,7 +409,6 @@ const ImportTestsModal: React.FC<{ onClose: () => void; onBack: () => void }> = 
               className="w-full px-4 py-3 rounded-xl bg-bg-card border border-[var(--border-color)] text-t-primary text-sm placeholder:text-t-muted focus:outline-none focus:border-c-brand transition-colors" />
           </div>
 
-          {/* Name field */}
           {op === "create" && (
             <div className="flex flex-col gap-1.5">
               <label className="text-xs font-semibold text-t-muted uppercase tracking-wider">Test Name</label>
@@ -475,9 +469,7 @@ const ImportTestsModal: React.FC<{ onClose: () => void; onBack: () => void }> = 
 };
 
 // ─────────────────────────────────────────────────────────────────────────
-// IMPORT STEPS MODAL
-// Flow: select test → select op → upload CSV → preview → import
-// CSV columns: serial_no, action, expected_result, is_divider
+// IMPORT STEPS MODAL — CSV flow
 // ─────────────────────────────────────────────────────────────────────────
 type StepOp = "create" | "update" | "delete";
 type StepImportStage = "select_test" | "select_op" | "upload" | "preview" | "importing" | "done";
@@ -550,7 +542,6 @@ const ImportStepsModal: React.FC<{ onClose: () => void; onBack: () => void }> = 
       setRows(parsed); setParseErrors(errors); setStage("preview");
     };
     reader.readAsText(file);
-    // reset input so same file can be re-selected
     e.target.value = "";
   };
 
@@ -599,9 +590,8 @@ const ImportStepsModal: React.FC<{ onClose: () => void; onBack: () => void }> = 
   }[stage];
 
   return (
-    <ModalShell icon="🔢" title="Import · Steps" subtitle={stageLabel} onClose={onClose}>
+    <ModalShell icon="🔢" title="Import · Steps (CSV)" subtitle={stageLabel} onClose={onClose}>
 
-      {/* ── STEP 1: select test ─────────────────────────────── */}
       {stage === "select_test" && (
         <div className="flex flex-col gap-4">
           <div className="flex flex-col gap-1.5">
@@ -631,7 +621,6 @@ const ImportStepsModal: React.FC<{ onClose: () => void; onBack: () => void }> = 
             )}
           </div>
 
-          {/* Selected test pill */}
           {selectedTest && (
             <div className="flex items-center gap-3 px-4 py-3 rounded-xl border border-c-brand/30 bg-c-brand-bg">
               <span className="text-xl">🧪</span>
@@ -652,10 +641,8 @@ const ImportStepsModal: React.FC<{ onClose: () => void; onBack: () => void }> = 
         </div>
       )}
 
-      {/* ── STEP 2: select operation ─────────────────────────── */}
       {stage === "select_op" && (
         <div className="flex flex-col gap-4">
-          {/* Selected test reminder */}
           <div className="flex items-center gap-3 px-4 py-3 rounded-xl border border-[var(--border-color)] bg-bg-card">
             <span className="text-lg">🧪</span>
             <div className="flex-1 min-w-0">
@@ -696,10 +683,8 @@ const ImportStepsModal: React.FC<{ onClose: () => void; onBack: () => void }> = 
         </div>
       )}
 
-      {/* ── STEP 3: upload CSV ──────────────────────────────── */}
       {stage === "upload" && (
         <div className="flex flex-col gap-4">
-          {/* Context strip */}
           <div className="flex items-center gap-2 px-3 py-2 rounded-xl border border-[var(--border-color)] bg-bg-card text-xs">
             <span>🧪</span>
             <span className="text-t-primary font-medium truncate">{selectedTest?.name}</span>
@@ -707,7 +692,6 @@ const ImportStepsModal: React.FC<{ onClose: () => void; onBack: () => void }> = 
             <span className="text-c-brand font-semibold">{opMeta.find(m => m.id === op)?.label}</span>
           </div>
 
-          {/* Column reference */}
           <div className="rounded-xl border border-[var(--border-color)] bg-bg-card p-4 text-xs">
             <p className="text-t-secondary font-semibold mb-2 uppercase tracking-wider">Required columns</p>
             <div className="flex flex-col gap-1.5">
@@ -723,7 +707,6 @@ const ImportStepsModal: React.FC<{ onClose: () => void; onBack: () => void }> = 
             </div>
           </div>
 
-          {/* Example */}
           <div className="rounded-xl border border-[var(--border-color)] bg-bg-card p-4 text-xs font-mono text-t-muted">
             <p className="text-t-secondary font-semibold mb-1.5 not-italic font-sans uppercase tracking-wider">Example</p>
             {op === "delete" ? (
@@ -747,10 +730,8 @@ const ImportStepsModal: React.FC<{ onClose: () => void; onBack: () => void }> = 
         </div>
       )}
 
-      {/* ── PREVIEW ─────────────────────────────────────────── */}
       {stage === "preview" && (
         <div className="flex flex-col gap-3">
-          {/* Context strip */}
           <div className="flex items-center gap-2 px-3 py-2 rounded-xl border border-[var(--border-color)] bg-bg-card text-xs">
             <span>🧪</span>
             <span className="text-t-primary font-medium truncate">{selectedTest?.name}</span>
@@ -808,7 +789,6 @@ const ImportStepsModal: React.FC<{ onClose: () => void; onBack: () => void }> = 
         </div>
       )}
 
-      {/* ── IMPORTING ───────────────────────────────────────── */}
       {stage === "importing" && (
         <div className="flex flex-col items-center gap-4 py-6">
           <div className="w-12 h-12 rounded-full border-4 border-c-brand border-t-transparent animate-spin" />
@@ -816,7 +796,6 @@ const ImportStepsModal: React.FC<{ onClose: () => void; onBack: () => void }> = 
         </div>
       )}
 
-      {/* ── DONE ────────────────────────────────────────────── */}
       {stage === "done" && summary && (
         <div className="flex flex-col gap-3">
           <div className="grid grid-cols-2 gap-2">
@@ -843,19 +822,501 @@ const ImportStepsModal: React.FC<{ onClose: () => void; onBack: () => void }> = 
   );
 };
 
-type ImportTarget = "modules" | "tests" | "steps" | null;
+// ─────────────────────────────────────────────────────────────────────────
+// IMPORT STEPS MANUAL MODAL
+// Flow: select op → select module → select test → (select step for update/delete)
+//       → fill form (create/update) → confirm → submit
+// ─────────────────────────────────────────────────────────────────────────
+type StepManualOp    = "create" | "update" | "delete";
+type StepManualStage = "select_op" | "select_module" | "select_test" | "select_step" | "fill_form" | "confirm" | "submitting" | "done";
+
+interface ModuleOption  { id: string; name: string; }
+interface StepOption    { id: string; serial_no: number; action: string; expected_result: string; is_divider: boolean; }
+interface StepFormData  { serial_no: string; action: string; expected_result: string; is_divider: boolean; }
+
+const EMPTY_FORM: StepFormData = { serial_no: "", action: "", expected_result: "", is_divider: false };
+
+const ImportStepsManualModal: React.FC<{ onClose: () => void; onBack: () => void }> = ({ onClose, onBack }) => {
+  const [stage,          setStage]          = useState<StepManualStage>("select_op");
+  const [op,             setOp]             = useState<StepManualOp>("create");
+  const [modules,        setModules]        = useState<ModuleOption[]>([]);
+  const [tests,          setTests]          = useState<TestOption[]>([]);
+  const [steps,          setSteps]          = useState<StepOption[]>([]);
+  const [loadingModules, setLoadingModules] = useState(false);
+  const [loadingTests,   setLoadingTests]   = useState(false);
+  const [loadingSteps,   setLoadingSteps]   = useState(false);
+  const [selectedModule, setSelectedModule] = useState<ModuleOption | null>(null);
+  const [selectedTest,   setSelectedTest]   = useState<TestOption | null>(null);
+  const [selectedStep,   setSelectedStep]   = useState<StepOption | null>(null);
+  const [form,           setForm]           = useState<StepFormData>(EMPTY_FORM);
+  const [errMsg,         setErrMsg]         = useState("");
+  const [resultMsg,      setResultMsg]      = useState("");
+
+  const opMeta = [
+    { id: "create" as StepManualOp, label: "Create", icon: "➕", desc: "Add a new step to a test"     },
+    { id: "update" as StepManualOp, label: "Update", icon: "✏️",  desc: "Edit an existing step"        },
+    { id: "delete" as StepManualOp, label: "Delete", icon: "🗑",  desc: "Remove a step permanently"    },
+  ];
+
+  // Load modules when entering select_module stage
+  useEffect(() => {
+    if (stage !== "select_module") return;
+    setLoadingModules(true);
+    supabase.from("modules").select("id, name").order("name")
+      .then(({ data }) => { if (data) setModules(data as ModuleOption[]); setLoadingModules(false); });
+  }, [stage]);
+
+  // Load tests when module is selected and we enter select_test stage
+  useEffect(() => {
+    if (stage !== "select_test" || !selectedModule) return;
+    setLoadingTests(true);
+    supabase.from("module_tests")
+      .select("test_id, tests(id, serial_no, name)")
+      .eq("module_id", selectedModule.id)
+      .then(({ data }) => {
+        if (data) {
+          const ts = data.map((r: any) => r.tests).filter(Boolean) as TestOption[];
+          ts.sort((a, b) => a.serial_no - b.serial_no);
+          setTests(ts);
+        }
+        setLoadingTests(false);
+      });
+  }, [stage, selectedModule]);
+
+  // Load steps when test is selected and we enter select_step stage
+  useEffect(() => {
+    if (stage !== "select_step" || !selectedTest) return;
+    setLoadingSteps(true);
+    supabase.from("steps")
+      .select("id, serial_no, action, expected_result, is_divider")
+      .eq("test_id", selectedTest.id)
+      .order("serial_no", { ascending: true })
+      .then(({ data }) => { if (data) setSteps(data as StepOption[]); setLoadingSteps(false); });
+  }, [stage, selectedTest]);
+
+  const stageSubtitle: Record<StepManualStage, string> = {
+    select_op:     "Choose operation",
+    select_module: "Step 1 — Select module",
+    select_test:   "Step 2 — Select test",
+    select_step:   "Step 3 — Select step",
+    fill_form:     op === "create" ? "Step 3 — Enter step details" : "Step 4 — Edit step details",
+    confirm:       "Review & confirm",
+    submitting:    "Processing…",
+    done:          "Complete",
+  };
+
+  // Breadcrumb context strip
+  const ContextStrip = () => (
+    <div className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-[var(--border-color)] bg-bg-card text-xs flex-wrap">
+      {selectedModule && (
+        <>
+          <span className="text-t-muted">📦</span>
+          <span className="text-t-primary font-medium">{selectedModule.name}</span>
+        </>
+      )}
+      {selectedTest && (
+        <>
+          <span className="text-t-muted mx-0.5">›</span>
+          <span className="text-t-muted">🧪</span>
+          <span className="text-t-primary font-medium truncate max-w-[120px]">{selectedTest.name}</span>
+        </>
+      )}
+      {selectedStep && (
+        <>
+          <span className="text-t-muted mx-0.5">›</span>
+          <span className="text-c-brand font-semibold font-mono">SN {selectedStep.serial_no}</span>
+        </>
+      )}
+    </div>
+  );
+
+  const handleSubmit = useCallback(async () => {
+    setStage("submitting");
+    setErrMsg("");
+    try {
+      if (op === "create") {
+        const snVal = parseFloat(form.serial_no);
+        if (isNaN(snVal)) throw new Error("Invalid serial number.");
+        if (!selectedTest) throw new Error("No test selected.");
+        const { error } = await supabase.from("steps").insert({
+          test_id: selectedTest.id,
+          serial_no: snVal,
+          action: form.action.trim(),
+          expected_result: form.expected_result.trim(),
+          is_divider: form.is_divider,
+        });
+        if (error) throw error;
+        setResultMsg(`Step SN ${snVal} "${form.action.trim() || "(divider)"}" created in "${selectedTest.name}".`);
+      } else if (op === "update") {
+        if (!selectedStep) throw new Error("No step selected.");
+        const { error } = await supabase.from("steps").update({
+          action: form.action.trim(),
+          expected_result: form.expected_result.trim(),
+          is_divider: form.is_divider,
+        }).eq("id", selectedStep.id);
+        if (error) throw error;
+        setResultMsg(`Step SN ${selectedStep.serial_no} updated successfully.`);
+      } else {
+        if (!selectedStep) throw new Error("No step selected.");
+        const { error } = await supabase.from("steps").delete().eq("id", selectedStep.id);
+        if (error) throw error;
+        setResultMsg(`Step SN ${selectedStep.serial_no} "${selectedStep.action || "(divider)"}" deleted.`);
+      }
+      setStage("done");
+    } catch (e: any) {
+      setErrMsg(e?.message ?? "Unexpected error.");
+      setStage("confirm");
+    }
+  }, [op, form, selectedTest, selectedStep]);
+
+  const resetAll = () => {
+    setStage("select_op"); setSelectedModule(null); setSelectedTest(null);
+    setSelectedStep(null); setForm(EMPTY_FORM); setResultMsg(""); setErrMsg("");
+  };
+
+  // ── SELECT OP ──────────────────────────────────────────────────────────
+  if (stage === "select_op") return (
+    <ModalShell icon="🔢" title="Import · Steps (Manual)" subtitle={stageSubtitle.select_op} onClose={onClose}>
+      <div className="flex flex-col gap-4">
+        <div className="flex flex-col gap-2">
+          {opMeta.map(m => (
+            <button key={m.id} onClick={() => setOp(m.id)}
+              className={`flex items-center gap-4 px-4 py-3.5 rounded-xl border transition-all text-left ${op === m.id ? "border-c-brand bg-c-brand-bg" : "border-[var(--border-color)] bg-bg-card hover:bg-bg-base"}`}>
+              <span className="text-xl">{m.icon}</span>
+              <div className="flex-1">
+                <p className={`text-sm font-semibold ${op === m.id ? "text-c-brand" : "text-t-primary"}`}>{m.label}</p>
+                <p className="text-xs text-t-muted">{m.desc}</p>
+              </div>
+              {op === m.id && <span className="w-4 h-4 rounded-full bg-c-brand flex items-center justify-center text-white text-[10px] font-bold shrink-0">✓</span>}
+            </button>
+          ))}
+        </div>
+        <div className="flex gap-2 pt-1">
+          <button onClick={onBack} className="flex-1 px-4 py-2.5 rounded-xl border border-[var(--border-color)] text-t-secondary hover:text-t-primary text-sm font-medium transition-colors">← Back</button>
+          <button onClick={() => setStage("select_module")} className="flex-1 btn-primary text-sm">Next →</button>
+        </div>
+      </div>
+    </ModalShell>
+  );
+
+  // ── SELECT MODULE ──────────────────────────────────────────────────────
+  if (stage === "select_module") return (
+    <ModalShell icon="🔢" title="Import · Steps (Manual)" subtitle={stageSubtitle.select_module} onClose={onClose}>
+      <div className="flex flex-col gap-4">
+        <label className="text-xs font-semibold text-t-muted uppercase tracking-wider">Module</label>
+        {loadingModules ? (
+          <div className="flex items-center gap-2 px-4 py-3 rounded-xl bg-bg-card border border-[var(--border-color)] text-t-muted text-sm">
+            <span className="w-4 h-4 border-2 border-c-brand border-t-transparent rounded-full animate-spin" /> Loading…
+          </div>
+        ) : modules.length === 0 ? (
+          <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-xs text-amber-400">No modules found.</div>
+        ) : (
+          <div className="flex flex-col gap-2 max-h-64 overflow-y-auto pr-0.5">
+            {modules.map(m => (
+              <button key={m.id} onClick={() => setSelectedModule(m)}
+                className={`flex items-center gap-3 px-4 py-3 rounded-xl border transition-all text-left ${selectedModule?.id === m.id ? "border-c-brand bg-c-brand-bg" : "border-[var(--border-color)] bg-bg-card hover:bg-bg-base"}`}>
+                <span className="text-lg">📦</span>
+                <span className={`text-sm font-medium flex-1 ${selectedModule?.id === m.id ? "text-c-brand" : "text-t-primary"}`}>{m.name}</span>
+                {selectedModule?.id === m.id && <span className="w-4 h-4 rounded-full bg-c-brand flex items-center justify-center text-white text-[10px] font-bold shrink-0">✓</span>}
+              </button>
+            ))}
+          </div>
+        )}
+        <div className="flex gap-2 pt-1">
+          <button onClick={() => setStage("select_op")} className="flex-1 px-4 py-2.5 rounded-xl border border-[var(--border-color)] text-t-secondary hover:text-t-primary text-sm font-medium transition-colors">← Back</button>
+          <button onClick={() => { setSelectedTest(null); setStage("select_test"); }} disabled={!selectedModule}
+            className="flex-1 btn-primary text-sm disabled:opacity-50 disabled:cursor-not-allowed">Next →</button>
+        </div>
+      </div>
+    </ModalShell>
+  );
+
+  // ── SELECT TEST ────────────────────────────────────────────────────────
+  if (stage === "select_test") return (
+    <ModalShell icon="🔢" title="Import · Steps (Manual)" subtitle={stageSubtitle.select_test} onClose={onClose}>
+      <div className="flex flex-col gap-4">
+        <ContextStrip />
+        <label className="text-xs font-semibold text-t-muted uppercase tracking-wider">Test</label>
+        {loadingTests ? (
+          <div className="flex items-center gap-2 px-4 py-3 rounded-xl bg-bg-card border border-[var(--border-color)] text-t-muted text-sm">
+            <span className="w-4 h-4 border-2 border-c-brand border-t-transparent rounded-full animate-spin" /> Loading…
+          </div>
+        ) : tests.length === 0 ? (
+          <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-xs text-amber-400">No tests found for this module.</div>
+        ) : (
+          <div className="flex flex-col gap-2 max-h-64 overflow-y-auto pr-0.5">
+            {tests.map(t => (
+              <button key={t.id} onClick={() => setSelectedTest(t)}
+                className={`flex items-center gap-3 px-4 py-3 rounded-xl border transition-all text-left ${selectedTest?.id === t.id ? "border-c-brand bg-c-brand-bg" : "border-[var(--border-color)] bg-bg-card hover:bg-bg-base"}`}>
+                <span className="text-lg">🧪</span>
+                <div className="flex-1">
+                  <p className={`text-sm font-medium ${selectedTest?.id === t.id ? "text-c-brand" : "text-t-primary"}`}>{t.name}</p>
+                  <p className="text-xs text-t-muted">SN {t.serial_no}</p>
+                </div>
+                {selectedTest?.id === t.id && <span className="w-4 h-4 rounded-full bg-c-brand flex items-center justify-center text-white text-[10px] font-bold shrink-0">✓</span>}
+              </button>
+            ))}
+          </div>
+        )}
+        <div className="flex gap-2 pt-1">
+          <button onClick={() => setStage("select_module")} className="flex-1 px-4 py-2.5 rounded-xl border border-[var(--border-color)] text-t-secondary hover:text-t-primary text-sm font-medium transition-colors">← Back</button>
+          <button
+            onClick={() => {
+              if (op === "create") { setForm(EMPTY_FORM); setStage("fill_form"); }
+              else { setSelectedStep(null); setStage("select_step"); }
+            }}
+            disabled={!selectedTest}
+            className="flex-1 btn-primary text-sm disabled:opacity-50 disabled:cursor-not-allowed">Next →</button>
+        </div>
+      </div>
+    </ModalShell>
+  );
+
+  // ── SELECT STEP (update / delete) ──────────────────────────────────────
+  if (stage === "select_step") return (
+    <ModalShell icon="🔢" title="Import · Steps (Manual)" subtitle={stageSubtitle.select_step} onClose={onClose}>
+      <div className="flex flex-col gap-4">
+        <ContextStrip />
+        <label className="text-xs font-semibold text-t-muted uppercase tracking-wider">Step</label>
+        {loadingSteps ? (
+          <div className="flex items-center gap-2 px-4 py-3 rounded-xl bg-bg-card border border-[var(--border-color)] text-t-muted text-sm">
+            <span className="w-4 h-4 border-2 border-c-brand border-t-transparent rounded-full animate-spin" /> Loading steps…
+          </div>
+        ) : steps.length === 0 ? (
+          <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-xs text-amber-400">No steps found for this test.</div>
+        ) : (
+          <div className="flex flex-col gap-2 max-h-64 overflow-y-auto pr-0.5">
+            {steps.map(s => (
+              <button key={s.id}
+                onClick={() => {
+                  setSelectedStep(s);
+                  if (op === "update") setForm({ serial_no: String(s.serial_no), action: s.action, expected_result: s.expected_result, is_divider: s.is_divider });
+                }}
+                className={`flex items-center gap-3 px-3 py-3 rounded-xl border transition-all text-left ${selectedStep?.id === s.id ? "border-c-brand bg-c-brand-bg" : "border-[var(--border-color)] bg-bg-card hover:bg-bg-base"}`}>
+                <span className={`text-xs font-bold font-mono px-2 py-1 rounded-lg shrink-0 min-w-[2.5rem] text-center ${selectedStep?.id === s.id ? "bg-c-brand text-white" : "bg-bg-base text-c-brand"}`}>
+                  {s.serial_no}
+                </span>
+                <div className="flex-1 min-w-0">
+                  {s.is_divider
+                    ? <p className="text-xs italic text-t-muted">— divider —</p>
+                    : <>
+                        <p className={`text-sm truncate ${selectedStep?.id === s.id ? "text-c-brand" : "text-t-primary"}`}>{s.action || <span className="italic text-t-muted">No action text</span>}</p>
+                        {s.expected_result && <p className="text-xs text-t-muted truncate mt-0.5">{s.expected_result}</p>}
+                      </>
+                  }
+                </div>
+                {selectedStep?.id === s.id && <span className="w-4 h-4 rounded-full bg-c-brand flex items-center justify-center text-white text-[10px] font-bold shrink-0">✓</span>}
+              </button>
+            ))}
+          </div>
+        )}
+        <div className="flex gap-2 pt-1">
+          <button onClick={() => setStage("select_test")} className="flex-1 px-4 py-2.5 rounded-xl border border-[var(--border-color)] text-t-secondary hover:text-t-primary text-sm font-medium transition-colors">← Back</button>
+          <button
+            onClick={() => op === "update" ? setStage("fill_form") : setStage("confirm")}
+            disabled={!selectedStep}
+            className={`flex-1 btn-primary text-sm disabled:opacity-50 disabled:cursor-not-allowed ${op === "delete" ? "!bg-red-500 hover:!bg-red-600" : ""}`}>
+            {op === "delete" ? "Review Delete →" : "Next →"}
+          </button>
+        </div>
+      </div>
+    </ModalShell>
+  );
+
+  // ── FILL FORM (create / update) ────────────────────────────────────────
+  if (stage === "fill_form") return (
+    <ModalShell icon="🔢" title="Import · Steps (Manual)" subtitle={stageSubtitle.fill_form} onClose={onClose}>
+      <div className="flex flex-col gap-4">
+        <ContextStrip />
+
+        {op === "create" && (
+          <div className="flex flex-col gap-1.5">
+            <label className="text-xs font-semibold text-t-muted uppercase tracking-wider">Serial No</label>
+            <input type="number" step="1" min="1" value={form.serial_no}
+              onChange={e => setForm(f => ({ ...f, serial_no: e.target.value }))}
+              placeholder="e.g. 5"
+              className="w-full px-4 py-3 rounded-xl bg-bg-card border border-[var(--border-color)] text-t-primary text-sm placeholder:text-t-muted focus:outline-none focus:border-c-brand transition-colors" />
+          </div>
+        )}
+
+        <div className="flex flex-col gap-1.5">
+          <label className="text-xs font-semibold text-t-muted uppercase tracking-wider">Action</label>
+          <textarea rows={3} value={form.action}
+            onChange={e => setForm(f => ({ ...f, action: e.target.value }))}
+            placeholder="Describe the action to perform…"
+            className="w-full px-4 py-3 rounded-xl bg-bg-card border border-[var(--border-color)] text-t-primary text-sm placeholder:text-t-muted focus:outline-none focus:border-c-brand transition-colors resize-none" />
+        </div>
+
+        <div className="flex flex-col gap-1.5">
+          <label className="text-xs font-semibold text-t-muted uppercase tracking-wider">Expected Result</label>
+          <textarea rows={3} value={form.expected_result}
+            onChange={e => setForm(f => ({ ...f, expected_result: e.target.value }))}
+            placeholder="What should happen after this step…"
+            className="w-full px-4 py-3 rounded-xl bg-bg-card border border-[var(--border-color)] text-t-primary text-sm placeholder:text-t-muted focus:outline-none focus:border-c-brand transition-colors resize-none" />
+        </div>
+
+        {/* Divider toggle */}
+        <button onClick={() => setForm(f => ({ ...f, is_divider: !f.is_divider }))}
+          className={`flex items-center gap-3 px-4 py-3 rounded-xl border transition-all text-left ${form.is_divider ? "border-c-brand bg-c-brand-bg" : "border-[var(--border-color)] bg-bg-card hover:bg-bg-base"}`}>
+          <span className="text-lg">➖</span>
+          <div className="flex-1">
+            <p className={`text-sm font-semibold ${form.is_divider ? "text-c-brand" : "text-t-primary"}`}>Section Divider</p>
+            <p className="text-xs text-t-muted">Mark this step as a visual divider row</p>
+          </div>
+          <div className={`w-10 h-5 rounded-full transition-colors duration-200 shrink-0 relative ${form.is_divider ? "bg-c-brand" : "bg-bg-base border border-[var(--border-color)]"}`}>
+            <span className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-all duration-200 ${form.is_divider ? "left-[calc(100%-1.1rem)]" : "left-0.5"}`} />
+          </div>
+        </button>
+
+        <div className="flex gap-2 pt-1">
+          <button onClick={() => op === "create" ? setStage("select_test") : setStage("select_step")}
+            className="flex-1 px-4 py-2.5 rounded-xl border border-[var(--border-color)] text-t-secondary hover:text-t-primary text-sm font-medium transition-colors">← Back</button>
+          <button onClick={() => setStage("confirm")} className="flex-1 btn-primary text-sm">Review →</button>
+        </div>
+      </div>
+    </ModalShell>
+  );
+
+  // ── CONFIRM ────────────────────────────────────────────────────────────
+  if (stage === "confirm") return (
+    <ModalShell icon="🔢" title="Import · Steps (Manual)" subtitle={stageSubtitle.confirm} onClose={onClose}>
+      <div className="flex flex-col gap-4">
+        <ContextStrip />
+
+        {/* Confirmation card */}
+        <div className={`rounded-xl border p-4 flex flex-col gap-3 ${op === "delete" ? "border-red-500/40 bg-red-500/10" : "border-[var(--border-color)] bg-bg-card"}`}>
+          <div className="flex items-center gap-2 pb-1 border-b border-[var(--border-color)]">
+            <span className="text-xl">{op === "create" ? "➕" : op === "update" ? "✏️" : "🗑"}</span>
+            <p className={`text-sm font-bold ${op === "delete" ? "text-red-400" : "text-t-primary"}`}>
+              {op === "create" ? "Creating new step" : op === "update" ? "Updating step" : "Deleting step"}
+            </p>
+          </div>
+
+          {op === "create" && (
+            <div className="flex flex-col gap-2 text-xs">
+              <Row label="Module"    value={selectedModule?.name ?? "—"} />
+              <Row label="Test"      value={selectedTest?.name ?? "—"} />
+              <Row label="Serial No" value={form.serial_no} mono brand />
+              <Row label="Action"    value={form.action     || "(empty)"} />
+              <Row label="Expected"  value={form.expected_result || "(empty)"} />
+              <Row label="Divider"   value={form.is_divider ? "Yes" : "No"} />
+            </div>
+          )}
+
+          {op === "update" && selectedStep && (
+            <div className="flex flex-col gap-2 text-xs">
+              <Row label="Test"      value={selectedTest?.name ?? "—"} />
+              <Row label="Serial No" value={String(selectedStep.serial_no)} mono brand />
+              <DiffRow label="Action"    before={selectedStep.action}          after={form.action} />
+              <DiffRow label="Expected"  before={selectedStep.expected_result} after={form.expected_result} />
+              <DiffRow label="Divider"   before={selectedStep.is_divider ? "Yes" : "No"} after={form.is_divider ? "Yes" : "No"} />
+            </div>
+          )}
+
+          {op === "delete" && selectedStep && (
+            <div className="flex flex-col gap-2 text-xs">
+              <Row label="Module"    value={selectedModule?.name ?? "—"} />
+              <Row label="Test"      value={selectedTest?.name ?? "—"} />
+              <Row label="Serial No" value={String(selectedStep.serial_no)} mono />
+              <Row label="Action"    value={selectedStep.action || "(divider)"} />
+              <div className="mt-1 flex items-center gap-2 text-red-400 font-semibold">
+                <span>⚠️</span>
+                <span>This action cannot be undone.</span>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {errMsg && (
+          <div className="rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-xs text-red-400 flex items-start gap-2">
+            <span>❌</span><p>{errMsg}</p>
+          </div>
+        )}
+
+        <div className="flex gap-2 pt-1">
+          <button onClick={() => op === "delete" ? setStage("select_step") : setStage("fill_form")}
+            className="flex-1 px-4 py-2.5 rounded-xl border border-[var(--border-color)] text-t-secondary hover:text-t-primary text-sm font-medium transition-colors">
+            ← {op === "delete" ? "Back" : "Edit"}
+          </button>
+          <button onClick={handleSubmit}
+            className={`flex-1 btn-primary text-sm ${op === "delete" ? "!bg-red-500 hover:!bg-red-600" : ""}`}>
+            {op === "create" ? "✅ Confirm Create" : op === "update" ? "✅ Confirm Update" : "🗑 Confirm Delete"}
+          </button>
+        </div>
+      </div>
+    </ModalShell>
+  );
+
+  // ── SUBMITTING ─────────────────────────────────────────────────────────
+  if (stage === "submitting") return (
+    <ModalShell icon="🔢" title="Import · Steps (Manual)" subtitle="Processing…" onClose={onClose}>
+      <div className="flex flex-col items-center gap-4 py-8">
+        <div className="w-12 h-12 rounded-full border-4 border-c-brand border-t-transparent animate-spin" />
+        <p className="text-sm text-t-secondary">Writing to Supabase…</p>
+      </div>
+    </ModalShell>
+  );
+
+  // ── DONE ───────────────────────────────────────────────────────────────
+  return (
+    <ModalShell icon="🔢" title="Import · Steps (Manual)" subtitle="Complete" onClose={onClose}>
+      <div className="flex flex-col gap-3">
+        <div className="rounded-xl border border-green-500/30 bg-green-500/10 p-4 text-sm flex items-start gap-3 text-green-400">
+          <span className="text-xl leading-none">✅</span>
+          <p className="font-medium">{resultMsg}</p>
+        </div>
+        <div className="flex gap-2">
+          <button onClick={resetAll} className="flex-1 px-4 py-2.5 rounded-xl border border-[var(--border-color)] text-t-secondary hover:text-t-primary text-sm font-medium transition-colors">← Another</button>
+          <button onClick={onClose} className="flex-1 btn-primary text-sm">Done</button>
+        </div>
+      </div>
+    </ModalShell>
+  );
+};
+
+// ── Small helpers for the confirm screen ──────────────────────────────────
+const Row: React.FC<{ label: string; value: string; mono?: boolean; brand?: boolean }> = ({ label, value, mono, brand }) => (
+  <div className="flex gap-2">
+    <span className="text-t-muted w-20 shrink-0">{label}:</span>
+    <span className={`${mono ? "font-mono font-bold" : ""} ${brand ? "text-c-brand" : "text-t-primary"} break-all`}>{value}</span>
+  </div>
+);
+
+const DiffRow: React.FC<{ label: string; before: string; after: string }> = ({ label, before, after }) => {
+  const changed = before !== after;
+  return (
+    <div className="flex flex-col gap-0.5">
+      <span className="text-t-muted">{label}:</span>
+      {changed ? (
+        <div className="pl-2 flex flex-col gap-0.5">
+          <span className="text-red-400 line-through break-all">{before || "(empty)"}</span>
+          <span className="text-green-400 break-all">→ {after || "(empty)"}</span>
+        </div>
+      ) : (
+        <span className="pl-2 text-t-muted italic">unchanged</span>
+      )}
+    </div>
+  );
+};
+
+// ─────────────────────────────────────────────────────────────────────────
+// IMPORT MODAL (router)
+// ─────────────────────────────────────────────────────────────────────────
+type ImportTarget = "modules" | "tests" | "steps" | "steps_manual" | null;
 
 const ImportModal: React.FC<{ onClose: () => void }> = ({ onClose }) => {
   const [target, setTarget] = useState<ImportTarget>(null);
 
-  if (target === "modules") return <ImportModulesModal onClose={onClose} onBack={() => setTarget(null)} />;
-  if (target === "tests")   return <ImportTestsModal   onClose={onClose} onBack={() => setTarget(null)} />;
-  if (target === "steps")   return <ImportStepsModal   onClose={onClose} onBack={() => setTarget(null)} />;
+  if (target === "modules")      return <ImportModulesModal     onClose={onClose} onBack={() => setTarget(null)} />;
+  if (target === "tests")        return <ImportTestsModal       onClose={onClose} onBack={() => setTarget(null)} />;
+  if (target === "steps")        return <ImportStepsModal       onClose={onClose} onBack={() => setTarget(null)} />;
+  if (target === "steps_manual") return <ImportStepsManualModal onClose={onClose} onBack={() => setTarget(null)} />;
 
   const options: { id: ImportTarget; icon: string; label: string; desc: string; badge: string }[] = [
-    { id: "modules", icon: "📦", label: "Modules", desc: "Create · update · delete module records", badge: "Manual" },
-    { id: "tests",   icon: "🧪", label: "Tests",   desc: "Manual create · update · delete",          badge: "Manual" },
-    { id: "steps",   icon: "🔢", label: "Steps",   desc: "Select test · op · upload CSV",            badge: "CSV"    },
+    { id: "modules",      icon: "📦", label: "Modules",       desc: "Create · update · delete module records",    badge: "Manual" },
+    { id: "tests",        icon: "🧪", label: "Tests",         desc: "Manual create · update · delete",            badge: "Manual" },
+    { id: "steps_manual", icon: "🔢", label: "Steps",         desc: "Search by module › test › step",             badge: "Manual" },
+    { id: "steps",        icon: "📂", label: "Steps (CSV)",   desc: "Select test · op · upload CSV",               badge: "CSV"    },
   ];
 
   return (
