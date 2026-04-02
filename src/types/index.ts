@@ -8,14 +8,6 @@ export interface AppUser {
   disabled: boolean;
 }
 
-export interface Module {
-  id: string;
-  name: string;
-  description?: string;
-  accent_color?: string;
-  created_at: string;
-}
-
 // ── Global test catalog ──────────────────────────────────────
 // A test is defined once and shared across all modules.
 export interface Test {
