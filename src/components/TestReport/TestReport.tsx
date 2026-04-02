@@ -368,12 +368,12 @@ const TestReport: React.FC = () => {
   onClick={() => setShowExportModal(true)}
   disabled={filtered.length === 0}
   className="flex items-center gap-1.5 px-4 py-2
-    bg-gray-100 dark:bg-white/10
-    hover:bg-gray-200 dark:hover:bg-white/20
+    bg-bg-card
+    hover:bg-bg-surface
     disabled:opacity-40 disabled:cursor-not-allowed
-    text-gray-700 dark:text-white
+    text-t-primary
     text-sm font-semibold rounded-lg transition
-    border border-gray-200 dark:border-white/10"
+    border border-[var(--border-color)]"
 >
   📤 Export
 </button>
@@ -403,10 +403,10 @@ const TestReport: React.FC = () => {
           <button
             onClick={() => window.location.reload()}
             className="px-4 py-2 rounded-xl
-              bg-gray-100 dark:bg-white/10
-              hover:bg-gray-200 dark:hover:bg-white/20
-              text-sm text-gray-700 dark:text-gray-300
-              border border-gray-200 dark:border-white/10 transition"
+              bg-bg-card
+              hover:bg-bg-surface
+              text-sm text-t-secondary
+              border border-[var(--border-color)] transition"
           >
             Retry
           </button>
@@ -417,7 +417,7 @@ const TestReport: React.FC = () => {
           {/* ── Filter + View toggle ── */}
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="flex items-center gap-3">
-              <label className="text-sm text-gray-400">Filter by Module</label>
+              <label className="text-sm text-t-muted">Filter by Module</label>
               <select
                 value={selectedModuleId ?? ""}
                 onChange={(e) => setSelectedModuleId(e.target.value || null)}
@@ -427,16 +427,15 @@ const TestReport: React.FC = () => {
                 {modules.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
               </select>
             </div>
-            {/* ✅ CHANGED: added light mode bg/border + removed style prop from button */}
             <div className="flex items-center gap-2 rounded-xl p-1
-              bg-gray-100 dark:bg-white/5
-              border border-gray-200 dark:border-white/10 w-fit">
+              bg-bg-card
+              border border-[var(--border-color)] w-fit">
               {(["graph", "table"] as const).map(v => (
                 <button key={v} onClick={() => setView(v)}
                   className={`px-4 py-2 rounded-lg text-sm font-semibold transition capitalize ${
                     view === v
-                      ? "bg-blue-700 text-white"
-                      : "text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white"
+                      ? "bg-c-brand text-white"
+                      : "text-t-muted hover:text-t-primary"
                   }`}>
                   {v}
                 </button>
@@ -486,11 +485,10 @@ const TestReport: React.FC = () => {
 
             ) : (
               /* ── Table view ── */
-              /* ✅ CHANGED: all table classes now have light + dark:dark variants */
-              <div className="overflow-x-auto rounded-xl border border-gray-200 dark:border-white/10">
+              <div className="overflow-x-auto rounded-xl border border-[var(--border-color)]">
                 <table className="w-full text-sm">
                   <thead>
-                    <tr className="bg-gray-50 dark:bg-white/5 text-gray-500 dark:text-gray-400 uppercase text-xs">
+                    <tr className="bg-bg-card text-t-muted uppercase text-xs">
                       <th className="px-4 py-3 text-left">Module</th>
                       <th className="px-4 py-3 text-center">Tests</th>
                       <th className="px-4 py-3 text-center">Total Steps</th>
@@ -500,7 +498,7 @@ const TestReport: React.FC = () => {
                       <th className="px-4 py-3 text-center">Pass Rate</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-gray-100 dark:divide-white/5">
+                  <tbody className="divide-y divide-[var(--border-color)]">
                     {filtered.map((m) => {
                       const allSteps = (m.tests ?? []).flatMap((t) => (t.steps ?? []).filter((s) => !s.is_divider));
                       const total   = allSteps.length;
@@ -509,21 +507,20 @@ const TestReport: React.FC = () => {
                       const pending = allSteps.filter((s) => s.status === "pending").length;
                       const rate    = total > 0 ? Math.round((pass / total) * 100) : 0;
                       return (
-                        <tr key={m.id} className="hover:bg-gray-50 dark:hover:bg-white/5 transition-colors">
-                          <td className="px-4 py-3 font-semibold text-gray-900 dark:text-white">{m.name}</td>
-                          <td className="px-4 py-3 text-center text-gray-600 dark:text-gray-300">{m.tests?.length ?? 0}</td>
-                          <td className="px-4 py-3 text-center font-bold text-gray-900 dark:text-white">{total}</td>
+                        <tr key={m.id} className="hover:bg-bg-card transition-colors">
+                          <td className="px-4 py-3 font-semibold text-t-primary">{m.name}</td>
+                          <td className="px-4 py-3 text-center text-t-secondary">{m.tests?.length ?? 0}</td>
+                          <td className="px-4 py-3 text-center font-bold text-t-primary">{total}</td>
                           <td className="px-4 py-3 text-center font-semibold text-green-600 dark:text-green-400">{pass}</td>
                           <td className="px-4 py-3 text-center font-semibold text-red-600 dark:text-red-400">{fail}</td>
                           <td className="px-4 py-3 text-center font-semibold text-amber-600 dark:text-amber-400">{pending}</td>
                           <td className="px-4 py-3 text-center">
                             <div className="flex items-center gap-2 justify-center">
-                              {/* ✅ CHANGED: bg-gray-200 dark:bg-gray-700 */}
-                              <div className="w-20 h-1.5 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
+                              <div className="w-20 h-1.5 bg-[var(--border-color)] rounded-full overflow-hidden">
                                 <div className="h-full rounded-full"
                                   style={{ width: `${rate}%`, backgroundColor: COLORS.pass }} />
                               </div>
-                              <span className="font-bold text-gray-900 dark:text-white">{rate}%</span>
+                              <span className="font-bold text-t-primary">{rate}%</span>
                             </div>
                           </td>
                         </tr>

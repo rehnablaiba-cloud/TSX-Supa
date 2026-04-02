@@ -36,11 +36,13 @@ const DonutChart: React.FC<Props> = ({ segments, size = 140, thickness = 22, cen
             cx={cx} cy={cy} r={r} fill="none" stroke={arc.color} strokeWidth={thickness}
             strokeDasharray={`${arc.dash} ${arc.gap}`} strokeDashoffset={-arc.offset} strokeLinecap="round" />
         ))}
-        <circle cx={cx} cy={cy} r={r - thickness / 2} fill="none" stroke="#1f2937" strokeWidth={thickness} />
+        {/* Track ring uses CSS var so it adapts to light/dark */}
+        <circle cx={cx} cy={cy} r={r - thickness / 2} fill="none"
+          stroke="var(--bg-card)" strokeWidth={thickness} />
       </svg>
       <div className="absolute inset-0 flex flex-col items-center justify-center">
-        <span className="text-2xl font-bold text-white">{centerValue ?? total}</span>
-        <span className="text-xs text-gray-400">{centerLabel}</span>
+        <span className="text-2xl font-bold text-t-primary">{centerValue ?? total}</span>
+        <span className="text-xs text-t-muted">{centerLabel}</span>
       </div>
     </div>
   );

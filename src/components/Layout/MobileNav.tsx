@@ -42,37 +42,36 @@ const MobileNav: React.FC<Props> = ({ activePage, onNavigate }) => {
           {/* Scrim */}
           <div className="absolute inset-0 bg-black/40" onClick={() => setShowMore(false)} />
 
-          {/* Sheet — light/dark surface */}
+          {/* Sheet */}
           <div
             ref={sheetRef}
             className="relative w-full
-              bg-white dark:bg-gray-900
-              border-t border-gray-200 dark:border-white/10
+              bg-bg-surface
+              border-t border-[var(--border-color)]
               rounded-t-2xl px-6 pt-4 pb-10 flex flex-col gap-3 z-10"
           >
             {/* Handle */}
-            <div className="w-10 h-1 bg-gray-300 dark:bg-white/20 rounded-full mx-auto mb-2" />
+            <div className="w-10 h-1 bg-bg-card rounded-full mx-auto mb-2" />
 
             {/* Theme toggle row */}
             <button
               onClick={() => { toggleTheme(); setShowMore(false); }}
               className="flex items-center gap-4 px-4 py-3.5 rounded-xl
-                bg-gray-100 dark:bg-white/5
-                hover:bg-gray-200 dark:hover:bg-white/10
-                transition-colors
-                text-gray-800 dark:text-gray-200"
+                bg-bg-card hover:bg-bg-base
+                border border-[var(--border-color)]
+                transition-colors text-t-primary"
             >
               <span className="text-2xl">{theme === "dark" ? "☀️" : "🌙"}</span>
               <div className="text-left">
                 <p className="text-sm font-semibold">
                   {theme === "dark" ? "Light Mode" : "Dark Mode"}
                 </p>
-                <p className="text-xs text-gray-500 dark:text-gray-500">Switch appearance</p>
+                <p className="text-xs text-t-muted">Switch appearance</p>
               </div>
             </button>
 
             {/* Divider */}
-            <div className="border-t border-gray-200 dark:border-white/5" />
+            <div className="border-t border-[var(--border-color)]" />
 
             {/* Sign out row */}
             <button
@@ -95,9 +94,9 @@ const MobileNav: React.FC<Props> = ({ activePage, onNavigate }) => {
 
       {/* ── Bottom nav ── */}
       <nav className="md:hidden fixed bottom-0 left-0 right-0 z-40
-        bg-white/95 dark:bg-gray-900/95
+        bg-bg-nav
         backdrop-blur
-        border-t border-gray-200 dark:border-white/5
+        border-t border-[var(--border-color)]
         flex items-center justify-around px-2 py-2">
         {items.map(item => (
           <button
@@ -105,8 +104,8 @@ const MobileNav: React.FC<Props> = ({ activePage, onNavigate }) => {
             onClick={() => onNavigate(item.id)}
             className={`flex flex-col items-center gap-0.5 px-4 py-1.5 rounded-xl transition-colors
               ${activePage === item.id
-                ? "text-blue-600 dark:text-blue-400"
-                : "text-gray-400 dark:text-gray-500"}`}
+                ? "text-c-brand"
+                : "text-t-muted"}`}
           >
             <span className="text-xl">{item.icon}</span>
             <span className="text-[10px] font-medium">{item.label}</span>
@@ -117,9 +116,7 @@ const MobileNav: React.FC<Props> = ({ activePage, onNavigate }) => {
         <button
           onClick={() => setShowMore(true)}
           className={`flex flex-col items-center gap-0.5 px-4 py-1.5 rounded-xl transition-colors
-            ${showMore
-              ? "text-blue-600 dark:text-blue-400"
-              : "text-gray-400 dark:text-gray-500"}`}
+            ${showMore ? "text-c-brand" : "text-t-muted"}`}
         >
           <span className="text-xl">•••</span>
           <span className="text-[10px] font-medium">More</span>

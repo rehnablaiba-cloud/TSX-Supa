@@ -381,7 +381,7 @@ const ModuleDashboard: React.FC<Props> = ({ moduleId, moduleName, onBack, onExec
 
         {/* ── Toolbar: filter only ── */}
         <div className="flex flex-wrap items-center gap-3">
-          <label className="text-sm text-gray-400">Filter by Test</label>
+          <label className="text-sm text-t-muted">Filter by Test</label>
           <select
             value={selectedTestId ?? ""}
             onChange={(e) => setSelectedTestId(e.target.value || null)}
@@ -396,13 +396,12 @@ const ModuleDashboard: React.FC<Props> = ({ moduleId, moduleName, onBack, onExec
 
         {/* ── Test list ── */}
         <div className="flex flex-col gap-1">
-          {/* ✅ light mode heading */}
-          <h3 className="font-semibold text-gray-700 dark:text-gray-300 mb-2">Test Cases</h3>
+          <h3 className="font-semibold text-t-secondary mb-2">Test Cases</h3>
 
           <FadeWrapper animKey={listAnimKey}>
             <div className="flex flex-col gap-3">
               {filteredTests.length === 0 ? (
-                <p className="text-sm text-gray-500">No tests found.</p>
+                <p className="text-sm text-t-muted">No tests found.</p>
               ) : (
                 filteredTests.map((test, index) => {
                   const lock            = locks.find(l => l.test_id === test.id);
@@ -459,21 +458,18 @@ const TestRow: React.FC<{
     >
       <div className="flex-1">
         <div className="flex items-center gap-2 flex-wrap">
-          {/* ✅ light mode test name */}
-          <p className={`font-medium text-gray-900 dark:text-white ${isLockedByOther ? "opacity-40" : ""}`}>
+          <p className={`font-medium text-t-primary ${isLockedByOther ? "opacity-40" : ""}`}>
             {test.name}
           </p>
-          {/* ✅ light mode amber badge */}
           {isLockedByOther && (
             <span className="flex items-center gap-1 text-xs font-semibold text-amber-600 dark:text-amber-500 bg-amber-500/15 border border-amber-500/40 rounded-full px-2.5 py-0.5">
               <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse inline-block" />
               🔒 {lockedByName} is executing. For access, contact user to finish.
             </span>
           )}
-          {/* ✅ light mode blue badge */}
           {isLockedByMe && (
-            <span className="flex items-center gap-1 text-xs font-semibold text-blue-600 dark:text-blue-500 bg-blue-500/15 border border-blue-500/40 rounded-full px-2.5 py-0.5">
-              <span className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-pulse inline-block" />
+            <span className="flex items-center gap-1 text-xs font-semibold text-c-brand bg-c-brand-bg border border-[var(--color-brand)] rounded-full px-2.5 py-0.5 opacity-70">
+              <span className="w-1.5 h-1.5 rounded-full bg-c-brand animate-pulse inline-block" />
               ✏️ You are executing
             </span>
           )}
@@ -485,8 +481,7 @@ const TestRow: React.FC<{
           <span className="badge-pend">{pending} Pend</span>
         </div>
 
-        {/* ✅ light mode progress bar track */}
-        <div className={`mt-2 h-1.5 bg-gray-200 dark:bg-gray-800 rounded-full overflow-hidden ${isLockedByOther ? "opacity-40" : ""}`}>
+        <div className={`mt-2 h-1.5 bg-[var(--border-color)] rounded-full overflow-hidden ${isLockedByOther ? "opacity-40" : ""}`}>
           <div
             className="h-full rounded-full transition-all duration-500"
             style={{ width: `${rate}%`, backgroundColor: isLockedByOther ? "#6b7280" : "#22c55e" }}
@@ -494,7 +489,6 @@ const TestRow: React.FC<{
         </div>
       </div>
 
-      {/* ✅ light mode locked button state */}
       <button
         onClick={(e) => {
           if (isLockedByOther) { e.preventDefault(); e.stopPropagation(); return; }
@@ -503,7 +497,7 @@ const TestRow: React.FC<{
         disabled={isLockedByOther}
         className={`whitespace-nowrap shrink-0 px-4 py-2 rounded-xl font-semibold transition-all text-sm ${
           isLockedByOther
-            ? "bg-gray-200 dark:bg-gray-500/20 text-gray-400 dark:text-gray-500 cursor-not-allowed pointer-events-none border border-gray-300 dark:border-gray-500/30"
+            ? "bg-bg-card text-t-muted cursor-not-allowed pointer-events-none border border-[var(--border-color)]"
             : "btn-primary cursor-pointer"
         }`}
       >
