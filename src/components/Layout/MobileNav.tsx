@@ -197,273 +197,573 @@ const ModalShell: React.FC<{
 );
 
 // ─────────────────────────────────────────────────────────────────────────
-// IMPORT MODULES MODAL — manual entry: name + operation dropdown
+// IMPORT MODULES MODAL — multi-step wizard (analogous to ImportStepsManualModal)
+// Flow: select_op → fill_form (create) | select_module (update/delete)
+//       → fill_form (update) → confirm → submitting → done
 // ─────────────────────────────────────────────────────────────────────────
 type ModuleOp = "create" | "update" | "delete";
-type ModuleImportStage = "form" | "submitting" | "done" | "error";
-interface ModuleResult { op: ModuleOp; name: string; success: boolean; message: string; }
+type ModuleManualStage = "select_op" | "select_module" | "fill_form" | "confirm" | "submitting" | "done";
+interface ModuleOption { id: string; name: string; }
 
 const ImportModulesModal: React.FC<{ onClose: () => void; onBack: () => void }> = ({ onClose, onBack }) => {
-  const [stage,   setStage]   = useState<ModuleImportStage>("form");
-  const [op,      setOp]      = useState<ModuleOp>("create");
-  const [name,    setName]    = useState("");
-  const [newName, setNewName] = useState("");
-  const [results, setResults] = useState<ModuleResult[]>([]);
-  const [errMsg,  setErrMsg]  = useState("");
+  const [stage,          setStage]          = useState<ModuleManualStage>("select_op");
+  const [op,             setOp]             = useState<ModuleOp>("create");
+  const [modules,        setModules]        = useState<ModuleOption[]>([]);
+  const [modulesLoading, setModulesLoading] = useState(false);
+  const [selectedModule, setSelectedModule] = useState<ModuleOption | null>(null);
+  const [formName,       setFormName]       = useState("");
+  const [errMsg,         setErrMsg]         = useState("");
+  const [resultMsg,      setResultMsg]      = useState("");
 
   const opMeta = [
-    { id: "create" as ModuleOp, label: "Create", icon: "➕", color: "text-green-400" },
-    { id: "update" as ModuleOp, label: "Update", icon: "✏️",  color: "text-c-brand"  },
-    { id: "delete" as ModuleOp, label: "Delete", icon: "🗑",  color: "text-red-400"  },
+    { id: "create" as ModuleOp, label: "Create", icon: "➕", desc: "Add a new module" },
+    { id: "update" as ModuleOp, label: "Update", icon: "✏️",  desc: "Rename an existing module"  },
+    { id: "delete" as ModuleOp, label: "Delete", icon: "🗑",  desc: "Remove a module permanently" },
   ];
 
+  const stageSubtitle: Record<ModuleManualStage, string> = {
+    select_op:     "Step 1 — Choose operation",
+    select_module: "Step 2 — Select module",
+    fill_form:     op === "create" ? "Step 2 — Enter details" : "Step 3 — Edit details",
+    confirm:       "Review & confirm",
+    submitting:    "Writing to Supabase…",
+    done:          "Complete",
+  };
+
+  const loadModules = useCallback(async () => {
+    setModulesLoading(true);
+    const { data, error } = await supabase.from("modules").select("id, name").order("name", { ascending: true });
+    if (!error && data) setModules(data as ModuleOption[]);
+    setModulesLoading(false);
+  }, []);
+
+  const handleOpNext = () => {
+    setErrMsg("");
+    if (op === "create") { setFormName(""); setStage("fill_form"); }
+    else { setSelectedModule(null); setModules([]); loadModules(); setStage("select_module"); }
+  };
+
+  const handleModuleNext = () => {
+    if (!selectedModule) return;
+    setErrMsg("");
+    if (op === "update") { setFormName(selectedModule.name); setStage("fill_form"); }
+    else setStage("confirm");
+  };
+
+  const handleFormNext = () => {
+    if (!formName.trim()) { setErrMsg("Module name is required."); return; }
+    setErrMsg("");
+    setStage("confirm");
+  };
+
   const handleSubmit = useCallback(async () => {
-    const trimmedName = name.trim();
-    if (!trimmedName) { setErrMsg("Module name is required."); return; }
-    if (op === "update" && !newName.trim()) { setErrMsg("New name is required for Update."); return; }
-    setErrMsg(""); setStage("submitting");
+    setStage("submitting");
     try {
       if (op === "create") {
-        const { error } = await supabase.from("modules").insert({ name: trimmedName });
+        const { error } = await supabase.from("modules").insert({ name: formName.trim() });
         if (error) throw error;
-        setResults([{ op, name: trimmedName, success: true, message: `Module "${trimmedName}" created.` }]);
-      } else if (op === "update") {
-        const { data: existing, error: fe } = await supabase.from("modules").select("id").eq("name", trimmedName).maybeSingle();
-        if (fe) throw fe;
-        if (!existing) throw new Error(`No module found with name "${trimmedName}".`);
-        const { error } = await supabase.from("modules").update({ name: newName.trim() }).eq("id", existing.id);
+        setResultMsg(`Module "${formName.trim()}" created.`);
+      } else if (op === "update" && selectedModule) {
+        const { error } = await supabase.from("modules").update({ name: formName.trim() }).eq("id", selectedModule.id);
         if (error) throw error;
-        setResults([{ op, name: trimmedName, success: true, message: `"${trimmedName}" renamed to "${newName.trim()}".` }]);
-      } else {
-        const { data: existing, error: fe } = await supabase.from("modules").select("id").eq("name", trimmedName).maybeSingle();
-        if (fe) throw fe;
-        if (!existing) throw new Error(`No module found with name "${trimmedName}".`);
-        const { error } = await supabase.from("modules").delete().eq("id", existing.id);
+        setResultMsg(`Module renamed from "${selectedModule.name}" to "${formName.trim()}".`);
+      } else if (op === "delete" && selectedModule) {
+        const { error } = await supabase.from("modules").delete().eq("id", selectedModule.id);
         if (error) throw error;
-        setResults([{ op, name: trimmedName, success: true, message: `Module "${trimmedName}" deleted.` }]);
+        setResultMsg(`Module "${selectedModule.name}" deleted.`);
       }
       setStage("done");
     } catch (e: any) {
-      setResults([{ op, name: trimmedName, success: false, message: e?.message ?? "Unexpected error." }]);
-      setStage("error");
+      setErrMsg(e?.message ?? "Unexpected error.");
+      setStage("confirm");
     }
-  }, [op, name, newName]);
+  }, [op, formName, selectedModule]);
 
-  const reset = () => { setStage("form"); setName(""); setNewName(""); setErrMsg(""); setResults([]); };
+  const resetAll = () => {
+    setStage("select_op"); setSelectedModule(null); setFormName(""); setResultMsg(""); setErrMsg("");
+  };
 
   return (
-    <ModalShell icon="📦" title="Import · Modules"
-      subtitle={stage === "form" ? "Manage module records" : stage === "submitting" ? "Processing…" : "Complete"}
-      onClose={onClose}>
-      {(stage === "form" || stage === "error") && (
+    <ModalShell icon="📦" title="Import · Modules" subtitle={stageSubtitle[stage]} onClose={onClose}>
+
+      {/* ── Step 1: Select Op ── */}
+      {stage === "select_op" && (
         <div className="flex flex-col gap-4">
-          <div className="flex flex-col gap-1.5">
-            <label className="text-xs font-semibold text-t-muted uppercase tracking-wider">Operation</label>
-            <div className="grid grid-cols-3 gap-2">
-              {opMeta.map(m => (
-                <button key={m.id} onClick={() => { setOp(m.id); setErrMsg(""); }}
-                  className={`flex flex-col items-center gap-1 py-3 rounded-xl border transition-all ${op === m.id ? "border-c-brand bg-c-brand-bg" : "border-[var(--border-color)] bg-bg-card hover:bg-bg-base"}`}>
-                  <span className="text-xl">{m.icon}</span>
-                  <span className={`text-xs font-semibold ${op === m.id ? "text-c-brand" : "text-t-secondary"}`}>{m.label}</span>
-                </button>
-              ))}
-            </div>
+          <div className="flex flex-col gap-2">
+            {opMeta.map(m => (
+              <button key={m.id} onClick={() => { setOp(m.id); setErrMsg(""); }}
+                className={`flex items-center gap-4 px-4 py-3.5 rounded-xl border transition-all text-left ${op === m.id ? "border-c-brand bg-c-brand-bg" : "border-[var(--border-color)] bg-bg-card hover:bg-bg-base"}`}>
+                <span className="text-xl">{m.icon}</span>
+                <div className="flex-1">
+                  <p className={`text-sm font-semibold ${op === m.id ? "text-c-brand" : "text-t-primary"}`}>{m.label}</p>
+                  <p className="text-xs text-t-muted">{m.desc}</p>
+                </div>
+                {op === m.id && <span className="w-4 h-4 rounded-full bg-c-brand flex items-center justify-center text-white text-[10px] font-bold shrink-0">✓</span>}
+              </button>
+            ))}
           </div>
-          <div className="flex flex-col gap-1.5">
-            <label className="text-xs font-semibold text-t-muted uppercase tracking-wider">
-              {op === "update" ? "Current Name" : "Module Name"}
-            </label>
-            <input type="text" value={name} onChange={e => { setName(e.target.value); setErrMsg(""); }}
-              placeholder={op === "delete" ? "Name of module to delete…" : op === "update" ? "Existing module name…" : "Enter module name…"}
-              className="w-full px-4 py-3 rounded-xl bg-bg-card border border-[var(--border-color)] text-t-primary text-sm placeholder:text-t-muted focus:outline-none focus:border-c-brand transition-colors" />
-          </div>
-          {op === "update" && (
-            <div className="flex flex-col gap-1.5">
-              <label className="text-xs font-semibold text-t-muted uppercase tracking-wider">New Name</label>
-              <input type="text" value={newName} onChange={e => { setNewName(e.target.value); setErrMsg(""); }}
-                placeholder="New module name…"
-                className="w-full px-4 py-3 rounded-xl bg-bg-card border border-[var(--border-color)] text-t-primary text-sm placeholder:text-t-muted focus:outline-none focus:border-c-brand transition-colors" />
-            </div>
-          )}
-          {op === "delete" && (
-            <div className="rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-xs text-red-400 flex items-start gap-2">
-              <span className="text-base leading-none mt-px">⚠️</span>
-              <p>This will permanently delete the module and all associated tests &amp; results.</p>
-            </div>
-          )}
-          {(errMsg || stage === "error") && (
-            <div className="rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-xs text-red-400">
-              {errMsg || results[0]?.message}
-            </div>
-          )}
           <div className="flex gap-2 pt-1">
             <button onClick={onBack} className="flex-1 px-4 py-2.5 rounded-xl border border-[var(--border-color)] text-t-secondary hover:text-t-primary text-sm font-medium transition-colors">← Back</button>
-            <button onClick={handleSubmit} className={`flex-1 btn-primary text-sm ${op === "delete" ? "!bg-red-500 hover:!bg-red-600" : ""}`}>
-              {opMeta.find(m => m.id === op)?.icon} {opMeta.find(m => m.id === op)?.label}
+            <button onClick={handleOpNext} className="flex-1 btn-primary text-sm">Next →</button>
+          </div>
+        </div>
+      )}
+
+      {/* ── Step 2: Select Module (update / delete) ── */}
+      {stage === "select_module" && (
+        <div className="flex flex-col gap-4">
+          <div className="flex items-center gap-3 px-4 py-3 rounded-xl border border-[var(--border-color)] bg-bg-card">
+            <span className="text-lg">{opMeta.find(m => m.id === op)?.icon}</span>
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-semibold text-t-primary">{opMeta.find(m => m.id === op)?.label} Module</p>
+            </div>
+            <button onClick={() => setStage("select_op")} className="text-xs text-c-brand hover:underline shrink-0">Change</button>
+          </div>
+
+          <div className="flex flex-col gap-1.5">
+            <label className="text-xs font-semibold text-t-muted uppercase tracking-wider">Select Module</label>
+            {modulesLoading ? (
+              <div className="flex items-center gap-2 px-4 py-3 rounded-xl bg-bg-card border border-[var(--border-color)] text-t-muted text-sm">
+                <span className="w-4 h-4 border-2 border-c-brand border-t-transparent rounded-full animate-spin" /> Loading modules…
+              </div>
+            ) : modules.length === 0 ? (
+              <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-xs text-amber-400">No modules found.</div>
+            ) : (
+              <div className="flex flex-col gap-2 max-h-56 overflow-y-auto pr-0.5">
+                {modules.map(m => (
+                  <button key={m.id} onClick={() => setSelectedModule(m)}
+                    className={`flex items-center gap-3 px-4 py-3 rounded-xl border transition-all text-left ${selectedModule?.id === m.id ? "border-c-brand bg-c-brand-bg" : "border-[var(--border-color)] bg-bg-card hover:bg-bg-base"}`}>
+                    <span className="text-lg">📦</span>
+                    <span className={`text-sm font-medium flex-1 truncate ${selectedModule?.id === m.id ? "text-c-brand" : "text-t-primary"}`}>{m.name}</span>
+                    {selectedModule?.id === m.id && <span className="w-4 h-4 rounded-full bg-c-brand flex items-center justify-center text-white text-[10px] font-bold shrink-0">✓</span>}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {op === "delete" && selectedModule && (
+            <div className="rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-xs text-red-400 flex items-start gap-2">
+              <span className="text-base leading-none mt-px">⚠️</span>
+              <p>This will permanently delete <strong>{selectedModule.name}</strong> and all associated tests &amp; results.</p>
+            </div>
+          )}
+
+          <div className="flex gap-2 pt-1">
+            <button onClick={() => setStage("select_op")} className="flex-1 px-4 py-2.5 rounded-xl border border-[var(--border-color)] text-t-secondary hover:text-t-primary text-sm font-medium transition-colors">← Back</button>
+            <button onClick={handleModuleNext} disabled={!selectedModule}
+              className={`flex-1 btn-primary text-sm disabled:opacity-50 disabled:cursor-not-allowed ${op === "delete" ? "!bg-red-500 hover:!bg-red-600" : ""}`}>
+              {op === "delete" ? "Review →" : "Next →"}
             </button>
           </div>
         </div>
       )}
-      {stage === "submitting" && (
-        <div className="flex flex-col items-center gap-4 py-6">
-          <div className="w-12 h-12 rounded-full border-4 border-c-brand border-t-transparent animate-spin" />
-          <p className="text-sm text-t-secondary">Processing…</p>
+
+      {/* ── Fill Form (create / update) ── */}
+      {stage === "fill_form" && (
+        <div className="flex flex-col gap-4">
+          {selectedModule && (
+            <div className="flex items-center gap-2 px-3 py-2 rounded-xl border border-[var(--border-color)] bg-bg-card text-xs">
+              <span>📦</span>
+              <span className="text-t-primary font-medium truncate flex-1">{selectedModule.name}</span>
+              <button onClick={() => setStage("select_module")} className="text-c-brand hover:underline shrink-0">Change</button>
+            </div>
+          )}
+
+          <div className="flex flex-col gap-1.5">
+            <label className="text-xs font-semibold text-t-muted uppercase tracking-wider">
+              {op === "update" ? "New Name" : "Module Name"}
+            </label>
+            <input
+              type="text"
+              value={formName}
+              onChange={e => { setFormName(e.target.value); setErrMsg(""); }}
+              placeholder={op === "update" ? "Updated module name…" : "Enter module name…"}
+              className="w-full px-4 py-3 rounded-xl bg-bg-card border border-[var(--border-color)] text-t-primary text-sm placeholder:text-t-muted focus:outline-none focus:border-c-brand transition-colors"
+              autoFocus
+            />
+          </div>
+
+          {errMsg && (
+            <div className="rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-xs text-red-400">{errMsg}</div>
+          )}
+
+          <div className="flex gap-2 pt-1">
+            <button onClick={() => op === "create" ? setStage("select_op") : setStage("select_module")}
+              className="flex-1 px-4 py-2.5 rounded-xl border border-[var(--border-color)] text-t-secondary hover:text-t-primary text-sm font-medium transition-colors">← Back</button>
+            <button onClick={handleFormNext} className="flex-1 btn-primary text-sm">Review →</button>
+          </div>
         </div>
       )}
-      {stage === "done" && results[0] && (
+
+      {/* ── Confirm ── */}
+      {stage === "confirm" && (
+        <div className="flex flex-col gap-4">
+          <div className={`rounded-xl border p-4 flex flex-col gap-3 ${op === "delete" ? "border-red-500/40 bg-red-500/10" : "border-[var(--border-color)] bg-bg-card"}`}>
+            <div className="flex items-center gap-2 pb-2 border-b border-[var(--border-color)]">
+              <span className="text-xl">{opMeta.find(m => m.id === op)?.icon}</span>
+              <p className={`text-sm font-bold ${op === "delete" ? "text-red-400" : "text-t-primary"}`}>
+                {op === "create" ? "Creating new module" : op === "update" ? "Updating module" : "Deleting module"}
+              </p>
+            </div>
+            {op === "create" && (
+              <Row label="Name" value={formName} />
+            )}
+            {op === "update" && selectedModule && (
+              <DiffRow label="Name" before={selectedModule.name} after={formName} />
+            )}
+            {op === "delete" && selectedModule && (
+              <>
+                <Row label="Module" value={selectedModule.name} />
+                <p className="text-xs text-red-400 font-semibold flex items-center gap-1"><span>⚠️</span> This action cannot be undone.</p>
+              </>
+            )}
+          </div>
+
+          {errMsg && (
+            <div className="rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-xs text-red-400 flex items-start gap-2">
+              <span>❌</span><p>{errMsg}</p>
+            </div>
+          )}
+
+          <div className="flex gap-2 pt-1">
+            <button
+              onClick={() => op === "delete" ? setStage("select_module") : setStage("fill_form")}
+              className="flex-1 px-4 py-2.5 rounded-xl border border-[var(--border-color)] text-t-secondary hover:text-t-primary text-sm font-medium transition-colors">
+              ← {op === "delete" ? "Back" : "Edit"}
+            </button>
+            <button onClick={handleSubmit}
+              className={`flex-1 btn-primary text-sm ${op === "delete" ? "!bg-red-500 hover:!bg-red-600" : ""}`}>
+              {op === "create" ? "✅ Confirm Create" : op === "update" ? "✅ Confirm Update" : "🗑 Confirm Delete"}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ── Submitting ── */}
+      {stage === "submitting" && (
+        <div className="flex flex-col items-center gap-4 py-8">
+          <div className="w-12 h-12 rounded-full border-4 border-c-brand border-t-transparent animate-spin" />
+          <p className="text-sm text-t-secondary">Writing to Supabase…</p>
+        </div>
+      )}
+
+      {/* ── Done ── */}
+      {stage === "done" && (
         <div className="flex flex-col gap-3">
-          <div className={`rounded-xl border p-4 text-sm flex items-start gap-3 ${results[0].success ? "border-green-500/30 bg-green-500/10 text-green-400" : "border-red-500/30 bg-red-500/10 text-red-400"}`}>
-            <span className="text-xl leading-none">{results[0].success ? "✅" : "❌"}</span>
-            <p className="font-medium">{results[0].message}</p>
+          <div className="rounded-xl border border-green-500/30 bg-green-500/10 p-4 text-sm flex items-start gap-3 text-green-400">
+            <span className="text-xl leading-none">✅</span>
+            <p className="font-medium">{resultMsg}</p>
           </div>
           <div className="flex gap-2">
-            <button onClick={reset} className="flex-1 px-4 py-2.5 rounded-xl border border-[var(--border-color)] text-t-secondary hover:text-t-primary text-sm font-medium transition-colors">← Another</button>
+            <button onClick={resetAll} className="flex-1 px-4 py-2.5 rounded-xl border border-[var(--border-color)] text-t-secondary hover:text-t-primary text-sm font-medium transition-colors">← Another</button>
             <button onClick={onClose} className="flex-1 btn-primary text-sm">Done</button>
           </div>
         </div>
       )}
+
     </ModalShell>
   );
 };
 
 // ─────────────────────────────────────────────────────────────────────────
-// IMPORT TESTS MODAL — manual: create / update / delete
+// IMPORT TESTS MODAL — multi-step wizard (analogous to ImportStepsManualModal)
+// Flow: select_op → fill_form (create) | select_test (update/delete)
+//       → fill_form (update) → confirm → submitting → done
 // ─────────────────────────────────────────────────────────────────────────
 type TestOp = "create" | "update" | "delete";
-type TestImportStage = "form" | "submitting" | "done" | "error";
-interface TestResult { op: TestOp; success: boolean; message: string; }
+type TestManualStage = "select_op" | "select_test" | "fill_form" | "confirm" | "submitting" | "done";
+interface TestListOption { id: string; serial_no: number; name: string; }
 
 const ImportTestsModal: React.FC<{ onClose: () => void; onBack: () => void }> = ({ onClose, onBack }) => {
-  const [stage,   setStage]   = useState<TestImportStage>("form");
-  const [op,      setOp]      = useState<TestOp>("create");
-  const [sn,      setSn]      = useState("");
-  const [name,    setName]    = useState("");
-  const [newName, setNewName] = useState("");
-  const [result,  setResult]  = useState<TestResult | null>(null);
-  const [errMsg,  setErrMsg]  = useState("");
+  const [stage,        setStage]        = useState<TestManualStage>("select_op");
+  const [op,           setOp]           = useState<TestOp>("create");
+  const [tests,        setTests]        = useState<TestListOption[]>([]);
+  const [testsLoading, setTestsLoading] = useState(false);
+  const [selectedTest, setSelectedTest] = useState<TestListOption | null>(null);
+  const [formSn,       setFormSn]       = useState("");
+  const [formName,     setFormName]     = useState("");
+  const [errMsg,       setErrMsg]       = useState("");
+  const [resultMsg,    setResultMsg]    = useState("");
 
   const opMeta = [
-    { id: "create" as TestOp, label: "Create", icon: "➕" },
-    { id: "update" as TestOp, label: "Update", icon: "✏️"  },
-    { id: "delete" as TestOp, label: "Delete", icon: "🗑"  },
+    { id: "create" as TestOp, label: "Create", icon: "➕", desc: "Add a new test record" },
+    { id: "update" as TestOp, label: "Update", icon: "✏️",  desc: "Rename an existing test" },
+    { id: "delete" as TestOp, label: "Delete", icon: "🗑",  desc: "Remove a test permanently" },
   ];
 
+  const stageSubtitle: Record<TestManualStage, string> = {
+    select_op:   "Step 1 — Choose operation",
+    select_test: "Step 2 — Select test",
+    fill_form:   op === "create" ? "Step 2 — Enter details" : "Step 3 — Edit details",
+    confirm:     "Review & confirm",
+    submitting:  "Writing to Supabase…",
+    done:        "Complete",
+  };
+
+  const loadTests = useCallback(async () => {
+    setTestsLoading(true);
+    const { data, error } = await supabase.from("tests").select("id, serial_no, name").order("serial_no", { ascending: true });
+    if (!error && data) setTests(data as TestListOption[]);
+    setTestsLoading(false);
+  }, []);
+
+  const handleOpNext = () => {
+    setErrMsg("");
+    if (op === "create") { setFormSn(""); setFormName(""); setStage("fill_form"); }
+    else { setSelectedTest(null); setTests([]); loadTests(); setStage("select_test"); }
+  };
+
+  const handleTestNext = () => {
+    if (!selectedTest) return;
+    setErrMsg("");
+    if (op === "update") { setFormName(selectedTest.name); setStage("fill_form"); }
+    else setStage("confirm");
+  };
+
+  const handleFormNext = () => {
+    if (op === "create") {
+      const snVal = parseFloat(formSn);
+      if (isNaN(snVal)) { setErrMsg("Serial number must be a valid number."); return; }
+      if (!formName.trim()) { setErrMsg("Test name is required."); return; }
+    } else {
+      if (!formName.trim()) { setErrMsg("Test name is required."); return; }
+    }
+    setErrMsg("");
+    setStage("confirm");
+  };
+
   const handleSubmit = useCallback(async () => {
-    const snVal = parseFloat(sn);
-    if (isNaN(snVal))                              { setErrMsg("Serial number must be a valid number."); return; }
-    if (op === "create" && !name.trim())           { setErrMsg("Test name is required."); return; }
-    if (op === "update" && !newName.trim())        { setErrMsg("New name is required for Update."); return; }
-    setErrMsg(""); setStage("submitting");
+    setStage("submitting");
     try {
       if (op === "create") {
-        const { error } = await supabase.from("tests").insert({ serial_no: snVal, name: name.trim() });
+        const snVal = parseFloat(formSn);
+        const { error } = await supabase.from("tests").insert({ serial_no: snVal, name: formName.trim() });
         if (error) throw error;
-        setResult({ op, success: true, message: `Test SN ${snVal} "${name.trim()}" created.` });
-      } else {
-        const { data: existing, error: fe } = await supabase.from("tests").select("id").eq("serial_no", snVal).maybeSingle();
-        if (fe) throw fe;
-        if (!existing) throw new Error(`No test found with SN ${snVal}.`);
-        if (op === "update") {
-          const { error } = await supabase.from("tests").update({ name: newName.trim() }).eq("id", existing.id);
-          if (error) throw error;
-          setResult({ op, success: true, message: `SN ${snVal} renamed to "${newName.trim()}".` });
-        } else {
-          const { error } = await supabase.from("tests").delete().eq("id", existing.id);
-          if (error) throw error;
-          setResult({ op, success: true, message: `Test SN ${snVal} deleted.` });
-        }
+        setResultMsg(`Test SN ${snVal} "${formName.trim()}" created.`);
+      } else if (op === "update" && selectedTest) {
+        const { error } = await supabase.from("tests").update({ name: formName.trim() }).eq("id", selectedTest.id);
+        if (error) throw error;
+        setResultMsg(`SN ${selectedTest.serial_no} renamed from "${selectedTest.name}" to "${formName.trim()}".`);
+      } else if (op === "delete" && selectedTest) {
+        const { error } = await supabase.from("tests").delete().eq("id", selectedTest.id);
+        if (error) throw error;
+        setResultMsg(`Test SN ${selectedTest.serial_no} "${selectedTest.name}" deleted.`);
       }
       setStage("done");
     } catch (e: any) {
-      setResult({ op, success: false, message: e?.message ?? "Unexpected error." });
-      setStage("error");
+      setErrMsg(e?.message ?? "Unexpected error.");
+      setStage("confirm");
     }
-  }, [op, sn, name, newName]);
+  }, [op, formSn, formName, selectedTest]);
 
-  const reset = () => { setStage("form"); setSn(""); setName(""); setNewName(""); setErrMsg(""); setResult(null); };
+  const resetAll = () => {
+    setStage("select_op"); setSelectedTest(null); setFormSn(""); setFormName(""); setResultMsg(""); setErrMsg("");
+  };
 
   return (
-    <ModalShell icon="🧪" title="Import · Tests"
-      subtitle={stage === "form" ? "Manage test records" : stage === "submitting" ? "Processing…" : "Complete"}
-      onClose={onClose}>
+    <ModalShell icon="🧪" title="Import · Tests" subtitle={stageSubtitle[stage]} onClose={onClose}>
 
-      {(stage === "form" || stage === "error") && (
+      {/* ── Step 1: Select Op ── */}
+      {stage === "select_op" && (
         <div className="flex flex-col gap-4">
-          <div className="flex flex-col gap-1.5">
-            <label className="text-xs font-semibold text-t-muted uppercase tracking-wider">Operation</label>
-            <div className="grid grid-cols-3 gap-2">
-              {opMeta.map(m => (
-                <button key={m.id} onClick={() => { setOp(m.id); setErrMsg(""); }}
-                  className={`flex flex-col items-center gap-1 py-3 rounded-xl border transition-all ${op === m.id ? "border-c-brand bg-c-brand-bg" : "border-[var(--border-color)] bg-bg-card hover:bg-bg-base"}`}>
-                  <span className="text-xl">{m.icon}</span>
-                  <span className={`text-xs font-semibold ${op === m.id ? "text-c-brand" : "text-t-secondary"}`}>{m.label}</span>
-                </button>
-              ))}
-            </div>
+          <div className="flex flex-col gap-2">
+            {opMeta.map(m => (
+              <button key={m.id} onClick={() => { setOp(m.id); setErrMsg(""); }}
+                className={`flex items-center gap-4 px-4 py-3.5 rounded-xl border transition-all text-left ${op === m.id ? "border-c-brand bg-c-brand-bg" : "border-[var(--border-color)] bg-bg-card hover:bg-bg-base"}`}>
+                <span className="text-xl">{m.icon}</span>
+                <div className="flex-1">
+                  <p className={`text-sm font-semibold ${op === m.id ? "text-c-brand" : "text-t-primary"}`}>{m.label}</p>
+                  <p className="text-xs text-t-muted">{m.desc}</p>
+                </div>
+                {op === m.id && <span className="w-4 h-4 rounded-full bg-c-brand flex items-center justify-center text-white text-[10px] font-bold shrink-0">✓</span>}
+              </button>
+            ))}
           </div>
-
-          <div className="flex flex-col gap-1.5">
-            <label className="text-xs font-semibold text-t-muted uppercase tracking-wider">Serial No (SN)</label>
-            <input type="number" step="0.1" value={sn} onChange={e => { setSn(e.target.value); setErrMsg(""); }}
-              placeholder="e.g. 1.1"
-              className="w-full px-4 py-3 rounded-xl bg-bg-card border border-[var(--border-color)] text-t-primary text-sm placeholder:text-t-muted focus:outline-none focus:border-c-brand transition-colors" />
-          </div>
-
-          {op === "create" && (
-            <div className="flex flex-col gap-1.5">
-              <label className="text-xs font-semibold text-t-muted uppercase tracking-wider">Test Name</label>
-              <input type="text" value={name} onChange={e => { setName(e.target.value); setErrMsg(""); }}
-                placeholder="Enter test name…"
-                className="w-full px-4 py-3 rounded-xl bg-bg-card border border-[var(--border-color)] text-t-primary text-sm placeholder:text-t-muted focus:outline-none focus:border-c-brand transition-colors" />
-            </div>
-          )}
-          {op === "update" && (
-            <div className="flex flex-col gap-1.5">
-              <label className="text-xs font-semibold text-t-muted uppercase tracking-wider">New Name</label>
-              <input type="text" value={newName} onChange={e => { setNewName(e.target.value); setErrMsg(""); }}
-                placeholder="Updated test name…"
-                className="w-full px-4 py-3 rounded-xl bg-bg-card border border-[var(--border-color)] text-t-primary text-sm placeholder:text-t-muted focus:outline-none focus:border-c-brand transition-colors" />
-            </div>
-          )}
-          {op === "delete" && (
-            <div className="rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-xs text-red-400 flex items-start gap-2">
-              <span className="text-base leading-none mt-px">⚠️</span>
-              <p>This will permanently delete the test and all associated steps &amp; results.</p>
-            </div>
-          )}
-
-          {(errMsg || stage === "error") && (
-            <div className="rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-xs text-red-400">
-              {errMsg || result?.message}
-            </div>
-          )}
           <div className="flex gap-2 pt-1">
             <button onClick={onBack} className="flex-1 px-4 py-2.5 rounded-xl border border-[var(--border-color)] text-t-secondary hover:text-t-primary text-sm font-medium transition-colors">← Back</button>
-            <button onClick={handleSubmit} className={`flex-1 btn-primary text-sm ${op === "delete" ? "!bg-red-500 hover:!bg-red-600" : ""}`}>
-              {opMeta.find(m => m.id === op)?.icon} {opMeta.find(m => m.id === op)?.label}
+            <button onClick={handleOpNext} className="flex-1 btn-primary text-sm">Next →</button>
+          </div>
+        </div>
+      )}
+
+      {/* ── Step 2: Select Test (update / delete) ── */}
+      {stage === "select_test" && (
+        <div className="flex flex-col gap-4">
+          <div className="flex items-center gap-3 px-4 py-3 rounded-xl border border-[var(--border-color)] bg-bg-card">
+            <span className="text-lg">{opMeta.find(m => m.id === op)?.icon}</span>
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-semibold text-t-primary">{opMeta.find(m => m.id === op)?.label} Test</p>
+            </div>
+            <button onClick={() => setStage("select_op")} className="text-xs text-c-brand hover:underline shrink-0">Change</button>
+          </div>
+
+          <div className="flex flex-col gap-1.5">
+            <label className="text-xs font-semibold text-t-muted uppercase tracking-wider">Select Test</label>
+            {testsLoading ? (
+              <div className="flex items-center gap-2 px-4 py-3 rounded-xl bg-bg-card border border-[var(--border-color)] text-t-muted text-sm">
+                <span className="w-4 h-4 border-2 border-c-brand border-t-transparent rounded-full animate-spin" /> Loading tests…
+              </div>
+            ) : tests.length === 0 ? (
+              <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-xs text-amber-400">No tests found.</div>
+            ) : (
+              <div className="flex flex-col gap-2 max-h-56 overflow-y-auto pr-0.5">
+                {tests.map(t => (
+                  <button key={t.id} onClick={() => setSelectedTest(t)}
+                    className={`flex items-center gap-3 px-4 py-3 rounded-xl border transition-all text-left ${selectedTest?.id === t.id ? "border-c-brand bg-c-brand-bg" : "border-[var(--border-color)] bg-bg-card hover:bg-bg-base"}`}>
+                    <span className="text-lg">🧪</span>
+                    <div className="flex-1 min-w-0">
+                      <p className={`text-sm font-medium truncate ${selectedTest?.id === t.id ? "text-c-brand" : "text-t-primary"}`}>{t.name}</p>
+                      <p className="text-xs text-t-muted">SN {t.serial_no}</p>
+                    </div>
+                    {selectedTest?.id === t.id && <span className="w-4 h-4 rounded-full bg-c-brand flex items-center justify-center text-white text-[10px] font-bold shrink-0">✓</span>}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {op === "delete" && selectedTest && (
+            <div className="rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-xs text-red-400 flex items-start gap-2">
+              <span className="text-base leading-none mt-px">⚠️</span>
+              <p>This will permanently delete <strong>SN {selectedTest.serial_no} — {selectedTest.name}</strong> and all associated steps &amp; results.</p>
+            </div>
+          )}
+
+          <div className="flex gap-2 pt-1">
+            <button onClick={() => setStage("select_op")} className="flex-1 px-4 py-2.5 rounded-xl border border-[var(--border-color)] text-t-secondary hover:text-t-primary text-sm font-medium transition-colors">← Back</button>
+            <button onClick={handleTestNext} disabled={!selectedTest}
+              className={`flex-1 btn-primary text-sm disabled:opacity-50 disabled:cursor-not-allowed ${op === "delete" ? "!bg-red-500 hover:!bg-red-600" : ""}`}>
+              {op === "delete" ? "Review →" : "Next →"}
             </button>
           </div>
         </div>
       )}
 
-      {stage === "submitting" && (
-        <div className="flex flex-col items-center gap-4 py-6">
-          <div className="w-12 h-12 rounded-full border-4 border-c-brand border-t-transparent animate-spin" />
-          <p className="text-sm text-t-secondary">Processing…</p>
+      {/* ── Fill Form (create / update) ── */}
+      {stage === "fill_form" && (
+        <div className="flex flex-col gap-4">
+          {selectedTest && (
+            <div className="flex items-center gap-2 px-3 py-2 rounded-xl border border-[var(--border-color)] bg-bg-card text-xs">
+              <span>🧪</span>
+              <span className="text-t-primary font-medium truncate flex-1">SN {selectedTest.serial_no} — {selectedTest.name}</span>
+              <button onClick={() => setStage("select_test")} className="text-c-brand hover:underline shrink-0">Change</button>
+            </div>
+          )}
+
+          {op === "create" && (
+            <div className="flex flex-col gap-1.5">
+              <label className="text-xs font-semibold text-t-muted uppercase tracking-wider">Serial No (SN)</label>
+              <input
+                type="number" step="0.1"
+                value={formSn}
+                onChange={e => { setFormSn(e.target.value); setErrMsg(""); }}
+                placeholder="e.g. 1.1"
+                className="w-full px-4 py-3 rounded-xl bg-bg-card border border-[var(--border-color)] text-t-primary text-sm placeholder:text-t-muted focus:outline-none focus:border-c-brand transition-colors"
+                autoFocus
+              />
+            </div>
+          )}
+
+          <div className="flex flex-col gap-1.5">
+            <label className="text-xs font-semibold text-t-muted uppercase tracking-wider">
+              {op === "update" ? "New Name" : "Test Name"}
+            </label>
+            <input
+              type="text"
+              value={formName}
+              onChange={e => { setFormName(e.target.value); setErrMsg(""); }}
+              placeholder={op === "update" ? "Updated test name…" : "Enter test name…"}
+              className="w-full px-4 py-3 rounded-xl bg-bg-card border border-[var(--border-color)] text-t-primary text-sm placeholder:text-t-muted focus:outline-none focus:border-c-brand transition-colors"
+              autoFocus={op === "update"}
+            />
+          </div>
+
+          {errMsg && (
+            <div className="rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-xs text-red-400">{errMsg}</div>
+          )}
+
+          <div className="flex gap-2 pt-1">
+            <button onClick={() => op === "create" ? setStage("select_op") : setStage("select_test")}
+              className="flex-1 px-4 py-2.5 rounded-xl border border-[var(--border-color)] text-t-secondary hover:text-t-primary text-sm font-medium transition-colors">← Back</button>
+            <button onClick={handleFormNext} className="flex-1 btn-primary text-sm">Review →</button>
+          </div>
         </div>
       )}
-      {stage === "done" && result && (
+
+      {/* ── Confirm ── */}
+      {stage === "confirm" && (
+        <div className="flex flex-col gap-4">
+          <div className={`rounded-xl border p-4 flex flex-col gap-3 ${op === "delete" ? "border-red-500/40 bg-red-500/10" : "border-[var(--border-color)] bg-bg-card"}`}>
+            <div className="flex items-center gap-2 pb-2 border-b border-[var(--border-color)]">
+              <span className="text-xl">{opMeta.find(m => m.id === op)?.icon}</span>
+              <p className={`text-sm font-bold ${op === "delete" ? "text-red-400" : "text-t-primary"}`}>
+                {op === "create" ? "Creating new test" : op === "update" ? "Updating test" : "Deleting test"}
+              </p>
+            </div>
+            {op === "create" && (
+              <>
+                <Row label="SN" value={formSn} mono />
+                <Row label="Name" value={formName} />
+              </>
+            )}
+            {op === "update" && selectedTest && (
+              <>
+                <Row label="SN" value={String(selectedTest.serial_no)} mono />
+                <DiffRow label="Name" before={selectedTest.name} after={formName} />
+              </>
+            )}
+            {op === "delete" && selectedTest && (
+              <>
+                <Row label="SN"   value={String(selectedTest.serial_no)} mono />
+                <Row label="Name" value={selectedTest.name} />
+                <p className="text-xs text-red-400 font-semibold flex items-center gap-1"><span>⚠️</span> This action cannot be undone.</p>
+              </>
+            )}
+          </div>
+
+          {errMsg && (
+            <div className="rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-xs text-red-400 flex items-start gap-2">
+              <span>❌</span><p>{errMsg}</p>
+            </div>
+          )}
+
+          <div className="flex gap-2 pt-1">
+            <button
+              onClick={() => op === "delete" ? setStage("select_test") : setStage("fill_form")}
+              className="flex-1 px-4 py-2.5 rounded-xl border border-[var(--border-color)] text-t-secondary hover:text-t-primary text-sm font-medium transition-colors">
+              ← {op === "delete" ? "Back" : "Edit"}
+            </button>
+            <button onClick={handleSubmit}
+              className={`flex-1 btn-primary text-sm ${op === "delete" ? "!bg-red-500 hover:!bg-red-600" : ""}`}>
+              {op === "create" ? "✅ Confirm Create" : op === "update" ? "✅ Confirm Update" : "🗑 Confirm Delete"}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ── Submitting ── */}
+      {stage === "submitting" && (
+        <div className="flex flex-col items-center gap-4 py-8">
+          <div className="w-12 h-12 rounded-full border-4 border-c-brand border-t-transparent animate-spin" />
+          <p className="text-sm text-t-secondary">Writing to Supabase…</p>
+        </div>
+      )}
+
+      {/* ── Done ── */}
+      {stage === "done" && (
         <div className="flex flex-col gap-3">
-          <div className={`rounded-xl border p-4 text-sm flex items-start gap-3 ${result.success ? "border-green-500/30 bg-green-500/10 text-green-400" : "border-red-500/30 bg-red-500/10 text-red-400"}`}>
-            <span className="text-xl leading-none">{result.success ? "✅" : "❌"}</span>
-            <p className="font-medium">{result.message}</p>
+          <div className="rounded-xl border border-green-500/30 bg-green-500/10 p-4 text-sm flex items-start gap-3 text-green-400">
+            <span className="text-xl leading-none">✅</span>
+            <p className="font-medium">{resultMsg}</p>
           </div>
           <div className="flex gap-2">
-            <button onClick={reset} className="flex-1 px-4 py-2.5 rounded-xl border border-[var(--border-color)] text-t-secondary hover:text-t-primary text-sm font-medium transition-colors">← Another</button>
+            <button onClick={resetAll} className="flex-1 px-4 py-2.5 rounded-xl border border-[var(--border-color)] text-t-secondary hover:text-t-primary text-sm font-medium transition-colors">← Another</button>
             <button onClick={onClose} className="flex-1 btn-primary text-sm">Done</button>
           </div>
         </div>
       )}
+
     </ModalShell>
   );
 };
