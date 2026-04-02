@@ -7,7 +7,7 @@
  *  3. MUI config         — active flag + typography/shape settings, also persisted
  */
 import React, { createContext, useContext, useEffect, useState, useCallback } from "react";
-import { applyTheme, cssVarMap, TokenKey, TokenMap } from "../theme";
+import { applyTheme, applyBrandShadeOverrides, cssVarMap, TokenKey, TokenMap, BrandShade } from "../theme";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -17,7 +17,7 @@ type ModeOverrides  = Partial<TokenMap>;
 type CustomTokens   = { light: ModeOverrides; dark: ModeOverrides };
 
 export interface MuiConfig {
-  active:               boolean;   // ← whether MUI ThemeProvider is wrapping the app
+  active:               boolean;
   fontFamily:           string;
   fontSize:             number;
   fontWeightRegular:    number;
@@ -51,6 +51,7 @@ export const MUI_CONFIG_DEFAULTS: MuiConfig = {
 const LS_THEME     = "theme";
 const LS_OVERRIDES = "themeEditorOverrides";
 const LS_MUI       = "themeEditorMuiConfig";
+const LS_BRAND_KEY = "themeEditorBrandPalette";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -64,12 +65,19 @@ function loadMuiConfig(): MuiConfig {
   return { ...MUI_CONFIG_DEFAULTS };
 }
 
+function loadBrandOverrides(): Partial<Record<BrandShade, string>> {
+  try { const r = localStorage.getItem(LS_BRAND_KEY); if (r) return JSON.parse(r); } catch {}
+  return {};
+}
+
 function applyThemeWithOverrides(mode: AppTheme, overrides: CustomTokens) {
   applyTheme(mode);
   const root = document.documentElement;
   (Object.entries(overrides[mode]) as [TokenKey, string][]).forEach(([key, value]) => {
     if (value) root.style.setProperty(cssVarMap[key], value);
   });
+  // Re-apply brand shade overrides so ThemeEditor changes survive mode switches.
+  applyBrandShadeOverrides(loadBrandOverrides());
 }
 
 // ─── Context type ─────────────────────────────────────────────────────────────

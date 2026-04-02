@@ -6,7 +6,7 @@
 import React, { useState, useRef, useEffect } from "react";
 import { useTheme, MuiConfig, MUI_CONFIG_DEFAULTS } from "../../context/ThemeContext";
 import { verifyThemePassword } from "../../config/themeEditorConfig";
-import { tokens as defaultTokens, palette as defaultPalette, TokenKey } from "../../theme";
+import { tokens as defaultTokens, palette as defaultPalette, TokenKey, BRAND_SHADES, BrandShade, brandShadeVar } from "../../theme";
 
 type Mode = "light" | "dark";
 
@@ -31,8 +31,6 @@ const TOKEN_LABELS: Record<TokenKey, string> = {
   colorBrand:"Brand Color", colorBrandHover:"Brand Hover", colorBrandBg:"Brand Background",
 };
 
-const BRAND_SHADES = [50, 100, 200, 300, 400, 500, 600, 700, 800, 900] as const;
-type BrandShade = typeof BRAND_SHADES[number];
 const STATUS_KEYS = ["pass", "fail", "pend"] as const;
 type StatusKey = typeof STATUS_KEYS[number];
 const STATUS_LABELS: Record<StatusKey, string> = { pass:"Pass ✅", fail:"Fail ❌", pend:"Pending ⏳" };
@@ -169,20 +167,51 @@ const BrandStatusEditor: React.FC = () => {
   const { theme, setTokenOverride } = useTheme();
   const [brandColors, setBrandColors] = useState<Record<BrandShade, string>>(() => {
     try { const r = localStorage.getItem(LS_BRAND_KEY); if (r) return JSON.parse(r); } catch {}
-    return { ...defaultPalette.brand };
+    return { ...defaultPalette.brand } as Record<BrandShade, string>;
   });
   const [statusColors, setStatusColors] = useState<Record<StatusKey, string>>(() => {
     try { const r = localStorage.getItem(LS_STATUS_KEY); if (r) return JSON.parse(r); } catch {}
     return { pass: defaultPalette.pass, fail: defaultPalette.fail, pend: defaultPalette.pend };
   });
 
+  // Restore brand shade CSS vars from localStorage on mount so they survive
+  // page reloads. applyTheme() sets defaults; we layer overrides on top.
+  useEffect(() => {
+    BRAND_SHADES.forEach(shade => {
+      const saved = brandColors[shade];
+      const def = (defaultPalette.brand as Record<number, string>)[shade];
+      if (saved && saved !== def) {
+        document.documentElement.style.setProperty(brandShadeVar(shade), saved);
+      }
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const handleBrandChange = (shade: BrandShade, value: string) => {
-    const next = { ...brandColors, [shade]: value }; setBrandColors(next);
+    const next = { ...brandColors, [shade]: value };
+    setBrandColors(next);
     localStorage.setItem(LS_BRAND_KEY, JSON.stringify(next));
-    const lm: Partial<Record<BrandShade, TokenKey>> = { 50:"colorBrandBg", 600:"colorBrand", 700:"colorBrandHover" };
-    const dm: Partial<Record<BrandShade, TokenKey>> = { 500:"colorBrand", 400:"colorBrandHover" };
-    if (lm[shade]) setTokenOverride("light", lm[shade]!, value);
-    if (dm[shade]) setTokenOverride("dark",  dm[shade]!,  value);
+
+    // 1. Always set the CSS var for the shade — bg-brand-{shade} resolves to var(--brand-{shade}).
+    document.documentElement.style.setProperty(brandShadeVar(shade), value);
+
+    // 2. Update semantic token overrides for both modes so the correct
+    //    primary/hover/bg tokens track whatever shade the user edits.
+    //    Light:  50→brandBg, 600→brand, 700→brandHover
+    //    Dark:   400→brandHover, 500→brand
+    const lightMap: Partial<Record<BrandShade, TokenKey>> = {
+      50: "colorBrandBg",
+      600: "colorBrand",
+      700: "colorBrandHover",
+    };
+    const darkMap: Partial<Record<BrandShade, TokenKey>> = {
+      400: "colorBrandHover",
+      500: "colorBrand",
+    };
+    const lightKey = lightMap[shade];
+    const darkKey  = darkMap[shade];
+    if (lightKey) setTokenOverride("light", lightKey, value);
+    if (darkKey)  setTokenOverride("dark",  darkKey,  value);
   };
 
   const handleStatusChange = (key: StatusKey, value: string) => {
@@ -196,7 +225,14 @@ const BrandStatusEditor: React.FC = () => {
       <div>
         <div className="flex items-center justify-between mb-2">
           <p className="text-[10px] font-bold uppercase tracking-wider text-t-muted">🎨 Brand Palette</p>
-          <button onClick={() => { setBrandColors({ ...defaultPalette.brand } as any); localStorage.removeItem(LS_BRAND_KEY); }}
+          <button onClick={() => {
+            const def = { ...defaultPalette.brand } as Record<BrandShade, string>;
+            setBrandColors(def);
+            localStorage.removeItem(LS_BRAND_KEY);
+            BRAND_SHADES.forEach(shade => {
+              document.documentElement.style.setProperty(brandShadeVar(shade), def[shade]);
+            });
+          }}
             className="text-[10px] text-t-muted hover:text-fail">Reset</button>
         </div>
         <div className="flex gap-1 mb-3">

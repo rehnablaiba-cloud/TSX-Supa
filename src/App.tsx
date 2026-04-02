@@ -14,48 +14,57 @@ import AuditLog from "./components/AuditLog/AuditLog";
 import Spinner from "./components/UI/Spinner";
 import { supabase } from "./supabase";
 import { Module } from "./types";
+import { tokens, palette, TokenKey } from "./theme";
 
 type Page = "dashboard" | "module" | "execution" | "report" | "users" | "auditlog";
 
 // ─── MUI Activator ─────────────────────────────────────────────────────────────
 //
-// Tries to dynamically import @mui/material + create a live MUI theme from the
-// current token values + MUI config.  If the package is not installed the import
-// fails silently and children render without an MUI ThemeProvider — no crash.
+// Dynamically imports @mui/material and builds a live MUI theme from the
+// current token values + MUI config. Reads token values directly from
+// theme.ts (+ customTokens overrides) rather than getComputedStyle so there
+// are no timing issues with CSS var injection order.
 //
-// Toggle this from the Theme Editor → MUI tab → "Activate MUI ThemeProvider".
+// Toggle from: Theme Editor → MUI tab → "Activate MUI ThemeProvider".
 
 type MuiProviderComponent = React.ComponentType<{ theme: unknown; children: React.ReactNode }>;
 
 const MuiActivator: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const { theme, muiConfig } = useTheme();
+  const { theme, muiConfig, customTokens } = useTheme();
   const [Provider, setProvider] = useState<MuiProviderComponent | null>(null);
-  const [muiTheme, setMuiTheme]   = useState<unknown>(null);
-  const [muiError, setMuiError]   = useState(false);
+  const [muiTheme, setMuiTheme] = useState<unknown>(null);
+  const [muiError, setMuiError] = useState<string | null>(null);
+  const [loading, setLoading]   = useState(false);
 
-  // Build the MUI theme object whenever the active mode or muiConfig changes
   const buildMuiTheme = useCallback(async () => {
-    if (!muiConfig.active) { setProvider(null); return; }
+    if (!muiConfig.active) {
+      setProvider(null);
+      setMuiTheme(null);
+      setMuiError(null);
+      return;
+    }
+
+    setLoading(true);
     try {
-      const [{ ThemeProvider: TP }, { createTheme }] = await Promise.all([
-        import("@mui/material/styles"),
-        import("@mui/material/styles"),
-      ]);
+      const { ThemeProvider: TP, createTheme } = await import("@mui/material/styles");
 
-      // Read the current resolved CSS var values so MUI colours match Tailwind exactly
-      const css = (v: string) =>
-        getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+      // Read token values directly from theme.ts + editor overrides.
+      // This avoids getComputedStyle timing issues (child effects fire before
+      // parent effects, so CSS vars may not be set yet when this runs).
+      const base = tokens[theme];
+      const over = customTokens[theme];
+      const tv = (key: TokenKey): string => (over[key] ?? base[key]) || "";
 
-      const t = createTheme({
+      const muiT = createTheme({
         palette: {
           mode: theme,
-          primary:    { main: css("--color-brand") },
-          error:      { main: css("--color-fail") || "#ef4444" },
-          warning:    { main: css("--color-pend") || "#f59e0b" },
-          success:    { main: css("--color-pass") || "#22c55e" },
-          background: { default: css("--bg-base"), paper: css("--bg-surface") },
-          text:       { primary: css("--text-primary"), secondary: css("--text-secondary") },
-          divider:    css("--border-color"),
+          primary:    { main: tv("colorBrand") || palette.brand[500] },
+          error:      { main: palette.fail },
+          warning:    { main: palette.pend },
+          success:    { main: palette.pass },
+          background: { default: tv("bgBase"), paper: tv("bgSurface") },
+          text:       { primary: tv("textPrimary"), secondary: tv("textSecondary") },
+          divider:    tv("borderColor"),
         },
         shape: { borderRadius: muiConfig.borderRadius },
         typography: {
@@ -80,30 +89,45 @@ const MuiActivator: React.FC<{ children: React.ReactNode }> = ({ children }) => 
         },
       });
 
-      setMuiTheme(t);
+      setMuiTheme(muiT);
+      // Use functional update to store a component (not an updater fn).
       setProvider(() => TP as unknown as MuiProviderComponent);
-      setMuiError(false);
+      setMuiError(null);
     } catch (e) {
-      // @mui/material not installed — fail silently, render without MUI ThemeProvider
-      console.warn("MUI ThemeProvider: @mui/material not found. Run: npm i @mui/material @emotion/react @emotion/styled");
-      setMuiError(true);
+      const msg = e instanceof Error ? e.message : String(e);
+      console.warn("MUI ThemeProvider error:", msg);
+      setMuiError(msg);
       setProvider(null);
+      setMuiTheme(null);
+    } finally {
+      setLoading(false);
     }
-  }, [theme, muiConfig]);
+  }, [theme, muiConfig, customTokens]);
 
   useEffect(() => { buildMuiTheme(); }, [buildMuiTheme]);
 
+  // ── Render ──────────────────────────────────────────────
+
   if (muiConfig.active && muiError) {
-    // Show a non-blocking banner — the app still works with Tailwind
+    const isMissing = muiError.includes("Cannot find module") ||
+                      muiError.includes("Failed to fetch") ||
+                      muiError.includes("not found");
     return (
       <>
         <div className="fixed top-0 left-0 right-0 z-[9999] bg-pend/90 text-white text-xs py-1.5 px-4 text-center">
-          ⚠️ MUI ThemeProvider active but <code>@mui/material</code> is not installed.
-          Run <code className="font-mono bg-black/20 px-1 rounded">npm i @mui/material @emotion/react @emotion/styled</code> — app continues with Tailwind.
+          {isMissing
+            ? <>⚠️ <code>@mui/material</code> not installed. Run: <code className="font-mono bg-black/20 px-1 rounded">npm i @mui/material @emotion/react @emotion/styled</code></>
+            : <>⚠️ MUI theme error — check console. App continues with Tailwind.</>
+          }
         </div>
         {children}
       </>
     );
+  }
+
+  if (muiConfig.active && loading) {
+    // MUI is being loaded — render children as-is to avoid layout flash.
+    return <>{children}</>;
   }
 
   if (Provider && muiTheme) {
