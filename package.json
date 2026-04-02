@@ -17,7 +17,11 @@
     "react-router-dom": "^6.26.0",
     "recharts": "^3.8.1",
     "supabase": "^2.84.5",
-    "uuid": "^10.0.0"
+    "uuid": "^10.0.0",
+    "@mui/material": "^6.0.0",
+    "@emotion/react": "^11.11.0",
+    "@emotion/styled": "^11.11.0",
+    "jszip": "^3.10.1"
   },
   "devDependencies": {
     "@types/react": "^18.3.3",

@@ -37,26 +37,23 @@ const LoginPage: React.FC = () => {
 
       <div
         ref={cardRef}
-        className="
-          glass rounded-3xl p-8 w-full max-w-md shadow-2xl relative overflow-hidden
-          bg-white/80 dark:bg-white/5
-        "
+        className="glass rounded-3xl p-8 w-full max-w-md shadow-2xl relative overflow-hidden"
       >
         <div className="absolute inset-0 shimmer opacity-10 pointer-events-none transform-gpu" />
 
         {/* Header */}
         <div className="flex flex-col items-center mb-8">
-          <div className="w-14 h-14 rounded-2xl bg-blue-600 flex items-center justify-center text-2xl mb-3">
-            🧪
+          <div className="w-14 h-14 rounded-2xl bg-c-brand flex items-center justify-center text-2xl mb-3">
+          🧪
           </div>
-          <h1 className="text-2xl font-bold text-gray-900 dark:text-white">TestPro</h1>
-          <p className="text-gray-500 dark:text-gray-400 text-sm mt-1">QA Test Management</p>
+          <h1 className="text-2xl font-bold text-t-primary">TestPro</h1>
+          <p className="text-t-muted text-sm mt-1">Test Execution Management System</p>
         </div>
 
         {/* Form */}
         <form onSubmit={handleSubmit} className="flex flex-col gap-4">
           <div>
-            <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1.5">
+            <label className="block text-xs text-t-muted mb-1.5">
               Email
             </label>
             <input
@@ -70,7 +67,7 @@ const LoginPage: React.FC = () => {
           </div>
 
           <div>
-            <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1.5">
+            <label className="block text-xs text-t-muted mb-1.5">
               Password
             </label>
             <input

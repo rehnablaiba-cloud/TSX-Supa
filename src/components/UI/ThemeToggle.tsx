@@ -11,7 +11,7 @@ const SunIcon = () => (
 
 const MoonIcon = () => (
   <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"
-    strokeWidth={1.5} stroke="currentColor" className="w-5 h-5 text-blue-400">
+    strokeWidth={1.5} stroke="currentColor" className="w-5 h-5 text-c-brand">
     <path strokeLinecap="round" strokeLinejoin="round"
       d="M21.752 15.002A9.72 9.72 0 0 1 18 15.75 9.75 9.75 0 0 1 8.25 6c0-1.33.266-2.597.748-3.752A9.753 9.753 0 0 0 3 12c0 5.385 4.365 9.75 9.75 9.75 4.596 0 8.477-3.172 9.502-7.498Z" />
   </svg>
@@ -26,9 +26,9 @@ const ThemeToggle: React.FC = () => {
       title="Toggle theme"
       className="
         flex items-center justify-center w-9 h-9 rounded-lg
-        bg-gray-800 hover:bg-gray-700
-        dark:bg-gray-700 dark:hover:bg-gray-600
-        text-gray-300 hover:text-white
+        bg-bg-card hover:bg-bg-surface
+        text-t-secondary hover:text-t-primary
+        border border-[var(--border-color)]
         transition-colors duration-200
       "
     >

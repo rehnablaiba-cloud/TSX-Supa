@@ -1,15 +1,21 @@
 import { useEffect } from "react";
 
-const useReleaseLockOnUnload = (testId: string, userId: string) => {
+// Releases a testlock row when the user closes/refreshes the tab.
+// Uses fetch with keepalive so the request fires even during beforeunload.
+// The REST filter matches on module_test_id + user_id so only the owner's
+// lock is removed (RLS also enforces this server-side).
+
+const useReleaseLockOnUnload = (moduleTestId: string, userId: string) => {
   useEffect(() => {
-    if (!testId || !userId) return;
+    if (!moduleTestId || !userId) return;
 
     const releaseLock = () => {
-      // Use fetch with keepalive so it fires even on tab close
       fetch(
-        `${import.meta.env.VITE_SUPABASE_URL}/rest/v1/testlocks?test_id=eq.${testId}&user_id=eq.${userId}`,
+        // ✅ Fixed: column is module_test_id, not test_id
+        `${import.meta.env.VITE_SUPABASE_URL}/rest/v1/testlocks` +
+        `?module_test_id=eq.${moduleTestId}&user_id=eq.${userId}`,
         {
-          method: "DELETE",
+          method:    "DELETE",
           keepalive: true,
           headers: {
             "apikey":        import.meta.env.VITE_SUPABASE_ANON_KEY,
@@ -27,7 +33,7 @@ const useReleaseLockOnUnload = (testId: string, userId: string) => {
       window.removeEventListener("beforeunload", releaseLock);
       window.removeEventListener("pagehide",     releaseLock);
     };
-  }, [testId, userId]);
+  }, [moduleTestId, userId]);
 };
 
 export default useReleaseLockOnUnload;

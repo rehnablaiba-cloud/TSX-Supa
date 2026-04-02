@@ -2,43 +2,47 @@
 @tailwind components;
 @tailwind utilities;
 
-/* ── Theme tokens ── */
+/*
+ * ── Theme tokens ─────────────────────────────────────────────────────
+ *
+ *  ⚠️  These are FALLBACK defaults only.
+ *  The real values are set at runtime by applyTheme() in src/theme.ts.
+ *  To change colours, edit src/theme.ts — NOT this file.
+ *
+ * ─────────────────────────────────────────────────────────────────────
+ */
 :root {
-  --bg-base:        #f1f5f9;
-  --bg-surface:     #ffffff;
-  --bg-card:        #f8fafc;
-  --bg-nav:         #ffffff;
-  --border-color:   rgba(0,0,0,0.08);
-  --text-primary:   #0f172a;
-  --text-secondary: #475569;
-  --text-muted:     #94a3b8;
-  --input-bg:       #f1f5f9;
-  --input-border:   rgba(0,0,0,0.12);
-  --input-text:     #0f172a;
-  --glass-bg:       rgba(255,255,255,0.7);
-  --glass-border:   rgba(0,0,0,0.08);
-  --grad-from:      #e0e7ff;
-  --grad-via:       #f1f5f9;
-  --grad-to:        #dbeafe;
-}
-
-.dark {
-  --bg-base:        #030712;
-  --bg-surface:     #111827;
-  --bg-card:        #1f2937;
-  --bg-nav:         rgba(17,24,39,0.8);
-  --border-color:   rgba(255,255,255,0.05);
-  --text-primary:   #f9fafb;
-  --text-secondary: #d1d5db;
-  --text-muted:     #6b7280;
-  --input-bg:       #1f2937;
-  --input-border:   rgba(255,255,255,0.10);
-  --input-text:     #f3f4f6;
-  --glass-bg:       rgba(255,255,255,0.05);
-  --glass-border:   rgba(255,255,255,0.10);
-  --grad-from:      #1e1b4b;
-  --grad-via:       #0f172a;
-  --grad-to:        #1e3a5f;
+  /* dark-mode defaults (app starts in dark mode) */
+  --bg-base:          #030712;
+  --bg-surface:       #111827;
+  --bg-card:          #1f2937;
+  --bg-nav:           rgba(17,24,39,0.80);
+  --border-color:     rgba(255,255,255,0.05);
+  --text-primary:     #f9fafb;
+  --text-secondary:   #d1d5db;
+  --text-muted:       #6b7280;
+  --input-bg:         #1f2937;
+  --input-border:     rgba(255,255,255,0.10);
+  --input-text:       #f3f4f6;
+  --glass-bg:         rgba(255,255,255,0.05);
+  --glass-border:     rgba(255,255,255,0.10);
+  --grad-from:        #1e1b4b;
+  --grad-via:         #0f172a;
+  --grad-to:          #1e3a5f;
+  --color-brand:      #3b82f6;
+  --color-brand-hover:#60a5fa;
+  --color-brand-bg:   rgba(59,130,246,0.15);
+  /* Brand shade fallbacks — overwritten by applyTheme() + ThemeEditor */
+  --brand-50:  #eff6ff;
+  --brand-100: #dbeafe;
+  --brand-200: #bfdbfe;
+  --brand-300: #93c5fd;
+  --brand-400: #60a5fa;
+  --brand-500: #3b82f6;
+  --brand-600: #2563eb;
+  --brand-700: #1d4ed8;
+  --brand-800: #1e40af;
+  --brand-900: #1e3a8a;
 }
 
 /* ── Base — use tokens, NOT hardcoded Tailwind classes ── */
@@ -70,11 +74,11 @@
   .btn-primary {
     @apply font-semibold px-4 py-2 rounded-xl transition-all duration-200
            disabled:opacity-50 disabled:cursor-not-allowed;
-    background-color: #1d4ed8;
+    background-color: var(--color-brand);
     color: #ffffff;
   }
   .btn-primary:hover:not(:disabled) {
-    background-color: #1e40af;
+    background-color: var(--color-brand-hover);
   }
 
   .btn-ghost {

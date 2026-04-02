@@ -31,22 +31,22 @@ const ExportModal: React.FC<Props> = ({ isOpen, onClose, title, subtitle, stats,
       {/* Modal */}
       <div
         className="relative
-          bg-white dark:bg-[#1a1d2e]
-          border border-gray-200 dark:border-white/10
+          bg-bg-surface
+          border border-[var(--border-color)]
           rounded-2xl shadow-2xl w-full max-w-md p-6 flex flex-col gap-5"
         onClick={e => e.stopPropagation()}
       >
         {/* Header */}
         <div className="flex items-start justify-between">
           <div>
-            <h2 className="text-lg font-bold text-gray-900 dark:text-white">{title}</h2>
+            <h2 className="text-lg font-bold text-t-primary">{title}</h2>
             {subtitle && (
-              <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">{subtitle}</p>
+              <p className="text-sm text-t-muted mt-0.5">{subtitle}</p>
             )}
           </div>
           <button
             onClick={onClose}
-            className="text-gray-400 dark:text-gray-500 hover:text-gray-900 dark:hover:text-white transition-colors text-xl leading-none mt-0.5"
+            className="text-t-muted hover:text-t-primary transition-colors text-xl leading-none mt-0.5"
           >
             ✕
           </button>
@@ -56,17 +56,17 @@ const ExportModal: React.FC<Props> = ({ isOpen, onClose, title, subtitle, stats,
         <div className="grid grid-cols-3 gap-3">
           {stats.map((s, i) => (
             <div key={i}
-              className="bg-gray-100 dark:bg-white/5
-                border border-gray-200 dark:border-white/10
+              className="bg-bg-card
+                border border-[var(--border-color)]
                 rounded-xl p-3 text-center">
-              <div className="text-lg font-bold text-gray-900 dark:text-white">{s.value}</div>
-              <div className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">{s.label}</div>
+              <div className="text-lg font-bold text-t-primary">{s.value}</div>
+              <div className="text-xs text-t-muted mt-0.5">{s.label}</div>
             </div>
           ))}
         </div>
 
         {/* Divider */}
-        <div className="text-xs text-gray-400 dark:text-gray-500 uppercase tracking-widest font-semibold">
+        <div className="text-xs text-t-muted uppercase tracking-widest font-semibold">
           Choose Format
         </div>
 
@@ -89,10 +89,10 @@ const ExportModal: React.FC<Props> = ({ isOpen, onClose, title, subtitle, stats,
         <button
           onClick={onClose}
           className="w-full py-2.5 rounded-xl
-            border border-gray-200 dark:border-white/10
-            text-gray-500 dark:text-gray-400
-            hover:text-gray-900 dark:hover:text-white
-            hover:border-gray-400 dark:hover:border-white/20
+            border border-[var(--border-color)]
+            text-t-muted
+            hover:text-t-primary
+            hover:border-c-brand
             text-sm font-medium transition-colors"
         >
           Cancel
