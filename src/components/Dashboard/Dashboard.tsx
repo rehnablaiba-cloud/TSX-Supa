@@ -9,14 +9,15 @@ interface Props {
   onNavigate: (page: string, moduleId?: string) => void;
 }
 
-function getModuleStats(tests: any[]) {
+// Stats are now derived from module_tests → step_results (not tests → steps)
+function getModuleStats(moduleTests: any[]) {
   let total = 0, pass = 0, fail = 0, pending = 0;
-  for (const t of tests ?? []) {
-    for (const s of t.steps ?? []) {
+  for (const mt of moduleTests ?? []) {
+    for (const sr of mt.step_results ?? []) {
       total++;
-      if (s.status === "pass")      pass++;
-      else if (s.status === "fail") fail++;
-      else                          pending++;
+      if (sr.status === "pass")      pass++;
+      else if (sr.status === "fail") fail++;
+      else                           pending++;
     }
   }
   return { total, pass, fail, pending, passRate: total > 0 ? Math.round((pass / total) * 100) : 0 };
@@ -24,7 +25,7 @@ function getModuleStats(tests: any[]) {
 
 function buildSummaries(modules: any[]): ModuleSummary[] {
   return modules.map(m => {
-    const stats = getModuleStats(m.tests);
+    const stats = getModuleStats(m.module_tests);
     return { name: m.name, description: m.description, ...stats };
   });
 }
@@ -37,8 +38,11 @@ const Dashboard: React.FC<Props> = ({ onNavigate }) => {
   const gridRef = useRef<HTMLDivElement>(null);
 
   const fetchModules = async (isInitial = false) => {
+    // Traverse: modules → module_tests → step_results(status)
     const { data, error: err } = await supabase
-      .from("modules").select("*, tests(steps(status))").order("name");
+      .from("modules")
+      .select("*, module_tests(step_results(status))")
+      .order("name");
     if (err) setError(err.message);
     else { setModules(data ?? []); setError(null); }
     if (isInitial) setInitialLoad(false);
@@ -119,7 +123,7 @@ const Dashboard: React.FC<Props> = ({ onNavigate }) => {
       ) : (
         <div ref={gridRef} className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
           {modules.map((m: any) => {
-            const { total, pass, fail, pending, passRate } = getModuleStats(m.tests);
+            const { total, pass, fail, pending, passRate } = getModuleStats(m.module_tests);
             const accent = m.accent_color || "var(--color-brand)";
             return (
               <button

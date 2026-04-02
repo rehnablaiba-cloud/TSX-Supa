@@ -2,7 +2,7 @@ import React, { useEffect, useState, useRef, useMemo, useCallback } from "react"
 import { supabase } from "../../supabase";
 import Spinner from "../UI/Spinner";
 import Topbar from "../Layout/Topbar";
-import { Step, Test } from "../../types";
+import { StepResult, ModuleTest } from "../../types";
 import { useAuth } from "../../context/AuthContext";
 import { useTheme } from "../../context/ThemeContext";
 import {
@@ -39,14 +39,12 @@ function useInjectStyle() {
   }, []);
 }
 
-// ── FadeWrapper ───────────────────────────────────────────────────────────────
 const FadeWrapper: React.FC<{ animKey: string | number; children: React.ReactNode }> = ({ animKey, children }) => (
   <div key={animKey} style={{ animation: "fadeSlideIn 0.28s cubic-bezier(0.22,1,0.36,1) both" }}>
     {children}
   </div>
 );
 
-// ── StaggerRow ────────────────────────────────────────────────────────────────
 const StaggerRow: React.FC<{ index: number; children: React.ReactNode }> = ({ index, children }) => (
   <div style={{
     animation: "fadeSlideInRow 0.25s cubic-bezier(0.22,1,0.36,1) both",
@@ -74,15 +72,27 @@ interface ChartTheme {
   border: string; tooltipBg: string; tooltipText: string; tooltipName: string;
 }
 
-// ── Types ─────────────────────────────────────────────────────────────────────
+// ── Props ─────────────────────────────────────────────────────────────────────
 interface Props {
   moduleId: string;
   moduleName: string;
   onBack: () => void;
-  onExecute: (testId: string) => void;
+  onExecute: (moduleTestId: string) => void; // now receives module_test.id
 }
 
-// ── Custom Tooltip ────────────────────────────────────────────────────────────
+// ── Joined shape returned by Supabase ────────────────────────────────────────
+interface ModuleTestRow {
+  id: string;
+  module_id: string;
+  test_id: string;
+  order_index: number;
+  test: { id: string; serial_no: number; name: string; description?: string };
+  step_results: (StepResult & {
+    step: { id: string; serial_no: number; action: string; expected_result: string; is_divider: boolean };
+  })[];
+}
+
+// ── Tooltips ──────────────────────────────────────────────────────────────────
 const CustomTooltip: React.FC<{
   active?: boolean; payload?: any[]; label?: string; ct: ChartTheme;
 }> = ({ active, payload, label, ct }) => {
@@ -101,7 +111,6 @@ const CustomTooltip: React.FC<{
   );
 };
 
-// ── Custom Pie Tooltip ────────────────────────────────────────────────────────
 const PieTooltip: React.FC<{
   active?: boolean; payload?: any[]; ct: ChartTheme;
 }> = ({ active, payload, ct }) => {
@@ -119,7 +128,7 @@ const PieTooltip: React.FC<{
   );
 };
 
-// ── Chart components ──────────────────────────────────────────────────────────
+// ── Chart sub-components ──────────────────────────────────────────────────────
 const RBarChart: React.FC<{ data: ChartRow[]; ct: ChartTheme }> = ({ data, ct }) => (
   <ResponsiveContainer width="100%" height={220}>
     <BarChart data={data} margin={{ top: 8, right: 16, left: -16, bottom: 8 }} barCategoryGap="28%" barGap={3}>
@@ -253,14 +262,13 @@ const RRadarChart: React.FC<{ data: ChartRow[]; ct: ChartTheme }> = ({ data, ct 
 // ── Main Component ────────────────────────────────────────────────────────────
 const ModuleDashboard: React.FC<Props> = ({ moduleId, moduleName, onBack, onExecute }) => {
   useInjectStyle();
-  const { user } = useAuth();
+  const { user }  = useAuth();
   const { theme } = useTheme();
 
-  const [tests, setTests]                   = useState<Test[]>([]);
-  const [allSteps, setAllSteps]             = useState<(Step & { test_id: string })[]>([]);
+  const [moduleTests, setModuleTests]       = useState<ModuleTestRow[]>([]);
   const [loading, setLoading]               = useState(true);
   const [locks, setLocks]                   = useState<any[]>([]);
-  const [selectedTestId, setSelectedTestId] = useState<string | null>(null);
+  const [selectedMtId, setSelectedMtId]     = useState<string | null>(null);
   const [chartType, setChartType]           = useState<ChartType>("bar");
 
   // ── Debounced lock refetch ─────────────────────────────────────────────────
@@ -272,24 +280,28 @@ const ModuleDashboard: React.FC<Props> = ({ moduleId, moduleName, onBack, onExec
     }, 300);
   }, []);
 
-  // ── Tests + steps + locks — parallel ──────────────────────────────────────
+  // ── Load: module_tests → tests + step_results → steps ────────────────────
   useEffect(() => {
     const load = async () => {
       setLoading(true);
 
-      const [testsRes, locksRes] = await Promise.all([
+      const [mtRes, locksRes] = await Promise.all([
         supabase
-          .from("tests")
-          .select("*, steps(*)")
+          .from("module_tests")
+          .select(`
+            id, module_id, test_id, order_index,
+            test:tests ( id, serial_no, name, description ),
+            step_results (
+              id, module_test_id, step_id, status, remarks, updated_at,
+              step:steps ( id, serial_no, action, expected_result, is_divider )
+            )
+          `)
           .eq("module_id", moduleId)
           .order("order_index"),
         supabase.from("testlocks").select("*"),
       ]);
 
-      const fetchedTests = (testsRes.data ?? []) as (Test & { steps: (Step & { test_id: string })[] })[];
-
-      setTests(fetchedTests);
-      setAllSteps(fetchedTests.flatMap(t => (t.steps ?? []).map(s => ({ ...s, test_id: t.id }))));
+      setModuleTests((mtRes.data ?? []) as ModuleTestRow[]);
       setLocks(locksRes.data ?? []);
       setLoading(false);
     };
@@ -301,7 +313,6 @@ const ModuleDashboard: React.FC<Props> = ({ moduleId, moduleName, onBack, onExec
     const channel = supabase.channel("all-locks")
       .on("postgres_changes", { event: "*", schema: "public", table: "testlocks" }, refetchLocks)
       .subscribe();
-
     return () => {
       if (lockRefetchTimer.current) clearTimeout(lockRefetchTimer.current);
       supabase.removeChannel(channel);
@@ -315,34 +326,35 @@ const ModuleDashboard: React.FC<Props> = ({ moduleId, moduleName, onBack, onExec
     : { panel: "#ffffff", text: "#0f172a", muted: "#475569", grid: "#cbd5e1",
         border: "#cbd5e1", tooltipBg: "#ffffff", tooltipText: "#0f172a", tooltipName: "#475569" };
 
-  const filteredTests = selectedTestId ? tests.filter(t => t.id === selectedTestId) : tests;
+  const filteredMts = selectedMtId ? moduleTests.filter(mt => mt.id === selectedMtId) : moduleTests;
 
+  // Chart rows: count step_results per test, excluding is_divider steps
   const chartData = useMemo<ChartRow[]>(() =>
-    filteredTests.map(t => {
-      const steps = allSteps.filter(s => s.test_id === t.id && !s.is_divider);
+    filteredMts.map(mt => {
+      const results = (mt.step_results ?? []).filter(sr => !sr.step?.is_divider);
       return {
-        name:    t.name,
-        pass:    steps.filter(s => s.status === "pass").length,
-        fail:    steps.filter(s => s.status === "fail").length,
-        pending: steps.filter(s => s.status === "pending").length,
+        name:    mt.test?.name ?? "",
+        pass:    results.filter(sr => sr.status === "pass").length,
+        fail:    results.filter(sr => sr.status === "fail").length,
+        pending: results.filter(sr => sr.status === "pending").length,
       };
-    }), [filteredTests, allSteps]);
+    }), [filteredMts]);
 
   // ── Execute guard ──────────────────────────────────────────────────────────
-  const handleExecute = (testId: string) => {
-    const lock = locks.find(l => l.test_id === testId);
+  const handleExecute = (mtId: string) => {
+    const lock = locks.find(l => l.module_test_id === mtId);
     if (lock && lock.user_id !== user?.id) return;
-    onExecute(testId);
+    onExecute(mtId);
   };
 
-  const listAnimKey  = selectedTestId ?? "all";
-  const chartAnimKey = `${selectedTestId ?? "all"}-${chartType}`;
+  const listAnimKey  = selectedMtId ?? "all";
+  const chartAnimKey = `${selectedMtId ?? "all"}-${chartType}`;
 
   if (loading) return <div className="flex-1 flex items-center justify-center"><Spinner /></div>;
 
   return (
     <div className="flex-1 flex flex-col">
-      <Topbar title={moduleName} subtitle={`${tests.length} tests`} onBack={onBack} />
+      <Topbar title={moduleName} subtitle={`${moduleTests.length} tests`} onBack={onBack} />
 
       <div className="p-6 flex flex-col gap-6 pb-24 md:pb-6">
 
@@ -379,17 +391,19 @@ const ModuleDashboard: React.FC<Props> = ({ moduleId, moduleName, onBack, onExec
           </FadeWrapper>
         </div>
 
-        {/* ── Toolbar: filter only ── */}
+        {/* ── Filter ── */}
         <div className="flex flex-wrap items-center gap-3">
           <label className="text-sm text-t-muted">Filter by Test</label>
           <select
-            value={selectedTestId ?? ""}
-            onChange={(e) => setSelectedTestId(e.target.value || null)}
+            value={selectedMtId ?? ""}
+            onChange={(e) => setSelectedMtId(e.target.value || null)}
             className="input text-sm"
           >
             <option value="">All Tests</option>
-            {tests.map((t) => (
-              <option key={t.id} value={t.id}>{t.name}</option>
+            {moduleTests.map((mt) => (
+              <option key={mt.id} value={mt.id}>
+                {mt.test?.serial_no} — {mt.test?.name}
+              </option>
             ))}
           </select>
         </div>
@@ -400,20 +414,23 @@ const ModuleDashboard: React.FC<Props> = ({ moduleId, moduleName, onBack, onExec
 
           <FadeWrapper animKey={listAnimKey}>
             <div className="flex flex-col gap-3">
-              {filteredTests.length === 0 ? (
+              {filteredMts.length === 0 ? (
                 <p className="text-sm text-t-muted">No tests found.</p>
               ) : (
-                filteredTests.map((test, index) => {
-                  const lock            = locks.find(l => l.test_id === test.id);
+                filteredMts.map((mt, index) => {
+                  const lock            = locks.find(l => l.module_test_id === mt.id);
                   const isLockedByOther = !!(lock && lock.user_id !== user?.id);
                   const isLockedByMe    = !!(lock && lock.user_id === user?.id);
-                  const steps           = allSteps.filter(s => s.test_id === test.id && !s.is_divider);
+                  // Non-divider results only for stats
+                  const results = (mt.step_results ?? []).filter(sr => !sr.step?.is_divider);
                   return (
-                    <StaggerRow key={test.id} index={index}>
+                    <StaggerRow key={mt.id} index={index}>
                       <TestRow
-                        test={test}
-                        steps={steps}
-                        onExecute={() => handleExecute(test.id)}
+                        moduleTestId={mt.id}
+                        testName={mt.test?.name ?? ""}
+                        testSerialNo={mt.test?.serial_no ?? 0}
+                        results={results}
+                        onExecute={() => handleExecute(mt.id)}
                         isLockedByOther={isLockedByOther}
                         isLockedByMe={isLockedByMe}
                         lockedByName={lock?.locked_by_name ?? ""}
@@ -432,17 +449,19 @@ const ModuleDashboard: React.FC<Props> = ({ moduleId, moduleName, onBack, onExec
 
 // ── Test Row ──────────────────────────────────────────────────────────────────
 const TestRow: React.FC<{
-  test: Test;
-  steps: Step[];
+  moduleTestId: string;
+  testName: string;
+  testSerialNo: number;
+  results: StepResult[];
   onExecute: () => void;
   isLockedByOther: boolean;
   isLockedByMe: boolean;
   lockedByName: string;
-}> = ({ test, steps, onExecute, isLockedByOther, isLockedByMe, lockedByName }) => {
-  const passed  = steps.filter(s => s.status === "pass").length;
-  const failed  = steps.filter(s => s.status === "fail").length;
-  const pending = steps.filter(s => s.status === "pending").length;
-  const total   = steps.length || 1;
+}> = ({ testName, testSerialNo, results, onExecute, isLockedByOther, isLockedByMe, lockedByName }) => {
+  const passed  = results.filter(r => r.status === "pass").length;
+  const failed  = results.filter(r => r.status === "fail").length;
+  const pending = results.filter(r => r.status === "pending").length;
+  const total   = results.length || 1;
   const rate    = Math.round((passed / total) * 100);
 
   const borderColor = isLockedByOther
@@ -458,8 +477,9 @@ const TestRow: React.FC<{
     >
       <div className="flex-1">
         <div className="flex items-center gap-2 flex-wrap">
+          <span className="text-xs font-mono text-t-muted">#{testSerialNo}</span>
           <p className={`font-medium text-t-primary ${isLockedByOther ? "opacity-40" : ""}`}>
-            {test.name}
+            {testName}
           </p>
           {isLockedByOther && (
             <span className="flex items-center gap-1 text-xs font-semibold text-amber-600 dark:text-amber-500 bg-amber-500/15 border border-amber-500/40 rounded-full px-2.5 py-0.5">
