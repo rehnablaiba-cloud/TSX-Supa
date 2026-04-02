@@ -329,160 +329,145 @@ const ImportModulesModal: React.FC<{ onClose: () => void; onBack: () => void }> 
 // ─────────────────────────────────────────────────────────────────────────
 // IMPORT TESTS MODAL — CSV with sn (float) + name columns
 // ─────────────────────────────────────────────────────────────────────────
-interface TestCsvRow { sn: number; name: string; }
-interface TestImportSummary { inserted: number; skipped: number; errors: string[]; }
-type TestImportStage = "upload" | "preview" | "importing" | "done";
-
-function parseTestsCsv(text: string): { rows: TestCsvRow[]; errors: string[] } {
-  const lines = text.replace(/\r\n/g, "\n").replace(/\r/g, "\n").split("\n");
-  const errors: string[] = []; const rows: TestCsvRow[] = [];
-  if (lines.length < 2) { errors.push("File is empty."); return { rows, errors }; }
-  const header = lines[0].split(",").map(h => h.trim().toLowerCase().replace(/\s+/g, "_"));
-  const iSn = header.indexOf("sn"); const iName = header.indexOf("name");
-  const missing: string[] = [];
-  if (iSn   < 0) missing.push("sn");
-  if (iName < 0) missing.push("name");
-  if (missing.length) { errors.push(`Missing columns: ${missing.join(", ")}`); return { rows, errors }; }
-  for (let i = 1; i < lines.length; i++) {
-    const raw = lines[i].trim(); if (!raw) continue;
-    const cells: string[] = []; let cur = "", inQ = false;
-    for (const ch of raw) {
-      if (ch === '"') { inQ = !inQ; continue; }
-      if (ch === "," && !inQ) { cells.push(cur.trim()); cur = ""; } else cur += ch;
-    }
-    cells.push(cur.trim());
-    const snVal = parseFloat(cells[iSn] ?? "");
-    if (isNaN(snVal)) { errors.push(`Row ${i + 1}: invalid sn "${cells[iSn]}" — skipped.`); continue; }
-    const nameVal = cells[iName] ?? "";
-    if (!nameVal) { errors.push(`Row ${i + 1}: empty name — skipped.`); continue; }
-    rows.push({ sn: snVal, name: nameVal });
-  }
-  return { rows, errors };
-}
+// ─────────────────────────────────────────────────────────────────────────
+// IMPORT TESTS MODAL — manual: create / update / delete
+// ─────────────────────────────────────────────────────────────────────────
+type TestOp = "create" | "update" | "delete";
+type TestImportStage = "form" | "submitting" | "done" | "error";
+interface TestResult { op: TestOp; success: boolean; message: string; }
 
 const ImportTestsModal: React.FC<{ onClose: () => void; onBack: () => void }> = ({ onClose, onBack }) => {
-  const [stage, setStage]           = useState<TestImportStage>("upload");
-  const [rows, setRows]             = useState<TestCsvRow[]>([]);
-  const [parseErrors, setParseErrors] = useState<string[]>([]);
-  const [summary, setSummary]       = useState<TestImportSummary | null>(null);
-  const fileRef = useRef<HTMLInputElement>(null);
+  const [stage,   setStage]   = useState<TestImportStage>("form");
+  const [op,      setOp]      = useState<TestOp>("create");
+  const [sn,      setSn]      = useState("");
+  const [name,    setName]    = useState("");
+  const [newName, setNewName] = useState("");
+  const [result,  setResult]  = useState<TestResult | null>(null);
+  const [errMsg,  setErrMsg]  = useState("");
 
-  const handleFile = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]; if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (ev) => {
-      const { rows: parsed, errors } = parseTestsCsv(ev.target?.result as string);
-      setRows(parsed); setParseErrors(errors); setStage("preview");
-    };
-    reader.readAsText(file);
-  };
+  const opMeta = [
+    { id: "create" as TestOp, label: "Create", icon: "➕" },
+    { id: "update" as TestOp, label: "Update", icon: "✏️"  },
+    { id: "delete" as TestOp, label: "Delete", icon: "🗑"  },
+  ];
 
-  const handleImport = useCallback(async () => {
-    setStage("importing");
-    const result: TestImportSummary = { inserted: 0, skipped: 0, errors: [] };
+  const handleSubmit = useCallback(async () => {
+    const snVal = parseFloat(sn);
+    if (isNaN(snVal))                              { setErrMsg("Serial number must be a valid number."); return; }
+    if (op === "create" && !name.trim())           { setErrMsg("Test name is required."); return; }
+    if (op === "update" && !newName.trim())        { setErrMsg("New name is required for Update."); return; }
+    setErrMsg(""); setStage("submitting");
     try {
-      for (const row of rows) {
-        const { error } = await supabase.from("tests").upsert({ serial_no: row.sn, name: row.name }, { onConflict: "serial_no" });
-        if (error) { result.errors.push(`SN ${row.sn} — ${error.message}`); result.skipped++; }
-        else result.inserted++;
+      if (op === "create") {
+        const { error } = await supabase.from("tests").insert({ serial_no: snVal, name: name.trim() });
+        if (error) throw error;
+        setResult({ op, success: true, message: `Test SN ${snVal} "${name.trim()}" created.` });
+      } else {
+        const { data: existing, error: fe } = await supabase.from("tests").select("id").eq("serial_no", snVal).maybeSingle();
+        if (fe) throw fe;
+        if (!existing) throw new Error(`No test found with SN ${snVal}.`);
+        if (op === "update") {
+          const { error } = await supabase.from("tests").update({ name: newName.trim() }).eq("id", existing.id);
+          if (error) throw error;
+          setResult({ op, success: true, message: `SN ${snVal} renamed to "${newName.trim()}".` });
+        } else {
+          const { error } = await supabase.from("tests").delete().eq("id", existing.id);
+          if (error) throw error;
+          setResult({ op, success: true, message: `Test SN ${snVal} deleted.` });
+        }
       }
-    } catch (e: any) { result.errors.push(e?.message ?? "Unexpected error."); }
-    setSummary(result); setStage("done");
-  }, [rows]);
+      setStage("done");
+    } catch (e: any) {
+      setResult({ op, success: false, message: e?.message ?? "Unexpected error." });
+      setStage("error");
+    }
+  }, [op, sn, name, newName]);
+
+  const reset = () => { setStage("form"); setSn(""); setName(""); setNewName(""); setErrMsg(""); setResult(null); };
 
   return (
     <ModalShell icon="🧪" title="Import · Tests"
-      subtitle={stage === "upload" ? "Upload CSV with sn & name" : stage === "preview" ? `${rows.length} tests found` : stage === "importing" ? "Writing to Supabase…" : "Import complete"}
+      subtitle={stage === "form" ? "Manage test records" : stage === "submitting" ? "Processing…" : "Complete"}
       onClose={onClose}>
-      {stage === "upload" && (
+
+      {(stage === "form" || stage === "error") && (
         <div className="flex flex-col gap-4">
-          <div className="rounded-xl border border-[var(--border-color)] bg-bg-card p-4 text-xs text-t-muted">
-            <p className="text-t-secondary font-semibold mb-2 text-xs uppercase tracking-wider">Required columns</p>
-            <div className="flex flex-col gap-2">
-              {[["sn", "Serial number — float (e.g. 1.1, 2.3)"], ["name", "Test name — string"]].map(([col, desc]) => (
-                <div key={col} className="flex items-start gap-3">
-                  <code className="text-c-brand font-bold w-12 shrink-0">{col}</code>
-                  <span className="text-t-muted">{desc}</span>
-                </div>
+          {/* Op selector */}
+          <div className="flex flex-col gap-1.5">
+            <label className="text-xs font-semibold text-t-muted uppercase tracking-wider">Operation</label>
+            <div className="grid grid-cols-3 gap-2">
+              {opMeta.map(m => (
+                <button key={m.id} onClick={() => { setOp(m.id); setErrMsg(""); }}
+                  className={`flex flex-col items-center gap-1 py-3 rounded-xl border transition-all ${op === m.id ? "border-c-brand bg-c-brand-bg" : "border-[var(--border-color)] bg-bg-card hover:bg-bg-base"}`}>
+                  <span className="text-xl">{m.icon}</span>
+                  <span className={`text-xs font-semibold ${op === m.id ? "text-c-brand" : "text-t-secondary"}`}>{m.label}</span>
+                </button>
               ))}
             </div>
           </div>
-          <div className="rounded-xl border border-[var(--border-color)] bg-bg-card p-4 text-xs font-mono text-t-muted">
-            <p className="text-t-secondary font-semibold mb-1.5 not-italic font-sans text-xs uppercase tracking-wider">Example</p>
-            <p className="text-c-brand">sn,name</p>
-            <p>1.1,Login flow</p>
-            <p>1.2,Password reset</p>
-            <p>2.1,Dashboard load</p>
+
+          {/* Serial No */}
+          <div className="flex flex-col gap-1.5">
+            <label className="text-xs font-semibold text-t-muted uppercase tracking-wider">Serial No (SN)</label>
+            <input type="number" step="0.1" value={sn} onChange={e => { setSn(e.target.value); setErrMsg(""); }}
+              placeholder="e.g. 1.1"
+              className="w-full px-4 py-3 rounded-xl bg-bg-card border border-[var(--border-color)] text-t-primary text-sm placeholder:text-t-muted focus:outline-none focus:border-c-brand transition-colors" />
           </div>
-          <button onClick={() => fileRef.current?.click()}
-            className="flex flex-col items-center gap-2 p-6 rounded-xl border-2 border-dashed border-[var(--border-color)] hover:border-c-brand/60 hover:bg-bg-card transition-colors cursor-pointer">
-            <span className="text-3xl">📂</span>
-            <span className="text-sm font-medium text-t-secondary">Tap to choose CSV file</span>
-          </button>
-          <input ref={fileRef} type="file" accept=".csv,text/csv" className="hidden" onChange={handleFile} />
-          <button onClick={onBack} className="w-full px-4 py-2.5 rounded-xl border border-[var(--border-color)] text-t-secondary hover:text-t-primary text-sm font-medium transition-colors">← Back</button>
-        </div>
-      )}
-      {stage === "preview" && (
-        <div className="flex flex-col gap-3">
-          {parseErrors.length > 0 && (
-            <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-400 flex flex-col gap-1">
-              <p className="font-semibold">Warnings ({parseErrors.length}):</p>
-              {parseErrors.map((e, i) => <p key={i}>• {e}</p>)}
+
+          {/* Name field */}
+          {op === "create" && (
+            <div className="flex flex-col gap-1.5">
+              <label className="text-xs font-semibold text-t-muted uppercase tracking-wider">Test Name</label>
+              <input type="text" value={name} onChange={e => { setName(e.target.value); setErrMsg(""); }}
+                placeholder="Enter test name…"
+                className="w-full px-4 py-3 rounded-xl bg-bg-card border border-[var(--border-color)] text-t-primary text-sm placeholder:text-t-muted focus:outline-none focus:border-c-brand transition-colors" />
             </div>
           )}
-          {rows.length === 0 ? <p className="text-sm text-red-400 text-center py-4">No valid rows found.</p> : (
-            <>
-              <div className="rounded-xl bg-bg-card border border-[var(--border-color)] p-3 text-center">
-                <p className="text-3xl font-bold text-c-brand">{rows.length}</p>
-                <p className="text-xs text-t-muted mt-0.5">Tests to import</p>
-              </div>
-              <div className="rounded-xl border border-[var(--border-color)] overflow-hidden max-h-52 overflow-y-auto">
-                <table className="w-full text-xs">
-                  <thead className="bg-bg-card sticky top-0">
-                    <tr><th className="px-3 py-2 text-left text-t-muted font-semibold">SN</th><th className="px-3 py-2 text-left text-t-muted font-semibold">Name</th></tr>
-                  </thead>
-                  <tbody className="divide-y divide-[var(--border-color)]">
-                    {rows.map((r, i) => (
-                      <tr key={i} className="hover:bg-bg-card">
-                        <td className="px-3 py-2 font-mono text-c-brand">{r.sn}</td>
-                        <td className="px-3 py-2 text-t-primary truncate max-w-[200px]">{r.name}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-              <div className="flex gap-2">
-                <button onClick={() => { setStage("upload"); setRows([]); setParseErrors([]); }} className="flex-1 px-4 py-2.5 rounded-xl border border-[var(--border-color)] text-t-secondary hover:text-t-primary text-sm font-medium transition-colors">← Back</button>
-                <button onClick={handleImport} className="flex-1 btn-primary text-sm">Import {rows.length} Tests →</button>
-              </div>
-            </>
+          {op === "update" && (
+            <div className="flex flex-col gap-1.5">
+              <label className="text-xs font-semibold text-t-muted uppercase tracking-wider">New Name</label>
+              <input type="text" value={newName} onChange={e => { setNewName(e.target.value); setErrMsg(""); }}
+                placeholder="Updated test name…"
+                className="w-full px-4 py-3 rounded-xl bg-bg-card border border-[var(--border-color)] text-t-primary text-sm placeholder:text-t-muted focus:outline-none focus:border-c-brand transition-colors" />
+            </div>
           )}
+          {op === "delete" && (
+            <div className="rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-xs text-red-400 flex items-start gap-2">
+              <span className="text-base leading-none mt-px">⚠️</span>
+              <p>This will permanently delete the test and all associated steps &amp; results.</p>
+            </div>
+          )}
+
+          {(errMsg || stage === "error") && (
+            <div className="rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-xs text-red-400">
+              {errMsg || result?.message}
+            </div>
+          )}
+          <div className="flex gap-2 pt-1">
+            <button onClick={onBack} className="flex-1 px-4 py-2.5 rounded-xl border border-[var(--border-color)] text-t-secondary hover:text-t-primary text-sm font-medium transition-colors">← Back</button>
+            <button onClick={handleSubmit} className={`flex-1 btn-primary text-sm ${op === "delete" ? "!bg-red-500 hover:!bg-red-600" : ""}`}>
+              {opMeta.find(m => m.id === op)?.icon} {opMeta.find(m => m.id === op)?.label}
+            </button>
+          </div>
         </div>
       )}
-      {stage === "importing" && (
+
+      {stage === "submitting" && (
         <div className="flex flex-col items-center gap-4 py-6">
           <div className="w-12 h-12 rounded-full border-4 border-c-brand border-t-transparent animate-spin" />
-          <p className="text-sm text-t-secondary">Writing tests to Supabase…</p>
+          <p className="text-sm text-t-secondary">Processing…</p>
         </div>
       )}
-      {stage === "done" && summary && (
+      {stage === "done" && result && (
         <div className="flex flex-col gap-3">
-          <div className="grid grid-cols-2 gap-2">
-            {[{ label: "Inserted", value: summary.inserted, color: "text-green-400" }, { label: "Skipped", value: summary.skipped, color: "text-amber-400" }].map(s => (
-              <div key={s.label} className="rounded-xl bg-bg-card border border-[var(--border-color)] p-3 text-center">
-                <p className={`text-2xl font-bold ${s.color}`}>{s.value}</p>
-                <p className="text-xs text-t-muted mt-0.5">{s.label}</p>
-              </div>
-            ))}
+          <div className={`rounded-xl border p-4 text-sm flex items-start gap-3 ${result.success ? "border-green-500/30 bg-green-500/10 text-green-400" : "border-red-500/30 bg-red-500/10 text-red-400"}`}>
+            <span className="text-xl leading-none">{result.success ? "✅" : "❌"}</span>
+            <p className="font-medium">{result.message}</p>
           </div>
-          {summary.errors.length > 0 && (
-            <div className="rounded-xl border border-red-500/30 bg-red-500/10 p-3 text-xs text-red-400 max-h-32 overflow-y-auto flex flex-col gap-1">
-              <p className="font-semibold">Errors ({summary.errors.length}):</p>
-              {summary.errors.map((e, i) => <p key={i}>• {e}</p>)}
-            </div>
-          )}
-          <button onClick={onClose} className="btn-primary text-sm w-full">Done</button>
+          <div className="flex gap-2">
+            <button onClick={reset} className="flex-1 px-4 py-2.5 rounded-xl border border-[var(--border-color)] text-t-secondary hover:text-t-primary text-sm font-medium transition-colors">← Another</button>
+            <button onClick={onClose} className="flex-1 btn-primary text-sm">Done</button>
+          </div>
         </div>
       )}
     </ModalShell>
@@ -490,26 +475,27 @@ const ImportTestsModal: React.FC<{ onClose: () => void; onBack: () => void }> = 
 };
 
 // ─────────────────────────────────────────────────────────────────────────
-// IMPORT STEPS MODAL — CSV with test_serial_no, step_sn, action, etc.
+// IMPORT STEPS MODAL
+// Flow: select test → select op → upload CSV → preview → import
+// CSV columns: serial_no, action, expected_result, is_divider
 // ─────────────────────────────────────────────────────────────────────────
-interface StepCsvRow {
-  test_serial_no: number; test_name: string; step_sn: number;
-  action: string; expected_result: string; is_divider: boolean;
-}
-interface StepImportSummary {
-  testsInserted: number; testsSkipped: number;
-  stepsInserted: number; stepsSkipped: number;
-  errors: string[];
-}
+type StepOp = "create" | "update" | "delete";
+type StepImportStage = "select_test" | "select_op" | "upload" | "preview" | "importing" | "done";
+
+interface TestOption { id: string; serial_no: number; name: string; }
+interface StepCsvRow { serial_no: number; action: string; expected_result: string; is_divider: boolean; }
+interface StepImportSummary { written: number; skipped: number; errors: string[]; }
 
 function parseStepsCsv(text: string): { rows: StepCsvRow[]; errors: string[] } {
   const lines = text.replace(/\r\n/g, "\n").replace(/\r/g, "\n").split("\n");
   const errors: string[] = []; const rows: StepCsvRow[] = [];
-  if (lines.length < 2) { errors.push("File empty."); return { rows, errors }; }
+  if (lines.length < 2) { errors.push("File is empty."); return { rows, errors }; }
   const header = lines[0].split(",").map(h => h.trim().toLowerCase().replace(/\s+/g, "_"));
-  const col = (n: string) => header.indexOf(n);
-  const [iTest, iName, iSn, iAct, iRes, iDiv] = [col("test_serial_no"), col("test_name"), col("step_sn"), col("action"), col("expected_result"), col("is_divider")];
-  const missing = ([iTest<0&&"test_serial_no", iName<0&&"test_name", iSn<0&&"step_sn", iAct<0&&"action", iRes<0&&"expected_result", iDiv<0&&"is_divider"] as (string|false)[]).filter(Boolean) as string[];
+  const iSn  = header.indexOf("serial_no");
+  const iAct = header.indexOf("action");
+  const iRes = header.indexOf("expected_result");
+  const iDiv = header.indexOf("is_divider");
+  const missing = ([iSn<0&&"serial_no", iAct<0&&"action", iRes<0&&"expected_result", iDiv<0&&"is_divider"] as (string|false)[]).filter(Boolean) as string[];
   if (missing.length) { errors.push(`Missing columns: ${missing.join(", ")}`); return { rows, errors }; }
   for (let i = 1; i < lines.length; i++) {
     const raw = lines[i].trim(); if (!raw) continue;
@@ -519,30 +505,42 @@ function parseStepsCsv(text: string): { rows: StepCsvRow[]; errors: string[] } {
       if (ch === "," && !inQ) { cells.push(cur.trim()); cur = ""; } else cur += ch;
     }
     cells.push(cur.trim());
-    const testSno = parseInt(cells[iTest] ?? "", 10); const stepSno = parseInt(cells[iSn] ?? "", 10);
-    if (isNaN(testSno) || isNaN(stepSno)) { errors.push(`Row ${i + 1}: bad serial numbers — skipped.`); continue; }
-    rows.push({ test_serial_no: testSno, test_name: cells[iName] ?? "", step_sn: stepSno, action: cells[iAct] ?? "", expected_result: cells[iRes] ?? "", is_divider: /^(true|1|yes)$/i.test(cells[iDiv] ?? "") });
+    const snVal = parseInt(cells[iSn] ?? "", 10);
+    if (isNaN(snVal) || snVal < 1) { errors.push(`Row ${i + 1}: invalid serial_no — skipped.`); continue; }
+    rows.push({
+      serial_no: snVal,
+      action: cells[iAct] ?? "",
+      expected_result: cells[iRes] ?? "",
+      is_divider: /^(true|1|yes)$/i.test(cells[iDiv] ?? ""),
+    });
   }
   return { rows, errors };
 }
 
-function groupStepsByTest(rows: StepCsvRow[]) {
-  const map = new Map<number, { name: string; steps: StepCsvRow[] }>();
-  for (const r of rows) {
-    if (!map.has(r.test_serial_no)) map.set(r.test_serial_no, { name: r.test_name, steps: [] });
-    map.get(r.test_serial_no)!.steps.push(r);
-  }
-  return map;
-}
-
-type StepImportStage = "upload" | "preview" | "importing" | "done";
-
 const ImportStepsModal: React.FC<{ onClose: () => void; onBack: () => void }> = ({ onClose, onBack }) => {
-  const [stage, setStage]           = useState<StepImportStage>("upload");
-  const [rows, setRows]             = useState<StepCsvRow[]>([]);
-  const [parseErrors, setParseErrors] = useState<string[]>([]);
-  const [summary, setSummary]       = useState<StepImportSummary | null>(null);
+  const [stage,        setStage]        = useState<StepImportStage>("select_test");
+  const [tests,        setTests]        = useState<TestOption[]>([]);
+  const [testsLoading, setTestsLoading] = useState(true);
+  const [selectedTest, setSelectedTest] = useState<TestOption | null>(null);
+  const [op,           setOp]           = useState<StepOp>("create");
+  const [rows,         setRows]         = useState<StepCsvRow[]>([]);
+  const [parseErrors,  setParseErrors]  = useState<string[]>([]);
+  const [summary,      setSummary]      = useState<StepImportSummary | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    supabase.from("tests").select("id, serial_no, name").order("serial_no", { ascending: true })
+      .then(({ data, error }) => {
+        if (!error && data) setTests(data as TestOption[]);
+        setTestsLoading(false);
+      });
+  }, []);
+
+  const opMeta = [
+    { id: "create" as StepOp, label: "Insert",  icon: "➕", desc: "Add new steps from CSV"          },
+    { id: "update" as StepOp, label: "Update",  icon: "✏️",  desc: "Overwrite existing steps by SN"  },
+    { id: "delete" as StepOp, label: "Delete",  icon: "🗑",  desc: "Remove steps by serial_no"       },
+  ];
 
   const handleFile = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]; if (!file) return;
@@ -552,108 +550,280 @@ const ImportStepsModal: React.FC<{ onClose: () => void; onBack: () => void }> = 
       setRows(parsed); setParseErrors(errors); setStage("preview");
     };
     reader.readAsText(file);
+    // reset input so same file can be re-selected
+    e.target.value = "";
   };
 
-  const grouped = groupStepsByTest(rows);
-  const testCount = grouped.size; const stepCount = rows.length;
-
   const handleImport = useCallback(async () => {
+    if (!selectedTest) return;
     setStage("importing");
-    const result: StepImportSummary = { testsInserted: 0, testsSkipped: 0, stepsInserted: 0, stepsSkipped: 0, errors: [] };
+    const result: StepImportSummary = { written: 0, skipped: 0, errors: [] };
     try {
-      for (const [serial_no, { name, steps }] of grouped) {
-        const { data: td, error: te } = await supabase.from("tests").upsert({ serial_no, name }, { onConflict: "serial_no" }).select("id").single();
-        if (te || !td) { result.errors.push(`Test SN ${serial_no}: ${te?.message ?? "no id"}`); result.testsSkipped++; continue; }
-        result.testsInserted++;
-        for (const s of steps) {
-          const { error: se } = await supabase.from("steps").upsert(
-            { test_id: td.id, serial_no: s.step_sn, action: s.action, expected_result: s.expected_result, is_divider: s.is_divider },
-            { onConflict: "test_id,serial_no" }
-          );
-          if (se) { result.errors.push(`Step SN ${s.step_sn} in test ${serial_no}: ${se.message}`); result.stepsSkipped++; }
-          else result.stepsInserted++;
+      for (const row of rows) {
+        if (op === "create") {
+          const { error } = await supabase.from("steps").insert({
+            test_id: selectedTest.id, serial_no: row.serial_no,
+            action: row.action, expected_result: row.expected_result, is_divider: row.is_divider,
+          });
+          if (error) { result.errors.push(`SN ${row.serial_no}: ${error.message}`); result.skipped++; }
+          else result.written++;
+        } else if (op === "update") {
+          const { data: existing, error: fe } = await supabase.from("steps")
+            .select("id").eq("test_id", selectedTest.id).eq("serial_no", row.serial_no).maybeSingle();
+          if (fe || !existing) { result.errors.push(`SN ${row.serial_no}: not found — skipped.`); result.skipped++; continue; }
+          const { error } = await supabase.from("steps").update({
+            action: row.action, expected_result: row.expected_result, is_divider: row.is_divider,
+          }).eq("id", existing.id);
+          if (error) { result.errors.push(`SN ${row.serial_no}: ${error.message}`); result.skipped++; }
+          else result.written++;
+        } else {
+          const { data: existing, error: fe } = await supabase.from("steps")
+            .select("id").eq("test_id", selectedTest.id).eq("serial_no", row.serial_no).maybeSingle();
+          if (fe || !existing) { result.errors.push(`SN ${row.serial_no}: not found — skipped.`); result.skipped++; continue; }
+          const { error } = await supabase.from("steps").delete().eq("id", existing.id);
+          if (error) { result.errors.push(`SN ${row.serial_no}: ${error.message}`); result.skipped++; }
+          else result.written++;
         }
       }
     } catch (e: any) { result.errors.push(e?.message ?? "Unexpected error."); }
     setSummary(result); setStage("done");
-  }, [grouped]);
+  }, [selectedTest, op, rows]);
+
+  const stageLabel = {
+    select_test: "Step 1 of 3 — Select test",
+    select_op:   "Step 2 of 3 — Choose operation",
+    upload:      "Step 3 of 3 — Upload CSV",
+    preview:     `${rows.length} rows · ready to ${op}`,
+    importing:   "Writing to Supabase…",
+    done:        "Import complete",
+  }[stage];
 
   return (
-    <ModalShell icon="🔢" title="Import · Steps"
-      subtitle={stage === "upload" ? "Upload CSV with steps data" : stage === "preview" ? `${testCount} tests · ${stepCount} steps` : stage === "importing" ? "Writing to Supabase…" : "Import complete"}
-      onClose={onClose}>
+    <ModalShell icon="🔢" title="Import · Steps" subtitle={stageLabel} onClose={onClose}>
+
+      {/* ── STEP 1: select test ─────────────────────────────── */}
+      {stage === "select_test" && (
+        <div className="flex flex-col gap-4">
+          <div className="flex flex-col gap-1.5">
+            <label className="text-xs font-semibold text-t-muted uppercase tracking-wider">Select Test</label>
+            {testsLoading ? (
+              <div className="w-full px-4 py-3 rounded-xl bg-bg-card border border-[var(--border-color)] text-t-muted text-sm flex items-center gap-2">
+                <span className="w-4 h-4 border-2 border-c-brand border-t-transparent rounded-full animate-spin inline-block" />
+                Loading tests…
+              </div>
+            ) : tests.length === 0 ? (
+              <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-xs text-amber-400">
+                No tests found. Import tests first.
+              </div>
+            ) : (
+              <select
+                defaultValue=""
+                onChange={e => {
+                  const t = tests.find(t => t.id === e.target.value) ?? null;
+                  setSelectedTest(t);
+                }}
+                className="w-full px-4 py-3 rounded-xl bg-bg-card border border-[var(--border-color)] text-t-primary text-sm focus:outline-none focus:border-c-brand transition-colors appearance-none cursor-pointer">
+                <option value="" disabled>Choose a test…</option>
+                {tests.map(t => (
+                  <option key={t.id} value={t.id}>SN {t.serial_no} — {t.name}</option>
+                ))}
+              </select>
+            )}
+          </div>
+
+          {/* Selected test pill */}
+          {selectedTest && (
+            <div className="flex items-center gap-3 px-4 py-3 rounded-xl border border-c-brand/30 bg-c-brand-bg">
+              <span className="text-xl">🧪</span>
+              <div>
+                <p className="text-sm font-semibold text-c-brand">{selectedTest.name}</p>
+                <p className="text-xs text-t-muted">SN {selectedTest.serial_no}</p>
+              </div>
+            </div>
+          )}
+
+          <div className="flex gap-2 pt-1">
+            <button onClick={onBack} className="flex-1 px-4 py-2.5 rounded-xl border border-[var(--border-color)] text-t-secondary hover:text-t-primary text-sm font-medium transition-colors">← Back</button>
+            <button onClick={() => setStage("select_op")} disabled={!selectedTest}
+              className="flex-1 btn-primary text-sm disabled:opacity-50 disabled:cursor-not-allowed">
+              Next →
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ── STEP 2: select operation ─────────────────────────── */}
+      {stage === "select_op" && (
+        <div className="flex flex-col gap-4">
+          {/* Selected test reminder */}
+          <div className="flex items-center gap-3 px-4 py-3 rounded-xl border border-[var(--border-color)] bg-bg-card">
+            <span className="text-lg">🧪</span>
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-semibold text-t-primary truncate">{selectedTest?.name}</p>
+              <p className="text-xs text-t-muted">SN {selectedTest?.serial_no}</p>
+            </div>
+            <button onClick={() => setStage("select_test")} className="text-xs text-c-brand hover:underline shrink-0">Change</button>
+          </div>
+
+          <div className="flex flex-col gap-1.5">
+            <label className="text-xs font-semibold text-t-muted uppercase tracking-wider">Operation</label>
+            <div className="flex flex-col gap-2">
+              {opMeta.map(m => (
+                <button key={m.id} onClick={() => setOp(m.id)}
+                  className={`flex items-center gap-4 px-4 py-3.5 rounded-xl border transition-all text-left ${op === m.id ? "border-c-brand bg-c-brand-bg" : "border-[var(--border-color)] bg-bg-card hover:bg-bg-base"}`}>
+                  <span className="text-xl">{m.icon}</span>
+                  <div className="flex-1">
+                    <p className={`text-sm font-semibold ${op === m.id ? "text-c-brand" : "text-t-primary"}`}>{m.label}</p>
+                    <p className="text-xs text-t-muted">{m.desc}</p>
+                  </div>
+                  {op === m.id && <span className="w-4 h-4 rounded-full bg-c-brand flex items-center justify-center text-white text-[10px] font-bold shrink-0">✓</span>}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {op === "delete" && (
+            <div className="rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-xs text-red-400 flex items-start gap-2">
+              <span className="text-base leading-none mt-px">⚠️</span>
+              <p>CSV only needs <code className="font-mono">serial_no</code> column for delete. Other columns are ignored.</p>
+            </div>
+          )}
+
+          <div className="flex gap-2 pt-1">
+            <button onClick={() => setStage("select_test")} className="flex-1 px-4 py-2.5 rounded-xl border border-[var(--border-color)] text-t-secondary hover:text-t-primary text-sm font-medium transition-colors">← Back</button>
+            <button onClick={() => setStage("upload")} className="flex-1 btn-primary text-sm">Next →</button>
+          </div>
+        </div>
+      )}
+
+      {/* ── STEP 3: upload CSV ──────────────────────────────── */}
       {stage === "upload" && (
         <div className="flex flex-col gap-4">
-          <div className="rounded-xl border border-[var(--border-color)] bg-bg-card p-4 text-xs text-t-muted">
-            <p className="text-t-secondary font-semibold mb-2 text-xs uppercase tracking-wider">Required columns</p>
-            <div className="flex flex-col gap-2">
-              {[["test_serial_no","Integer test ID"],["test_name","Test display name"],["step_sn","Step serial no. (int)"],["action","Step action text"],["expected_result","Expected outcome"],["is_divider","true / false"]].map(([c, d]) => (
+          {/* Context strip */}
+          <div className="flex items-center gap-2 px-3 py-2 rounded-xl border border-[var(--border-color)] bg-bg-card text-xs">
+            <span>🧪</span>
+            <span className="text-t-primary font-medium truncate">{selectedTest?.name}</span>
+            <span className="mx-1 text-t-muted">·</span>
+            <span className="text-c-brand font-semibold">{opMeta.find(m => m.id === op)?.label}</span>
+          </div>
+
+          {/* Column reference */}
+          <div className="rounded-xl border border-[var(--border-color)] bg-bg-card p-4 text-xs">
+            <p className="text-t-secondary font-semibold mb-2 uppercase tracking-wider">Required columns</p>
+            <div className="flex flex-col gap-1.5">
+              {(op === "delete"
+                ? [["serial_no", "Step serial no. (int)"]]
+                : [["serial_no","Step serial no. (int)"],["action","Step action text"],["expected_result","Expected outcome"],["is_divider","true / false"]]
+              ).map(([c, d]) => (
                 <div key={c} className="flex items-start gap-3">
-                  <code className="text-c-brand font-bold w-32 shrink-0 text-[11px]">{c}</code>
+                  <code className="text-c-brand font-bold w-28 shrink-0">{c}</code>
                   <span className="text-t-muted">{d}</span>
                 </div>
               ))}
             </div>
           </div>
+
+          {/* Example */}
+          <div className="rounded-xl border border-[var(--border-color)] bg-bg-card p-4 text-xs font-mono text-t-muted">
+            <p className="text-t-secondary font-semibold mb-1.5 not-italic font-sans uppercase tracking-wider">Example</p>
+            {op === "delete" ? (
+              <><p className="text-c-brand">serial_no</p><p>1</p><p>2</p><p>3</p></>
+            ) : (
+              <><p className="text-c-brand">serial_no,action,expected_result,is_divider</p>
+              <p>1,Open login page,Login page loads,false</p>
+              <p>2,Enter credentials,Fields accept input,false</p>
+              <p>3,Click submit,Dashboard shown,false</p></>
+            )}
+          </div>
+
           <button onClick={() => fileRef.current?.click()}
             className="flex flex-col items-center gap-2 p-6 rounded-xl border-2 border-dashed border-[var(--border-color)] hover:border-c-brand/60 hover:bg-bg-card transition-colors cursor-pointer">
             <span className="text-3xl">📂</span>
             <span className="text-sm font-medium text-t-secondary">Tap to choose CSV file</span>
           </button>
           <input ref={fileRef} type="file" accept=".csv,text/csv" className="hidden" onChange={handleFile} />
-          <button onClick={onBack} className="w-full px-4 py-2.5 rounded-xl border border-[var(--border-color)] text-t-secondary hover:text-t-primary text-sm font-medium transition-colors">← Back</button>
+
+          <button onClick={() => setStage("select_op")} className="w-full px-4 py-2.5 rounded-xl border border-[var(--border-color)] text-t-secondary hover:text-t-primary text-sm font-medium transition-colors">← Back</button>
         </div>
       )}
+
+      {/* ── PREVIEW ─────────────────────────────────────────── */}
       {stage === "preview" && (
         <div className="flex flex-col gap-3">
+          {/* Context strip */}
+          <div className="flex items-center gap-2 px-3 py-2 rounded-xl border border-[var(--border-color)] bg-bg-card text-xs">
+            <span>🧪</span>
+            <span className="text-t-primary font-medium truncate">{selectedTest?.name}</span>
+            <span className="mx-1 text-t-muted">·</span>
+            <span className="text-c-brand font-semibold">{opMeta.find(m => m.id === op)?.label}</span>
+          </div>
+
           {parseErrors.length > 0 && (
             <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-400 flex flex-col gap-1">
-              <p className="font-semibold">Warnings:</p>
+              <p className="font-semibold">Warnings ({parseErrors.length}):</p>
               {parseErrors.map((e, i) => <p key={i}>• {e}</p>)}
             </div>
           )}
-          {rows.length === 0 ? <p className="text-sm text-red-400 text-center py-4">No valid rows found.</p> : (
+
+          {rows.length === 0 ? (
+            <p className="text-sm text-red-400 text-center py-4">No valid rows found.</p>
+          ) : (
             <>
-              <div className="grid grid-cols-2 gap-2">
-                {[{ label: "Tests", value: testCount, color: "text-c-brand" }, { label: "Steps", value: stepCount, color: "text-t-primary" }].map(s => (
-                  <div key={s.label} className="rounded-xl bg-bg-card border border-[var(--border-color)] p-3 text-center">
-                    <p className={`text-2xl font-bold ${s.color}`}>{s.value}</p>
-                    <p className="text-xs text-t-muted mt-0.5">{s.label}</p>
-                  </div>
-                ))}
+              <div className="rounded-xl bg-bg-card border border-[var(--border-color)] p-3 text-center">
+                <p className="text-3xl font-bold text-c-brand">{rows.length}</p>
+                <p className="text-xs text-t-muted mt-0.5">Steps to {op}</p>
               </div>
-              <div className="rounded-xl border border-[var(--border-color)] overflow-hidden max-h-48 overflow-y-auto">
+
+              <div className="rounded-xl border border-[var(--border-color)] overflow-hidden max-h-52 overflow-y-auto">
                 <table className="w-full text-xs">
-                  <thead className="bg-bg-card sticky top-0"><tr><th className="px-2 py-2 text-left text-t-muted">SN</th><th className="px-2 py-2 text-left text-t-muted">Test</th><th className="px-2 py-2 text-center text-t-muted">Steps</th></tr></thead>
+                  <thead className="bg-bg-card sticky top-0">
+                    <tr>
+                      <th className="px-2 py-2 text-left text-t-muted font-semibold">SN</th>
+                      {op !== "delete" && <th className="px-2 py-2 text-left text-t-muted font-semibold">Action</th>}
+                      {op !== "delete" && <th className="px-2 py-2 text-center text-t-muted font-semibold">Div?</th>}
+                    </tr>
+                  </thead>
                   <tbody className="divide-y divide-[var(--border-color)]">
-                    {[...grouped.entries()].map(([sno, { name, steps }]) => (
-                      <tr key={sno} className="hover:bg-bg-card">
-                        <td className="px-2 py-2 font-mono text-t-muted">#{sno}</td>
-                        <td className="px-2 py-2 text-t-primary font-medium truncate max-w-[140px]">{name}</td>
-                        <td className="px-2 py-2 text-center text-t-secondary">{steps.length}</td>
+                    {rows.map((r, i) => (
+                      <tr key={i} className="hover:bg-bg-card">
+                        <td className="px-2 py-2 font-mono text-c-brand">{r.serial_no}</td>
+                        {op !== "delete" && <td className="px-2 py-2 text-t-primary truncate max-w-[160px]">{r.action || <span className="text-t-muted italic">—</span>}</td>}
+                        {op !== "delete" && <td className="px-2 py-2 text-center text-t-muted">{r.is_divider ? "✓" : ""}</td>}
                       </tr>
                     ))}
                   </tbody>
                 </table>
               </div>
+
               <div className="flex gap-2">
-                <button onClick={() => { setStage("upload"); setRows([]); setParseErrors([]); }} className="flex-1 px-4 py-2.5 rounded-xl border border-[var(--border-color)] text-t-secondary hover:text-t-primary text-sm font-medium transition-colors">← Back</button>
-                <button onClick={handleImport} className="flex-1 btn-primary text-sm">Import →</button>
+                <button onClick={() => { setStage("upload"); setRows([]); setParseErrors([]); }}
+                  className="flex-1 px-4 py-2.5 rounded-xl border border-[var(--border-color)] text-t-secondary hover:text-t-primary text-sm font-medium transition-colors">← Back</button>
+                <button onClick={handleImport}
+                  className={`flex-1 btn-primary text-sm ${op === "delete" ? "!bg-red-500 hover:!bg-red-600" : ""}`}>
+                  {opMeta.find(m => m.id === op)?.icon} {opMeta.find(m => m.id === op)?.label} {rows.length} Steps →
+                </button>
               </div>
             </>
           )}
         </div>
       )}
+
+      {/* ── IMPORTING ───────────────────────────────────────── */}
       {stage === "importing" && (
         <div className="flex flex-col items-center gap-4 py-6">
           <div className="w-12 h-12 rounded-full border-4 border-c-brand border-t-transparent animate-spin" />
-          <p className="text-sm text-t-secondary">Importing to Supabase…</p>
+          <p className="text-sm text-t-secondary">Writing to Supabase…</p>
         </div>
       )}
+
+      {/* ── DONE ────────────────────────────────────────────── */}
       {stage === "done" && summary && (
         <div className="flex flex-col gap-3">
           <div className="grid grid-cols-2 gap-2">
-            {[{ label: "Tests written", value: summary.testsInserted, color: "text-green-400" }, { label: "Tests skipped", value: summary.testsSkipped, color: "text-amber-400" }, { label: "Steps written", value: summary.stepsInserted, color: "text-green-400" }, { label: "Steps skipped", value: summary.stepsSkipped, color: "text-amber-400" }].map(s => (
+            {[
+              { label: "Written",  value: summary.written,  color: "text-green-400" },
+              { label: "Skipped",  value: summary.skipped,  color: "text-amber-400" },
+            ].map(s => (
               <div key={s.label} className="rounded-xl bg-bg-card border border-[var(--border-color)] p-3 text-center">
                 <p className={`text-2xl font-bold ${s.color}`}>{s.value}</p>
                 <p className="text-xs text-t-muted mt-0.5">{s.label}</p>
@@ -666,9 +836,6 @@ const ImportStepsModal: React.FC<{ onClose: () => void; onBack: () => void }> = 
               {summary.errors.map((e, i) => <p key={i}>• {e}</p>)}
             </div>
           )}
-          <div className="rounded-xl border border-green-500/30 bg-green-500/10 p-3 text-xs text-green-400 text-center">
-            ✓ Triggers auto-populate module_tests &amp; step_results
-          </div>
           <button onClick={onClose} className="btn-primary text-sm w-full">Done</button>
         </div>
       )}
@@ -676,9 +843,6 @@ const ImportStepsModal: React.FC<{ onClose: () => void; onBack: () => void }> = 
   );
 };
 
-// ─────────────────────────────────────────────────────────────────────────
-// IMPORT HUB MODAL — selection screen for Modules / Tests / Steps
-// ─────────────────────────────────────────────────────────────────────────
 type ImportTarget = "modules" | "tests" | "steps" | null;
 
 const ImportModal: React.FC<{ onClose: () => void }> = ({ onClose }) => {
@@ -690,8 +854,8 @@ const ImportModal: React.FC<{ onClose: () => void }> = ({ onClose }) => {
 
   const options: { id: ImportTarget; icon: string; label: string; desc: string; badge: string }[] = [
     { id: "modules", icon: "📦", label: "Modules", desc: "Create · update · delete module records", badge: "Manual" },
-    { id: "tests",   icon: "🧪", label: "Tests",   desc: "CSV with sn (float) and name columns",    badge: "CSV"    },
-    { id: "steps",   icon: "🔢", label: "Steps",   desc: "CSV: test_serial_no, step_sn, action…",   badge: "CSV"    },
+    { id: "tests",   icon: "🧪", label: "Tests",   desc: "Manual create · update · delete",          badge: "Manual" },
+    { id: "steps",   icon: "🔢", label: "Steps",   desc: "Select test · op · upload CSV",            badge: "CSV"    },
   ];
 
   return (
