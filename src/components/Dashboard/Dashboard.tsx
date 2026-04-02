@@ -81,7 +81,7 @@ const Dashboard: React.FC<Props> = ({ onNavigate }) => {
     <div className="p-6 flex flex-col gap-6 pb-24 md:pb-6">
       <ExportModal
         isOpen={showExportModal} onClose={() => setShowExportModal(false)}
-        title="Export Dashboard" subtitle="All modules summary"
+        title="Export Dashboard" subtitle="Fleet summary"
         stats={globalStats()}
         options={[
           { label: "CSV",  icon: "📥", color: "bg-green-600", hoverColor: "hover:bg-green-700",
@@ -96,9 +96,9 @@ const Dashboard: React.FC<Props> = ({ onNavigate }) => {
       {/* Header */}
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
-          <h2 className="text-xl font-bold text-t-primary">All Modules</h2>
+          <h2 className="text-xl font-bold text-t-primary">Fleet</h2>
           <p className="text-sm text-t-muted mt-1">
-            {modules.length} module{modules.length !== 1 ? "s" : ""} tracked
+            {modules.length} Trainset{modules.length !== 1 ? "s" : ""} tracked
           </p>
         </div>
         <button

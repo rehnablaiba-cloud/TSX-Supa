@@ -362,7 +362,7 @@ const TestReport: React.FC = () => {
     <>
       <Topbar
         title="Test Report"
-        subtitle="Module-wise execution summary"
+        subtitle="Trainset-wise execution summary"
         actions={
           <button
   onClick={() => setShowExportModal(true)}
@@ -417,7 +417,7 @@ const TestReport: React.FC = () => {
           {/* ── Filter + View toggle ── */}
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="flex items-center gap-3">
-              <label className="text-sm text-t-muted">Filter by Module</label>
+              <label className="text-sm text-t-muted">Filter by Trainset</label>
               <select
                 value={selectedModuleId ?? ""}
                 onChange={(e) => setSelectedModuleId(e.target.value || null)}
@@ -489,7 +489,7 @@ const TestReport: React.FC = () => {
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="bg-bg-card text-t-muted uppercase text-xs">
-                      <th className="px-4 py-3 text-left">Module</th>
+                      <th className="px-4 py-3 text-left">Trainset</th>
                       <th className="px-4 py-3 text-center">Tests</th>
                       <th className="px-4 py-3 text-center">Total Steps</th>
                       <th className="px-4 py-3 text-center text-green-600 dark:text-green-400">Pass</th>
