@@ -1,105 +1,149 @@
 /**
  * ThemeContext.tsx
  *
- * Light wrapper around src/theme.ts.
- * All colour values live in theme.ts — do not hardcode anything here.
- *
- * Extended with:
- *  - customTokens: per-mode token overrides (stored in localStorage)
- *  - setTokenOverride / resetTokenOverrides for the Theme Editor panel
- *  - applyThemeWithOverrides: applies defaults then layers overrides on top
+ * Manages:
+ *  1. light / dark mode  — applyTheme() from theme.ts
+ *  2. Token overrides    — layered on top of defaults, persisted to localStorage
+ *  3. MUI config         — active flag + typography/shape settings, also persisted
  */
 import React, { createContext, useContext, useEffect, useState, useCallback } from "react";
 import { applyTheme, cssVarMap, TokenKey, TokenMap } from "../theme";
 
-type Theme = "light" | "dark";
+// ─── Types ────────────────────────────────────────────────────────────────────
 
-// Partial overrides per mode — only the tokens the user has changed
-type ModeOverrides = Partial<TokenMap>;
-type CustomTokens = { light: ModeOverrides; dark: ModeOverrides };
+export type AppTheme = "light" | "dark";
 
-const LS_THEME_KEY     = "theme";
-const LS_OVERRIDES_KEY = "themeEditorOverrides";
+type ModeOverrides  = Partial<TokenMap>;
+type CustomTokens   = { light: ModeOverrides; dark: ModeOverrides };
+
+export interface MuiConfig {
+  active:               boolean;   // ← whether MUI ThemeProvider is wrapping the app
+  fontFamily:           string;
+  fontSize:             number;
+  fontWeightRegular:    number;
+  fontWeightMedium:     number;
+  fontWeightBold:       number;
+  borderRadius:         number;
+  buttonBorderRadius:   number;
+  textFieldBorderRadius:number;
+  buttonTextTransform:  "none" | "uppercase" | "capitalize";
+  disablePaperBgImage:  boolean;
+}
+
+// ─── Defaults ─────────────────────────────────────────────────────────────────
+
+export const MUI_CONFIG_DEFAULTS: MuiConfig = {
+  active:               false,
+  fontFamily:           "Inter, system-ui, sans-serif",
+  fontSize:             14,
+  fontWeightRegular:    400,
+  fontWeightMedium:     500,
+  fontWeightBold:       700,
+  borderRadius:         12,
+  buttonBorderRadius:   12,
+  textFieldBorderRadius:12,
+  buttonTextTransform:  "none",
+  disablePaperBgImage:  true,
+};
+
+// ─── LocalStorage keys ────────────────────────────────────────────────────────
+
+const LS_THEME     = "theme";
+const LS_OVERRIDES = "themeEditorOverrides";
+const LS_MUI       = "themeEditorMuiConfig";
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function loadOverrides(): CustomTokens {
-  try {
-    const raw = localStorage.getItem(LS_OVERRIDES_KEY);
-    if (raw) return JSON.parse(raw) as CustomTokens;
-  } catch { /* ignore */ }
+  try { const r = localStorage.getItem(LS_OVERRIDES); if (r) return JSON.parse(r); } catch {}
   return { light: {}, dark: {} };
 }
 
-function saveOverrides(o: CustomTokens) {
-  localStorage.setItem(LS_OVERRIDES_KEY, JSON.stringify(o));
+function loadMuiConfig(): MuiConfig {
+  try { const r = localStorage.getItem(LS_MUI); if (r) return { ...MUI_CONFIG_DEFAULTS, ...JSON.parse(r) }; } catch {}
+  return { ...MUI_CONFIG_DEFAULTS };
 }
 
-/** Apply CSS vars for the active mode, then layer any custom overrides on top. */
-function applyThemeWithOverrides(mode: Theme, overrides: CustomTokens) {
-  applyTheme(mode); // sets all CSS vars from theme.ts defaults
-  const modeOverrides = overrides[mode];
+function applyThemeWithOverrides(mode: AppTheme, overrides: CustomTokens) {
+  applyTheme(mode);
   const root = document.documentElement;
-  (Object.entries(modeOverrides) as [TokenKey, string][]).forEach(([key, value]) => {
+  (Object.entries(overrides[mode]) as [TokenKey, string][]).forEach(([key, value]) => {
     if (value) root.style.setProperty(cssVarMap[key], value);
   });
 }
 
-interface ThemeContextType {
-  theme: Theme;
-  toggleTheme: () => void;
-  setTheme: (t: Theme) => void;
+// ─── Context type ─────────────────────────────────────────────────────────────
 
-  // Theme Editor API
-  customTokens: CustomTokens;
-  setTokenOverride: (mode: Theme, key: TokenKey, value: string) => void;
-  resetTokenOverrides: () => void;
+interface ThemeContextType {
+  theme:              AppTheme;
+  toggleTheme:        () => void;
+  setTheme:           (t: AppTheme) => void;
+
+  customTokens:       CustomTokens;
+  setTokenOverride:   (mode: AppTheme, key: TokenKey, value: string) => void;
+  resetTokenOverrides:() => void;
+
+  muiConfig:          MuiConfig;
+  setMuiConfig:       (cfg: Partial<MuiConfig>) => void;
+  resetMuiConfig:     () => void;
 }
 
+// ─── Context + Provider ───────────────────────────────────────────────────────
+
 const ThemeContext = createContext<ThemeContextType>({
-  theme: "dark",
-  toggleTheme: () => {},
-  setTheme: () => {},
-  customTokens: { light: {}, dark: {} },
-  setTokenOverride: () => {},
-  resetTokenOverrides: () => {},
+  theme: "dark", toggleTheme: () => {}, setTheme: () => {},
+  customTokens: { light: {}, dark: {} }, setTokenOverride: () => {}, resetTokenOverrides: () => {},
+  muiConfig: MUI_CONFIG_DEFAULTS, setMuiConfig: () => {}, resetMuiConfig: () => {},
 });
 
 export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [theme, setThemeState] = useState<Theme>(() =>
-    (localStorage.getItem(LS_THEME_KEY) as Theme) ?? "dark"
+  const [theme, setThemeState] = useState<AppTheme>(() =>
+    (localStorage.getItem(LS_THEME) as AppTheme) ?? "dark"
   );
   const [customTokens, setCustomTokens] = useState<CustomTokens>(loadOverrides);
+  const [muiConfig, setMuiConfigState]  = useState<MuiConfig>(loadMuiConfig);
 
-  // Re-apply whenever theme or overrides change
   useEffect(() => {
     applyThemeWithOverrides(theme, customTokens);
-    localStorage.setItem(LS_THEME_KEY, theme);
+    localStorage.setItem(LS_THEME, theme);
   }, [theme, customTokens]);
 
-  const setTheme    = (t: Theme) => setThemeState(t);
-  const toggleTheme = () => setThemeState(prev => (prev === "dark" ? "light" : "dark"));
+  const setTheme    = (t: AppTheme) => setThemeState(t);
+  const toggleTheme = () => setThemeState(p => p === "dark" ? "light" : "dark");
 
-  const setTokenOverride = useCallback((mode: Theme, key: TokenKey, value: string) => {
+  const setTokenOverride = useCallback((mode: AppTheme, key: TokenKey, value: string) => {
     setCustomTokens(prev => {
-      const next: CustomTokens = {
-        light: { ...prev.light },
-        dark:  { ...prev.dark  },
-      };
+      const next = { light: { ...prev.light }, dark: { ...prev.dark } };
       next[mode] = { ...next[mode], [key]: value };
-      saveOverrides(next);
+      localStorage.setItem(LS_OVERRIDES, JSON.stringify(next));
       return next;
     });
   }, []);
 
   const resetTokenOverrides = useCallback(() => {
     const empty: CustomTokens = { light: {}, dark: {} };
-    saveOverrides(empty);
+    localStorage.setItem(LS_OVERRIDES, JSON.stringify(empty));
     setCustomTokens(empty);
+  }, []);
+
+  const setMuiConfig = useCallback((patch: Partial<MuiConfig>) => {
+    setMuiConfigState(prev => {
+      const next = { ...prev, ...patch };
+      localStorage.setItem(LS_MUI, JSON.stringify(next));
+      return next;
+    });
+  }, []);
+
+  const resetMuiConfig = useCallback(() => {
+    localStorage.setItem(LS_MUI, JSON.stringify(MUI_CONFIG_DEFAULTS));
+    setMuiConfigState({ ...MUI_CONFIG_DEFAULTS });
   }, []);
 
   return (
     <ThemeContext.Provider value={{
       theme, toggleTheme, setTheme,
       customTokens, setTokenOverride, resetTokenOverrides,
+      muiConfig, setMuiConfig, resetMuiConfig,
     }}>
       {children}
     </ThemeContext.Provider>
