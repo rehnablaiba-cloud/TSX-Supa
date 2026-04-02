@@ -16,6 +16,7 @@ import {
 } from "recharts";
 import { PieLabelRenderProps } from "recharts";
 
+
 // ── Animation keyframes ───────────────────────────────────────────────────────
 const ANIM_STYLE = `
 @keyframes fadeSlideIn {
@@ -23,6 +24,7 @@ const ANIM_STYLE = `
   to   { opacity: 1; transform: translateY(0);    }
 }
 `;
+
 
 function useInjectStyle() {
   const injected = useRef(false);
@@ -35,14 +37,17 @@ function useInjectStyle() {
   }, []);
 }
 
+
 const FadeWrapper: React.FC<{ animKey: string | number; children: React.ReactNode }> = ({ animKey, children }) => (
   <div key={animKey} style={{ animation: "fadeSlideIn 0.28s cubic-bezier(0.22,1,0.36,1) both" }}>
     {children}
   </div>
 );
 
+
 // ── Constants ─────────────────────────────────────────────────────────────────
 const COLORS = { pass: "#22c55e", fail: "#ef4444", pending: "#f59e0b" };
+
 
 type ChartType = "bar" | "area" | "line" | "pie" | "radar";
 const CHART_TYPES: { type: ChartType; label: string }[] = [
@@ -53,11 +58,13 @@ const CHART_TYPES: { type: ChartType; label: string }[] = [
   { type: "radar", label: "Radar" },
 ];
 
+
 interface ChartRow { name: string; pass: number; fail: number; pending: number; }
 interface ChartTheme {
   panel: string; text: string; muted: string; grid: string;
   border: string; tooltipBg: string; tooltipText: string; tooltipName: string;
 }
+
 
 // ── Local joined types ────────────────────────────────────────────────────────
 interface StepResultRow {
@@ -73,19 +80,21 @@ interface StepResultRow {
   };
 }
 
+
 interface ModuleTestRow {
   id: string;
   test: { id: string; serial_no: number; name: string };
   step_results: StepResultRow[];
 }
 
+
 interface ModuleRow {
   id: string;
   name: string;
   description: string;
-  accent_color: string;
   module_tests: ModuleTestRow[];
 }
+
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 function getNonDividerResults(moduleTests: ModuleTestRow[]): StepResultRow[] {
@@ -93,6 +102,7 @@ function getNonDividerResults(moduleTests: ModuleTestRow[]): StepResultRow[] {
     (mt.step_results ?? []).filter(sr => !sr.step?.is_divider)
   );
 }
+
 
 // ── Tooltips ──────────────────────────────────────────────────────────────────
 const CustomTooltip: React.FC<{
@@ -113,6 +123,7 @@ const CustomTooltip: React.FC<{
   );
 };
 
+
 const PieTooltip: React.FC<{
   active?: boolean; payload?: any[]; ct: ChartTheme;
 }> = ({ active, payload, ct }) => {
@@ -129,6 +140,7 @@ const PieTooltip: React.FC<{
     </div>
   );
 };
+
 
 // ── Chart sub-components ──────────────────────────────────────────────────────
 const RBarChart: React.FC<{ data: ChartRow[]; ct: ChartTheme }> = ({ data, ct }) => (
@@ -147,6 +159,7 @@ const RBarChart: React.FC<{ data: ChartRow[]; ct: ChartTheme }> = ({ data, ct })
     </BarChart>
   </ResponsiveContainer>
 );
+
 
 const RAreaChart: React.FC<{ data: ChartRow[]; ct: ChartTheme }> = ({ data, ct }) => (
   <ResponsiveContainer width="100%" height={240}>
@@ -174,6 +187,7 @@ const RAreaChart: React.FC<{ data: ChartRow[]; ct: ChartTheme }> = ({ data, ct }
   </ResponsiveContainer>
 );
 
+
 const RLineChart: React.FC<{ data: ChartRow[]; ct: ChartTheme }> = ({ data, ct }) => (
   <ResponsiveContainer width="100%" height={240}>
     <LineChart data={data} margin={{ top: 8, right: 16, left: -16, bottom: 8 }}>
@@ -193,6 +207,7 @@ const RLineChart: React.FC<{ data: ChartRow[]; ct: ChartTheme }> = ({ data, ct }
     </LineChart>
   </ResponsiveContainer>
 );
+
 
 const RPieChart: React.FC<{ data: ChartRow[]; ct: ChartTheme }> = ({ data, ct }) => {
   const totals = data.reduce(
@@ -237,6 +252,7 @@ const RPieChart: React.FC<{ data: ChartRow[]; ct: ChartTheme }> = ({ data, ct })
   );
 };
 
+
 const RRadarChart: React.FC<{ data: ChartRow[]; ct: ChartTheme }> = ({ data, ct }) => {
   if (data.length === 0) return (
     <div className="flex items-center justify-center h-40">
@@ -261,6 +277,7 @@ const RRadarChart: React.FC<{ data: ChartRow[]; ct: ChartTheme }> = ({ data, ct 
   );
 };
 
+
 // ── Main Component ────────────────────────────────────────────────────────────
 const TestReport: React.FC = () => {
   useInjectStyle();
@@ -274,15 +291,15 @@ const TestReport: React.FC = () => {
   const [view, setView]                         = useState<"graph" | "table">("graph");
   const [chartType, setChartType]               = useState<ChartType>("bar");
 
+
   useEffect(() => {
     const fetchData = async () => {
       setLoading(true); setError(null);
       try {
-        // Single query: modules → module_tests → test + step_results → step
         const { data, error: err } = await supabase
           .from("modules")
           .select(`
-            id, name, description, accent_color,
+            id, name, description,
             module_tests (
               id,
               test:tests ( id, serial_no, name ),
@@ -305,9 +322,11 @@ const TestReport: React.FC = () => {
     fetchData();
   }, []);
 
+
   const filtered = selectedModuleId
     ? modules.filter(m => m.id === selectedModuleId)
     : modules;
+
 
   const chartTheme: ChartTheme = theme === "dark"
     ? { panel: "#111827", text: "#e5e7eb", muted: "#94a3b8", grid: "#334155",
@@ -315,7 +334,7 @@ const TestReport: React.FC = () => {
     : { panel: "#ffffff", text: "#0f172a", muted: "#475569", grid: "#cbd5e1",
         border: "#cbd5e1", tooltipBg: "#ffffff", tooltipText: "#0f172a", tooltipName: "#475569" };
 
-  // Chart data: one row per module, counts from step_results excluding dividers
+
   const chartData = useMemo<ChartRow[]>(() =>
     filtered.map(m => {
       const results = getNonDividerResults(m.module_tests ?? []);
@@ -327,7 +346,7 @@ const TestReport: React.FC = () => {
       };
     }), [filtered]);
 
-  // Flat data for export: module → module_test → step_result (non-divider)
+
   const buildFlatData = (mods: ModuleRow[]): FlatData[] => {
     const flat: FlatData[] = [];
     mods.forEach(m => {
@@ -350,6 +369,7 @@ const TestReport: React.FC = () => {
     return flat;
   };
 
+
   const exportStats = () => {
     const flat = buildFlatData(filtered);
     return [
@@ -359,8 +379,10 @@ const TestReport: React.FC = () => {
     ];
   };
 
+
   const chartAnimKey = `${selectedModuleId ?? "all"}-${chartType}`;
   const viewAnimKey  = view;
+
 
   return (
     <>
