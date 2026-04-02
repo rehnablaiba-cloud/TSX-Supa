@@ -46,16 +46,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [isLoading, setIsLoading] = useState(true);
   const [user, setUser]           = useState<AuthUser | null>(null);
 
+  // FIX: Do NOT set a temporary user with a guessed role before the profile
+  // loads. The previous code set defaultRole:"tester" immediately, causing a
+  // brief window where admins were treated as testers by any component that
+  // rendered during the background fetch (could hide admin UI or let
+  // role-gated checks pass incorrectly).
+  //
+  // isLoading stays true until loadProfile resolves — the spinner covers the
+  // gap so there is no visible flash.
   const handleSession = async (sessionUser: { id: string; email?: string | null }) => {
-    // Render app immediately with basic info (no profile fetch lag)
-    setUser({
-      id:          sessionUser.id,
-      email:       sessionUser.email ?? "",
-      displayName: sessionUser.email ?? "",
-      defaultRole: "tester",
-    });
-
-    // Enrich from profiles in background
     const profile = await loadProfile(sessionUser.id, sessionUser.email ?? "");
 
     if (!profile) {

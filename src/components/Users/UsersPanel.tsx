@@ -12,6 +12,7 @@ interface ProfileRow {
   id: string;
   display_name: string;
   role: Role;
+  disabled: boolean;
 }
 
 const UsersPanel: React.FC = () => {
@@ -24,18 +25,42 @@ const UsersPanel: React.FC = () => {
   const [editTarget, setEditTarget]     = useState<AppUser | null>(null);
   const [editRole, setEditRole]         = useState<Role>("tester");
   const [editName, setEditName]         = useState("");
+  const [editDisabled, setEditDisabled] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<AppUser | null>(null);
   const [loading, setLoading]           = useState(false);
+
+  // ── Admin guard ─────────────────────────────────────────────────────────────
+  // FIX: Non-admins cannot see or interact with this panel at all.
+  // RLS on profiles also blocks the underlying queries, but blocking at the
+  // component level gives a clear error instead of a confusing empty table.
+  if (currentUser?.defaultRole !== "admin") {
+    return (
+      <div className="flex-1 flex flex-col">
+        <Topbar title="Users" subtitle="Admin only" />
+        <div className="flex flex-col items-center justify-center flex-1 gap-4 p-8 text-center">
+          <div className="w-14 h-14 rounded-full bg-red-500/10 border border-red-500/20
+            flex items-center justify-center text-2xl">
+            🔒
+          </div>
+          <div>
+            <p className="font-semibold text-t-primary">Access Restricted</p>
+            <p className="text-sm text-t-muted mt-1">Only admins can manage users.</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   const filtered = users.filter(u =>
     u.display_name.toLowerCase().includes(search.toLowerCase())
   );
 
-  // ── Fetch from profiles table directly ──────────────────────────────────────
+  // ── Fetch from profiles table ────────────────────────────────────────────────
+  // FIX: include `disabled` so admins can see and toggle account status.
   const loadUsers = async () => {
     const { data, error } = await supabase
       .from("profiles")
-      .select("id, display_name, role")
+      .select("id, display_name, role, disabled")
       .order("display_name");
 
     if (error) {
@@ -47,20 +72,39 @@ const UsersPanel: React.FC = () => {
       (data as ProfileRow[]).map(p => ({
         id:           p.id,
         display_name: p.display_name ?? "",
-        email:        "",       // not stored in profiles
+        email:        "",
         defaultRole:  p.role ?? "tester",
-        disabled:     false,    // not stored in profiles
+        disabled:     p.disabled ?? false,
       }))
     );
   };
 
   useEffect(() => { loadUsers(); }, []);
 
-  // ── Edit (display_name + role) via profiles table ───────────────────────────
-  const openEdit = (u: AppUser) => {
+  // ── Edit ─────────────────────────────────────────────────────────────────────
+  // FIX: Re-fetch the target user's current values from the DB before opening
+  // the modal. The list state may be stale (another admin could have changed
+  // the role between page load and now). Using stale values would overwrite
+  // the latest DB state when Save is clicked.
+  const openEdit = async (u: AppUser) => {
+    setLoading(true);
+    const { data, error } = await supabase
+      .from("profiles")
+      .select("display_name, role, disabled")
+      .eq("id", u.id)
+      .single();
+
+    if (error || !data) {
+      addToast("Could not load latest user data", "error");
+      setLoading(false);
+      return;
+    }
+
     setEditTarget(u);
-    setEditName(u.display_name);
-    setEditRole(u.defaultRole);
+    setEditName(data.display_name ?? u.display_name);
+    setEditRole((data.role ?? u.defaultRole) as Role);
+    setEditDisabled(data.disabled ?? false);
+    setLoading(false);
     setShowForm(true);
   };
 
@@ -70,7 +114,7 @@ const UsersPanel: React.FC = () => {
     try {
       const { error } = await supabase
         .from("profiles")
-        .update({ display_name: editName, role: editRole })
+        .update({ display_name: editName, role: editRole, disabled: editDisabled })
         .eq("id", editTarget.id);
 
       if (error) throw new Error(error.message);
@@ -86,7 +130,7 @@ const UsersPanel: React.FC = () => {
     setEditTarget(null);
   };
 
-  // ── Delete still goes through edge function so auth.users is also cleaned up
+  // ── Delete via edge function (cleans up auth.users too) ─────────────────────
   const getToken = async () => {
     const { data } = await supabase.auth.getSession();
     return data.session?.access_token ?? "";
@@ -128,6 +172,7 @@ const UsersPanel: React.FC = () => {
               <tr className="text-left text-t-muted border-b border-[var(--border-color)]">
                 <th className="pb-3 pr-4 font-medium">User</th>
                 <th className="pb-3 pr-4 font-medium">Role</th>
+                <th className="pb-3 pr-4 font-medium">Status</th>
                 <th className="pb-3 font-medium">Actions</th>
               </tr>
             </thead>
@@ -149,9 +194,16 @@ const UsersPanel: React.FC = () => {
                       {u.defaultRole}
                     </span>
                   </td>
+                  {/* FIX: show disabled status so admins can see locked-out accounts */}
+                  <td className="py-3 pr-4">
+                    {u.disabled
+                      ? <span className="text-xs px-2 py-0.5 rounded-full bg-red-500/15 text-red-400">Disabled</span>
+                      : <span className="text-xs px-2 py-0.5 rounded-full bg-green-500/15 text-green-400">Active</span>
+                    }
+                  </td>
                   <td className="py-3">
                     <div className="flex gap-2">
-                      <button onClick={() => openEdit(u)}
+                      <button onClick={() => openEdit(u)} disabled={loading}
                         className="text-xs btn-ghost py-1 px-3">Edit</button>
                       <button
                         disabled={u.id === currentUser?.id}
@@ -164,7 +216,7 @@ const UsersPanel: React.FC = () => {
                 </tr>
               ))}
               {filtered.length === 0 && (
-                <tr><td colSpan={3} className="py-10 text-center text-t-muted">No users found.</td></tr>
+                <tr><td colSpan={4} className="py-10 text-center text-t-muted">No users found.</td></tr>
               )}
             </tbody>
           </table>
@@ -191,6 +243,18 @@ const UsersPanel: React.FC = () => {
                   <option value="tester">Tester</option>
                   <option value="admin">Admin</option>
                 </select>
+              </div>
+              <div className="flex items-center gap-3">
+                <input
+                  type="checkbox"
+                  id="edit-disabled"
+                  checked={editDisabled}
+                  onChange={e => setEditDisabled(e.target.checked)}
+                  className="w-4 h-4 accent-red-500"
+                />
+                <label htmlFor="edit-disabled" className="text-sm text-t-primary select-none">
+                  Disable this account
+                </label>
               </div>
             </div>
             <div className="flex gap-3 justify-end mt-6">

@@ -5,6 +5,8 @@ import Topbar from "../Layout/Topbar";
 import { StepResult, ModuleTest } from "../../types";
 import { useAuth } from "../../context/AuthContext";
 import { useTheme } from "../../context/ThemeContext";
+import { useToast } from "../../context/ToastContext";
+import { useAuditLog } from "../../hooks/useAuditLog";
 import {
   ResponsiveContainer,
   BarChart, Bar,
@@ -263,6 +265,9 @@ const RRadarChart: React.FC<{ data: ChartRow[]; ct: ChartTheme }> = ({ data, ct 
 const ModuleDashboard: React.FC<Props> = ({ moduleId, moduleName, onBack, onExecute }) => {
   useInjectStyle();
   const { user }  = useAuth();
+  const isAdmin   = user?.defaultRole === "admin";
+  const { addToast } = useToast();
+  const { log }      = useAuditLog();
   const { theme } = useTheme();
 
   const [moduleTests, setModuleTests]       = useState<ModuleTestRow[]>([]);
@@ -345,6 +350,21 @@ const ModuleDashboard: React.FC<Props> = ({ moduleId, moduleName, onBack, onExec
     const lock = locks.find(l => l.module_test_id === mtId);
     if (lock && lock.user_id !== user?.id) return;
     onExecute(mtId);
+  };
+
+  const handleForceRelease = async (mtId: string, lockedByName: string) => {
+    const { error } = await supabase
+      .from("testlocks")
+      .delete()
+      .eq("module_test_id", mtId);
+
+    if (error) {
+      addToast("Failed to release lock: " + error.message, "error");
+    } else {
+      log(`Force-released lock held by ${lockedByName}`, "warn");
+      addToast(`Lock held by ${lockedByName} released`, "success");
+    }
+    // Realtime channel will update locks state automatically
   };
 
   const listAnimKey  = selectedMtId ?? "all";
@@ -434,6 +454,8 @@ const ModuleDashboard: React.FC<Props> = ({ moduleId, moduleName, onBack, onExec
                         isLockedByOther={isLockedByOther}
                         isLockedByMe={isLockedByMe}
                         lockedByName={lock?.locked_by_name ?? ""}
+                        isAdmin={isAdmin}
+                        onForceRelease={() => handleForceRelease(mt.id, lock?.locked_by_name ?? "unknown")}
                       />
                     </StaggerRow>
                   );
@@ -457,7 +479,9 @@ const TestRow: React.FC<{
   isLockedByOther: boolean;
   isLockedByMe: boolean;
   lockedByName: string;
-}> = ({ testName, testSerialNo, results, onExecute, isLockedByOther, isLockedByMe, lockedByName }) => {
+  isAdmin: boolean;
+  onForceRelease: () => void;
+}> = ({ testName, testSerialNo, results, onExecute, isLockedByOther, isLockedByMe, lockedByName, isAdmin, onForceRelease }) => {
   const passed  = results.filter(r => r.status === "pass").length;
   const failed  = results.filter(r => r.status === "fail").length;
   const pending = results.filter(r => r.status === "pending").length;
@@ -482,9 +506,20 @@ const TestRow: React.FC<{
             {testName}
           </p>
           {isLockedByOther && (
-            <span className="flex items-center gap-1 text-xs font-semibold text-amber-600 dark:text-amber-500 bg-amber-500/15 border border-amber-500/40 rounded-full px-2.5 py-0.5">
+            <span className="flex items-center gap-1.5 text-xs font-semibold text-amber-600 dark:text-amber-500 bg-amber-500/15 border border-amber-500/40 rounded-full px-2.5 py-0.5">
               <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse inline-block" />
-              🔒 {lockedByName} is executing. For access, contact user to finish.
+              🔒 {lockedByName} is executing.
+              {isAdmin ? (
+                <button
+                  onClick={e => { e.stopPropagation(); onForceRelease(); }}
+                  className="ml-1 underline underline-offset-2 hover:text-red-500 transition-colors"
+                  title="Force-release this lock (admin only)"
+                >
+                  Force release
+                </button>
+              ) : (
+                <span className="font-normal opacity-80">Contact user to finish.</span>
+              )}
             </span>
           )}
           {isLockedByMe && (

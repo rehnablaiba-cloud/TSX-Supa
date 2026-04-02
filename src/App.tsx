@@ -146,15 +146,33 @@ const AppInner: React.FC = () => {
   const [selectedModuleId, setSelectedModuleId]     = useState<string | null>(null);
   const [selectedTestId, setSelectedTestId]         = useState<string | null>(null);
 
+  // FIX: modules were fetched once on login and never refreshed.
+  // A Realtime channel now keeps the list in sync — if another admin
+  // adds/renames/deletes a module mid-session this user will see it immediately.
   useEffect(() => {
     if (!isAuthenticated) return;
-    supabase
-      .from("modules")
-      .select("*")
-      .then(({ data, error }) => {
-        if (!error && data) setModules(data as Module[]);
-        else if (error) console.error("Error fetching modules:", error.message);
-      });
+
+    const fetchModules = () =>
+      supabase
+        .from("modules")
+        .select("*")
+        .then(({ data, error }) => {
+          if (!error && data) setModules(data as Module[]);
+          else if (error) console.error("Error fetching modules:", error.message);
+        });
+
+    fetchModules();
+
+    const channel = supabase
+      .channel("modules_realtime")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "modules" },
+        () => fetchModules()
+      )
+      .subscribe();
+
+    return () => { supabase.removeChannel(channel); };
   }, [isAuthenticated]);
 
   if (authLoading) {
