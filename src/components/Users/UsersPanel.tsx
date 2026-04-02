@@ -7,9 +7,12 @@ import { useToast } from "../../context/ToastContext";
 import { useAuditLog } from "../../hooks/useAuditLog";
 import { AppUser, Role } from "../../types";
 
-const EMPTY: {
-  display_name: string; email: string; password: string; defaultRole: Role; disabled: boolean;
-} = { display_name: "", email: "", password: "", defaultRole: "tester", disabled: false };
+// ─── Profile row shape returned by Supabase ───────────────────────────────────
+interface ProfileRow {
+  id: string;
+  display_name: string;
+  role: Role;
+}
 
 const UsersPanel: React.FC = () => {
   const { user: currentUser } = useAuth();
@@ -18,77 +21,103 @@ const UsersPanel: React.FC = () => {
   const [users, setUsers]               = useState<AppUser[]>([]);
   const [search, setSearch]             = useState("");
   const [showForm, setShowForm]         = useState(false);
-  const [form, setForm]                 = useState({ ...EMPTY });
-  const [editId, setEditId]             = useState<string | null>(null);
+  const [editTarget, setEditTarget]     = useState<AppUser | null>(null);
+  const [editRole, setEditRole]         = useState<Role>("tester");
+  const [editName, setEditName]         = useState("");
   const [deleteTarget, setDeleteTarget] = useState<AppUser | null>(null);
   const [loading, setLoading]           = useState(false);
 
   const filtered = users.filter(u =>
-    `${u.display_name} ${u.email}`.toLowerCase().includes(search.toLowerCase())
+    u.display_name.toLowerCase().includes(search.toLowerCase())
   );
 
+  // ── Fetch from profiles table directly ──────────────────────────────────────
+  const loadUsers = async () => {
+    const { data, error } = await supabase
+      .from("profiles")
+      .select("id, display_name, role")
+      .order("display_name");
+
+    if (error) {
+      addToast("Failed to load users: " + error.message, "error");
+      return;
+    }
+
+    setUsers(
+      (data as ProfileRow[]).map(p => ({
+        id:           p.id,
+        display_name: p.display_name ?? "",
+        email:        "",       // not stored in profiles
+        defaultRole:  p.role ?? "tester",
+        disabled:     false,    // not stored in profiles
+      }))
+    );
+  };
+
+  useEffect(() => { loadUsers(); }, []);
+
+  // ── Edit (display_name + role) via profiles table ───────────────────────────
+  const openEdit = (u: AppUser) => {
+    setEditTarget(u);
+    setEditName(u.display_name);
+    setEditRole(u.defaultRole);
+    setShowForm(true);
+  };
+
+  const handleSave = async () => {
+    if (!editTarget) return;
+    setLoading(true);
+    try {
+      const { error } = await supabase
+        .from("profiles")
+        .update({ display_name: editName, role: editRole })
+        .eq("id", editTarget.id);
+
+      if (error) throw new Error(error.message);
+
+      log(`Edited user: ${editTarget.display_name}`, "info");
+      addToast("User updated", "success");
+      await loadUsers();
+    } catch (e: any) {
+      addToast(e.message || "Error saving user", "error");
+    }
+    setLoading(false);
+    setShowForm(false);
+    setEditTarget(null);
+  };
+
+  // ── Delete still goes through edge function so auth.users is also cleaned up
   const getToken = async () => {
     const { data } = await supabase.auth.getSession();
     return data.session?.access_token ?? "";
   };
 
-  const edgeFn = async (body: object) => {
+  const handleDelete = async () => {
+    if (!deleteTarget) return;
     const token = await getToken();
     const res = await fetch(
       `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/manage-users`,
       {
         method: "POST",
         headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
-        body: JSON.stringify(body),
+        body: JSON.stringify({ action: "delete", payload: { id: deleteTarget.id } }),
       }
     );
-    return res.json();
-  };
-
-  const loadUsers = async () => {
-    const data = await edgeFn({ action: "list" });
-    setUsers(Array.isArray(data) ? data : []);
-  };
-
-  useEffect(() => { loadUsers(); }, []);
-
-  const handleSave = async () => {
-    setLoading(true);
-    try {
-      const action  = editId ? "update" : "create";
-      const payload = editId
-        ? { id: editId, display_name: form.display_name, role: form.defaultRole }
-        : { email: form.email, password: form.password, display_name: form.display_name, role: form.defaultRole };
-
-      const data = await edgeFn({ action, payload });
-      if (data.error) throw new Error(data.error);
-
-      log(editId ? `Edited user: ${form.email}` : `Created user: ${form.email}`, "info");
-      addToast(editId ? "User updated" : "User created", "success");
+    const data = await res.json();
+    if (data.error) {
+      addToast("Delete failed: " + data.error, "error");
+    } else {
+      log(`Deleted user: ${deleteTarget.display_name}`, "warn");
+      addToast("User deleted", "success");
       await loadUsers();
-    } catch (e: any) {
-      addToast(e.message || "Error saving user", "error");
     }
-    setLoading(false); setShowForm(false); setEditId(null); setForm({ ...EMPTY });
-  };
-
-  const handleDelete = async () => {
-    if (!deleteTarget) return;
-    await edgeFn({ action: "delete", payload: { id: deleteTarget.id } });
-    log(`Deleted user: ${deleteTarget.email}`, "warn");
-    addToast("User deleted", "success");
     setDeleteTarget(null);
-    await loadUsers();
   };
 
   return (
     <div className="flex-1 flex flex-col">
-      <Topbar title="Users" subtitle="Admin panel"
-        actions={
-          <button onClick={() => { setShowForm(true); setEditId(null); setForm({ ...EMPTY }); }}
-            className="btn-primary text-sm">+ Add User</button>
-        }
-      />
+      <Topbar title="Users" subtitle="Fetched from profiles" />
+
       <div className="p-6 flex flex-col gap-4 pb-24 md:pb-6">
         <input value={search} onChange={e => setSearch(e.target.value)}
           placeholder="Search users…" className="input max-w-sm" />
@@ -99,7 +128,6 @@ const UsersPanel: React.FC = () => {
               <tr className="text-left text-t-muted border-b border-[var(--border-color)]">
                 <th className="pb-3 pr-4 font-medium">User</th>
                 <th className="pb-3 pr-4 font-medium">Role</th>
-                <th className="pb-3 pr-4 font-medium">Status</th>
                 <th className="pb-3 font-medium">Actions</th>
               </tr>
             </thead>
@@ -109,34 +137,25 @@ const UsersPanel: React.FC = () => {
                   <td className="py-3 pr-4">
                     <div className="flex items-center gap-3">
                       <div className="w-8 h-8 rounded-full bg-c-brand flex items-center justify-center text-sm font-bold text-white">
-                        {(u.display_name || u.email)[0].toUpperCase()}
+                        {(u.display_name || "?")[0].toUpperCase()}
                       </div>
-                      <div>
-                        <p className="font-medium text-t-primary">{u.display_name}</p>
-                        <p className="text-xs text-t-muted">{u.email}</p>
-                      </div>
+                      <p className="font-medium text-t-primary">
+                        {u.display_name || <span className="text-t-muted italic">Unnamed</span>}
+                      </p>
                     </div>
                   </td>
                   <td className="py-3 pr-4">
-                    <span className={u.defaultRole === "admin" ? "badge-admin" : "badge-tester"}>{u.defaultRole}</span>
-                  </td>
-                  <td className="py-3 pr-4">
-                    <span className={`text-xs font-medium px-2 py-1 rounded-full ${
-                      u.disabled
-                        ? "bg-bg-card text-t-muted"
-                        : "bg-green-500/20 text-green-600 dark:text-green-400"
-                    }`}>
-                      {u.disabled ? "Inactive" : "Active"}
+                    <span className={u.defaultRole === "admin" ? "badge-admin" : "badge-tester"}>
+                      {u.defaultRole}
                     </span>
                   </td>
                   <td className="py-3">
                     <div className="flex gap-2">
-                      <button onClick={() => {
-                          setEditId(u.id);
-                          setForm({ display_name: u.display_name, email: u.email, password: "", defaultRole: u.defaultRole, disabled: u.disabled });
-                          setShowForm(true);
-                        }} className="text-xs btn-ghost py-1 px-3">Edit</button>
-                      <button disabled={u.id === currentUser?.id} onClick={() => setDeleteTarget(u)}
+                      <button onClick={() => openEdit(u)}
+                        className="text-xs btn-ghost py-1 px-3">Edit</button>
+                      <button
+                        disabled={u.id === currentUser?.id}
+                        onClick={() => setDeleteTarget(u)}
                         className="text-xs px-3 py-1 rounded-lg bg-red-500/10 text-red-500 dark:text-red-400 hover:bg-red-500/20 disabled:opacity-30 transition-colors">
                         Delete
                       </button>
@@ -145,35 +164,30 @@ const UsersPanel: React.FC = () => {
                 </tr>
               ))}
               {filtered.length === 0 && (
-                <tr><td colSpan={4} className="py-10 text-center text-t-muted">No users found.</td></tr>
+                <tr><td colSpan={3} className="py-10 text-center text-t-muted">No users found.</td></tr>
               )}
             </tbody>
           </table>
         </div>
       </div>
 
-      {showForm && (
+      {/* ── Edit modal ── */}
+      {showForm && editTarget && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
           <div className="glass rounded-2xl p-6 w-full max-w-md">
-            <h3 className="text-lg font-semibold text-t-primary mb-5">{editId ? "Edit User" : "Add User"}</h3>
+            <h3 className="text-lg font-semibold text-t-primary mb-5">Edit User</h3>
             <div className="flex flex-col gap-4">
               <div>
                 <label className="block text-xs text-t-muted mb-1.5">Display Name</label>
-                <input value={form.display_name} onChange={e => setForm(p => ({ ...p, display_name: e.target.value }))} className="input" />
+                <input value={editName}
+                  onChange={e => setEditName(e.target.value)}
+                  className="input" />
               </div>
-              {!editId && <>
-                <div>
-                  <label className="block text-xs text-t-muted mb-1.5">Email</label>
-                  <input type="email" value={form.email} onChange={e => setForm(p => ({ ...p, email: e.target.value }))} className="input" />
-                </div>
-                <div>
-                  <label className="block text-xs text-t-muted mb-1.5">Password</label>
-                  <input type="password" value={form.password} onChange={e => setForm(p => ({ ...p, password: e.target.value }))} className="input" />
-                </div>
-              </>}
               <div>
                 <label className="block text-xs text-t-muted mb-1.5">Role</label>
-                <select value={form.defaultRole} onChange={e => setForm(p => ({ ...p, defaultRole: e.target.value as Role }))} className="input">
+                <select value={editRole}
+                  onChange={e => setEditRole(e.target.value as Role)}
+                  className="input">
                   <option value="tester">Tester</option>
                   <option value="admin">Admin</option>
                 </select>
