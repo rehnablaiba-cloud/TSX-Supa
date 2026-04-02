@@ -44,7 +44,7 @@ const LoginPage: React.FC = () => {
         {/* Header */}
         <div className="flex flex-col items-center mb-8">
           <div className="w-14 h-14 rounded-2xl bg-c-brand flex items-center justify-center text-2xl mb-3">
-            <Image source={require('./train.png')} />
+          🧪
           </div>
           <h1 className="text-2xl font-bold text-t-primary">TestPro</h1>
           <p className="text-t-muted text-sm mt-1">Test Execution Management System</p>
