@@ -4,8 +4,9 @@ import { useTheme } from "../../context/ThemeContext";
 import ThemeEditor from "../ThemeEditor/ThemeEditorPanel";
 import { supabase } from "../../supabase";
 
-// ─── Hardcoded import password ─────────────────────────────────────────────
-const IMPORT_PASSWORD = "testpro2024";
+// ─── Access control: admin role required for Theme Editor, Import, Export ──
+// Role is fetched from the `profiles` table by AuthContext (user.defaultRole).
+// No hardcoded passwords — gate is purely Supabase-driven.
 
 // ─── All tables to dump (FK-safe order for SQL inserts) ───────────────────
 const ALL_TABLES = [
@@ -337,18 +338,14 @@ function groupByTest(rows: CsvRow[]) {
   return map;
 }
 
-type ImportStep = "password" | "upload" | "preview" | "importing" | "done";
+type ImportStep = "upload" | "preview" | "importing" | "done";
 
 const ImportModal: React.FC<{ onClose: () => void }> = ({ onClose }) => {
-  const [step, setStep] = useState<ImportStep>("password");
-  const [pwInput, setPwInput] = useState(""); const [pwError, setPwError] = useState(false);
+  const [step, setStep] = useState<ImportStep>("upload");
   const [rows, setRows] = useState<CsvRow[]>([]); const [parseErrors, setParseErrors] = useState<string[]>([]);
   const [summary, setSummary] = useState<ImportSummary|null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
-  const handlePasswordSubmit = () => {
-    if (pwInput === IMPORT_PASSWORD) { setPwError(false); setStep("upload"); } else setPwError(true);
-  };
 
   const handleFile = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]; if (!file) return;
@@ -396,7 +393,7 @@ const ImportModal: React.FC<{ onClose: () => void }> = ({ onClose }) => {
           <div>
             <h2 className="text-base font-bold text-t-primary">📥 Import Test Data</h2>
             <p className="text-xs text-t-muted mt-0.5">
-              {step==="password"&&"Enter password"}{step==="upload"&&"Upload CSV"}
+              {step==="upload"&&"Upload CSV"}
               {step==="preview"&&`${testCount} tests · ${stepCount} steps`}
               {step==="importing"&&"Writing to Supabase…"}{step==="done"&&"Import complete"}
             </p>
@@ -404,17 +401,6 @@ const ImportModal: React.FC<{ onClose: () => void }> = ({ onClose }) => {
           <button onClick={onClose} className="w-8 h-8 flex items-center justify-center rounded-full text-t-muted hover:text-t-primary hover:bg-bg-card transition-colors text-lg">✕</button>
         </div>
 
-        {step==="password"&&(
-          <div className="flex flex-col gap-3">
-            <input type="password" value={pwInput} autoFocus
-              onChange={e=>{setPwInput(e.target.value);setPwError(false);}}
-              onKeyDown={e=>e.key==="Enter"&&handlePasswordSubmit()}
-              placeholder="Import password"
-              className={`input text-sm ${pwError?"border-red-500 ring-1 ring-red-500/30":""}`} />
-            {pwError&&<p className="text-xs text-red-400">Incorrect password.</p>}
-            <button onClick={handlePasswordSubmit} className="btn-primary text-sm w-full">Unlock →</button>
-          </div>
-        )}
 
         {step==="upload"&&(
           <div className="flex flex-col gap-4">
@@ -551,6 +537,22 @@ const MobileNav: React.FC<Props> = ({ activePage, onNavigate }) => {
   const sheetRef = useRef<HTMLDivElement>(null);
 
   const isAdmin = user?.defaultRole === "admin";
+  const [accessDenied, setAccessDenied] = useState<string | null>(null);
+
+  // Opens a protected sheet only for admins. Shows inline feedback otherwise.
+  const openProtected = (setter: (v: boolean) => void) => {
+    setAccessDenied(null);
+    if (!user) {
+      setAccessDenied("No user session found. Please sign out and sign in again.");
+      return;
+    }
+    if (!isAdmin) {
+      setAccessDenied("Admin access required. Your current role: " + user.defaultRole + ".");
+      return;
+    }
+    open(setter);
+  };
+
   const items = [
     { id: "dashboard", icon: "📊", label: "Home"   },
     { id: "report",    icon: "📋", label: "Report" },
@@ -582,15 +584,22 @@ const MobileNav: React.FC<Props> = ({ activePage, onNavigate }) => {
       {/* ── More sheet ── */}
       {showMore && (
         <div className="md:hidden fixed inset-0 z-50 flex items-end">
-          <div className="absolute inset-0 bg-black/40" onClick={() => setShowMore(false)} />
+          <div className="absolute inset-0 bg-black/40" onClick={() => { setShowMore(false); setAccessDenied(null); }} />
           <div ref={sheetRef}
             className="relative w-full bg-bg-surface border-t border-[var(--border-color)]
               rounded-t-2xl px-6 pt-4 pb-10 flex flex-col gap-3 z-10">
             <div className="w-10 h-1 bg-bg-card rounded-full mx-auto mb-2" />
 
-            <SheetButton icon="🎨" label="Theme Editor"  desc="Customize colors & palette" badge="🔒 Admin" onClick={() => open(setShowThemeEditor)} />
-            <SheetButton icon="📥" label="Import Data"   desc="Upload tests via CSV"        badge="🔒 PW"    onClick={() => open(setShowImport)} />
-            <SheetButton icon="📤" label="Export Data"   desc="All tables · CSV · JSON · SQL"               onClick={() => open(setShowExport)} />
+            <SheetButton icon="🎨" label="Theme Editor"  desc="Customize colors & palette" badge="🔒 Admin" onClick={() => openProtected(setShowThemeEditor)} />
+            <SheetButton icon="📥" label="Import Data"   desc="Upload tests via CSV"        badge="🔒 Admin" onClick={() => openProtected(setShowImport)} />
+            <SheetButton icon="📤" label="Export Data"   desc="All tables · CSV · JSON · SQL" badge="🔒 Admin" onClick={() => openProtected(setShowExport)} />
+
+            {accessDenied && (
+              <div className="rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-xs text-red-400 flex items-start gap-2">
+                <span className="text-base leading-none mt-px">🚫</span>
+                <p>{accessDenied}</p>
+              </div>
+            )}
 
             <button onClick={() => { toggleTheme(); setShowMore(false); }}
               className="flex items-center gap-4 px-4 py-3.5 rounded-xl bg-bg-card hover:bg-bg-base
