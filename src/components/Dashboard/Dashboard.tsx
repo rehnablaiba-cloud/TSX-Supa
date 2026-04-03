@@ -109,7 +109,7 @@ const Dashboard: React.FC<Props> = ({ onNavigate }) => {
           onClick={() => setShowExportModal(true)}
           disabled={modules.length === 0}
           className="flex items-center gap-1.5 px-4 py-2 text-sm font-semibold rounded-lg transition
-            bg-bg-card hover:bg-bg-surface
+            bg-bg-card hover:bg-bg-surface/80 backdrop-blur-md
             border border-[var(--border-color)]
             text-t-primary
             disabled:opacity-40 disabled:cursor-not-allowed">
