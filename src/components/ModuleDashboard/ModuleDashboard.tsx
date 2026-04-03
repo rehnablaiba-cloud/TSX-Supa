@@ -379,8 +379,8 @@ const ModuleDashboard: React.FC<Props> = ({ moduleId, moduleName, onBack, onExec
       <div className="p-6 flex flex-col gap-6 pb-24 md:pb-6">
 
         {/* ── Chart panel ── */}
-        <div className="p-4 rounded-xl border"
-          style={{ backgroundColor: chartTheme.panel, borderColor: chartTheme.border }}>
+        <div className="p-4 rounded-xl border bg-bg-surface/70 backdrop-blur-md"
+  style={{ borderColor: chartTheme.border }}>
           <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
             <h3 className="text-sm font-semibold" style={{ color: chartTheme.text }}>Execution Graph</h3>
             <div className="flex items-center gap-0.5 rounded-lg p-0.5 border"
