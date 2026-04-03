@@ -8,7 +8,6 @@ import { useToast } from "../../context/ToastContext";
 import { useAuditLog } from "../../hooks/useAuditLog";
 import { exportExecutionCSV, exportExecutionPDF, FlatData } from "../../utils/export";
 
-// Props now receive moduleTestId (module_tests.id) instead of raw testId
 interface Props {
   moduleId: string;
   moduleName: string;
@@ -18,20 +17,18 @@ interface Props {
 
 type Filter = "all" | "pass" | "fail" | "pending";
 
-// Combined type: step definition merged with its per-module result
 interface ExecutionStep {
-  stepId:        string;
-  stepResultId:  string;
-  moduleTestId:  string;
-  serial_no:     number;
-  action:        string;
+  stepId:          string;
+  stepResultId:    string;
+  moduleTestId:    string;
+  serial_no:       number;
+  action:          string;
   expected_result: string;
-  is_divider:    boolean;
-  status:        "pass" | "fail" | "pending";
-  remarks:       string;
+  is_divider:      boolean;
+  status:          "pass" | "fail" | "pending";
+  remarks:         string;
 }
 
-// Shape returned by Supabase for module_tests list
 interface ModuleTestItem {
   id:          string;
   order_index: number;
@@ -65,9 +62,9 @@ const LockedScreen: React.FC<{ lockedByName: string; testName: string; onBack: (
 
 // ── Main Component ────────────────────────────────────────────
 const TestExecution: React.FC<Props> = ({ moduleId, moduleName, initialModuleTestId, onBack }) => {
-  const { user }      = useAuth();
-  const { addToast }  = useToast();
-  const { log }       = useAuditLog();
+  const { user }     = useAuth();
+  const { addToast } = useToast();
+  const { log }      = useAuditLog();
 
   const [currentMtId, setCurrentMtId]         = useState(initialModuleTestId);
   const [filter, setFilter]                   = useState<Filter>("all");
@@ -106,7 +103,6 @@ const TestExecution: React.FC<Props> = ({ moduleId, moduleName, initialModuleTes
     setLockLoading(true);
 
     Promise.all([
-      // Step definitions + results joined in one query
       supabase
         .from("step_results")
         .select(`
@@ -116,10 +112,10 @@ const TestExecution: React.FC<Props> = ({ moduleId, moduleName, initialModuleTes
         .eq("module_test_id", currentMtId),
       supabase
         .from("testlocks")
-        .select("*")
+        // FIX: was select("*") — only these 3 fields are consumed
+        .select("module_test_id, user_id, locked_by_name")
         .eq("module_test_id", currentMtId),
     ]).then(([srRes, lockRes]) => {
-      // Flatten into ExecutionStep[], sorted by serial_no
       const merged: ExecutionStep[] = ((srRes.data ?? []) as any[])
         .map((sr) => ({
           stepId:          sr.step.id,
@@ -140,7 +136,7 @@ const TestExecution: React.FC<Props> = ({ moduleId, moduleName, initialModuleTes
       setLockLoading(false);
     });
 
-    // Real-time: lock changes for this module_test
+    // Real-time: lock changes
     const lockChannel = supabase.channel(`lock:${currentMtId}`)
       .on("postgres_changes", {
         event: "*", schema: "public", table: "testlocks",
@@ -150,7 +146,7 @@ const TestExecution: React.FC<Props> = ({ moduleId, moduleName, initialModuleTes
       })
       .subscribe();
 
-    // Real-time: step_result updates for this module_test
+    // Real-time: step_result updates
     const srChannel = supabase.channel(`step_results:${currentMtId}`)
       .on("postgres_changes", {
         event: "UPDATE", schema: "public", table: "step_results",
@@ -245,21 +241,19 @@ const TestExecution: React.FC<Props> = ({ moduleId, moduleName, initialModuleTes
     }
   }, [scrollTarget]);
 
-  // ── Step update — optimistic, writes to step_results ────
+  // ── Step update — optimistic ──────────────────────────────
   const handleStepUpdate = useCallback(async (
     stepId: string, status: "pass" | "fail" | "pending", remarks: string
   ) => {
     const currentIndex = steps.findIndex(s => s.stepId === stepId);
     const nextPending  = steps.slice(currentIndex + 1).find(s => !s.is_divider && s.status === "pending");
 
-    // Optimistic update
     setSteps(prev => prev.map(s => s.stepId === stepId ? { ...s, status, remarks } : s));
 
     if (status !== "pending" && nextPending) {
       setScrollTarget(nextPending.stepId);
     }
 
-    // Write to step_results via RPC (tester-safe)
     await supabase.rpc("update_step_result", {
       p_module_test_id: currentMtId,
       p_step_id:        stepId,

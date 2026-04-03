@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef, useMemo, useCallback } from "react";
+import React, { useEffect, useRef, useState, useMemo, useCallback } from "react";
 import { supabase } from "../../supabase";
 import Spinner from "../UI/Spinner";
 import Topbar from "../Layout/Topbar";
@@ -79,19 +79,23 @@ interface Props {
   moduleId: string;
   moduleName: string;
   onBack: () => void;
-  onExecute: (moduleTestId: string) => void; // now receives module_test.id
+  onExecute: (moduleTestId: string) => void;
 }
 
-// ── Joined shape returned by Supabase ────────────────────────────────────────
+// FIX: trimmed — only fields actually consumed in this component
+interface TrimmedStepResult {
+  id: string;
+  status: "pass" | "fail" | "pending";
+  step: { id: string; is_divider: boolean } | null;
+}
+
 interface ModuleTestRow {
   id: string;
   module_id: string;
   test_id: string;
   order_index: number;
   test: { id: string; serial_no: number; name: string; description?: string };
-  step_results: (StepResult & {
-    step: { id: string; serial_no: number; action: string; expected_result: string; is_divider: boolean };
-  })[];
+  step_results: TrimmedStepResult[];
 }
 
 // ── Tooltips ──────────────────────────────────────────────────────────────────
@@ -264,28 +268,32 @@ const RRadarChart: React.FC<{ data: ChartRow[]; ct: ChartTheme }> = ({ data, ct 
 // ── Main Component ────────────────────────────────────────────────────────────
 const ModuleDashboard: React.FC<Props> = ({ moduleId, moduleName, onBack, onExecute }) => {
   useInjectStyle();
-  const { user }  = useAuth();
-  const isAdmin   = user?.defaultRole === "admin";
+  const { user }     = useAuth();
+  const isAdmin      = user?.defaultRole === "admin";
   const { addToast } = useToast();
   const { log }      = useAuditLog();
-  const { theme } = useTheme();
+  const { theme }    = useTheme();
 
-  const [moduleTests, setModuleTests]       = useState<ModuleTestRow[]>([]);
-  const [loading, setLoading]               = useState(true);
-  const [locks, setLocks]                   = useState<any[]>([]);
-  const [selectedMtId, setSelectedMtId]     = useState<string | null>(null);
-  const [chartType, setChartType]           = useState<ChartType>("bar");
+  const [moduleTests, setModuleTests]   = useState<ModuleTestRow[]>([]);
+  const [loading, setLoading]           = useState(true);
+  const [locks, setLocks]               = useState<any[]>([]);
+  const [selectedMtId, setSelectedMtId] = useState<string | null>(null);
+  const [chartType, setChartType]       = useState<ChartType>("bar");
 
   // ── Debounced lock refetch ─────────────────────────────────────────────────
   const lockRefetchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const refetchLocks = useCallback(() => {
     if (lockRefetchTimer.current) clearTimeout(lockRefetchTimer.current);
     lockRefetchTimer.current = setTimeout(() => {
-      supabase.from("testlocks").select("*").then(({ data }) => setLocks(data ?? []));
+      // FIX: only fetch columns actually used
+      supabase
+        .from("testlocks")
+        .select("module_test_id, user_id, locked_by_name")
+        .then(({ data }) => setLocks(data ?? []));
     }, 300);
   }, []);
 
-  // ── Load: module_tests → tests + step_results → steps ────────────────────
+  // ── Load: module_tests → tests + step_results (trimmed) ──────────────────
   useEffect(() => {
     const load = async () => {
       setLoading(true);
@@ -297,13 +305,19 @@ const ModuleDashboard: React.FC<Props> = ({ moduleId, moduleName, onBack, onExec
             id, module_id, test_id, order_index,
             test:tests ( id, serial_no, name, description ),
             step_results (
-              id, module_test_id, step_id, status, remarks, updated_at,
-              step:steps ( id, serial_no, action, expected_result, is_divider )
+              id, status,
+              step:steps ( id, is_divider )
             )
           `)
+          // FIX: was fetching remarks, updated_at, module_test_id, step_id,
+          //      and full step fields (serial_no, action, expected_result) —
+          //      none used in this component; only status + is_divider needed
           .eq("module_id", moduleId)
           .order("order_index"),
-        supabase.from("testlocks").select("*"),
+        supabase
+          .from("testlocks")
+          // FIX: was select("*") — only these 3 fields are consumed
+          .select("module_test_id, user_id, locked_by_name"),
       ]);
 
       setModuleTests((mtRes.data ?? []) as unknown as ModuleTestRow[]);
@@ -333,7 +347,6 @@ const ModuleDashboard: React.FC<Props> = ({ moduleId, moduleName, onBack, onExec
 
   const filteredMts = selectedMtId ? moduleTests.filter(mt => mt.id === selectedMtId) : moduleTests;
 
-  // Chart rows: count step_results per test, excluding is_divider steps
   const chartData = useMemo<ChartRow[]>(() =>
     filteredMts.map(mt => {
       const results = (mt.step_results ?? []).filter(sr => !sr.step?.is_divider);
@@ -364,7 +377,6 @@ const ModuleDashboard: React.FC<Props> = ({ moduleId, moduleName, onBack, onExec
       log(`Force-released lock held by ${lockedByName}`, "warn");
       addToast(`Lock held by ${lockedByName} released`, "success");
     }
-    // Realtime channel will update locks state automatically
   };
 
   const listAnimKey  = selectedMtId ?? "all";
@@ -379,8 +391,8 @@ const ModuleDashboard: React.FC<Props> = ({ moduleId, moduleName, onBack, onExec
       <div className="p-6 flex flex-col gap-6 pb-24 md:pb-6">
 
         {/* ── Chart panel ── */}
-        <div className="p-4 rounded-xl border bg-bg-surface/70 backdrop-blur-md"
-  style={{ borderColor: chartTheme.border }}>
+        <div className="p-4 rounded-xl border"
+          style={{ backgroundColor: chartTheme.panel, borderColor: chartTheme.border }}>
           <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
             <h3 className="text-sm font-semibold" style={{ color: chartTheme.text }}>Execution Graph</h3>
             <div className="flex items-center gap-0.5 rounded-lg p-0.5 border"
@@ -441,8 +453,7 @@ const ModuleDashboard: React.FC<Props> = ({ moduleId, moduleName, onBack, onExec
                   const lock            = locks.find(l => l.module_test_id === mt.id);
                   const isLockedByOther = !!(lock && lock.user_id !== user?.id);
                   const isLockedByMe    = !!(lock && lock.user_id === user?.id);
-                  // Non-divider results only for stats
-                  const results = (mt.step_results ?? []).filter(sr => !sr.step?.is_divider);
+                  const results         = (mt.step_results ?? []).filter(sr => !sr.step?.is_divider);
                   return (
                     <StaggerRow key={mt.id} index={index}>
                       <TestRow
@@ -474,7 +485,7 @@ const TestRow: React.FC<{
   moduleTestId: string;
   testName: string;
   testSerialNo: number;
-  results: StepResult[];
+  results: TrimmedStepResult[];
   onExecute: () => void;
   isLockedByOther: boolean;
   isLockedByMe: boolean;

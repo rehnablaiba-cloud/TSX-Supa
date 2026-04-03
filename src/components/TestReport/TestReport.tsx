@@ -16,7 +16,6 @@ import {
 } from "recharts";
 import { PieLabelRenderProps } from "recharts";
 
-
 // ── Animation keyframes ───────────────────────────────────────────────────────
 const ANIM_STYLE = `
 @keyframes fadeSlideIn {
@@ -24,7 +23,6 @@ const ANIM_STYLE = `
   to   { opacity: 1; transform: translateY(0);    }
 }
 `;
-
 
 function useInjectStyle() {
   const injected = useRef(false);
@@ -37,17 +35,14 @@ function useInjectStyle() {
   }, []);
 }
 
-
 const FadeWrapper: React.FC<{ animKey: string | number; children: React.ReactNode }> = ({ animKey, children }) => (
   <div key={animKey} style={{ animation: "fadeSlideIn 0.28s cubic-bezier(0.22,1,0.36,1) both" }}>
     {children}
   </div>
 );
 
-
 // ── Constants ─────────────────────────────────────────────────────────────────
 const COLORS = { pass: "#22c55e", fail: "#ef4444", pending: "#f59e0b" };
-
 
 type ChartType = "bar" | "area" | "line" | "pie" | "radar";
 const CHART_TYPES: { type: ChartType; label: string }[] = [
@@ -58,13 +53,11 @@ const CHART_TYPES: { type: ChartType; label: string }[] = [
   { type: "radar", label: "Radar" },
 ];
 
-
 interface ChartRow { name: string; pass: number; fail: number; pending: number; }
 interface ChartTheme {
   panel: string; text: string; muted: string; grid: string;
   border: string; tooltipBg: string; tooltipText: string; tooltipName: string;
 }
-
 
 // ── Local joined types ────────────────────────────────────────────────────────
 interface StepResultRow {
@@ -80,13 +73,11 @@ interface StepResultRow {
   };
 }
 
-
 interface ModuleTestRow {
   id: string;
   test: { id: string; serial_no: number; name: string };
   step_results: StepResultRow[];
 }
-
 
 interface ModuleRow {
   id: string;
@@ -95,6 +86,11 @@ interface ModuleRow {
   module_tests: ModuleTestRow[];
 }
 
+// FIX: lightweight type for dropdown — no step data needed
+interface ModuleOption {
+  id: string;
+  name: string;
+}
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 function getNonDividerResults(moduleTests: ModuleTestRow[]): StepResultRow[] {
@@ -102,7 +98,6 @@ function getNonDividerResults(moduleTests: ModuleTestRow[]): StepResultRow[] {
     (mt.step_results ?? []).filter(sr => !sr.step?.is_divider)
   );
 }
-
 
 // ── Tooltips ──────────────────────────────────────────────────────────────────
 const CustomTooltip: React.FC<{
@@ -123,7 +118,6 @@ const CustomTooltip: React.FC<{
   );
 };
 
-
 const PieTooltip: React.FC<{
   active?: boolean; payload?: any[]; ct: ChartTheme;
 }> = ({ active, payload, ct }) => {
@@ -140,7 +134,6 @@ const PieTooltip: React.FC<{
     </div>
   );
 };
-
 
 // ── Chart sub-components ──────────────────────────────────────────────────────
 const RBarChart: React.FC<{ data: ChartRow[]; ct: ChartTheme }> = ({ data, ct }) => (
@@ -159,7 +152,6 @@ const RBarChart: React.FC<{ data: ChartRow[]; ct: ChartTheme }> = ({ data, ct })
     </BarChart>
   </ResponsiveContainer>
 );
-
 
 const RAreaChart: React.FC<{ data: ChartRow[]; ct: ChartTheme }> = ({ data, ct }) => (
   <ResponsiveContainer width="100%" height={240}>
@@ -187,7 +179,6 @@ const RAreaChart: React.FC<{ data: ChartRow[]; ct: ChartTheme }> = ({ data, ct }
   </ResponsiveContainer>
 );
 
-
 const RLineChart: React.FC<{ data: ChartRow[]; ct: ChartTheme }> = ({ data, ct }) => (
   <ResponsiveContainer width="100%" height={240}>
     <LineChart data={data} margin={{ top: 8, right: 16, left: -16, bottom: 8 }}>
@@ -207,7 +198,6 @@ const RLineChart: React.FC<{ data: ChartRow[]; ct: ChartTheme }> = ({ data, ct }
     </LineChart>
   </ResponsiveContainer>
 );
-
 
 const RPieChart: React.FC<{ data: ChartRow[]; ct: ChartTheme }> = ({ data, ct }) => {
   const totals = data.reduce(
@@ -252,7 +242,6 @@ const RPieChart: React.FC<{ data: ChartRow[]; ct: ChartTheme }> = ({ data, ct })
   );
 };
 
-
 const RRadarChart: React.FC<{ data: ChartRow[]; ct: ChartTheme }> = ({ data, ct }) => {
   if (data.length === 0) return (
     <div className="flex items-center justify-center h-40">
@@ -277,12 +266,14 @@ const RRadarChart: React.FC<{ data: ChartRow[]; ct: ChartTheme }> = ({ data, ct 
   );
 };
 
-
 // ── Main Component ────────────────────────────────────────────────────────────
 const TestReport: React.FC = () => {
   useInjectStyle();
   const { theme } = useTheme();
 
+  // FIX: separate lightweight state for dropdown — avoids re-fetching full data
+  // just to populate the filter select
+  const [moduleOptions, setModuleOptions]       = useState<ModuleOption[]>([]);
   const [modules, setModules]                   = useState<ModuleRow[]>([]);
   const [loading, setLoading]                   = useState(true);
   const [error, setError]                       = useState<string | null>(null);
@@ -291,12 +282,24 @@ const TestReport: React.FC = () => {
   const [view, setView]                         = useState<"graph" | "table">("graph");
   const [chartType, setChartType]               = useState<ChartType>("bar");
 
+  // FIX: fetch just id+name for the dropdown once — no joins needed
+  useEffect(() => {
+    supabase
+      .from("modules")
+      .select("id, name")
+      .order("name")
+      .then(({ data }) => setModuleOptions((data ?? []) as ModuleOption[]));
+  }, []);
 
+  // FIX: re-fetch when selectedModuleId changes and filter at DB level —
+  // previously fetched everything once and filtered in JS, meaning all
+  // module/step data was always loaded even when viewing a single module
   useEffect(() => {
     const fetchData = async () => {
-      setLoading(true); setError(null);
+      setLoading(true);
+      setError(null);
       try {
-        const { data, error: err } = await supabase
+        let query = supabase
           .from("modules")
           .select(`
             id, name, description,
@@ -311,6 +314,10 @@ const TestReport: React.FC = () => {
           `)
           .order("name", { ascending: true });
 
+        // FIX: apply filter at DB level instead of JS .filter()
+        if (selectedModuleId) query = (query as any).eq("id", selectedModuleId);
+
+        const { data, error: err } = await query;
         if (err) throw new Error(err.message);
         setModules((data ?? []) as unknown as ModuleRow[]);
       } catch (err: any) {
@@ -320,23 +327,17 @@ const TestReport: React.FC = () => {
       }
     };
     fetchData();
-  }, []);
+  }, [selectedModuleId]); // re-runs on filter change
 
-
-  const filtered = selectedModuleId
-    ? modules.filter(m => m.id === selectedModuleId)
-    : modules;
-
-
+  // FIX: `modules` is already DB-filtered — no JS filter needed
   const chartTheme: ChartTheme = theme === "dark"
     ? { panel: "#111827", text: "#e5e7eb", muted: "#94a3b8", grid: "#334155",
         border: "#334155", tooltipBg: "#0f172a", tooltipText: "#f8fafc", tooltipName: "#cbd5e1" }
     : { panel: "#ffffff", text: "#0f172a", muted: "#475569", grid: "#cbd5e1",
         border: "#cbd5e1", tooltipBg: "#ffffff", tooltipText: "#0f172a", tooltipName: "#475569" };
 
-
   const chartData = useMemo<ChartRow[]>(() =>
-    filtered.map(m => {
+    modules.map(m => {
       const results = getNonDividerResults(m.module_tests ?? []);
       return {
         name:    m.name,
@@ -344,8 +345,7 @@ const TestReport: React.FC = () => {
         fail:    results.filter(sr => sr.status === "fail").length,
         pending: results.filter(sr => sr.status === "pending").length,
       };
-    }), [filtered]);
-
+    }), [modules]);
 
   const buildFlatData = (mods: ModuleRow[]): FlatData[] => {
     const flat: FlatData[] = [];
@@ -369,9 +369,8 @@ const TestReport: React.FC = () => {
     return flat;
   };
 
-
   const exportStats = () => {
-    const flat = buildFlatData(filtered);
+    const flat = buildFlatData(modules);
     return [
       { label: "Total Steps", value: flat.length },
       { label: "Pass",        value: flat.filter(s => s.status === "pass").length },
@@ -379,10 +378,8 @@ const TestReport: React.FC = () => {
     ];
   };
 
-
   const chartAnimKey = `${selectedModuleId ?? "all"}-${chartType}`;
   const viewAnimKey  = view;
-
 
   return (
     <>
@@ -392,7 +389,7 @@ const TestReport: React.FC = () => {
         actions={
           <button
             onClick={() => setShowExportModal(true)}
-            disabled={filtered.length === 0}
+            disabled={modules.length === 0}
             className="flex items-center gap-1.5 px-4 py-2 bg-bg-card hover:bg-bg-surface
               disabled:opacity-40 disabled:cursor-not-allowed text-t-primary
               text-sm font-semibold rounded-lg transition border border-[var(--border-color)]">
@@ -404,13 +401,13 @@ const TestReport: React.FC = () => {
       <ExportModal
         isOpen={showExportModal} onClose={() => setShowExportModal(false)}
         title="Export Report"
-        subtitle={selectedModuleId ? modules.find(m => m.id === selectedModuleId)?.name : "All Modules"}
+        subtitle={selectedModuleId ? moduleOptions.find(m => m.id === selectedModuleId)?.name : "All Modules"}
         stats={exportStats()}
         options={[
           { label: "CSV", icon: "📥", color: "bg-green-600", hoverColor: "hover:bg-green-700",
-            onConfirm: () => exportReportCSV([], buildFlatData(filtered)) },
+            onConfirm: () => exportReportCSV([], buildFlatData(modules)) },
           { label: "PDF", icon: "📋", color: "bg-red-600", hoverColor: "hover:bg-red-700",
-            onConfirm: () => exportReportPDF([], buildFlatData(filtered)) },
+            onConfirm: () => exportReportPDF([], buildFlatData(modules)) },
         ]}
       />
 
@@ -420,7 +417,7 @@ const TestReport: React.FC = () => {
         <div className="flex flex-col items-center justify-center py-20 gap-3">
           <span className="text-2xl">⚠️</span>
           <p className="text-sm text-red-400 font-medium">{error}</p>
-          <button onClick={() => window.location.reload()}
+          <button onClick={() => setSelectedModuleId(prev => prev)}
             className="px-4 py-2 rounded-xl bg-bg-card hover:bg-bg-surface text-sm
               text-t-secondary border border-[var(--border-color)] transition">
             Retry
@@ -438,7 +435,8 @@ const TestReport: React.FC = () => {
                 onChange={e => setSelectedModuleId(e.target.value || null)}
                 className="input text-sm">
                 <option value="">All Modules</option>
-                {modules.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
+                {/* FIX: uses lightweight moduleOptions instead of full modules */}
+                {moduleOptions.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
               </select>
             </div>
             <div className="flex items-center gap-2 rounded-xl p-1 bg-bg-card border border-[var(--border-color)] w-fit">
@@ -456,8 +454,8 @@ const TestReport: React.FC = () => {
           {/* ── View panel ── */}
           <FadeWrapper animKey={viewAnimKey}>
             {view === "graph" ? (
-              <div className="p-4 rounded-xl border bg-bg-surface/70 backdrop-blur-md"
-  style={{ borderColor: chartTheme.border }}>
+              <div className="p-4 rounded-xl border"
+                style={{ backgroundColor: chartTheme.panel, borderColor: chartTheme.border }}>
                 <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
                   <h3 className="text-sm font-semibold" style={{ color: chartTheme.text }}>Execution Graph</h3>
                   <div className="flex items-center gap-0.5 rounded-lg p-0.5 border"
@@ -506,7 +504,7 @@ const TestReport: React.FC = () => {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-[var(--border-color)]">
-                    {filtered.map(m => {
+                    {modules.map(m => {
                       const results = getNonDividerResults(m.module_tests ?? []);
                       const total   = results.length;
                       const pass    = results.filter(sr => sr.status === "pass").length;

@@ -9,7 +9,6 @@ interface Props {
   onNavigate: (page: string, moduleId?: string) => void;
 }
 
-// Stats are now derived from module_tests → step_results (not tests → steps)
 function getModuleStats(moduleTests: any[]) {
   let total = 0, pass = 0, fail = 0, pending = 0;
   for (const mt of moduleTests ?? []) {
@@ -38,10 +37,10 @@ const Dashboard: React.FC<Props> = ({ onNavigate }) => {
   const gridRef = useRef<HTMLDivElement>(null);
 
   const fetchModules = async (isInitial = false) => {
-    // Traverse: modules → module_tests → step_results(status)
+    // FIX: explicit columns instead of * — avoids fetching unused fields
     const { data, error: err } = await supabase
       .from("modules")
-      .select("*, module_tests(step_results(status))")
+      .select("id, name, description, accent_color, module_tests(step_results(status))")
       .order("name");
     if (err) setError(err.message);
     else { setModules(data ?? []); setError(null); }
@@ -109,7 +108,7 @@ const Dashboard: React.FC<Props> = ({ onNavigate }) => {
           onClick={() => setShowExportModal(true)}
           disabled={modules.length === 0}
           className="flex items-center gap-1.5 px-4 py-2 text-sm font-semibold rounded-lg transition
-            bg-bg-card hover:bg-bg-surface/80 backdrop-blur-md
+            bg-bg-card hover:bg-bg-surface
             border border-[var(--border-color)]
             text-t-primary
             disabled:opacity-40 disabled:cursor-not-allowed">
