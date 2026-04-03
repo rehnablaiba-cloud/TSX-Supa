@@ -451,7 +451,7 @@ const TestExecution: React.FC<Props> = ({ moduleId, moduleName, initialModuleTes
 
             {/* ── Mobile ── */}
             <div className="md:hidden flex flex-col">
-              <div className="sticky top-0 z-10 grid grid-cols-[64px_1fr] border-b border-[var(--border-color)] bg-bg-surface/90 backdrop-blur-sm">
+              <div className="sticky top-0 z-10 grid grid-cols-[64px_1fr] border-b border-[var(--border-color)] bg-bg-surface/80 backdrop-blur-md">
                 <div className="px-3 py-2 border-r border-[var(--border-color)]">
                   <span className="text-[10px] font-semibold text-t-muted uppercase tracking-wider">S.No</span>
                 </div>
