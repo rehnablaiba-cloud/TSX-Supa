@@ -2,7 +2,6 @@ import React, { useEffect, useRef, useState, useMemo, useCallback } from "react"
 import { supabase } from "../../supabase";
 import Spinner from "../UI/Spinner";
 import Topbar from "../Layout/Topbar";
-import { StepResult, ModuleTest } from "../../types";
 import { useAuth } from "../../context/AuthContext";
 import { useTheme } from "../../context/ThemeContext";
 import { useToast } from "../../context/ToastContext";
@@ -16,7 +15,6 @@ import {
   RadarChart, Radar, PolarGrid, PolarAngleAxis, PolarRadiusAxis,
   XAxis, YAxis, CartesianGrid, Tooltip, Legend,
 } from "recharts";
-import { PieLabelRenderProps } from "recharts";
 
 // ── Animation keyframes ───────────────────────────────────────────────────────
 const ANIM_STYLE = `
@@ -92,8 +90,6 @@ interface TrimmedStepResult {
 
 interface ModuleTestRow {
   id: string;
-  module_id: string;
-  test_id: string;
   order_index: number;
   test: { id: string; serial_no: number; name: string; description?: string };
   step_results: TrimmedStepResult[];
@@ -322,7 +318,7 @@ const ModuleDashboard: React.FC<Props> = ({ moduleId, moduleName, onBack, onExec
         supabase
           .from("module_tests")
           .select(`
-            id, module_id, test_id, order_index,
+            id, order_index,
             test:tests ( id, serial_no, name, description ),
             step_results (
               id, status,
@@ -526,7 +522,6 @@ const ModuleDashboard: React.FC<Props> = ({ moduleId, moduleName, onBack, onExec
                   return (
                     <StaggerRow key={mt.id} index={index}>
                       <TestRow
-                        moduleTestId={mt.id}
                         testName={mt.test?.name ?? ""}
                         testSerialNo={mt.test?.serial_no ?? 0}
                         results={results}
@@ -551,7 +546,6 @@ const ModuleDashboard: React.FC<Props> = ({ moduleId, moduleName, onBack, onExec
 
 // ── Test Row ──────────────────────────────────────────────────────────────────
 const TestRow: React.FC<{
-  moduleTestId: string;
   testName: string;
   testSerialNo: number;
   results: TrimmedStepResult[];
