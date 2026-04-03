@@ -73,6 +73,13 @@ const TestExecution: React.FC<Props> = ({ moduleId, moduleName, initialModuleTes
   const [lockAcquired, setLockAcquired]       = useState(false);
   const [scrollTarget, setScrollTarget]       = useState<string | null>(null);
 
+  // ── Keyboard navigation state ─────────────────────────────
+  const [focusedStepId, setFocusedStepId]     = useState<string | null>(null);
+  const stepsInitialized                       = useRef(false);
+  // remarksMap lets the keyboard handler read live textarea values
+  // without needing to lift all remarks state into the parent
+  const remarksMap                             = useRef<Record<string, string>>({});
+
   const heartbeatRef       = useRef<ReturnType<typeof setInterval> | null>(null);
   const stepRefs           = useRef<Record<string, HTMLTableRowElement | HTMLDivElement | null>>({});
   const scrollContainerRef = useRef<HTMLDivElement>(null);
@@ -102,6 +109,11 @@ const TestExecution: React.FC<Props> = ({ moduleId, moduleName, initialModuleTes
     setLoading(true);
     setLockLoading(true);
 
+    // Reset keyboard nav state for this new test
+    stepsInitialized.current = false;
+    setFocusedStepId(null);
+    remarksMap.current = {};
+
     Promise.all([
       supabase
         .from("step_results")
@@ -112,7 +124,6 @@ const TestExecution: React.FC<Props> = ({ moduleId, moduleName, initialModuleTes
         .eq("module_test_id", currentMtId),
       supabase
         .from("testlocks")
-        // FIX: was select("*") — only these 3 fields are consumed
         .select("module_test_id, user_id, locked_by_name")
         .eq("module_test_id", currentMtId),
     ]).then(([srRes, lockRes]) => {
@@ -165,6 +176,17 @@ const TestExecution: React.FC<Props> = ({ moduleId, moduleName, initialModuleTes
       supabase.removeChannel(srChannel);
     };
   }, [currentMtId, currentTest?.id]);
+
+  // ── Auto-focus first pending step after load ──────────────
+  useEffect(() => {
+    if (steps.length === 0 || stepsInitialized.current) return;
+    stepsInitialized.current = true;
+    const firstPending = steps.find(s => !s.is_divider && s.status === "pending");
+    if (firstPending) {
+      setFocusedStepId(firstPending.stepId);
+      setScrollTarget(firstPending.stepId);
+    }
+  }, [steps]);
 
   const isLockedByOther = !!(lock && lock.user_id !== user?.id);
 
@@ -250,8 +272,18 @@ const TestExecution: React.FC<Props> = ({ moduleId, moduleName, initialModuleTes
 
     setSteps(prev => prev.map(s => s.stepId === stepId ? { ...s, status, remarks } : s));
 
-    if (status !== "pending" && nextPending) {
-      setScrollTarget(nextPending.stepId);
+    // Advance keyboard focus to next pending step
+    if (status !== "pending") {
+      if (nextPending) {
+        setFocusedStepId(nextPending.stepId);
+        setScrollTarget(nextPending.stepId);
+      } else {
+        setFocusedStepId(null);
+      }
+    } else {
+      // Undo: restore focus to the step that was just reset
+      setFocusedStepId(stepId);
+      setScrollTarget(stepId);
     }
 
     await supabase.rpc("update_step_result", {
@@ -261,6 +293,28 @@ const TestExecution: React.FC<Props> = ({ moduleId, moduleName, initialModuleTes
       p_remarks:        remarks,
     });
   }, [steps, currentMtId]);
+
+  // ── Global keyboard handler: Enter to pass focused step ───
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key !== "Enter" || e.shiftKey) return;
+      // Don't intercept if user is typing in a textarea or input
+      const activeTag = (document.activeElement as HTMLElement)?.tagName;
+      if (activeTag === "TEXTAREA" || activeTag === "INPUT" || activeTag === "BUTTON") return;
+      if (!focusedStepId || isLockedByOther) return;
+
+      const focused = steps.find(s => s.stepId === focusedStepId);
+      if (!focused || focused.is_divider) return;
+
+      // Use the live remarks value from the map (typed but not yet submitted),
+      // falling back to the saved value from state
+      const remarks = remarksMap.current[focusedStepId] ?? focused.remarks ?? "";
+      handleStepUpdate(focusedStepId, "pass", remarks);
+    };
+
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [focusedStepId, steps, isLockedByOther, handleStepUpdate]);
 
   const handleFinish = async () => {
     stopHeartbeat();
@@ -372,7 +426,18 @@ const TestExecution: React.FC<Props> = ({ moduleId, moduleName, initialModuleTes
             <span><span className="text-red-400 font-semibold">{failCount}</span> fail</span>
             <span><span className="text-t-muted font-semibold">{totalCount - doneCount}</span> pending</span>
           </div>
-          <span className="text-xs text-t-muted font-medium">{progressPct}%</span>
+          <div className="flex items-center gap-3">
+            {/* Keyboard hint */}
+            {focusedStepId && (
+              <span className="hidden md:flex items-center gap-1.5 text-xs text-t-muted">
+                <kbd className="px-1.5 py-0.5 rounded bg-[var(--border-color)] text-t-secondary font-mono text-[10px] border border-[var(--border-color)]">
+                  Enter
+                </kbd>
+                to pass
+              </span>
+            )}
+            <span className="text-xs text-t-muted font-medium">{progressPct}%</span>
+          </div>
         </div>
         <div className="h-1.5 bg-[var(--border-color)] rounded-full overflow-hidden">
           <div className="h-full rounded-full transition-all duration-500"
@@ -435,7 +500,10 @@ const TestExecution: React.FC<Props> = ({ moduleId, moduleName, initialModuleTes
                       key={step.stepId}
                       step={step}
                       readonly={false}
+                      isFocused={focusedStepId === step.stepId}
                       onUpdate={handleStepUpdate}
+                      onFocus={() => setFocusedStepId(step.stepId)}
+                      onRemarksChange={(val) => { remarksMap.current[step.stepId] = val; }}
                       rowRef={(el) => { stepRefs.current[step.stepId] = el; }}
                     />
                   )
@@ -467,7 +535,10 @@ const TestExecution: React.FC<Props> = ({ moduleId, moduleName, initialModuleTes
                       key={step.stepId}
                       step={step}
                       readonly={false}
+                      isFocused={focusedStepId === step.stepId}
                       onUpdate={handleStepUpdate}
+                      onFocus={() => setFocusedStepId(step.stepId)}
+                      onRemarksChange={(val) => { remarksMap.current[step.stepId] = val; }}
                       cardRef={(el) => { stepRefs.current[step.stepId] = el; }}
                     />
                   )
@@ -485,18 +556,35 @@ const TestExecution: React.FC<Props> = ({ moduleId, moduleName, initialModuleTes
 const TableStepRow: React.FC<{
   step: ExecutionStep;
   readonly: boolean;
+  isFocused: boolean;
   onUpdate: (stepId: string, status: "pass" | "fail" | "pending", remarks: string) => void;
+  onFocus: () => void;
+  onRemarksChange: (val: string) => void;
   rowRef?: (el: HTMLTableRowElement | null) => void;
-}> = ({ step, readonly, onUpdate, rowRef }) => {
+}> = ({ step, readonly, isFocused, onUpdate, onFocus, onRemarksChange, rowRef }) => {
   const [remarks, setRemarks] = useState(step.remarks || "");
   useEffect(() => { setRemarks(step.remarks || ""); }, [step.remarks]);
+
+  const handleRemarksChange = (val: string) => {
+    setRemarks(val);
+    onRemarksChange(val);
+  };
 
   const rowBg = step.status === "pass" ? "bg-green-500/5"
     : step.status === "fail" ? "bg-red-500/5" : "";
 
+  // Focused row: sky-blue outline. outline on <tr> works in all modern browsers.
+  const focusedStyle: React.CSSProperties = isFocused
+    ? { outline: "2px solid #38bdf8", outlineOffset: "-2px" }
+    : {};
+
   return (
-    <tr ref={rowRef}
-      className={`border-b border-[var(--border-color)] hover:bg-bg-card transition-colors ${rowBg}`}>
+    <tr
+      ref={rowRef}
+      onClick={onFocus}
+      style={focusedStyle}
+      className={`border-b border-[var(--border-color)] hover:bg-bg-card transition-colors cursor-pointer ${rowBg}`}
+    >
       <td className="px-2 py-3 text-center">
         <span className="text-xs font-mono text-t-muted">{step.serial_no}</span>
       </td>
@@ -509,7 +597,8 @@ const TableStepRow: React.FC<{
       <td className="px-3 py-3">
         <textarea
           value={remarks}
-          onChange={e => setRemarks(e.target.value)}
+          onChange={e => handleRemarksChange(e.target.value)}
+          onFocus={onFocus}
           onKeyDown={e => {
             if (e.key === "Enter" && !e.shiftKey) {
               e.preventDefault();
@@ -534,13 +623,13 @@ const TableStepRow: React.FC<{
         <td className="px-2 py-3">
           <div className="flex flex-col items-center gap-1">
             <div className="flex gap-1 w-full">
-              <button onClick={() => onUpdate(step.stepId, "pass", remarks)} title="Pass"
+              <button onClick={e => { e.stopPropagation(); onUpdate(step.stepId, "pass", remarks); }} title="Pass"
                 className={`flex-1 h-7 rounded-md text-xs font-bold transition-colors flex items-center justify-center ${
                   step.status === "pass"
                     ? "bg-green-500 text-white"
                     : "bg-green-500/10 hover:bg-green-500/25 text-green-400 border border-green-500/20"
                 }`}>✓</button>
-              <button onClick={() => onUpdate(step.stepId, "fail", remarks)} title="Fail"
+              <button onClick={e => { e.stopPropagation(); onUpdate(step.stepId, "fail", remarks); }} title="Fail"
                 className={`flex-1 h-7 rounded-md text-xs font-bold transition-colors flex items-center justify-center ${
                   step.status === "fail"
                     ? "bg-red-500 text-white"
@@ -548,11 +637,12 @@ const TableStepRow: React.FC<{
                 }`}>✗</button>
             </div>
             {step.status !== "pending" && (
-              <button onClick={() => onUpdate(step.stepId, "pending", "")}
-                className="w-full h-7 rounded-md text-xs font-bold text-t-muted hover:text-t-primary
+              <button
+                onClick={e => { e.stopPropagation(); onUpdate(step.stepId, "pending", ""); }}
+                className="w-full h-7 rounded-md text-xs font-semibold text-t-muted hover:text-t-primary
                   bg-bg-card hover:bg-bg-surface border border-[var(--border-color)] transition-colors
-                  flex items-center justify-center">
-                ↩
+                  flex items-center justify-center gap-1">
+                Undo
               </button>
             )}
           </div>
@@ -567,32 +657,55 @@ const TableStepRow: React.FC<{
 const MobileStepCard: React.FC<{
   step: ExecutionStep;
   readonly: boolean;
+  isFocused: boolean;
   onUpdate: (stepId: string, status: "pass" | "fail" | "pending", remarks: string) => void;
+  onFocus: () => void;
+  onRemarksChange: (val: string) => void;
   cardRef?: (el: HTMLDivElement | null) => void;
-}> = ({ step, readonly, onUpdate, cardRef }) => {
+}> = ({ step, readonly, isFocused, onUpdate, onFocus, onRemarksChange, cardRef }) => {
   const [remarks, setRemarks] = useState(step.remarks || "");
   useEffect(() => { setRemarks(step.remarks || ""); }, [step.remarks]);
+
+  const handleRemarksChange = (val: string) => {
+    setRemarks(val);
+    onRemarksChange(val);
+  };
 
   const rowBg = step.status === "pass" ? "bg-green-500/5"
     : step.status === "fail" ? "bg-red-500/5" : "";
 
-  const accentColor = step.status === "pass" ? "#22c55e"
-    : step.status === "fail" ? "#ef4444" : "#374151";
+  // Left accent: blue when focused, otherwise status colour
+  const accentColor = isFocused
+    ? "#38bdf8"
+    : step.status === "pass" ? "#22c55e"
+    : step.status === "fail" ? "#ef4444"
+    : "#374151";
 
   return (
     <div
       ref={cardRef}
-      className={`rounded-xl overflow-hidden border border-[var(--border-color)] w-full ${rowBg}`}
+      onClick={onFocus}
+      className={`rounded-xl overflow-hidden border border-[var(--border-color)] w-full cursor-pointer transition-shadow ${rowBg} ${
+        isFocused ? "ring-2 ring-sky-400 ring-offset-0" : ""
+      }`}
       style={{ borderLeftColor: accentColor, borderLeftWidth: 3 }}
     >
       <div className="flex items-center justify-between px-3 py-2 border-b border-[var(--border-color)] bg-bg-card">
         <span className="text-xs font-mono text-t-muted tracking-wide">#{step.serial_no}</span>
-        <span className={`text-xs font-bold px-2 py-0.5 rounded-full capitalize ${
-          step.status === "pass" ? "bg-green-500/15 text-green-400"
-          : step.status === "fail" ? "bg-red-500/15 text-red-400"
-          : "bg-[var(--border-color)] text-t-muted"}`}>
-          {step.status}
-        </span>
+        <div className="flex items-center gap-2">
+          {isFocused && (
+            <span className="flex items-center gap-1 text-[10px] text-sky-400 font-medium">
+              <kbd className="px-1 py-0.5 rounded bg-sky-400/10 border border-sky-400/20 font-mono text-[9px]">Enter</kbd>
+              to pass
+            </span>
+          )}
+          <span className={`text-xs font-bold px-2 py-0.5 rounded-full capitalize ${
+            step.status === "pass" ? "bg-green-500/15 text-green-400"
+            : step.status === "fail" ? "bg-red-500/15 text-red-400"
+            : "bg-[var(--border-color)] text-t-muted"}`}>
+            {step.status}
+          </span>
+        </div>
       </div>
 
       <div className="grid grid-cols-[80px_1fr] border-b border-[var(--border-color)]">
@@ -620,7 +733,8 @@ const MobileStepCard: React.FC<{
         <div className="px-3 py-2 min-w-0">
           <textarea
             value={remarks}
-            onChange={e => setRemarks(e.target.value)}
+            onChange={e => handleRemarksChange(e.target.value)}
+            onFocus={onFocus}
             onKeyDown={e => {
               if (e.key === "Enter" && !e.shiftKey) {
                 e.preventDefault();
@@ -640,20 +754,25 @@ const MobileStepCard: React.FC<{
           <span className="text-[10px] font-semibold text-t-muted uppercase tracking-wider">Actions</span>
           <div className="flex items-center gap-2">
             {step.status !== "pending" && (
-              <button onClick={() => onUpdate(step.stepId, "pending", "")}
-                className="w-8 h-8 rounded-md text-xs font-bold text-t-muted hover:text-t-primary
+              <button
+                onClick={e => { e.stopPropagation(); onUpdate(step.stepId, "pending", ""); }}
+                className="px-2.5 h-8 rounded-md text-xs font-semibold text-t-muted hover:text-t-primary
                   bg-bg-card hover:bg-bg-surface border border-[var(--border-color)]
                   transition-colors flex items-center justify-center">
-                ↩
+                Undo
               </button>
             )}
-            <button onClick={() => onUpdate(step.stepId, "pass", remarks)} title="Pass"
+            <button
+              onClick={e => { e.stopPropagation(); onUpdate(step.stepId, "pass", remarks); }}
+              title="Pass"
               className={`w-8 h-8 rounded-md text-xs font-bold transition-colors flex items-center justify-center ${
                 step.status === "pass"
                   ? "bg-green-500 text-white"
                   : "bg-green-500/10 hover:bg-green-500/25 text-green-400 border border-green-500/20"
               }`}>✓</button>
-            <button onClick={() => onUpdate(step.stepId, "fail", remarks)} title="Fail"
+            <button
+              onClick={e => { e.stopPropagation(); onUpdate(step.stepId, "fail", remarks); }}
+              title="Fail"
               className={`w-8 h-8 rounded-md text-xs font-bold transition-colors flex items-center justify-center ${
                 step.status === "fail"
                   ? "bg-red-500 text-white"
