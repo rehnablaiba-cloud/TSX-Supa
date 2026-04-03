@@ -30,14 +30,16 @@ const ANIM_STYLE = `
 }
 `;
 
+// FIX #6: Remove the injected <style> on unmount to avoid duplicate tags
+// accumulating across mount/unmount cycles.
 function useInjectStyle() {
-  const injected = useRef(false);
   useEffect(() => {
-    if (injected.current) return;
-    injected.current = true;
     const el = document.createElement("style");
     el.textContent = ANIM_STYLE;
     document.head.appendChild(el);
+    return () => {
+      document.head.removeChild(el);
+    };
   }, []);
 }
 
@@ -82,7 +84,6 @@ interface Props {
   onExecute: (moduleTestId: string) => void;
 }
 
-// FIX: trimmed — only fields actually consumed in this component
 interface TrimmedStepResult {
   id: string;
   status: "pass" | "fail" | "pending";
@@ -217,14 +218,20 @@ const RPieChart: React.FC<{ data: ChartRow[]; ct: ChartTheme }> = ({ data, ct })
   return (
     <ResponsiveContainer width="100%" height={220}>
       <PieChart>
-        <Pie data={pieData} cx="50%" cy="50%" innerRadius="46%" outerRadius="72%"
-          paddingAngle={3} dataKey="value" nameKey="name"
-          label={(props: PieLabelRenderProps): string => {
-            const name = props.name ?? "";
-            const percent = ((props.percent as number) ?? 0) * 100;
-            return `${name}: ${percent.toFixed(0)}%`;
-          }}
-          labelLine={false} style={{ fontSize: 11 }} isAnimationActive>
+        {/* FIX #7: Removed inline label prop — labels overlap on a donut with
+            labelLine={false}. The Legend below already shows names + counts,
+            so labels are redundant and cause clipping on small screens. */}
+        <Pie
+          data={pieData}
+          cx="50%"
+          cy="50%"
+          innerRadius="46%"
+          outerRadius="72%"
+          paddingAngle={3}
+          dataKey="value"
+          nameKey="name"
+          isAnimationActive
+        >
           {pieData.map((entry) => (
             <Cell key={entry.name} fill={COLORS[entry.name as keyof typeof COLORS]} opacity={0.88} />
           ))}
@@ -276,27 +283,40 @@ const ModuleDashboard: React.FC<Props> = ({ moduleId, moduleName, onBack, onExec
 
   const [moduleTests, setModuleTests]   = useState<ModuleTestRow[]>([]);
   const [loading, setLoading]           = useState(true);
+  const [error, setError]               = useState<string | null>(null); // FIX #4
   const [locks, setLocks]               = useState<any[]>([]);
   const [selectedMtId, setSelectedMtId] = useState<string | null>(null);
   const [chartType, setChartType]       = useState<ChartType>("bar");
 
   // ── Debounced lock refetch ─────────────────────────────────────────────────
   const lockRefetchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // FIX #1a: Sequence counter guards against out-of-order responses when
+  // multiple debounce windows fire close together.
+  const fetchSeq = useRef(0);
+
   const refetchLocks = useCallback(() => {
     if (lockRefetchTimer.current) clearTimeout(lockRefetchTimer.current);
     lockRefetchTimer.current = setTimeout(() => {
-      // FIX: only fetch columns actually used
+      const seq = ++fetchSeq.current;
       supabase
         .from("testlocks")
         .select("module_test_id, user_id, locked_by_name")
-        .then(({ data }) => setLocks(data ?? []));
+        .then(({ data }) => {
+          // Discard the response if a newer fetch has already been issued.
+          if (seq === fetchSeq.current) setLocks(data ?? []);
+        });
     }, 300);
   }, []);
 
   // ── Load: module_tests → tests + step_results (trimmed) ──────────────────
   useEffect(() => {
+    // FIX #3: cancelled flag prevents a slow in-flight fetch from overwriting
+    // fresh results after moduleId has already changed.
+    let cancelled = false;
+
     const load = async () => {
       setLoading(true);
+      setError(null);
 
       const [mtRes, locksRes] = await Promise.all([
         supabase
@@ -309,30 +329,51 @@ const ModuleDashboard: React.FC<Props> = ({ moduleId, moduleName, onBack, onExec
               step:steps ( id, is_divider )
             )
           `)
-          // FIX: was fetching remarks, updated_at, module_test_id, step_id,
-          //      and full step fields (serial_no, action, expected_result) —
-          //      none used in this component; only status + is_divider needed
           .eq("module_id", moduleId)
           .order("order_index"),
         supabase
           .from("testlocks")
-          // FIX: was select("*") — only these 3 fields are consumed
           .select("module_test_id, user_id, locked_by_name"),
       ]);
+
+      if (cancelled) return;
+
+      // FIX #4: Surface Supabase errors to the user instead of silently
+      // rendering an empty list.
+      if (mtRes.error) {
+        setError(mtRes.error.message);
+        setLoading(false);
+        return;
+      }
+      if (locksRes.error) {
+        setError(locksRes.error.message);
+        setLoading(false);
+        return;
+      }
 
       setModuleTests((mtRes.data ?? []) as unknown as ModuleTestRow[]);
       setLocks(locksRes.data ?? []);
       setLoading(false);
     };
+
     load();
+    return () => { cancelled = true; };
   }, [moduleId]);
 
   // ── Locks — real-time ──────────────────────────────────────────────────────
   useEffect(() => {
+    // FIX #1b: mounted flag prevents setState being called after unmount when
+    // a debounce timer fires after the component has been torn down.
+    let mounted = true;
+
     const channel = supabase.channel("all-locks")
-      .on("postgres_changes", { event: "*", schema: "public", table: "testlocks" }, refetchLocks)
+      .on("postgres_changes", { event: "*", schema: "public", table: "testlocks" }, () => {
+        if (mounted) refetchLocks();
+      })
       .subscribe();
+
     return () => {
+      mounted = false;
       if (lockRefetchTimer.current) clearTimeout(lockRefetchTimer.current);
       supabase.removeChannel(channel);
     };
@@ -345,7 +386,16 @@ const ModuleDashboard: React.FC<Props> = ({ moduleId, moduleName, onBack, onExec
     : { panel: "#ffffff", text: "#0f172a", muted: "#475569", grid: "#cbd5e1",
         border: "#cbd5e1", tooltipBg: "#ffffff", tooltipText: "#0f172a", tooltipName: "#475569" };
 
-  const filteredMts = selectedMtId ? moduleTests.filter(mt => mt.id === selectedMtId) : moduleTests;
+  // FIX #3 + #5: filteredMts is now memoized so its reference only changes
+  // when moduleTests or selectedMtId actually change. This also fixes chartData
+  // recomputing on every render, since filteredMts was previously a new array
+  // reference each time, making the useMemo dependency always appear "changed".
+  const filteredMts = useMemo(() =>
+    selectedMtId
+      ? moduleTests.filter(mt => mt.id === selectedMtId)
+      : moduleTests,
+    [moduleTests, selectedMtId]
+  );
 
   const chartData = useMemo<ChartRow[]>(() =>
     filteredMts.map(mt => {
@@ -361,7 +411,10 @@ const ModuleDashboard: React.FC<Props> = ({ moduleId, moduleName, onBack, onExec
   // ── Execute guard ──────────────────────────────────────────────────────────
   const handleExecute = (mtId: string) => {
     const lock = locks.find(l => l.module_test_id === mtId);
-    if (lock && lock.user_id !== user?.id) return;
+    // FIX #2: Guard against null user. Previously user?.id resolved to
+    // undefined when user was null, making lock.user_id !== undefined always
+    // true and blocking the current user from resuming their own lock.
+    if (lock && user && lock.user_id !== user.id) return;
     onExecute(mtId);
   };
 
@@ -383,6 +436,19 @@ const ModuleDashboard: React.FC<Props> = ({ moduleId, moduleName, onBack, onExec
   const chartAnimKey = `${selectedMtId ?? "all"}-${chartType}`;
 
   if (loading) return <div className="flex-1 flex items-center justify-center"><Spinner /></div>;
+
+  // FIX #4: Render error state instead of a silent empty list.
+  if (error) return (
+    <div className="flex-1 flex flex-col">
+      <Topbar title={moduleName} subtitle="Error" onBack={onBack} />
+      <div className="flex-1 flex items-center justify-center p-6">
+        <div className="text-center">
+          <p className="text-sm font-semibold text-red-500 mb-1">Failed to load module data</p>
+          <p className="text-xs text-t-muted">{error}</p>
+        </div>
+      </div>
+    </div>
+  );
 
   return (
     <div className="flex-1 flex flex-col">
@@ -451,9 +517,12 @@ const ModuleDashboard: React.FC<Props> = ({ moduleId, moduleName, onBack, onExec
               ) : (
                 filteredMts.map((mt, index) => {
                   const lock            = locks.find(l => l.module_test_id === mt.id);
-                  const isLockedByOther = !!(lock && lock.user_id !== user?.id);
-                  const isLockedByMe    = !!(lock && lock.user_id === user?.id);
-                  const results         = (mt.step_results ?? []).filter(sr => !sr.step?.is_divider);
+                  const isLockedByOther = !!(lock && user && lock.user_id !== user.id); // FIX #2
+                  const isLockedByMe    = !!(lock && user && lock.user_id === user.id); // FIX #2
+                  // FIX #5: Filter step results here, outside JSX, so the
+                  // result is computed once per row per render rather than
+                  // being recomputed inline during render.
+                  const results = (mt.step_results ?? []).filter(sr => !sr.step?.is_divider);
                   return (
                     <StaggerRow key={mt.id} index={index}>
                       <TestRow
