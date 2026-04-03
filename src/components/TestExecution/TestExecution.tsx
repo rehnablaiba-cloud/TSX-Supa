@@ -247,7 +247,7 @@ const TestExecution: React.FC<Props> = ({ moduleId, moduleName, initialModuleTes
     return () => window.removeEventListener("beforeunload", release);
   }, [currentMtId, user?.id]);
 
-  // ── Auto-scroll ───────────────────────────────────────────
+  // ── Auto-scroll: snap focused step to top of container ───
   useLayoutEffect(() => {
     if (!scrollTarget) return;
     const el        = stepRefs.current[scrollTarget];
@@ -256,8 +256,7 @@ const TestExecution: React.FC<Props> = ({ moduleId, moduleName, initialModuleTes
       const elRect        = el.getBoundingClientRect();
       const containerRect = container.getBoundingClientRect();
       const scrollTo      =
-        elRect.top - containerRect.top + container.scrollTop
-        - container.clientHeight / 2 + elRect.height / 2;
+        elRect.top - containerRect.top + container.scrollTop - 8;
       container.scrollTo({ top: scrollTo, behavior: "smooth" });
       setScrollTarget(null);
     }
@@ -476,11 +475,11 @@ const TestExecution: React.FC<Props> = ({ moduleId, moduleName, initialModuleTes
             <table className="hidden md:table w-full text-sm border-collapse table-fixed">
               <thead>
                 <tr className="border-b border-[var(--border-color)]">
-                  <th className="text-left px-2 py-2.5 text-xs font-semibold text-t-muted uppercase tracking-wider w-[6%]">S.No</th>
-                  <th className="text-left px-4 py-2.5 text-xs font-semibold text-t-muted uppercase tracking-wider w-[32%]">Action</th>
-                  <th className="text-left px-4 py-2.5 text-xs font-semibold text-t-muted uppercase tracking-wider w-[32%]">Expected Result</th>
-                  <th className="text-left px-3 py-2.5 text-xs font-semibold text-t-muted uppercase tracking-wider w-[14%]">Remarks</th>
-                  <th className="text-center px-2 py-2.5 text-xs font-semibold text-t-muted uppercase tracking-wider w-[9%]">Status</th>
+                  <th className="text-left px-2 py-2.5 text-xs font-semibold text-t-muted uppercase tracking-wider w-[6%] border-r border-[var(--border-color)]">S.No</th>
+                  <th className="text-left px-4 py-2.5 text-xs font-semibold text-t-muted uppercase tracking-wider w-[32%] border-r border-[var(--border-color)]">Action</th>
+                  <th className="text-left px-4 py-2.5 text-xs font-semibold text-t-muted uppercase tracking-wider w-[32%] border-r border-[var(--border-color)]">Expected Result</th>
+                  <th className="text-left px-3 py-2.5 text-xs font-semibold text-t-muted uppercase tracking-wider w-[14%] border-r border-[var(--border-color)]">Remarks</th>
+                  <th className="text-center px-2 py-2.5 text-xs font-semibold text-t-muted uppercase tracking-wider w-[9%] border-r border-[var(--border-color)]">Status</th>
                   <th className="text-center px-2 py-2.5 text-xs font-semibold text-t-muted uppercase tracking-wider w-[7%]">Actions</th>
                 </tr>
               </thead>
@@ -585,16 +584,16 @@ const TableStepRow: React.FC<{
       style={focusedStyle}
       className={`border-b border-[var(--border-color)] hover:bg-bg-card transition-colors cursor-pointer ${rowBg}`}
     >
-      <td className="px-2 py-3 text-center">
+      <td className="px-2 py-3 text-center border-r border-[var(--border-color)]">
         <span className="text-xs font-mono text-t-muted">{step.serial_no}</span>
       </td>
-      <td className="px-4 py-3">
+      <td className="px-4 py-3 border-r border-[var(--border-color)]">
         <p className="text-sm text-t-primary leading-snug break-words">{step.action}</p>
       </td>
-      <td className="px-4 py-3">
+      <td className="px-4 py-3 border-r border-[var(--border-color)]">
         <p className="text-sm text-t-secondary leading-snug break-words">{step.expected_result}</p>
       </td>
-      <td className="px-3 py-3">
+      <td className="px-3 py-3 border-r border-[var(--border-color)]">
         <textarea
           value={remarks}
           onChange={e => handleRemarksChange(e.target.value)}
@@ -611,7 +610,7 @@ const TableStepRow: React.FC<{
           className="input text-sm resize-none disabled:opacity-50 w-full"
         />
       </td>
-      <td className="px-2 py-3 text-center">
+      <td className="px-2 py-3 text-center border-r border-[var(--border-color)]">
         <span className={`text-xs font-bold px-2 py-0.5 rounded-full capitalize ${
           step.status === "pass" ? "bg-green-500/15 text-green-400"
           : step.status === "fail" ? "bg-red-500/15 text-red-400"
