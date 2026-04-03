@@ -131,7 +131,7 @@ const ExportModal: React.FC<{ onClose: () => void }> = ({ onClose }) => {
   return (
     <div className="fixed inset-0 z-[60] flex items-end md:items-center justify-center">
       <div className="absolute inset-0 bg-black/50" onClick={onClose} />
-      <div className="relative w-full md:max-w-md mx-auto bg-bg-surface border-t md:border border-[var(--border-color)] rounded-t-2xl md:rounded-2xl px-6 pt-5 pb-10 md:pb-6 z-10 flex flex-col gap-4 max-h-[90vh] overflow-y-auto">
+      <div className="relative w-full md:max-w-md mx-auto bg-bg-surface/80 backdrop-blur-md border-t md:border border-[var(--border-color)] rounded-t-2xl md:rounded-2xl px-6 pt-5 pb-10 md:pb-6 z-10 flex flex-col gap-4 max-h-[90vh] overflow-y-auto">
         <div className="w-10 h-1 bg-bg-card rounded-full mx-auto md:hidden shrink-0" />
         <div className="flex items-center justify-between shrink-0">
           <div>
