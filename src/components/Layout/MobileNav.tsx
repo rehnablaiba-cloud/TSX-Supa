@@ -4,6 +4,15 @@ import { useAuth } from "../../context/AuthContext";
 import { useTheme } from "../../context/ThemeContext";
 import ThemeEditor from "../ThemeEditor/ThemeEditorPanel";
 import { supabase } from "../../supabase";
+import {
+  BarChart2, FileJson, Table2, Database,
+  Package, FlaskConical, Hash, FolderOpen,
+  Plus, Pencil, Trash2,
+  AlertTriangle, XCircle, CheckCircle, Check, X,
+  Upload, Download, Settings, Palette,
+  Sun, Moon, LogOut, Minus,
+  Users, ScrollText, MoreHorizontal, LayoutDashboard, ClipboardList,
+} from "lucide-react";
 
 // ─── All tables to dump (FK-safe order for SQL inserts) ───────────────────
 const ALL_TABLES = [
@@ -71,11 +80,11 @@ function toSql(table: string, rows: Record<string, unknown>[]): string {
 // EXPORT MODAL
 // ─────────────────────────────────────────────────────────────────────────
 type ExportFormat = "csv_zip" | "json" | "tsv_zip" | "sql";
-const FORMAT_META: { id: ExportFormat; label: string; icon: string; desc: string }[] = [
-  { id: "csv_zip", label: "CSV (zip)", icon: "📊", desc: "One CSV per table · re-importable"  },
-  { id: "json",    label: "JSON",      icon: "🗂",  desc: "All tables in one nested file"      },
-  { id: "tsv_zip", label: "TSV (zip)", icon: "📋",  desc: "Tab-separated · Excel-friendly"    },
-  { id: "sql",     label: "SQL",       icon: "🗄",  desc: "INSERT statements · full backup"    },
+const FORMAT_META: { id: ExportFormat; label: string; icon: React.ReactNode; desc: string }[] = [
+  { id: "csv_zip", label: "CSV (zip)", icon: <BarChart2 size={20} />, desc: "One CSV per table · re-importable"  },
+  { id: "json",    label: "JSON",      icon: <FileJson size={20} />,  desc: "All tables in one nested file"      },
+  { id: "tsv_zip", label: "TSV (zip)", icon: <Table2 size={20} />,  desc: "Tab-separated · Excel-friendly"    },
+  { id: "sql",     label: "SQL",       icon: <Database size={20} />,  desc: "INSERT statements · full backup"    },
 ];
 type ExportStage = "idle" | "fetching" | "ready" | "exporting" | "done" | "error";
 
@@ -134,7 +143,7 @@ const ExportModal: React.FC<{ onClose: () => void }> = ({ onClose }) => {
         <div className="w-10 h-1 bg-bg-card rounded-full mx-auto md:hidden shrink-0" />
         <div className="flex items-center justify-between shrink-0">
           <div>
-            <h2 className="text-base font-bold text-t-primary">📤 Export All Data</h2>
+            <h2 className="text-base font-bold text-t-primary flex items-center gap-1.5"><Upload size={16} />Export All Data</h2>
             <p className="text-xs text-t-muted mt-0.5">
               {stage === "fetching"  && "Fetching from Supabase…"}
               {stage === "ready"     && `${ALL_TABLES.length} tables · ${totalRows} rows`}
@@ -143,7 +152,7 @@ const ExportModal: React.FC<{ onClose: () => void }> = ({ onClose }) => {
               {stage === "error"     && "Something went wrong"}
             </p>
           </div>
-          <button onClick={onClose} className="w-8 h-8 flex items-center justify-center rounded-full text-t-muted hover:text-t-primary hover:bg-bg-card transition-colors text-lg shrink-0">✕</button>
+          <button onClick={onClose} className="w-8 h-8 flex items-center justify-center rounded-full text-t-muted hover:text-t-primary hover:bg-bg-card transition-colors shrink-0"><X size={16} /></button>
         </div>
 
         {stage === "fetching" && (
@@ -185,12 +194,12 @@ const ExportModal: React.FC<{ onClose: () => void }> = ({ onClose }) => {
               {FORMAT_META.map(f => (
                 <button key={f.id} onClick={() => setFormat(f.id)}
                   className={`flex items-center gap-3 px-4 py-3 rounded-xl border transition-all text-left ${format === f.id ? "border-c-brand bg-c-brand-bg" : "border-[var(--border-color)] bg-bg-card hover:bg-bg-base"}`}>
-                  <span className="text-xl">{f.icon}</span>
+                  {f.icon}
                   <div className="flex-1">
                     <p className={`text-sm font-semibold ${format === f.id ? "text-c-brand" : "text-t-primary"}`}>{f.label}</p>
                     <p className="text-xs text-t-muted">{f.desc}</p>
                   </div>
-                  {format === f.id && <span className="w-4 h-4 rounded-full bg-c-brand flex items-center justify-center text-white text-[10px] font-bold shrink-0">✓</span>}
+                  {format === f.id && <span className="w-4 h-4 rounded-full bg-c-brand flex items-center justify-center text-white shrink-0"><Check size={10} /></span>}
                 </button>
               ))}
             </div>
@@ -200,8 +209,8 @@ const ExportModal: React.FC<{ onClose: () => void }> = ({ onClose }) => {
               {stage === "exporting"
                 ? <><span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> Building…</>
                 : stage === "done"
-                ? <>✓ Downloaded!</>
-                : <>⬇ Download {FORMAT_META.find(f => f.id === format)?.label}</>}
+                ? <><Check size={14} /> Downloaded!</>
+                : <><Download size={14} /> Download {FORMAT_META.find(f => f.id === format)?.label}</>}
             </button>
             {stage === "done" && (
               <button onClick={onClose} className="w-full px-4 py-2.5 rounded-xl border border-[var(--border-color)] text-t-secondary hover:text-t-primary text-sm font-medium transition-colors">Close</button>
@@ -217,7 +226,7 @@ const ExportModal: React.FC<{ onClose: () => void }> = ({ onClose }) => {
 // SHARED MODAL SHELL
 // ─────────────────────────────────────────────────────────────────────────
 const ModalShell: React.FC<{
-  title: string; subtitle?: string; icon: string;
+  title: string; subtitle?: string; icon: React.ReactNode;
   onClose: () => void; children: React.ReactNode;
 }> = ({ title, subtitle, icon, onClose, children }) => (
   <div className="fixed inset-0 z-[70] flex items-end md:items-center justify-center">
@@ -226,10 +235,10 @@ const ModalShell: React.FC<{
       <div className="w-10 h-1 bg-bg-card rounded-full mx-auto md:hidden shrink-0" />
       <div className="flex items-center justify-between shrink-0">
         <div>
-          <h2 className="text-base font-bold text-t-primary">{icon} {title}</h2>
+          <h2 className="text-base font-bold text-t-primary flex items-center gap-1.5">{icon}{title}</h2>
           {subtitle && <p className="text-xs text-t-muted mt-0.5">{subtitle}</p>}
         </div>
-        <button onClick={onClose} className="w-8 h-8 flex items-center justify-center rounded-full text-t-muted hover:text-t-primary hover:bg-bg-card transition-colors text-lg shrink-0">✕</button>
+        <button onClick={onClose} className="w-8 h-8 flex items-center justify-center rounded-full text-t-muted hover:text-t-primary hover:bg-bg-card transition-colors shrink-0"><X size={16} /></button>
       </div>
       {children}
     </div>
@@ -274,9 +283,9 @@ type ModuleOp          = "create" | "update" | "delete";
 type ModuleManualStage = "select_op" | "select_module" | "fill_form" | "confirm" | "submitting" | "done";
 
 const MODULE_OP_META = [
-  { id: "create" as ModuleOp, label: "Create", icon: "➕", desc: "Add a new module"             },
-  { id: "update" as ModuleOp, label: "Update", icon: "✏️",  desc: "Rename an existing module"    },
-  { id: "delete" as ModuleOp, label: "Delete", icon: "🗑",  desc: "Remove a module permanently"  },
+  { id: "create" as ModuleOp, label: "Create", icon: <Plus size={20} />,   desc: "Add a new module"             },
+  { id: "update" as ModuleOp, label: "Update", icon: <Pencil size={20} />, desc: "Rename an existing module"    },
+  { id: "delete" as ModuleOp, label: "Delete", icon: <Trash2 size={20} />, desc: "Remove a module permanently"  },
 ];
 
 const STAGE_SUBTITLE_MODULE: Record<ModuleManualStage, (op: ModuleOp) => string> = {
@@ -340,18 +349,18 @@ const ImportModulesModal: React.FC<{ onClose: () => void; onBack: () => void }> 
   const subtitle = STAGE_SUBTITLE_MODULE[stage](op);
 
   if (stage === "select_op") return (
-    <ModalShell icon="📦" title="Import · Modules" subtitle={subtitle} onClose={onClose}>
+    <ModalShell icon={<Package size={16} />} title="Import · Modules" subtitle={subtitle} onClose={onClose}>
       <div className="flex flex-col gap-4">
         <div className="flex flex-col gap-2">
           {MODULE_OP_META.map(m => (
             <button key={m.id} onClick={() => setOp(m.id)}
               className={`flex items-center gap-4 px-4 py-3.5 rounded-xl border transition-all text-left ${op === m.id ? "border-c-brand bg-c-brand-bg" : "border-[var(--border-color)] bg-bg-card hover:bg-bg-base"}`}>
-              <span className="text-xl">{m.icon}</span>
+              {m.icon}
               <div className="flex-1">
                 <p className={`text-sm font-semibold ${op === m.id ? "text-c-brand" : "text-t-primary"}`}>{m.label}</p>
                 <p className="text-xs text-t-muted">{m.desc}</p>
               </div>
-              {op === m.id && <span className="w-4 h-4 rounded-full bg-c-brand flex items-center justify-center text-white text-[10px] font-bold shrink-0">✓</span>}
+              {op === m.id && <span className="w-4 h-4 rounded-full bg-c-brand flex items-center justify-center text-white shrink-0"><Check size={10} /></span>}
             </button>
           ))}
         </div>
@@ -365,7 +374,7 @@ const ImportModulesModal: React.FC<{ onClose: () => void; onBack: () => void }> 
   );
 
   if (stage === "select_module") return (
-    <ModalShell icon="📦" title="Import · Modules" subtitle={subtitle} onClose={onClose}>
+    <ModalShell icon={<Package size={16} />} title="Import · Modules" subtitle={subtitle} onClose={onClose}>
       <div className="flex flex-col gap-4">
         <label className="text-xs font-semibold text-t-muted uppercase tracking-wider">Module</label>
         {loadingMods ? (
@@ -380,9 +389,9 @@ const ImportModulesModal: React.FC<{ onClose: () => void; onBack: () => void }> 
               // key and selection keyed on name (the PK)
               <button key={m.name} onClick={() => setSelectedMod(m)}
                 className={`flex items-center gap-3 px-4 py-3 rounded-xl border transition-all text-left ${selectedMod?.name === m.name ? "border-c-brand bg-c-brand-bg" : "border-[var(--border-color)] bg-bg-card hover:bg-bg-base"}`}>
-                <span className="text-lg">📦</span>
+                <Package size={18} />
                 <span className={`text-sm font-medium flex-1 ${selectedMod?.name === m.name ? "text-c-brand" : "text-t-primary"}`}>{m.name}</span>
-                {selectedMod?.name === m.name && <span className="w-4 h-4 rounded-full bg-c-brand flex items-center justify-center text-white text-[10px] font-bold shrink-0">✓</span>}
+                {selectedMod?.name === m.name && <span className="w-4 h-4 rounded-full bg-c-brand flex items-center justify-center text-white shrink-0"><Check size={10} /></span>}
               </button>
             ))}
           </div>
@@ -404,11 +413,11 @@ const ImportModulesModal: React.FC<{ onClose: () => void; onBack: () => void }> 
   );
 
   if (stage === "fill_form") return (
-    <ModalShell icon="📦" title="Import · Modules" subtitle={subtitle} onClose={onClose}>
+    <ModalShell icon={<Package size={16} />} title="Import · Modules" subtitle={subtitle} onClose={onClose}>
       <div className="flex flex-col gap-4">
         {selectedMod && (
           <div className="flex items-center gap-3 px-3 py-2 rounded-xl border border-[var(--border-color)] bg-bg-card text-xs">
-            <span>📦</span>
+            <Package size={14} />
             <span className="text-t-primary font-medium">{selectedMod.name}</span>
           </div>
         )}
@@ -431,11 +440,11 @@ const ImportModulesModal: React.FC<{ onClose: () => void; onBack: () => void }> 
   );
 
   if (stage === "confirm") return (
-    <ModalShell icon="📦" title="Import · Modules" subtitle={subtitle} onClose={onClose}>
+    <ModalShell icon={<Package size={16} />} title="Import · Modules" subtitle={subtitle} onClose={onClose}>
       <div className="flex flex-col gap-4">
         <div className={`rounded-xl border p-4 flex flex-col gap-3 ${op === "delete" ? "border-red-500/40 bg-red-500/10" : "border-[var(--border-color)] bg-bg-card"}`}>
           <div className="flex items-center gap-2 pb-1 border-b border-[var(--border-color)]">
-            <span className="text-xl">{op === "create" ? "➕" : op === "update" ? "✏️" : "🗑"}</span>
+            {op === "create" ? <Plus size={18} /> : op === "update" ? <Pencil size={18} /> : <Trash2 size={18} />}
             <p className={`text-sm font-bold ${op === "delete" ? "text-red-400" : "text-t-primary"}`}>
               {op === "create" ? "Creating new module" : op === "update" ? "Updating module" : "Deleting module"}
             </p>
@@ -449,13 +458,13 @@ const ImportModulesModal: React.FC<{ onClose: () => void; onBack: () => void }> 
           {op === "delete" && selectedMod && (
             <div className="flex flex-col gap-2 text-xs">
               <Row label="Module" value={selectedMod.name} />
-              <div className="mt-1 flex items-center gap-2 text-red-400 font-semibold"><span>⚠️</span><span>This action cannot be undone.</span></div>
+              <div className="mt-1 flex items-center gap-2 text-red-400 font-semibold"><AlertTriangle size={14} /><span>This action cannot be undone.</span></div>
             </div>
           )}
         </div>
         {errMsg && (
           <div className="rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-xs text-red-400 flex items-start gap-2">
-            <span>❌</span><p>{errMsg}</p>
+            <XCircle size={14} className="shrink-0 mt-0.5" /><p>{errMsg}</p>
           </div>
         )}
         <div className="flex gap-2 pt-1">
@@ -473,7 +482,7 @@ const ImportModulesModal: React.FC<{ onClose: () => void; onBack: () => void }> 
   );
 
   if (stage === "submitting") return (
-    <ModalShell icon="📦" title="Import · Modules" subtitle="Processing…" onClose={onClose}>
+    <ModalShell icon={<Package size={16} />} title="Import · Modules" subtitle="Processing…" onClose={onClose}>
       <div className="flex flex-col items-center gap-4 py-8">
         <div className="w-12 h-12 rounded-full border-4 border-c-brand border-t-transparent animate-spin" />
         <p className="text-sm text-t-secondary">Writing to Supabase…</p>
@@ -482,10 +491,10 @@ const ImportModulesModal: React.FC<{ onClose: () => void; onBack: () => void }> 
   );
 
   return (
-    <ModalShell icon="📦" title="Import · Modules" subtitle="Complete" onClose={onClose}>
+    <ModalShell icon={<Package size={16} />} title="Import · Modules" subtitle="Complete" onClose={onClose}>
       <div className="flex flex-col gap-3">
         <div className="rounded-xl border border-green-500/30 bg-green-500/10 p-4 text-sm flex items-start gap-3 text-green-400">
-          <span className="text-xl leading-none">✅</span>
+          <CheckCircle size={20} className="shrink-0" />
           <p className="font-medium">{resultMsg}</p>
         </div>
         <div className="flex gap-2">
@@ -505,9 +514,9 @@ type TestManualStage = "select_op" | "select_test" | "fill_form" | "confirm" | "
 interface TestFormData { serial_no: string; name: string; }
 
 const TEST_OP_META = [
-  { id: "create" as TestOp, label: "Create", icon: "➕", desc: "Add a new test"             },
-  { id: "update" as TestOp, label: "Update", icon: "✏️",  desc: "Rename an existing test"    },
-  { id: "delete" as TestOp, label: "Delete", icon: "🗑",  desc: "Remove a test permanently"  },
+  { id: "create" as TestOp, label: "Create", icon: <Plus size={20} />,   desc: "Add a new test"             },
+  { id: "update" as TestOp, label: "Update", icon: <Pencil size={20} />, desc: "Rename an existing test"    },
+  { id: "delete" as TestOp, label: "Delete", icon: <Trash2 size={20} />, desc: "Remove a test permanently"  },
 ];
 
 const ImportTestsModal: React.FC<{ onClose: () => void; onBack: () => void }> = ({ onClose, onBack }) => {
@@ -562,18 +571,18 @@ const ImportTestsModal: React.FC<{ onClose: () => void; onBack: () => void }> = 
   }, []);
 
   if (stage === "select_op") return (
-    <ModalShell icon="🧪" title="Import · Tests" subtitle="Choose operation" onClose={onClose}>
+    <ModalShell icon={<FlaskConical size={16} />} title="Import · Tests" subtitle="Choose operation" onClose={onClose}>
       <div className="flex flex-col gap-4">
         <div className="flex flex-col gap-2">
           {TEST_OP_META.map(m => (
             <button key={m.id} onClick={() => setOp(m.id)}
               className={`flex items-center gap-4 px-4 py-3.5 rounded-xl border transition-all text-left ${op === m.id ? "border-c-brand bg-c-brand-bg" : "border-[var(--border-color)] bg-bg-card hover:bg-bg-base"}`}>
-              <span className="text-xl">{m.icon}</span>
+              {m.icon}
               <div className="flex-1">
                 <p className={`text-sm font-semibold ${op === m.id ? "text-c-brand" : "text-t-primary"}`}>{m.label}</p>
                 <p className="text-xs text-t-muted">{m.desc}</p>
               </div>
-              {op === m.id && <span className="w-4 h-4 rounded-full bg-c-brand flex items-center justify-center text-white text-[10px] font-bold shrink-0">✓</span>}
+              {op === m.id && <span className="w-4 h-4 rounded-full bg-c-brand flex items-center justify-center text-white shrink-0"><Check size={10} /></span>}
             </button>
           ))}
         </div>
@@ -587,7 +596,7 @@ const ImportTestsModal: React.FC<{ onClose: () => void; onBack: () => void }> = 
   );
 
   if (stage === "select_test") return (
-    <ModalShell icon="🧪" title="Import · Tests" subtitle="Select test" onClose={onClose}>
+    <ModalShell icon={<FlaskConical size={16} />} title="Import · Tests" subtitle="Select test" onClose={onClose}>
       <div className="flex flex-col gap-4">
         <label className="text-xs font-semibold text-t-muted uppercase tracking-wider">Test</label>
         {loadingTests ? (
@@ -602,12 +611,12 @@ const ImportTestsModal: React.FC<{ onClose: () => void; onBack: () => void }> = 
               // key and selection keyed on name (the PK)
               <button key={t.name} onClick={() => setSelectedTest(t)}
                 className={`flex items-center gap-3 px-4 py-3 rounded-xl border transition-all text-left ${selectedTest?.name === t.name ? "border-c-brand bg-c-brand-bg" : "border-[var(--border-color)] bg-bg-card hover:bg-bg-base"}`}>
-                <span className="text-lg">🧪</span>
+                <FlaskConical size={18} />
                 <div className="flex-1">
                   <p className={`text-sm font-medium ${selectedTest?.name === t.name ? "text-c-brand" : "text-t-primary"}`}>{t.name}</p>
                   <p className="text-xs text-t-muted">SN {t.serial_no}</p>
                 </div>
-                {selectedTest?.name === t.name && <span className="w-4 h-4 rounded-full bg-c-brand flex items-center justify-center text-white text-[10px] font-bold shrink-0">✓</span>}
+                {selectedTest?.name === t.name && <span className="w-4 h-4 rounded-full bg-c-brand flex items-center justify-center text-white shrink-0"><Check size={10} /></span>}
               </button>
             ))}
           </div>
@@ -629,11 +638,11 @@ const ImportTestsModal: React.FC<{ onClose: () => void; onBack: () => void }> = 
   );
 
   if (stage === "fill_form") return (
-    <ModalShell icon="🧪" title="Import · Tests" subtitle={op === "create" ? "Enter test details" : "Edit test name"} onClose={onClose}>
+    <ModalShell icon={<FlaskConical size={16} />} title="Import · Tests" subtitle={op === "create" ? "Enter test details" : "Edit test name"} onClose={onClose}>
       <div className="flex flex-col gap-4">
         {selectedTest && (
           <div className="flex items-center gap-3 px-3 py-2 rounded-xl border border-[var(--border-color)] bg-bg-card text-xs">
-            <span>🧪</span>
+            <FlaskConical size={14} />
             <div>
               <p className="text-t-primary font-medium">{selectedTest.name}</p>
               <p className="text-t-muted">SN {selectedTest.serial_no}</p>
@@ -668,11 +677,11 @@ const ImportTestsModal: React.FC<{ onClose: () => void; onBack: () => void }> = 
   );
 
   if (stage === "confirm") return (
-    <ModalShell icon="🧪" title="Import · Tests" subtitle="Review & confirm" onClose={onClose}>
+    <ModalShell icon={<FlaskConical size={16} />} title="Import · Tests" subtitle="Review & confirm" onClose={onClose}>
       <div className="flex flex-col gap-4">
         <div className={`rounded-xl border p-4 flex flex-col gap-3 ${op === "delete" ? "border-red-500/40 bg-red-500/10" : "border-[var(--border-color)] bg-bg-card"}`}>
           <div className="flex items-center gap-2 pb-1 border-b border-[var(--border-color)]">
-            <span className="text-xl">{op === "create" ? "➕" : op === "update" ? "✏️" : "🗑"}</span>
+            {op === "create" ? <Plus size={18} /> : op === "update" ? <Pencil size={18} /> : <Trash2 size={18} />}
             <p className={`text-sm font-bold ${op === "delete" ? "text-red-400" : "text-t-primary"}`}>
               {op === "create" ? "Creating new test" : op === "update" ? "Updating test" : "Deleting test"}
             </p>
@@ -693,13 +702,13 @@ const ImportTestsModal: React.FC<{ onClose: () => void; onBack: () => void }> = 
             <div className="flex flex-col gap-2 text-xs">
               <Row label="Serial No" value={String(selectedTest.serial_no)} mono brand />
               <Row label="Name"      value={selectedTest.name} />
-              <div className="mt-1 flex items-center gap-2 text-red-400 font-semibold"><span>⚠️</span><span>This action cannot be undone.</span></div>
+              <div className="mt-1 flex items-center gap-2 text-red-400 font-semibold"><AlertTriangle size={14} /><span>This action cannot be undone.</span></div>
             </div>
           )}
         </div>
         {errMsg && (
           <div className="rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-xs text-red-400 flex items-start gap-2">
-            <span>❌</span><p>{errMsg}</p>
+            <XCircle size={14} className="shrink-0 mt-0.5" /><p>{errMsg}</p>
           </div>
         )}
         <div className="flex gap-2 pt-1">
@@ -717,7 +726,7 @@ const ImportTestsModal: React.FC<{ onClose: () => void; onBack: () => void }> = 
   );
 
   if (stage === "submitting") return (
-    <ModalShell icon="🧪" title="Import · Tests" subtitle="Processing…" onClose={onClose}>
+    <ModalShell icon={<FlaskConical size={16} />} title="Import · Tests" subtitle="Processing…" onClose={onClose}>
       <div className="flex flex-col items-center gap-4 py-8">
         <div className="w-12 h-12 rounded-full border-4 border-c-brand border-t-transparent animate-spin" />
         <p className="text-sm text-t-secondary">Writing to Supabase…</p>
@@ -726,10 +735,10 @@ const ImportTestsModal: React.FC<{ onClose: () => void; onBack: () => void }> = 
   );
 
   return (
-    <ModalShell icon="🧪" title="Import · Tests" subtitle="Complete" onClose={onClose}>
+    <ModalShell icon={<FlaskConical size={16} />} title="Import · Tests" subtitle="Complete" onClose={onClose}>
       <div className="flex flex-col gap-3">
         <div className="rounded-xl border border-green-500/30 bg-green-500/10 p-4 text-sm flex items-start gap-3 text-green-400">
-          <span className="text-xl leading-none">✅</span>
+          <CheckCircle size={20} className="shrink-0" />
           <p className="font-medium">{resultMsg}</p>
         </div>
         <div className="flex gap-2">
@@ -751,9 +760,9 @@ interface StepCsvRow       { serial_no: number; action: string; expected_result:
 interface StepImportSummary { written: number; skipped: number; errors: string[]; }
 
 const STEP_CSV_OP_META = [
-  { id: "create" as StepOp, label: "Create", icon: "➕", desc: "Add new steps from CSV"         },
-  { id: "update" as StepOp, label: "Update", icon: "✏️",  desc: "Overwrite existing steps by SN"  },
-  { id: "delete" as StepOp, label: "Delete", icon: "🗑",  desc: "Remove steps by serial_no"       },
+  { id: "create" as StepOp, label: "Create", icon: <Plus size={20} />,   desc: "Add new steps from CSV"         },
+  { id: "update" as StepOp, label: "Update", icon: <Pencil size={20} />, desc: "Overwrite existing steps by SN"  },
+  { id: "delete" as StepOp, label: "Delete", icon: <Trash2 size={20} />, desc: "Remove steps by serial_no"       },
 ];
 
 function parseStepsCsv(text: string): { rows: StepCsvRow[]; errors: string[] } {
@@ -884,7 +893,7 @@ const ImportStepsModal: React.FC<{ onClose: () => void; onBack: () => void }> = 
   }[stage];
 
   return (
-    <ModalShell icon="🔢" title="Import · Steps (CSV)" subtitle={stageLabel} onClose={onClose}>
+    <ModalShell icon={<Hash size={16} />} title="Import · Steps (CSV)" subtitle={stageLabel} onClose={onClose}>
 
       {stage === "select_test" && (
         <div className="flex flex-col gap-4">
@@ -907,7 +916,7 @@ const ImportStepsModal: React.FC<{ onClose: () => void; onBack: () => void }> = 
           </div>
           {selectedTest && (
             <div className="flex items-center gap-3 px-4 py-3 rounded-xl border border-c-brand/30 bg-c-brand-bg">
-              <span className="text-xl">🧪</span>
+              <FlaskConical size={20} />
               <div>
                 <p className="text-sm font-semibold text-c-brand">{selectedTest.name}</p>
                 <p className="text-xs text-t-muted">SN {selectedTest.serial_no}</p>
@@ -925,7 +934,7 @@ const ImportStepsModal: React.FC<{ onClose: () => void; onBack: () => void }> = 
       {stage === "select_op" && (
         <div className="flex flex-col gap-4">
           <div className="flex items-center gap-3 px-4 py-3 rounded-xl border border-[var(--border-color)] bg-bg-card">
-            <span className="text-lg">🧪</span>
+            <FlaskConical size={18} />
             <div className="flex-1 min-w-0">
               <p className="text-sm font-semibold text-t-primary truncate">{selectedTest?.name}</p>
               <p className="text-xs text-t-muted">SN {selectedTest?.serial_no}</p>
@@ -938,19 +947,19 @@ const ImportStepsModal: React.FC<{ onClose: () => void; onBack: () => void }> = 
               {STEP_CSV_OP_META.map(m => (
                 <button key={m.id} onClick={() => setOp(m.id)}
                   className={`flex items-center gap-4 px-4 py-3.5 rounded-xl border transition-all text-left ${op === m.id ? "border-c-brand bg-c-brand-bg" : "border-[var(--border-color)] bg-bg-card hover:bg-bg-base"}`}>
-                  <span className="text-xl">{m.icon}</span>
+                  {m.icon}
                   <div className="flex-1">
                     <p className={`text-sm font-semibold ${op === m.id ? "text-c-brand" : "text-t-primary"}`}>{m.label}</p>
                     <p className="text-xs text-t-muted">{m.desc}</p>
                   </div>
-                  {op === m.id && <span className="w-4 h-4 rounded-full bg-c-brand flex items-center justify-center text-white text-[10px] font-bold shrink-0">✓</span>}
+                  {op === m.id && <span className="w-4 h-4 rounded-full bg-c-brand flex items-center justify-center text-white shrink-0"><Check size={10} /></span>}
                 </button>
               ))}
             </div>
           </div>
           {op === "delete" && (
             <div className="rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-xs text-red-400 flex items-start gap-2">
-              <span className="text-base leading-none mt-px">⚠️</span>
+              <AlertTriangle size={14} className="mt-px shrink-0" />
               <p>CSV only needs <code className="font-mono">serial_no</code> column for delete. Other columns are ignored.</p>
             </div>
           )}
@@ -964,7 +973,7 @@ const ImportStepsModal: React.FC<{ onClose: () => void; onBack: () => void }> = 
       {stage === "upload" && (
         <div className="flex flex-col gap-4">
           <div className="flex items-center gap-2 px-3 py-2 rounded-xl border border-[var(--border-color)] bg-bg-card text-xs">
-            <span>🧪</span>
+            <FlaskConical size={14} />
             <span className="text-t-primary font-medium truncate">{selectedTest?.name}</span>
             <span className="mx-1 text-t-muted">·</span>
             <span className="text-c-brand font-semibold">{STEP_CSV_OP_META.find(m => m.id === op)?.label}</span>
@@ -996,7 +1005,7 @@ const ImportStepsModal: React.FC<{ onClose: () => void; onBack: () => void }> = 
           </div>
           <button onClick={() => fileRef.current?.click()}
             className="flex flex-col items-center gap-2 p-6 rounded-xl border-2 border-dashed border-[var(--border-color)] hover:border-c-brand/60 hover:bg-bg-card transition-colors cursor-pointer">
-            <span className="text-3xl">📂</span>
+            <FolderOpen size={32} />
             <span className="text-sm font-medium text-t-secondary">Tap to choose CSV file</span>
           </button>
           <input ref={fileRef} type="file" accept=".csv,text/csv" className="hidden" onChange={handleFile} />
@@ -1007,7 +1016,7 @@ const ImportStepsModal: React.FC<{ onClose: () => void; onBack: () => void }> = 
       {stage === "preview" && (
         <div className="flex flex-col gap-3">
           <div className="flex items-center gap-2 px-3 py-2 rounded-xl border border-[var(--border-color)] bg-bg-card text-xs">
-            <span>🧪</span>
+            <FlaskConical size={14} />
             <span className="text-t-primary font-medium truncate">{selectedTest?.name}</span>
             <span className="mx-1 text-t-muted">·</span>
             <span className="text-c-brand font-semibold">{STEP_CSV_OP_META.find(m => m.id === op)?.label}</span>
@@ -1107,14 +1116,14 @@ const StepContextStrip: React.FC<{
   <div className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-[var(--border-color)] bg-bg-card text-xs flex-wrap">
     {selectedModule && (
       <>
-        <span className="text-t-muted">📦</span>
+        <Package size={13} className="text-t-muted shrink-0" />
         <span className="text-t-primary font-medium">{selectedModule.name}</span>
       </>
     )}
     {selectedTest && (
       <>
         <span className="text-t-muted mx-0.5">›</span>
-        <span className="text-t-muted">🧪</span>
+        <FlaskConical size={13} className="text-t-muted shrink-0" />
         <span className="text-t-primary font-medium truncate max-w-[120px]">{selectedTest.name}</span>
       </>
     )}
@@ -1134,9 +1143,9 @@ type StepManualOp    = "create" | "update" | "delete";
 type StepManualStage = "select_op" | "select_module" | "select_test" | "select_step" | "fill_form" | "confirm" | "submitting" | "done";
 
 const STEP_MANUAL_OP_META = [
-  { id: "create" as StepManualOp, label: "Create", icon: "➕", desc: "Add a new step to a test"  },
-  { id: "update" as StepManualOp, label: "Update", icon: "✏️",  desc: "Edit an existing step"     },
-  { id: "delete" as StepManualOp, label: "Delete", icon: "🗑",  desc: "Remove a step permanently" },
+  { id: "create" as StepManualOp, label: "Create", icon: <Plus size={20} />,   desc: "Add a new step to a test"  },
+  { id: "update" as StepManualOp, label: "Update", icon: <Pencil size={20} />, desc: "Edit an existing step"     },
+  { id: "delete" as StepManualOp, label: "Delete", icon: <Trash2 size={20} />, desc: "Remove a step permanently" },
 ];
 
 const ImportStepsManualModal: React.FC<{ onClose: () => void; onBack: () => void }> = ({ onClose, onBack }) => {
@@ -1245,18 +1254,18 @@ const ImportStepsManualModal: React.FC<{ onClose: () => void; onBack: () => void
   };
 
   if (stage === "select_op") return (
-    <ModalShell icon="🔢" title="Import · Steps (Manual)" subtitle={stageSubtitle.select_op} onClose={onClose}>
+    <ModalShell icon={<Hash size={16} />} title="Import · Steps (Manual)" subtitle={stageSubtitle.select_op} onClose={onClose}>
       <div className="flex flex-col gap-4">
         <div className="flex flex-col gap-2">
           {STEP_MANUAL_OP_META.map(m => (
             <button key={m.id} onClick={() => setOp(m.id)}
               className={`flex items-center gap-4 px-4 py-3.5 rounded-xl border transition-all text-left ${op === m.id ? "border-c-brand bg-c-brand-bg" : "border-[var(--border-color)] bg-bg-card hover:bg-bg-base"}`}>
-              <span className="text-xl">{m.icon}</span>
+              {m.icon}
               <div className="flex-1">
                 <p className={`text-sm font-semibold ${op === m.id ? "text-c-brand" : "text-t-primary"}`}>{m.label}</p>
                 <p className="text-xs text-t-muted">{m.desc}</p>
               </div>
-              {op === m.id && <span className="w-4 h-4 rounded-full bg-c-brand flex items-center justify-center text-white text-[10px] font-bold shrink-0">✓</span>}
+              {op === m.id && <span className="w-4 h-4 rounded-full bg-c-brand flex items-center justify-center text-white shrink-0"><Check size={10} /></span>}
             </button>
           ))}
         </div>
@@ -1269,7 +1278,7 @@ const ImportStepsManualModal: React.FC<{ onClose: () => void; onBack: () => void
   );
 
   if (stage === "select_module") return (
-    <ModalShell icon="🔢" title="Import · Steps (Manual)" subtitle={stageSubtitle.select_module} onClose={onClose}>
+    <ModalShell icon={<Hash size={16} />} title="Import · Steps (Manual)" subtitle={stageSubtitle.select_module} onClose={onClose}>
       <div className="flex flex-col gap-4">
         <label className="text-xs font-semibold text-t-muted uppercase tracking-wider">Module</label>
         {loadingModules ? (
@@ -1283,9 +1292,9 @@ const ImportStepsManualModal: React.FC<{ onClose: () => void; onBack: () => void
             {modules.map(m => (
               <button key={m.name} onClick={() => setSelectedModule(m)}
                 className={`flex items-center gap-3 px-4 py-3 rounded-xl border transition-all text-left ${selectedModule?.name === m.name ? "border-c-brand bg-c-brand-bg" : "border-[var(--border-color)] bg-bg-card hover:bg-bg-base"}`}>
-                <span className="text-lg">📦</span>
+                <Package size={18} />
                 <span className={`text-sm font-medium flex-1 ${selectedModule?.name === m.name ? "text-c-brand" : "text-t-primary"}`}>{m.name}</span>
-                {selectedModule?.name === m.name && <span className="w-4 h-4 rounded-full bg-c-brand flex items-center justify-center text-white text-[10px] font-bold shrink-0">✓</span>}
+                {selectedModule?.name === m.name && <span className="w-4 h-4 rounded-full bg-c-brand flex items-center justify-center text-white shrink-0"><Check size={10} /></span>}
               </button>
             ))}
           </div>
@@ -1300,7 +1309,7 @@ const ImportStepsManualModal: React.FC<{ onClose: () => void; onBack: () => void
   );
 
   if (stage === "select_test") return (
-    <ModalShell icon="🔢" title="Import · Steps (Manual)" subtitle={stageSubtitle.select_test} onClose={onClose}>
+    <ModalShell icon={<Hash size={16} />} title="Import · Steps (Manual)" subtitle={stageSubtitle.select_test} onClose={onClose}>
       <div className="flex flex-col gap-4">
         <StepContextStrip selectedModule={selectedModule} selectedTest={selectedTest} />
         <label className="text-xs font-semibold text-t-muted uppercase tracking-wider">Test</label>
@@ -1315,12 +1324,12 @@ const ImportStepsManualModal: React.FC<{ onClose: () => void; onBack: () => void
             {tests.map(t => (
               <button key={t.name} onClick={() => setSelectedTest(t)}
                 className={`flex items-center gap-3 px-4 py-3 rounded-xl border transition-all text-left ${selectedTest?.name === t.name ? "border-c-brand bg-c-brand-bg" : "border-[var(--border-color)] bg-bg-card hover:bg-bg-base"}`}>
-                <span className="text-lg">🧪</span>
+                <FlaskConical size={18} />
                 <div className="flex-1">
                   <p className={`text-sm font-medium ${selectedTest?.name === t.name ? "text-c-brand" : "text-t-primary"}`}>{t.name}</p>
                   <p className="text-xs text-t-muted">SN {t.serial_no}</p>
                 </div>
-                {selectedTest?.name === t.name && <span className="w-4 h-4 rounded-full bg-c-brand flex items-center justify-center text-white text-[10px] font-bold shrink-0">✓</span>}
+                {selectedTest?.name === t.name && <span className="w-4 h-4 rounded-full bg-c-brand flex items-center justify-center text-white shrink-0"><Check size={10} /></span>}
               </button>
             ))}
           </div>
@@ -1340,7 +1349,7 @@ const ImportStepsManualModal: React.FC<{ onClose: () => void; onBack: () => void
   );
 
   if (stage === "select_step") return (
-    <ModalShell icon="🔢" title="Import · Steps (Manual)" subtitle={stageSubtitle.select_step} onClose={onClose}>
+    <ModalShell icon={<Hash size={16} />} title="Import · Steps (Manual)" subtitle={stageSubtitle.select_step} onClose={onClose}>
       <div className="flex flex-col gap-4">
         <StepContextStrip selectedModule={selectedModule} selectedTest={selectedTest} />
         <label className="text-xs font-semibold text-t-muted uppercase tracking-wider">Step</label>
@@ -1371,7 +1380,7 @@ const ImportStepsManualModal: React.FC<{ onClose: () => void; onBack: () => void
                       </>
                   }
                 </div>
-                {selectedStep?.id === s.id && <span className="w-4 h-4 rounded-full bg-c-brand flex items-center justify-center text-white text-[10px] font-bold shrink-0">✓</span>}
+                {selectedStep?.id === s.id && <span className="w-4 h-4 rounded-full bg-c-brand flex items-center justify-center text-white shrink-0"><Check size={10} /></span>}
               </button>
             ))}
           </div>
@@ -1390,7 +1399,7 @@ const ImportStepsManualModal: React.FC<{ onClose: () => void; onBack: () => void
   );
 
   if (stage === "fill_form") return (
-    <ModalShell icon="🔢" title="Import · Steps (Manual)" subtitle={stageSubtitle.fill_form} onClose={onClose}>
+    <ModalShell icon={<Hash size={16} />} title="Import · Steps (Manual)" subtitle={stageSubtitle.fill_form} onClose={onClose}>
       <div className="flex flex-col gap-4">
         <StepContextStrip selectedModule={selectedModule} selectedTest={selectedTest} selectedStep={selectedStep} />
         {op === "create" && (
@@ -1418,7 +1427,7 @@ const ImportStepsManualModal: React.FC<{ onClose: () => void; onBack: () => void
         </div>
         <button onClick={() => setForm(f => ({ ...f, is_divider: !f.is_divider }))}
           className={`flex items-center gap-3 px-4 py-3 rounded-xl border transition-all text-left ${form.is_divider ? "border-c-brand bg-c-brand-bg" : "border-[var(--border-color)] bg-bg-card hover:bg-bg-base"}`}>
-          <span className="text-lg">➖</span>
+          <Minus size={18} />
           <div className="flex-1">
             <p className={`text-sm font-semibold ${form.is_divider ? "text-c-brand" : "text-t-primary"}`}>Section Divider</p>
             <p className="text-xs text-t-muted">Mark this step as a visual divider row</p>
@@ -1437,12 +1446,12 @@ const ImportStepsManualModal: React.FC<{ onClose: () => void; onBack: () => void
   );
 
   if (stage === "confirm") return (
-    <ModalShell icon="🔢" title="Import · Steps (Manual)" subtitle={stageSubtitle.confirm} onClose={onClose}>
+    <ModalShell icon={<Hash size={16} />} title="Import · Steps (Manual)" subtitle={stageSubtitle.confirm} onClose={onClose}>
       <div className="flex flex-col gap-4">
         <StepContextStrip selectedModule={selectedModule} selectedTest={selectedTest} selectedStep={selectedStep} />
         <div className={`rounded-xl border p-4 flex flex-col gap-3 ${op === "delete" ? "border-red-500/40 bg-red-500/10" : "border-[var(--border-color)] bg-bg-card"}`}>
           <div className="flex items-center gap-2 pb-1 border-b border-[var(--border-color)]">
-            <span className="text-xl">{op === "create" ? "➕" : op === "update" ? "✏️" : "🗑"}</span>
+            {op === "create" ? <Plus size={18} /> : op === "update" ? <Pencil size={18} /> : <Trash2 size={18} />}
             <p className={`text-sm font-bold ${op === "delete" ? "text-red-400" : "text-t-primary"}`}>
               {op === "create" ? "Creating new step" : op === "update" ? "Updating step" : "Deleting step"}
             </p>
@@ -1480,7 +1489,7 @@ const ImportStepsManualModal: React.FC<{ onClose: () => void; onBack: () => void
         </div>
         {errMsg && (
           <div className="rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-xs text-red-400 flex items-start gap-2">
-            <span>❌</span><p>{errMsg}</p>
+            <XCircle size={14} className="shrink-0 mt-0.5" /><p>{errMsg}</p>
           </div>
         )}
         <div className="flex gap-2 pt-1">
@@ -1498,7 +1507,7 @@ const ImportStepsManualModal: React.FC<{ onClose: () => void; onBack: () => void
   );
 
   if (stage === "submitting") return (
-    <ModalShell icon="🔢" title="Import · Steps (Manual)" subtitle="Processing…" onClose={onClose}>
+    <ModalShell icon={<Hash size={16} />} title="Import · Steps (Manual)" subtitle="Processing…" onClose={onClose}>
       <div className="flex flex-col items-center gap-4 py-8">
         <div className="w-12 h-12 rounded-full border-4 border-c-brand border-t-transparent animate-spin" />
         <p className="text-sm text-t-secondary">Writing to Supabase…</p>
@@ -1507,10 +1516,10 @@ const ImportStepsManualModal: React.FC<{ onClose: () => void; onBack: () => void
   );
 
   return (
-    <ModalShell icon="🔢" title="Import · Steps (Manual)" subtitle="Complete" onClose={onClose}>
+    <ModalShell icon={<Hash size={16} />} title="Import · Steps (Manual)" subtitle="Complete" onClose={onClose}>
       <div className="flex flex-col gap-3">
         <div className="rounded-xl border border-green-500/30 bg-green-500/10 p-4 text-sm flex items-start gap-3 text-green-400">
-          <span className="text-xl leading-none">✅</span>
+          <CheckCircle size={20} className="shrink-0" />
           <p className="font-medium">{resultMsg}</p>
         </div>
         <div className="flex gap-2">
@@ -1535,11 +1544,11 @@ const ImportModal: React.FC<{ onClose: () => void }> = ({ onClose }) => {
   if (target === "steps")        return <ImportStepsModal       onClose={onClose} onBack={() => setTarget(null)} />;
   if (target === "steps_manual") return <ImportStepsManualModal onClose={onClose} onBack={() => setTarget(null)} />;
 
-  const options: { id: ImportTarget; icon: string; label: string; desc: string; badge: string }[] = [
-    { id: "modules",      icon: "📦", label: "Modules",     desc: "Create · update · delete module records", badge: "Manual" },
-    { id: "tests",        icon: "🧪", label: "Tests",       desc: "Manual create · update · delete",         badge: "Manual" },
-    { id: "steps_manual", icon: "🔢", label: "Steps",       desc: "Search by module › test › step",          badge: "Manual" },
-    { id: "steps",        icon: "📂", label: "Steps (CSV)", desc: "Select test · op · upload CSV",            badge: "CSV"    },
+  const options: { id: ImportTarget; icon: React.ReactNode; label: string; desc: string; badge: string }[] = [
+    { id: "modules",      icon: <Package size={22} />, label: "Modules",     desc: "Create · update · delete module records", badge: "Manual" },
+    { id: "tests",        icon: <FlaskConical size={22} />, label: "Tests",       desc: "Manual create · update · delete",         badge: "Manual" },
+    { id: "steps_manual", icon: <Hash size={22} />, label: "Steps",       desc: "Search by module › test › step",          badge: "Manual" },
+    { id: "steps",        icon: <FolderOpen size={22} />, label: "Steps (CSV)", desc: "Select test · op · upload CSV",            badge: "CSV"    },
   ];
 
   return (
@@ -1549,16 +1558,16 @@ const ImportModal: React.FC<{ onClose: () => void }> = ({ onClose }) => {
         <div className="w-10 h-1 bg-bg-card rounded-full mx-auto md:hidden" />
         <div className="flex items-center justify-between">
           <div>
-            <h2 className="text-base font-bold text-t-primary">📥 Import Data</h2>
+            <h2 className="text-base font-bold text-t-primary flex items-center gap-1.5"><Download size={16} />Import Data</h2>
             <p className="text-xs text-t-muted mt-0.5">Choose what to import</p>
           </div>
-          <button onClick={onClose} className="w-8 h-8 flex items-center justify-center rounded-full text-t-muted hover:text-t-primary hover:bg-bg-card transition-colors text-lg">✕</button>
+          <button onClick={onClose} className="w-8 h-8 flex items-center justify-center rounded-full text-t-muted hover:text-t-primary hover:bg-bg-card transition-colors text-lg"><X size={16} /></button>
         </div>
         <div className="flex flex-col gap-2">
           {options.map(opt => (
             <button key={opt.id as string} onClick={() => setTarget(opt.id)}
               className="flex items-center gap-4 px-4 py-4 rounded-xl bg-bg-card hover:bg-bg-base border border-[var(--border-color)] transition-colors text-left group">
-              <span className="text-2xl">{opt.icon}</span>
+              {opt.icon}
               <div className="flex-1">
                 <p className="text-sm font-semibold text-t-primary group-hover:text-c-brand transition-colors">{opt.label}</p>
                 <p className="text-xs text-t-muted mt-0.5">{opt.desc}</p>
@@ -1580,7 +1589,7 @@ const SheetButton: React.FC<{
 }> = ({ icon, label, desc, onClick }) => (
   <button onClick={onClick}
     className="flex items-center gap-4 px-4 py-3.5 rounded-xl bg-bg-card hover:bg-bg-base border border-[var(--border-color)] transition-colors text-t-primary w-full text-left">
-    <span className="text-2xl">{icon}</span>
+    <span className="flex items-center justify-center w-6 h-6">{icon}</span>
     <div>
       <p className="text-sm font-semibold">{label}</p>
       <p className="text-xs text-t-muted">{desc}</p>
@@ -1623,9 +1632,9 @@ const MobileNav: React.FC<Props> = ({ activePage, onNavigate }) => {
   const isAdmin = user?.role === "admin";
 
   const items = [
-    { id: "dashboard", icon: "📊", label: "Home"   },
-    { id: "report",    icon: "📋", label: "Report" },
-    { id: "auditlog",  icon: "📜", label: "Audit"  },
+    { id: "dashboard", icon: <LayoutDashboard size={20} />, label: "Home"   },
+    { id: "report",    icon: <ClipboardList size={20} />,   label: "Report" },
+    { id: "auditlog",  icon: <ScrollText size={20} />,      label: "Audit"  },
     ...(isAdmin ? [{ id: "users", icon: "👥", label: "Users" }] : []),
   ];
 
@@ -1654,14 +1663,14 @@ const MobileNav: React.FC<Props> = ({ activePage, onNavigate }) => {
                 <p className="text-xs text-t-muted">Signed in as {user?.email}</p>
               </div>
               <button onClick={() => setShowAdminPanel(false)}
-                className="w-8 h-8 flex items-center justify-center rounded-full text-t-muted hover:text-t-primary hover:bg-bg-card transition-colors text-lg">✕</button>
+                className="w-8 h-8 flex items-center justify-center rounded-full text-t-muted hover:text-t-primary hover:bg-bg-card transition-colors text-lg"><X size={16} /></button>
             </div>
             <div className="border-t border-[var(--border-color)]" />
-            <SheetButton icon="🎨" label="Theme Editor" desc="Customize colors & palette"
+            <SheetButton icon={<Palette size={22} />} label="Theme Editor" desc="Customize colors & palette"
               onClick={() => { setShowAdminPanel(false); setShowThemeEditor(true); }} />
-            <SheetButton icon="📥" label="Import Data"  desc="Modules · Tests · Steps"
+            <SheetButton icon={<Download size={22} />} label="Import Data"  desc="Modules · Tests · Steps"
               onClick={() => { setShowAdminPanel(false); setShowImport(true); }} />
-            <SheetButton icon="📤" label="Export Data"  desc="All tables · CSV · JSON · SQL"
+            <SheetButton icon={<Upload size={22} />} label="Export Data"  desc="All tables · CSV · JSON · SQL"
               onClick={() => { setShowAdminPanel(false); setShowExport(true); }} />
           </div>
         </div>
@@ -1674,12 +1683,12 @@ const MobileNav: React.FC<Props> = ({ activePage, onNavigate }) => {
           <div ref={sheetRef} className="relative w-full bg-bg-surface/80 backdrop-blur-md border-t border-[var(--border-color)] rounded-t-2xl px-6 pt-4 pb-10 flex flex-col gap-3 z-10">
             <div className="w-10 h-1 bg-bg-card rounded-full mx-auto mb-2" />
             {isAdmin && (
-              <SheetButton icon="⚙️" label="Admin Tools" desc="Theme · Import · Export"
+              <SheetButton icon={<Settings size={22} />} label="Admin Tools" desc="Theme · Import · Export"
                 onClick={() => { setShowMore(false); setShowAdminPanel(true); }} />
             )}
             <button onClick={() => { toggleTheme(); setShowMore(false); }}
               className="flex items-center gap-4 px-4 py-3.5 rounded-xl bg-bg-card hover:bg-bg-base border border-[var(--border-color)] transition-colors text-t-primary">
-              <span className="text-2xl">{theme === "dark" ? "☀️" : "🌙"}</span>
+              {theme === "dark" ? <Sun size={22} /> : <Moon size={22} />}
               <div className="text-left">
                 <p className="text-sm font-semibold">{theme === "dark" ? "Light Mode" : "Dark Mode"}</p>
                 <p className="text-xs text-t-muted">Switch appearance</p>
@@ -1688,7 +1697,7 @@ const MobileNav: React.FC<Props> = ({ activePage, onNavigate }) => {
             <div className="border-t border-[var(--border-color)]" />
             <button onClick={() => { signOut(); setShowMore(false); }}
               className="flex items-center gap-4 px-4 py-3.5 rounded-xl bg-red-50 dark:bg-red-500/10 hover:bg-red-100 dark:hover:bg-red-500/20 transition-colors text-red-600 dark:text-red-400 border border-red-200 dark:border-red-500/20">
-              <span className="text-2xl">⎋</span>
+              <LogOut size={22} />
               <div className="text-left">
                 <p className="text-sm font-semibold">Sign Out</p>
                 <p className="text-xs text-red-400/60">Signed in as {user?.email ?? "you"}</p>
@@ -1703,13 +1712,13 @@ const MobileNav: React.FC<Props> = ({ activePage, onNavigate }) => {
         {items.map(item => (
           <button key={item.id} onClick={() => onNavigate(item.id)}
             className={`flex flex-col items-center gap-0.5 px-4 py-1.5 rounded-xl transition-colors ${activePage === item.id ? "text-c-brand" : "text-t-muted"}`}>
-            <span className="text-xl">{item.icon}</span>
+            <span className="flex items-center justify-center">{item.icon}</span>
             <span className="text-[10px] font-medium">{item.label}</span>
           </button>
         ))}
         <button onClick={() => setShowMore(prev => !prev)}
           className={`flex flex-col items-center gap-0.5 px-4 py-1.5 rounded-xl transition-colors ${showMore ? "text-c-brand" : "text-t-muted"}`}>
-          <span className="text-xl">•••</span>
+          <MoreHorizontal size={20} />
           <span className="text-[10px] font-medium">More</span>
         </button>
       </nav>
