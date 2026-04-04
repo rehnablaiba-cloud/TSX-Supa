@@ -317,9 +317,9 @@ const TestExecution: React.FC<Props> = ({
     const idx         = steps.findIndex(s => s.stepId === stepId);
     const step        = steps[idx];
     const nextPending = steps.slice(idx + 1).find(s => !s.is_divider && s.status === "pending");
-    const displayName = status === "pending"
-      ? null
-      : (user?.displayName || user?.email || "User");
+    // Always record who acted — pass, fail, or undo — so the badge shows
+    // the person who last touched the step regardless of direction.
+    const displayName = user?.displayName || user?.email || "User";
 
     // Snapshot for rollback.
     const prevSteps = steps;
@@ -327,7 +327,7 @@ const TestExecution: React.FC<Props> = ({
     // Optimistic update.
     setSteps(prev => prev.map(s =>
       s.stepId === stepId
-        ? { ...s, status, remarks, display_name: displayName ?? "" }
+        ? { ...s, status, remarks, display_name: displayName }
         : s
     ));
 
@@ -340,21 +340,25 @@ const TestExecution: React.FC<Props> = ({
     }
 
     try {
-      const [rpcRes, dnRes] = await Promise.all([
-        supabase.rpc("update_step_result", {
-          p_module_test_id: currentMtId,
-          p_step_id:        stepId,
-          p_status:         status,
-          p_remarks:        remarks,
-        }),
-        step?.stepResultId
-          ? supabase
-              .from("step_results")
-              .update({ display_name: displayName })
-              .eq("id", step.stepResultId)
-          : Promise.resolve({ error: null }),
-      ]);
-      if (rpcRes.error || (dnRes as any).error) throw rpcRes.error ?? (dnRes as any).error;
+      // FIX: run the RPC first, THEN update display_name in a separate sequential
+      // write. The RPC internally stamps display_name with the acting user's name.
+      // Running both in Promise.all (parallel) causes a race on undo: the RPC's
+      // user-name write can land after our null write and silently overwrite it.
+      const rpcRes = await supabase.rpc("update_step_result", {
+        p_module_test_id: currentMtId,
+        p_step_id:        stepId,
+        p_status:         status,
+        p_remarks:        remarks,
+      });
+      if (rpcRes.error) throw rpcRes.error;
+
+      if (step?.stepResultId) {
+        const dnRes = await supabase
+          .from("step_results")
+          .update({ display_name: displayName })
+          .eq("id", step.stepResultId);
+        if (dnRes.error) throw dnRes.error;
+      }
     } catch (err) {
       // Rollback optimistic update.
       setSteps(prevSteps);
@@ -369,30 +373,37 @@ const TestExecution: React.FC<Props> = ({
     const actionable = steps.filter(s => !s.is_divider);
     const prevSteps  = steps;
 
+    const undoName = user?.displayName || user?.email || "User";
     setSteps(prev => prev.map(s =>
-      s.is_divider ? s : { ...s, status: "pending", remarks: "", display_name: "" }
+      s.is_divider ? s : { ...s, status: "pending", remarks: "", display_name: undoName }
     ));
     remarksMap.current = {};
     const first = actionable[0];
     if (first) { setFocusedStepId(first.stepId); setScrollTarget(first.stepId); }
 
     try {
-      const results = await Promise.all(
-        actionable.flatMap(s => [
-          supabase.rpc("update_step_result", {
-            p_module_test_id: currentMtId,
-            p_step_id:        s.stepId,
-            p_status:         "pending",
-            p_remarks:        "",
-          }),
-          supabase
-            .from("step_results")
-            .update({ display_name: null })
-            .eq("id", s.stepResultId),
-        ])
+      // FIX: same race as handleStepUpdate. The RPC stamps display_name internally.
+      // Interleaving [rpc, update] pairs in flatMap means each pair races. Instead,
+      // batch ALL RPCs first, then batch ALL display_name clears once every RPC settles.
+      const rpcResults = await Promise.all(
+        actionable.map(s => supabase.rpc("update_step_result", {
+          p_module_test_id: currentMtId,
+          p_step_id:        s.stepId,
+          p_status:         "pending",
+          p_remarks:        "",
+        }))
       );
-      const failed = results.find((r: any) => r.error);
-      if (failed) throw (failed as any).error;
+      const rpcFailed = rpcResults.find(r => r.error);
+      if (rpcFailed) throw rpcFailed.error;
+
+      const dnResults = await Promise.all(
+        actionable.map(s =>
+          supabase.from("step_results").update({ display_name: undoName }).eq("id", s.stepResultId)
+        )
+      );
+      const dnFailed = dnResults.find((r: any) => r.error);
+      if (dnFailed) throw (dnFailed as any).error;
+
       addToast("All steps reset to pending.", "info");
       log("Undo all steps", "info");
     } catch (err) {
