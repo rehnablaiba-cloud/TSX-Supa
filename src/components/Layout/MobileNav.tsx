@@ -301,7 +301,7 @@ const ImportModulesModal: React.FC<{ onClose: () => void; onBack: () => void }> 
   useEffect(() => {
     if (stage !== "select_module") return;
     setLoadingMods(true);
-    supabase.from("modules").select("name").order("name")
+    supabase.from("modules").select("id, name").order("name")
       .then(({ data }) => { if (data) setModules(data as ModuleOption[]); setLoadingMods(false); });
   }, [stage]);
 
