@@ -305,7 +305,7 @@ const TestReport: React.FC = () => {
             id, name, description,
             module_tests!module_id (
               id,
-              test:tests ( id, serial_no, name ),
+              test:tests!tests_id ( id, serial_no, name ),
               step_results!module_tests_id (
                 id, status, remarks,
                 step:steps ( id, serial_no, action, expected_result, is_divider )
