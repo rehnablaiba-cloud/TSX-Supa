@@ -28,16 +28,12 @@ const ANIM_STYLE = `
 }
 `;
 
-// FIX #6: Remove the injected <style> on unmount to avoid duplicate tags
-// accumulating across mount/unmount cycles.
 function useInjectStyle() {
   useEffect(() => {
     const el = document.createElement("style");
     el.textContent = ANIM_STYLE;
     document.head.appendChild(el);
-    return () => {
-      document.head.removeChild(el);
-    };
+    return () => { document.head.removeChild(el); };
   }, []);
 }
 
@@ -76,23 +72,23 @@ interface ChartTheme {
 
 // ── Props ─────────────────────────────────────────────────────────────────────
 interface Props {
-  moduleId: string;
   moduleName: string;
   onBack: () => void;
   onExecute: (moduleTestId: string) => void;
 }
 
+// step_results for a module (all of them; matched to module_tests in JS)
 interface TrimmedStepResult {
   id: string;
   status: "pass" | "fail" | "pending";
-  // Schema v2: step PK is serial_no (no UUID id on steps)
-  step: { serial_no: number; is_divider: boolean } | null;
+  step: { id: string; is_divider: boolean; tests_name: string } | null;
 }
 
 interface ModuleTestRow {
-  id: string;  // composite: module_name_tests_name
-  // Schema v2: no order_index; test PK is name (no UUID id)
+  id: string;
+  tests_name: string;
   test: { serial_no: number; name: string; description?: string };
+  // populated in JS by matching step.tests_name
   step_results: TrimmedStepResult[];
 }
 
@@ -215,17 +211,8 @@ const RPieChart: React.FC<{ data: ChartRow[]; ct: ChartTheme }> = ({ data, ct })
   return (
     <ResponsiveContainer width="100%" height={220}>
       <PieChart>
-        <Pie
-          data={pieData}
-          cx="50%"
-          cy="50%"
-          innerRadius="46%"
-          outerRadius="72%"
-          paddingAngle={3}
-          dataKey="value"
-          nameKey="name"
-          isAnimationActive
-        >
+        <Pie data={pieData} cx="50%" cy="50%" innerRadius="46%" outerRadius="72%"
+          paddingAngle={3} dataKey="value" nameKey="name" isAnimationActive>
           {pieData.map((entry) => (
             <Cell key={entry.name} fill={COLORS[entry.name as keyof typeof COLORS]} opacity={0.88} />
           ))}
@@ -267,7 +254,7 @@ const RRadarChart: React.FC<{ data: ChartRow[]; ct: ChartTheme }> = ({ data, ct 
 };
 
 // ── Main Component ────────────────────────────────────────────────────────────
-const ModuleDashboard: React.FC<Props> = ({ moduleId, moduleName, onBack, onExecute }) => {
+const ModuleDashboard: React.FC<Props> = ({ moduleName, onBack, onExecute }) => {
   useInjectStyle();
   const { user }     = useAuth();
   const isAdmin      = user?.role === "admin";
@@ -282,7 +269,6 @@ const ModuleDashboard: React.FC<Props> = ({ moduleId, moduleName, onBack, onExec
   const [selectedMtId, setSelectedMtId] = useState<string | null>(null);
   const [chartType, setChartType]       = useState<ChartType>("bar");
 
-  // ── Debounced lock refetch ─────────────────────────────────────────────────
   const lockRefetchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const fetchSeq = useRef(0);
 
@@ -299,7 +285,7 @@ const ModuleDashboard: React.FC<Props> = ({ moduleId, moduleName, onBack, onExec
     }, 300);
   }, []);
 
-  // ── Load: module_tests → tests + step_results (trimmed) ──────────────────
+  // ── Load: fetch module_tests + step_results in parallel ──────────────────
   useEffect(() => {
     let cancelled = false;
 
@@ -307,20 +293,17 @@ const ModuleDashboard: React.FC<Props> = ({ moduleId, moduleName, onBack, onExec
       setLoading(true);
       setError(null);
 
-      const [mtRes, locksRes] = await Promise.all([
+      const [mtRes, srRes, locksRes] = await Promise.all([
+        // module_tests with test info; ordered by test serial_no in JS
         supabase
           .from("module_tests")
-          .select(`
-            id,
-            test:tests ( serial_no, name, description ),
-            step_results:step_results!module_steps_id (
-              id, status,
-              step:steps ( serial_no, is_divider )
-            )
-          `)
-          // Schema v2: FK column is module_name (was module_id)
-          .eq("module_name", moduleId)
-          .order("tests_name"),
+          .select("id, tests_name, test:tests!tests_name(serial_no, name, description)")
+          .eq("module_name", moduleName),
+        // step_results for the whole module; match to test via step.tests_name
+        supabase
+          .from("step_results")
+          .select("id, status, step:test_steps!test_steps_id(id, is_divider, tests_name)")
+          .eq("module_name", moduleName),
         supabase
           .from("test_locks")
           .select("module_test_id, user_id, locked_by_name"),
@@ -328,36 +311,40 @@ const ModuleDashboard: React.FC<Props> = ({ moduleId, moduleName, onBack, onExec
 
       if (cancelled) return;
 
-      if (mtRes.error) {
-        setError(mtRes.error.message);
-        setLoading(false);
-        return;
-      }
-      if (locksRes.error) {
-        setError(locksRes.error.message);
-        setLoading(false);
-        return;
-      }
+      if (mtRes.error) { setError(mtRes.error.message); setLoading(false); return; }
+      if (srRes.error) { setError(srRes.error.message); setLoading(false); return; }
 
-      setModuleTests((mtRes.data ?? []) as unknown as ModuleTestRow[]);
+      const allStepResults: TrimmedStepResult[] = (srRes.data ?? []) as any[];
+
+      // Build merged ModuleTestRow[] — attach step_results per test by tests_name match
+      const merged: ModuleTestRow[] = ((mtRes.data ?? []) as any[])
+        .map(mt => ({
+          id: mt.id,
+          tests_name: mt.tests_name,
+          test: mt.test,
+          step_results: allStepResults.filter(
+            sr => sr.step?.tests_name === mt.tests_name
+          ),
+        }))
+        .sort((a, b) => (a.test?.serial_no ?? 0) - (b.test?.serial_no ?? 0));
+
+      setModuleTests(merged);
       setLocks(locksRes.data ?? []);
       setLoading(false);
     };
 
     load();
     return () => { cancelled = true; };
-  }, [moduleId]);
+  }, [moduleName]);
 
   // ── Locks — real-time ──────────────────────────────────────────────────────
   useEffect(() => {
     let mounted = true;
-
     const channel = supabase.channel("all-locks")
       .on("postgres_changes", { event: "*", schema: "public", table: "test_locks" }, () => {
         if (mounted) refetchLocks();
       })
       .subscribe();
-
     return () => {
       mounted = false;
       if (lockRefetchTimer.current) clearTimeout(lockRefetchTimer.current);
@@ -373,15 +360,12 @@ const ModuleDashboard: React.FC<Props> = ({ moduleId, moduleName, onBack, onExec
         border: "#cbd5e1", tooltipBg: "#ffffff", tooltipText: "#0f172a", tooltipName: "#475569" };
 
   const filteredMts = useMemo(() =>
-    selectedMtId
-      ? moduleTests.filter(mt => mt.id === selectedMtId)
-      : moduleTests,
+    selectedMtId ? moduleTests.filter(mt => mt.id === selectedMtId) : moduleTests,
     [moduleTests, selectedMtId]
   );
 
   const chartData = useMemo<ChartRow[]>(() =>
     filteredMts.map(mt => {
-      // Schema v2: step has no UUID id; use serial_no for is_divider check
       const results = (mt.step_results ?? []).filter(sr => !sr.step?.is_divider);
       return {
         name:    mt.test?.name ?? "",
@@ -391,22 +375,10 @@ const ModuleDashboard: React.FC<Props> = ({ moduleId, moduleName, onBack, onExec
       };
     }), [filteredMts]);
 
-  // FIX #8: Scope lock lookups strictly to module_tests that belong to THIS
-  // module. The raw `locks` array contains every active lock across the entire
-  // app. Without this filter, a lock created in Module A for a test that also
-  // exists in Module B would bleed into Module B's dashboard and incorrectly
-  // show that row as locked.
-  const moduleTestIdSet = useMemo(
-    () => new Set(moduleTests.map(mt => mt.id)),
-    [moduleTests]
-  );
+  // Scope locks to this module's module_tests only
+  const moduleTestIdSet = useMemo(() => new Set(moduleTests.map(mt => mt.id)), [moduleTests]);
+  const scopedLocks     = useMemo(() => locks.filter(l => moduleTestIdSet.has(l.module_test_id)), [locks, moduleTestIdSet]);
 
-  const scopedLocks = useMemo(
-    () => locks.filter(l => moduleTestIdSet.has(l.module_test_id)),
-    [locks, moduleTestIdSet]
-  );
-
-  // ── Execute guard ──────────────────────────────────────────────────────────
   const handleExecute = (mtId: string) => {
     const lock = scopedLocks.find(l => l.module_test_id === mtId);
     if (lock && user && lock.user_id !== user.id) return;
@@ -510,8 +482,6 @@ const ModuleDashboard: React.FC<Props> = ({ moduleId, moduleName, onBack, onExec
                 <p className="text-sm text-t-muted">No tests found.</p>
               ) : (
                 filteredMts.map((mt, index) => {
-                  // Use scopedLocks so only locks belonging to THIS module are
-                  // considered — prevents cross-module lock bleed.
                   const lock            = scopedLocks.find(l => l.module_test_id === mt.id);
                   const isLockedByOther = !!(lock && user && lock.user_id !== user.id);
                   const isLockedByMe    = !!(lock && user && lock.user_id === user.id);

@@ -17,20 +17,23 @@ import {
 } from "../../utils/export";
 
 interface Props {
-  onNavigate: (page: string, moduleId?: string) => void;
+  onNavigate: (page: string, moduleName?: string) => void;
 }
 
-function getModuleStats(moduleTests: any[]) {
-  let total = 0, pass = 0, fail = 0, pending = 0;
+// step_results are now fetched directly via module_name FK on modules.
+// module_tests is fetched for test count only.
+function getModuleStats(
+  moduleTests: { id: string }[],
+  stepResults: { status: string }[]
+) {
   const testCount = moduleTests?.length ?? 0;
+  let total = 0, pass = 0, fail = 0, pending = 0;
 
-  for (const mt of moduleTests ?? []) {
-    for (const sr of mt.step_results ?? []) {
-      total++;
-      if (sr.status === "pass")      pass++;
-      else if (sr.status === "fail") fail++;
-      else                           pending++;
-    }
+  for (const sr of stepResults ?? []) {
+    total++;
+    if (sr.status === "pass")      pass++;
+    else if (sr.status === "fail") fail++;
+    else                           pending++;
   }
 
   const passPct    = total > 0 ? Math.round((pass / total) * 100) : 0;
@@ -42,7 +45,10 @@ function getModuleStats(moduleTests: any[]) {
 
 function buildSummaries(modules: any[]): ModuleSummary[] {
   return modules.map((m) => {
-    const { total, pass, fail, pending, passRate } = getModuleStats(m.module_tests);
+    const { total, pass, fail, pending, passRate } = getModuleStats(
+      m.module_tests ?? [],
+      m.step_results ?? []
+    );
     return { name: m.name, description: m.description, total, pass, fail, pending, passRate };
   });
 }
@@ -122,16 +128,11 @@ const Dashboard: React.FC<Props> = ({ onNavigate }) => {
   }, []);
 
   const fetchModules = useCallback(async (isInitial = false) => {
+    // module PK is name. Fetch module_tests (for count) and step_results (for status)
+    // both via their module_name FK to modules.
     const { data, error: err } = await supabase
       .from("modules")
-      // FIX: PostgREST throws "more than one relationship was found for 'modules'
-      // and 'module_tests'" when multiple foreign keys exist between the tables.
-      // Append !<fk_column> to each nested select to tell PostgREST exactly which
-      // FK to traverse: module_tests.module_id → modules, and
-      // step_results.module_test_id → module_tests.
-      // Schema v2: modules PK is name (no id). module_tests FK is module_name.
-      // step_results FK to module_tests is module_steps_id (was module_test_id).
-      .select("name, description, module_tests!module_name(step_results!module_steps_id(status))")
+      .select("name, description, module_tests:module_tests!module_name(id), step_results:step_results!module_name(status)")
       .order("name");
 
     if (!mountedRef.current) return;
@@ -228,7 +229,7 @@ const Dashboard: React.FC<Props> = ({ onNavigate }) => {
         <div ref={gridRef} className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
           {modules.map((m: any) => {
             const { total, pass, fail, pending, passRate, failPct, pendingPct, testCount } =
-              getModuleStats(m.module_tests);
+              getModuleStats(m.module_tests ?? [], m.step_results ?? []);
 
             const passLabelColor =
               total === 0        ? "var(--text-muted)"

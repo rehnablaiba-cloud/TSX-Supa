@@ -9,9 +9,8 @@ import { useAuditLog } from "../../hooks/useAuditLog";
 import { exportExecutionCSV, exportExecutionPDF, FlatData } from "../../utils/export";
 
 interface Props {
-  moduleId:            string;
-  moduleName:          string;
-  initialModuleTestId: string;
+  moduleName:          string;   // modules.name (PK)
+  initialModuleTestId: string;   // module_tests.id = module_name||'_'||tests_name
   isAdmin?:            boolean;
   onBack:              () => void;
 }
@@ -19,10 +18,9 @@ interface Props {
 type Filter = "all" | "pass" | "fail" | "pending";
 
 interface ExecutionStep {
-  // Schema v2: steps PK is serial_no (integer), no UUID id.
-  stepSerialNo:    number;   // was stepId (UUID string)
-  stepResultId:    string;   // composite text id: moduleStepsId_serial_no
-  moduleStepsId:   string;   // was moduleTestId; FK → module_tests.id
+  stepId:          string;   // test_steps.id (text)
+  stepResultId:    string;
+  moduleTestId:    string;
   serial_no:       number;
   action:          string;
   expected_result: string;
@@ -33,8 +31,8 @@ interface ExecutionStep {
 }
 
 interface ModuleTestItem {
-  id:   string;  // composite: module_name_tests_name
-  // Schema v2: no order_index; test PK is name (no UUID id)
+  id:          string;
+  tests_name:  string;
   test: { serial_no: number; name: string };
 }
 
@@ -67,36 +65,30 @@ const LockedScreen: React.FC<{
 
 // ── Main Component ─────────────────────────────────────────────
 const TestExecution: React.FC<Props> = ({
-  moduleId, moduleName, initialModuleTestId, isAdmin = false, onBack,
+  moduleName, initialModuleTestId, isAdmin = false, onBack,
 }) => {
   const { user }     = useAuth();
   const { addToast } = useToast();
   const { log }      = useAuditLog();
 
-  // currentMtId is fixed — setCurrentMtId intentionally omitted (no test-switcher UI).
   const currentMtId = initialModuleTestId;
+  // Derive tests_name: module_tests.id = module_name || '_' || tests_name
+  const testsName = currentMtId.slice(moduleName.length + 1);
 
   const [filter, setFilter]                   = useState<Filter>("all");
   const [search, setSearch]                   = useState("");
   const [showExportModal, setShowExportModal] = useState(false);
-  const [scrollTarget, setScrollTarget]       = useState<number | null>(null);
+  const [scrollTarget, setScrollTarget]       = useState<string | null>(null);
+  const [focusedStepId, setFocusedStepId]     = useState<string | null>(null);
 
   const stepsInitialized = useRef(false);
-  const remarksMap       = useRef<Record<number, string>>({});
+  const remarksMap       = useRef<Record<string, string>>({});
   const heartbeatRef     = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  // Schema v2: keyed by serial_no (number as string) instead of UUID
   const trRefs   = useRef<Record<string, HTMLTableRowElement | null>>({});
   const cardRefs = useRef<Record<string, HTMLDivElement   | null>>({});
-
-  // Schema v2: focusedStepId is the step's serial_no, not a UUID string
-  const [focusedStepId, setFocusedStepId] = useState<number | null>(null);
-
   const scrollContainerRef = useRef<HTMLDivElement>(null);
 
-  // ── Module tests, steps, and lock — all fetched in parallel ──
-  // FIX (image 1): was a two-step waterfall; currentMtId is already known so
-  // we fetch moduleTests + step_results + testlocks in a single Promise.all.
   const [moduleTests, setModuleTests] = useState<ModuleTestItem[]>([]);
   const [steps, setSteps]             = useState<ExecutionStep[]>([]);
   const [lock, setLock]               = useState<any>(null);
@@ -111,34 +103,35 @@ const TestExecution: React.FC<Props> = ({
     remarksMap.current = {};
 
     Promise.all([
-      // Schema v2: FK is module_name (was module_id); no order_index
+      // Fetch module_tests for this module (for sidebar / context)
       supabase
         .from("module_tests")
-        .select("id, test:tests(serial_no, name)")
-        .eq("module_name", moduleId)
-        .order("tests_name"),
-      // Schema v2: FK is module_steps_id (was module_test_id)
-      // steps have no id; serial_no is the PK
+        .select("id, tests_name, test:tests!tests_name(serial_no, name)")
+        .eq("module_name", moduleName)
+        .order("id"),
+      // Fetch step_results for the module; filter to this test in JS
       supabase
         .from("step_results")
         .select(`
-          id, module_steps_id, steps_serial_no, status, remarks, display_name,
-          step:steps ( serial_no, action, expected_result, is_divider )
+          id, module_name, test_steps_id, status, remarks, display_name,
+          step:test_steps!test_steps_id(id, serial_no, action, expected_result, is_divider, tests_name)
         `)
-        .eq("module_steps_id", currentMtId),
+        .eq("module_name", moduleName),
+      // Lock for the specific module_test
       supabase
-        .from("testlocks")
+        .from("test_locks")
         .select("module_test_id, user_id, locked_by_name")
         .eq("module_test_id", currentMtId),
     ]).then(([mtRes, srRes, lockRes]) => {
       setModuleTests((mtRes.data ?? []) as unknown as ModuleTestItem[]);
 
+      // Filter step_results to the current test and build ExecutionStep[]
       const merged: ExecutionStep[] = ((srRes.data ?? []) as any[])
+        .filter(sr => sr.step?.tests_name === testsName)
         .map(sr => ({
-          // Schema v2: use steps_serial_no as the step identifier
-          stepSerialNo:    sr.step.serial_no as number,
+          stepId:          sr.test_steps_id,
           stepResultId:    sr.id,
-          moduleStepsId:   sr.module_steps_id,
+          moduleTestId:    currentMtId,
           serial_no:       sr.step.serial_no,
           action:          sr.step.action,
           expected_result: sr.step.expected_result,
@@ -151,32 +144,36 @@ const TestExecution: React.FC<Props> = ({
 
       setSteps(merged);
       setLock(lockRes.data?.[0] ?? null);
-
-      // Both done at the same time — no flash of undefined test name in LockedScreen.
       setLoading(false);
       setLockLoading(false);
     });
 
+    // Real-time: lock channel
     const lockChannel = supabase.channel(`lock:${currentMtId}`)
       .on("postgres_changes", {
-        event: "*", schema: "public", table: "testlocks",
+        event: "*", schema: "public", table: "test_locks",
         filter: `module_test_id=eq.${currentMtId}`,
       }, ({ eventType, new: newRow }: any) => {
         if (eventType === "DELETE") setLock(null); else setLock(newRow);
       })
       .subscribe();
 
-    // Schema v2: filter column is module_steps_id (was module_test_id)
-    const srChannel = supabase.channel(`step_results:${currentMtId}`)
+    // Real-time: step_results for the module — filter by testsName in handler
+    const srChannel = supabase.channel(`step_results:${moduleName}:${testsName}`)
       .on("postgres_changes", {
         event: "UPDATE", schema: "public", table: "step_results",
-        filter: `module_steps_id=eq.${currentMtId}`,
+        filter: `module_name=eq.${moduleName}`,
       }, ({ new: updated }: any) => {
-        setSteps(prev => prev.map(s =>
-          s.stepResultId === updated.id
-            ? { ...s, status: updated.status, remarks: updated.remarks, display_name: updated.display_name ?? "" }
-            : s
-        ));
+        // Only process updates that belong to our current test
+        setSteps(prev => {
+          const match = prev.find(s => s.stepResultId === updated.id);
+          if (!match) return prev;
+          return prev.map(s =>
+            s.stepResultId === updated.id
+              ? { ...s, status: updated.status, remarks: updated.remarks, display_name: updated.display_name ?? "" }
+              : s
+          );
+        });
       })
       .subscribe();
 
@@ -184,27 +181,26 @@ const TestExecution: React.FC<Props> = ({
       supabase.removeChannel(lockChannel);
       supabase.removeChannel(srChannel);
     };
-  }, [moduleId, currentMtId]);
+  }, [moduleName, currentMtId, testsName]);
 
   const currentMt   = moduleTests.find(mt => mt.id === currentMtId);
   const currentTest = currentMt?.test;
 
-  // Clean up stale ref entries when steps change
+  // Clean up stale ref entries
   useEffect(() => {
-    // Schema v2: refs are keyed by String(serial_no) instead of UUID
-    const live = new Set(steps.map(s => String(s.stepSerialNo)));
+    const live = new Set(steps.map(s => s.stepId));
     for (const id of Object.keys(trRefs.current))   { if (!live.has(id)) delete trRefs.current[id]; }
     for (const id of Object.keys(cardRefs.current)) { if (!live.has(id)) delete cardRefs.current[id]; }
   }, [steps]);
 
-  // ── Auto-focus first pending step after load ───────────────
+  // Auto-focus first pending step after load
   useEffect(() => {
     if (steps.length === 0 || stepsInitialized.current) return;
     stepsInitialized.current = true;
     const firstPending = steps.find(s => !s.is_divider && s.status === "pending");
     if (firstPending) {
-      setFocusedStepId(firstPending.stepSerialNo);
-      setScrollTarget(firstPending.stepSerialNo);
+      setFocusedStepId(firstPending.stepId);
+      setScrollTarget(firstPending.stepId);
     }
   }, [steps]);
 
@@ -214,7 +210,7 @@ const TestExecution: React.FC<Props> = ({
   const startHeartbeat = useCallback(() => {
     if (heartbeatRef.current) clearInterval(heartbeatRef.current);
     heartbeatRef.current = setInterval(async () => {
-      if (user) await supabase.from("testlocks")
+      if (user) await supabase.from("test_locks")
         .update({ locked_at: new Date().toISOString() })
         .eq("module_test_id", currentMtId)
         .eq("user_id", user.id);
@@ -230,8 +226,7 @@ const TestExecution: React.FC<Props> = ({
     if (!user) return;
     let cancelled = false;
     (async () => {
-      // Insert our lock row (ignore if another user already holds it).
-      await supabase.from("testlocks").upsert(
+      await supabase.from("test_locks").upsert(
         {
           module_test_id: currentMtId,
           user_id:        user.id,
@@ -242,12 +237,8 @@ const TestExecution: React.FC<Props> = ({
       );
       if (cancelled) return;
 
-      // FIX (image 3 — critical): ignoreDuplicates:true returns no data on a no-op
-      // (e.g. page refresh where we already own the row), so data?.user_id check
-      // always failed → heartbeat never started → lock expired mid-session.
-      // Fix: always query ownership explicitly after the upsert attempt.
       const { data: owned } = await supabase
-        .from("testlocks")
+        .from("test_locks")
         .select("user_id")
         .eq("module_test_id", currentMtId)
         .single();
@@ -256,22 +247,19 @@ const TestExecution: React.FC<Props> = ({
     return () => {
       cancelled = true;
       stopHeartbeat();
-      supabase.from("testlocks").delete()
+      supabase.from("test_locks").delete()
         .eq("module_test_id", currentMtId).eq("user_id", user.id);
     };
   }, [currentMtId, user?.id, startHeartbeat, stopHeartbeat]);
 
   // ── Lock release on tab/window close ──────────────────────
-  // FIX (image 3 — critical): sendBeacon to /api/release-lock silently fails in a
-  // Vite SPA (no such server route). Use fetch with keepalive:true so the request
-  // survives page unload without needing a server endpoint.
   useEffect(() => {
     if (!user) return;
     const release = () => {
       const supabaseUrl  = (supabase as any).supabaseUrl  as string;
       const supabaseKey  = (supabase as any).supabaseKey  as string;
       fetch(
-        `${supabaseUrl}/rest/v1/testlocks?module_test_id=eq.${currentMtId}&user_id=eq.${user.id}`,
+        `${supabaseUrl}/rest/v1/test_locks?module_test_id=eq.${currentMtId}&user_id=eq.${user.id}`,
         {
           method:    "DELETE",
           keepalive: true,
@@ -293,11 +281,10 @@ const TestExecution: React.FC<Props> = ({
     let rafId2: number;
     rafId1 = requestAnimationFrame(() => {
       rafId2 = requestAnimationFrame(() => {
-        const key       = String(scrollTarget);
         const isDesktop = window.innerWidth >= 768;
         const el        = isDesktop
-          ? trRefs.current[key]
-          : cardRefs.current[key];
+          ? trRefs.current[scrollTarget]
+          : cardRefs.current[scrollTarget];
         const container = scrollContainerRef.current;
         if (!el || !container) return;
 
@@ -319,82 +306,71 @@ const TestExecution: React.FC<Props> = ({
     };
   }, [scrollTarget, loading]);
 
-  // Schema v2: stepSerialNo (number) replaces stepId (UUID string).
-  // The RPC update_step_result is replaced with a direct upsert since the
-  // step_results schema changed (module_steps_id / steps_serial_no).
+  // ── Step update ────────────────────────────────────────────
   const handleStepUpdate = useCallback(async (
-    stepSerialNo: number, status: "pass" | "fail" | "pending", remarks: string,
+    stepId: string, status: "pass" | "fail" | "pending", remarks: string,
   ) => {
-    const idx         = steps.findIndex(s => s.stepSerialNo === stepSerialNo);
-    const step        = steps[idx];
+    const idx         = steps.findIndex(s => s.stepId === stepId);
     const nextPending = steps.slice(idx + 1).find(s => !s.is_divider && s.status === "pending");
     const displayName = user?.displayName || user?.email || "User";
-
-    const prevSteps = steps;
+    const prevSteps   = steps;
 
     // Optimistic update
     setSteps(prev => prev.map(s =>
-      s.stepSerialNo === stepSerialNo
+      s.stepId === stepId
         ? { ...s, status, remarks, display_name: displayName }
         : s
     ));
 
     if (status !== "pending") {
-      if (nextPending) { setFocusedStepId(nextPending.stepSerialNo); setScrollTarget(nextPending.stepSerialNo); }
+      if (nextPending) { setFocusedStepId(nextPending.stepId); setScrollTarget(nextPending.stepId); }
       else setFocusedStepId(null);
     } else {
-      setFocusedStepId(stepSerialNo);
-      setScrollTarget(stepSerialNo);
+      setFocusedStepId(stepId);
+      setScrollTarget(stepId);
     }
 
     try {
-      // Schema v2: direct upsert on step_results.
-      // id = composite key: moduleStepsId_stepSerialNo
-      const compositeId = `${currentMtId}_${stepSerialNo}`;
-      const { error } = await supabase.from("step_results").upsert({
-        id:              compositeId,
-        module_steps_id: currentMtId,
-        steps_serial_no: stepSerialNo,
-        status,
-        remarks,
-        display_name:    displayName,
-        updated_at:      new Date().toISOString(),
-      }, { onConflict: "id" });
-      if (error) throw error;
+      // New RPC signature: p_module_name, p_test_steps_id, p_status, p_remarks, p_display_name
+      const rpcRes = await supabase.rpc("update_step_result", {
+        p_module_name:    moduleName,
+        p_test_steps_id:  stepId,
+        p_status:         status,
+        p_remarks:        remarks,
+        p_display_name:   displayName,
+      });
+      if (rpcRes.error) throw rpcRes.error;
     } catch (err) {
       setSteps(prevSteps);
       addToast("Failed to save step result. Please try again.", "error");
     }
-  }, [steps, currentMtId, user, addToast]);
+  }, [steps, moduleName, user, addToast]);
 
-  // Schema v2: batch upsert all steps to pending using direct table writes.
+  // ── Undo All (admin) ───────────────────────────────────────
   const handleUndoAll = useCallback(async () => {
     const actionable = steps.filter(s => !s.is_divider);
     const prevSteps  = steps;
+    const undoName   = user?.displayName || user?.email || "User";
 
-    const undoName = user?.displayName || user?.email || "User";
     setSteps(prev => prev.map(s =>
       s.is_divider ? s : { ...s, status: "pending", remarks: "", display_name: undoName }
     ));
     remarksMap.current = {};
     const first = actionable[0];
-    if (first) { setFocusedStepId(first.stepSerialNo); setScrollTarget(first.stepSerialNo); }
+    if (first) { setFocusedStepId(first.stepId); setScrollTarget(first.stepId); }
 
     try {
-      const upsertRows = actionable.map(s => ({
-        id:              `${currentMtId}_${s.stepSerialNo}`,
-        module_steps_id: currentMtId,
-        steps_serial_no: s.stepSerialNo,
-        status:          "pending" as const,
-        remarks:         "",
-        display_name:    undoName,
-        updated_at:      new Date().toISOString(),
-      }));
-
-      const { error } = await supabase
-        .from("step_results")
-        .upsert(upsertRows, { onConflict: "id" });
-      if (error) throw error;
+      const rpcResults = await Promise.all(
+        actionable.map(s => supabase.rpc("update_step_result", {
+          p_module_name:   moduleName,
+          p_test_steps_id: s.stepId,
+          p_status:        "pending",
+          p_remarks:       "",
+          p_display_name:  undoName,
+        }))
+      );
+      const rpcFailed = rpcResults.find(r => r.error);
+      if (rpcFailed) throw rpcFailed.error;
 
       addToast("All steps reset to pending.", "info");
       log("Undo all steps", "info");
@@ -402,7 +378,7 @@ const TestExecution: React.FC<Props> = ({
       setSteps(prevSteps);
       addToast("Failed to reset steps. Please try again.", "error");
     }
-  }, [steps, currentMtId, user, addToast, log]);
+  }, [steps, moduleName, user, addToast, log]);
 
   // ── Keyboard: Enter to pass focused step ───────────────────
   useEffect(() => {
@@ -411,8 +387,7 @@ const TestExecution: React.FC<Props> = ({
       const tag = (document.activeElement as HTMLElement)?.tagName;
       if (tag === "TEXTAREA" || tag === "INPUT" || tag === "BUTTON") return;
       if (!focusedStepId || isLockedByOther) return;
-      // Schema v2: focusedStepId is now a number (serial_no)
-      const focused = steps.find(s => s.stepSerialNo === focusedStepId);
+      const focused = steps.find(s => s.stepId === focusedStepId);
       if (!focused || focused.is_divider) return;
       handleStepUpdate(focusedStepId, "pass", remarksMap.current[focusedStepId] ?? focused.remarks ?? "");
     };
@@ -422,7 +397,7 @@ const TestExecution: React.FC<Props> = ({
 
   const handleFinish = async () => {
     stopHeartbeat();
-    if (user) await supabase.from("testlocks").delete()
+    if (user) await supabase.from("test_locks").delete()
       .eq("module_test_id", currentMtId).eq("user_id", user.id);
     log(`Finished test: ${currentTest?.name}`, "pass");
     addToast(`Test "${currentTest?.name}" completed!`, "success");
@@ -430,9 +405,6 @@ const TestExecution: React.FC<Props> = ({
   };
 
   // ── Derived / memoised values ──────────────────────────────
-  // FIX (image 2): filtered, buildFlatData, exportStats, and progress stats were
-  // all recomputed on every render (every keystroke). Wrapped in useMemo.
-
   const filtered = useMemo(() => steps.filter(s => {
     if (s.is_divider) return true;
     if (filter !== "all" && s.status !== filter) return false;
@@ -478,10 +450,6 @@ const TestExecution: React.FC<Props> = ({
     }, [steps]);
 
   // ── Guards ─────────────────────────────────────────────────
-  // FIX (image 3 — medium): previously lockLoading cleared before moduleTests
-  // loaded (two separate effects), so LockedScreen received undefined testName.
-  // Now all three fetches share one Promise.all, so lockLoading + moduleTests
-  // are always ready together.
   if (lockLoading) return (
     <div className="flex flex-col items-center justify-center gap-3" style={{ height: "100dvh" }}>
       <Spinner /><p className="text-xs text-t-muted">Checking lock status…</p>
@@ -608,7 +576,7 @@ const TestExecution: React.FC<Props> = ({
               <tbody>
                 {filtered.map(step =>
                   step.is_divider ? (
-                    <tr key={String(step.stepSerialNo)} className="border-b border-[var(--border-color)]">
+                    <tr key={step.stepId} className="border-b border-[var(--border-color)]">
                       <td colSpan={6} className="px-4 py-2 bg-c-brand-bg">
                         <div className="flex items-center gap-2">
                           <span className="w-1.5 h-1.5 rounded-full bg-c-brand inline-block" />
@@ -618,14 +586,14 @@ const TestExecution: React.FC<Props> = ({
                     </tr>
                   ) : (
                     <TableStepRow
-                      key={String(step.stepSerialNo)}
+                      key={step.stepId}
                       step={step}
                       readonly={false}
-                      isFocused={focusedStepId === step.stepSerialNo}
+                      isFocused={focusedStepId === step.stepId}
                       onUpdate={handleStepUpdate}
-                      onFocus={() => setFocusedStepId(step.stepSerialNo)}
-                      onRemarksChange={val => { remarksMap.current[step.stepSerialNo] = val; }}
-                      rowRef={el => { trRefs.current[String(step.stepSerialNo)] = el; }}
+                      onFocus={() => setFocusedStepId(step.stepId)}
+                      onRemarksChange={val => { remarksMap.current[step.stepId] = val; }}
+                      rowRef={el => { trRefs.current[step.stepId] = el; }}
                     />
                   )
                 )}
@@ -645,21 +613,21 @@ const TestExecution: React.FC<Props> = ({
               <div className="flex flex-col gap-2 p-3">
                 {filtered.map(step =>
                   step.is_divider ? (
-                    <div key={String(step.stepSerialNo)} className="flex items-center gap-3 py-1">
+                    <div key={step.stepId} className="flex items-center gap-3 py-1">
                       <div className="flex-1 h-px bg-[var(--border-color)]" />
                       <span className="text-xs font-semibold text-c-brand uppercase tracking-widest">{step.action}</span>
                       <div className="flex-1 h-px bg-[var(--border-color)]" />
                     </div>
                   ) : (
                     <MobileStepCard
-                      key={String(step.stepSerialNo)}
+                      key={step.stepId}
                       step={step}
                       readonly={false}
-                      isFocused={focusedStepId === step.stepSerialNo}
+                      isFocused={focusedStepId === step.stepId}
                       onUpdate={handleStepUpdate}
-                      onFocus={() => setFocusedStepId(step.stepSerialNo)}
-                      onRemarksChange={val => { remarksMap.current[step.stepSerialNo] = val; }}
-                      cardRef={el => { cardRefs.current[String(step.stepSerialNo)] = el; }}
+                      onFocus={() => setFocusedStepId(step.stepId)}
+                      onRemarksChange={val => { remarksMap.current[step.stepId] = val; }}
+                      cardRef={el => { cardRefs.current[step.stepId] = el; }}
                     />
                   )
                 )}
@@ -672,7 +640,7 @@ const TestExecution: React.FC<Props> = ({
   );
 };
 
-// ── Tester Badge — shared by both desktop and mobile ──────────
+// ── Tester Badge ──────────────────────────────────────────────
 const TesterBadge: React.FC<{ name: string; status: "pass" | "fail" | "pending" }> = ({ name, status }) => {
   if (!name) return null;
   const color = status === "pass" ? "text-green-400" : status === "fail" ? "text-red-400" : "text-t-muted";
@@ -689,7 +657,7 @@ const TableStepRow: React.FC<{
   step:            ExecutionStep;
   readonly:        boolean;
   isFocused:       boolean;
-  onUpdate:        (stepSerialNo: number, status: "pass" | "fail" | "pending", remarks: string) => void;
+  onUpdate:        (stepId: string, status: "pass" | "fail" | "pending", remarks: string) => void;
   onFocus:         () => void;
   onRemarksChange: (val: string) => void;
   rowRef?:         (el: HTMLTableRowElement | null) => void;
@@ -717,14 +685,13 @@ const TableStepRow: React.FC<{
           value={remarks}
           onChange={e => { setRemarks(e.target.value); onRemarksChange(e.target.value); }}
           onFocus={onFocus}
-          onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); onUpdate(step.stepSerialNo, "pass", remarks); } }}
+          onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); onUpdate(step.stepId, "pass", remarks); } }}
           disabled={readonly}
           placeholder="Remarks… (Enter to pass)"
           rows={2}
           className="input text-sm resize-none disabled:opacity-50 w-full"
         />
       </td>
-
       <td className="px-2 py-3 text-center border-r border-[var(--border-color)]">
         <div className="flex flex-col items-center gap-1.5">
           <span className={`text-xs font-bold px-2 py-0.5 rounded-full capitalize ${
@@ -736,22 +703,21 @@ const TableStepRow: React.FC<{
           <TesterBadge name={step.display_name} status={step.status} />
         </div>
       </td>
-
       {!readonly ? (
         <td className="px-2 py-3">
           <div className="flex flex-col items-center gap-1">
             <div className="flex gap-1 w-full">
-              <button onClick={e => { e.stopPropagation(); onUpdate(step.stepSerialNo, "pass", remarks); }}
+              <button onClick={e => { e.stopPropagation(); onUpdate(step.stepId, "pass", remarks); }}
                 className={`flex-1 h-7 rounded-md text-xs font-bold transition-colors flex items-center justify-center ${
                   step.status === "pass" ? "bg-green-500 text-white" : "bg-green-500/10 hover:bg-green-500/25 text-green-400 border border-green-500/20"
                 }`}>✓</button>
-              <button onClick={e => { e.stopPropagation(); onUpdate(step.stepSerialNo, "fail", remarks); }}
+              <button onClick={e => { e.stopPropagation(); onUpdate(step.stepId, "fail", remarks); }}
                 className={`flex-1 h-7 rounded-md text-xs font-bold transition-colors flex items-center justify-center ${
                   step.status === "fail" ? "bg-red-500 text-white" : "bg-red-500/10 hover:bg-red-500/25 text-red-400 border border-red-500/20"
                 }`}>✗</button>
             </div>
             {step.status !== "pending" && (
-              <button onClick={e => { e.stopPropagation(); onUpdate(step.stepSerialNo, "pending", ""); }}
+              <button onClick={e => { e.stopPropagation(); onUpdate(step.stepId, "pending", ""); }}
                 className="w-full h-7 rounded-md text-xs font-semibold text-t-muted hover:text-t-primary
                   bg-bg-card hover:bg-bg-surface border border-[var(--border-color)] transition-colors
                   flex items-center justify-center">
@@ -770,7 +736,7 @@ const MobileStepCard: React.FC<{
   step:            ExecutionStep;
   readonly:        boolean;
   isFocused:       boolean;
-  onUpdate:        (stepSerialNo: number, status: "pass" | "fail" | "pending", remarks: string) => void;
+  onUpdate:        (stepId: string, status: "pass" | "fail" | "pending", remarks: string) => void;
   onFocus:         () => void;
   onRemarksChange: (val: string) => void;
   cardRef?:        (el: HTMLDivElement | null) => void;
@@ -828,7 +794,7 @@ const MobileStepCard: React.FC<{
             value={remarks}
             onChange={e => { setRemarks(e.target.value); onRemarksChange(e.target.value); }}
             onFocus={onFocus}
-            onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); onUpdate(step.stepSerialNo, "pass", remarks); } }}
+            onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); onUpdate(step.stepId, "pass", remarks); } }}
             disabled={readonly}
             placeholder="Remarks… (Enter to pass)"
             rows={2}
@@ -842,17 +808,17 @@ const MobileStepCard: React.FC<{
           <span className="text-[10px] font-semibold text-t-muted uppercase tracking-wider">Result</span>
           <div className="flex items-center gap-2">
             {step.status !== "pending" && (
-              <button onClick={e => { e.stopPropagation(); onUpdate(step.stepSerialNo, "pending", ""); }}
+              <button onClick={e => { e.stopPropagation(); onUpdate(step.stepId, "pending", ""); }}
                 className="px-2.5 h-8 rounded-md text-xs font-semibold text-t-muted hover:text-t-primary
                   bg-bg-card hover:bg-bg-surface border border-[var(--border-color)] transition-colors flex items-center justify-center">
                 Undo
               </button>
             )}
-            <button onClick={e => { e.stopPropagation(); onUpdate(step.stepSerialNo, "pass", remarks); }}
+            <button onClick={e => { e.stopPropagation(); onUpdate(step.stepId, "pass", remarks); }}
               className={`w-8 h-8 rounded-md text-xs font-bold transition-colors flex items-center justify-center ${
                 step.status === "pass" ? "bg-green-500 text-white" : "bg-green-500/10 hover:bg-green-500/25 text-green-400 border border-green-500/20"
               }`}>✓</button>
-            <button onClick={e => { e.stopPropagation(); onUpdate(step.stepSerialNo, "fail", remarks); }}
+            <button onClick={e => { e.stopPropagation(); onUpdate(step.stepId, "fail", remarks); }}
               className={`w-8 h-8 rounded-md text-xs font-bold transition-colors flex items-center justify-center ${
                 step.status === "fail" ? "bg-red-500 text-white" : "bg-red-500/10 hover:bg-red-500/25 text-red-400 border border-red-500/20"
               }`}>✗</button>

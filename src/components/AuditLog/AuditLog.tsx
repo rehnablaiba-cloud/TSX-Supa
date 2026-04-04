@@ -19,11 +19,10 @@ const AuditLog: React.FC = () => {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // Non-admins get an empty result from RLS — skip the query entirely
     if (!isAdmin) { setLoading(false); return; }
 
     supabase
-      .from("auditlog")
+      .from("audit_log")
       .select("*")
       .order("created_at", { ascending: false })
       .limit(300)
@@ -33,7 +32,6 @@ const AuditLog: React.FC = () => {
       });
   }, [isAdmin]);
 
-  // ── Non-admin guard ──────────────────────────────────────────────────────
   if (!isAdmin) {
     return (
       <div className="flex-1 flex flex-col">
@@ -45,16 +43,13 @@ const AuditLog: React.FC = () => {
           </div>
           <div>
             <p className="font-semibold text-t-primary">Access Restricted</p>
-            <p className="text-sm text-t-muted mt-1">
-              Only admins can view the audit log.
-            </p>
+            <p className="text-sm text-t-muted mt-1">Only admins can view the audit log.</p>
           </div>
         </div>
       </div>
     );
   }
 
-  // ── Admin view ───────────────────────────────────────────────────────────
   return (
     <div className="flex-1 flex flex-col">
       <Topbar title="Audit Log" subtitle="Last 300 events" />

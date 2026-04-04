@@ -60,43 +60,43 @@ interface ChartTheme {
 }
 
 // ── Local joined types ────────────────────────────────────────────────────────
+// step_results joined with test_steps, which includes tests_name for grouping
 interface StepResultRow {
   id: string;
   status: "pass" | "fail" | "pending";
   remarks: string;
-  // Schema v2: step PK is serial_no (no UUID id)
   step: {
+    id: string;
     serial_no: number;
     action: string;
     expected_result: string;
     is_divider: boolean;
-  };
+    tests_name: string;  // for matching to module_tests
+  } | null;
 }
 
 interface ModuleTestRow {
-  id: string;  // composite: module_name_tests_name
-  // Schema v2: test PK is name (no UUID id)
-  test: { serial_no: number; name: string };
-  step_results: StepResultRow[];
+  id: string;
+  tests_name: string;
+  test: { serial_no: number; name: string } | null;
 }
 
+// Module row: module_tests for test names + step_results via module_name FK
 interface ModuleRow {
-  // Schema v2: module PK is name (no UUID id)
   name: string;
   description: string;
   module_tests: ModuleTestRow[];
+  step_results: StepResultRow[];
 }
 
-// Lightweight type for the dropdown
 interface ModuleOption {
   name: string;
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
-function getNonDividerResults(moduleTests: ModuleTestRow[]): StepResultRow[] {
-  return moduleTests.flatMap(mt =>
-    (mt.step_results ?? []).filter(sr => !sr.step?.is_divider)
-  );
+// Get non-divider step results for a module
+function getNonDividerResults(stepResults: StepResultRow[]): StepResultRow[] {
+  return stepResults.filter(sr => !sr.step?.is_divider);
 }
 
 // ── Tooltips ──────────────────────────────────────────────────────────────────
@@ -271,19 +271,17 @@ const TestReport: React.FC = () => {
   useInjectStyle();
   const { theme } = useTheme();
 
-  // FIX: separate lightweight state for dropdown — avoids re-fetching full data
-  // just to populate the filter select
-  const [moduleOptions, setModuleOptions]       = useState<ModuleOption[]>([]);
-  const [modules, setModules]                   = useState<ModuleRow[]>([]);
-  const [loading, setLoading]                   = useState(true);
-  const [error, setError]                       = useState<string | null>(null);
-  // Schema v2: filter by module name (PK) instead of UUID id
+  // Module PK is now name. Use name as filter key.
+  const [moduleOptions, setModuleOptions]         = useState<ModuleOption[]>([]);
+  const [modules, setModules]                     = useState<ModuleRow[]>([]);
+  const [loading, setLoading]                     = useState(true);
+  const [error, setError]                         = useState<string | null>(null);
   const [selectedModuleName, setSelectedModuleName] = useState<string | null>(null);
-  const [showExportModal, setShowExportModal]   = useState(false);
-  const [view, setView]                         = useState<"graph" | "table">("graph");
-  const [chartType, setChartType]               = useState<ChartType>("bar");
+  const [showExportModal, setShowExportModal]     = useState(false);
+  const [view, setView]                           = useState<"graph" | "table">("graph");
+  const [chartType, setChartType]                 = useState<ChartType>("bar");
 
-  // Schema v2: modules PK is name; no UUID id column
+  // Lightweight fetch for the dropdown
   useEffect(() => {
     supabase
       .from("modules")
@@ -292,24 +290,26 @@ const TestReport: React.FC = () => {
       .then(({ data }) => setModuleOptions((data ?? []) as ModuleOption[]));
   }, []);
 
+  // Full fetch: modules with module_tests (for test names) + step_results (for statuses)
   useEffect(() => {
     const fetchData = async () => {
       setLoading(true);
       setError(null);
       try {
-        // Schema v2: modules PK is name. module_tests FK hint is module_name.
-        // step_results FK hint to module_tests is module_steps_id.
-        // steps PK is serial_no (no UUID id on step or test).
+        // Fetch module_tests and step_results via their module_name FK on modules.
+        // step_results includes test_steps info (tests_name for grouping, is_divider for filter).
         let query = supabase
           .from("modules")
           .select(`
             name, description,
-            module_tests:module_tests!module_name (
-              id,
-              test:tests ( serial_no, name ),
-              step_results:step_results!module_steps_id (
-                id, status, remarks,
-                step:steps ( serial_no, action, expected_result, is_divider )
+            module_tests:module_tests!module_name(
+              id, tests_name,
+              test:tests!tests_name(serial_no, name)
+            ),
+            step_results:step_results!module_name(
+              id, status, remarks,
+              step:test_steps!test_steps_id(
+                id, serial_no, action, expected_result, is_divider, tests_name
               )
             )
           `)
@@ -329,7 +329,6 @@ const TestReport: React.FC = () => {
     fetchData();
   }, [selectedModuleName]);
 
-  // FIX: `modules` is already DB-filtered — no JS filter needed
   const chartTheme: ChartTheme = theme === "dark"
     ? { panel: "#111827", text: "#e5e7eb", muted: "#94a3b8", grid: "#334155",
         border: "#334155", tooltipBg: "#0f172a", tooltipText: "#f8fafc", tooltipName: "#cbd5e1" }
@@ -338,7 +337,7 @@ const TestReport: React.FC = () => {
 
   const chartData = useMemo<ChartRow[]>(() =>
     modules.map(m => {
-      const results = getNonDividerResults(m.module_tests ?? []);
+      const results = getNonDividerResults(m.step_results ?? []);
       return {
         name:    m.name,
         pass:    results.filter(sr => sr.status === "pass").length,
@@ -347,12 +346,14 @@ const TestReport: React.FC = () => {
       };
     }), [modules]);
 
+  // Build flat export data by matching step_results to module_tests by tests_name
   const buildFlatData = (mods: ModuleRow[]): FlatData[] => {
     const flat: FlatData[] = [];
     mods.forEach(m => {
       (m.module_tests ?? []).forEach(mt => {
-        (mt.step_results ?? [])
-          .filter(sr => !sr.step?.is_divider)
+        (m.step_results ?? [])
+          .filter(sr => sr.step?.tests_name === mt.tests_name && !sr.step?.is_divider)
+          .sort((a, b) => (a.step?.serial_no ?? 0) - (b.step?.serial_no ?? 0))
           .forEach(sr => {
             flat.push({
               module:   m.name,
@@ -435,7 +436,6 @@ const TestReport: React.FC = () => {
                 onChange={e => setSelectedModuleName(e.target.value || null)}
                 className="input text-sm">
                 <option value="">All Modules</option>
-                {/* Schema v2: module PK is name, so key and value are both m.name */}
                 {moduleOptions.map(m => <option key={m.name} value={m.name}>{m.name}</option>)}
               </select>
             </div>
@@ -505,7 +505,7 @@ const TestReport: React.FC = () => {
                   </thead>
                   <tbody className="divide-y divide-[var(--border-color)]">
                     {modules.map(m => {
-                      const results = getNonDividerResults(m.module_tests ?? []);
+                      const results = getNonDividerResults(m.step_results ?? []);
                       const total   = results.length;
                       const pass    = results.filter(sr => sr.status === "pass").length;
                       const fail    = results.filter(sr => sr.status === "fail").length;

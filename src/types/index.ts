@@ -8,59 +8,61 @@ export interface AppUser {
   disabled: boolean;
 }
 
-// ── Module ───────────────────────────────────────────────────
-// PK is `name` (text). No UUID id column.
 export interface Module {
-  name: string;
+  name: string;              // PK (text)
   description?: string;
   created_at: string;
 }
 
 // ── Global test catalog ──────────────────────────────────────
-// PK is `name` (text). serial_no is unique across the catalog.
+// PK is name (text). serial_no is float.
 export interface Test {
   serial_no: number;
-  name: string;
+  name: string;              // PK (text)
   description?: string;
   created_at: string;
 }
 
-// ── Global step definitions (no results) ────────────────────
-// PK is `serial_no` (integer). Steps are global — no test_id.
+// ── Global step definitions ──────────────────────────────────
+// PK: id = tests_name || '_' || serial_no (text)
 export interface Step {
+  id: string;                // text PK built by trigger
   serial_no: number;
+  tests_name: string;        // FK → tests.name
   action: string;
   expected_result: string;
   is_divider: boolean;
 }
 
 // ── Junction: module ↔ test ──────────────────────────────────
-// id = module_name + "_" + tests_name (composite text PK)
+// PK: id = module_name || '_' || tests_name (text)
 export interface ModuleTest {
   id: string;
-  module_name: string;
-  tests_name: string;
+  module_name: string;       // FK → modules.name
+  tests_name: string;        // FK → tests.name
+  // joined relations (optional)
   test?: Test;
   step_results?: StepResult[];
 }
 
 // ── Per-module execution results ─────────────────────────────
-// id = module_steps_id + "_" + steps_serial_no (composite text PK)
+// PK: id = module_name || '_' || test_steps_id (text)
 export interface StepResult {
   id: string;
-  module_steps_id: string;   // FK → module_tests.id
-  steps_serial_no: number;   // FK → steps.serial_no
+  module_name: string;       // FK → modules.name
+  test_steps_id: string;     // FK → test_steps.id
   status: "pass" | "fail" | "pending";
   remarks: string;
   updated_at: string;
   display_name?: string;
+  // joined relations (optional)
   step?: Step;
 }
 
-// ── Locks ────────────────────────────────────────────────────
+// ── Locks are per module_test ────────────────────────────────
 export interface TestLock {
   id: string;
-  module_test_id: string;
+  module_test_id: string;    // FK → module_tests.id
   user_id: string;
   locked_by_name: string;
   locked_at: string;
