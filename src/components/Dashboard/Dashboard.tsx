@@ -20,16 +20,16 @@ interface Props {
   onNavigate: (page: string, moduleName?: string) => void;
 }
 
-// step_results are now fetched directly via module_name FK on modules.
-// module_tests is fetched for test count only.
+// ✅ FIX 1: updated type to include nested step with is_divider
 function getModuleStats(
   moduleTests: { id: string }[],
-  stepResults: { status: string }[]
+  stepResults: { status: string; step?: { is_divider: boolean } | null }[]
 ) {
   const testCount = moduleTests?.length ?? 0;
   let total = 0, pass = 0, fail = 0, pending = 0;
 
   for (const sr of stepResults ?? []) {
+    if (sr.step?.is_divider) continue; // ✅ FIX 2: skip dividers
     total++;
     if (sr.status === "pass")      pass++;
     else if (sr.status === "fail") fail++;
@@ -128,11 +128,17 @@ const Dashboard: React.FC<Props> = ({ onNavigate }) => {
   }, []);
 
   const fetchModules = useCallback(async (isInitial = false) => {
-    // module PK is name. Fetch module_tests (for count) and step_results (for status)
-    // both via their module_name FK to modules.
     const { data, error: err } = await supabase
       .from("modules")
-      .select("name, description, module_tests:module_tests!module_name(id), step_results:step_results!module_name(status)")
+      .select(`
+        name,
+        description,
+        module_tests:module_tests!module_name(id),
+        step_results:step_results!module_name(
+          status,
+          step:test_steps!test_steps_id(is_divider)
+        )
+      `)                        // ✅ FIX 3: join is_divider from test_steps
       .order("name");
 
     if (!mountedRef.current) return;
