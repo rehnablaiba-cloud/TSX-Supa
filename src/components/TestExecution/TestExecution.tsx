@@ -81,7 +81,17 @@ const TestExecution: React.FC<Props> = ({
   const stepsInitialized   = useRef(false);
   const remarksMap         = useRef<Record<string, string>>({});
   const heartbeatRef       = useRef<ReturnType<typeof setInterval> | null>(null);
-  const stepRefs           = useRef<Record<string, HTMLTableRowElement | HTMLDivElement | null>>({});
+
+  // ── TWO separate ref maps — this is the key fix for auto-scroll ──
+  // Both desktop <table> and mobile <div> render simultaneously in the DOM
+  // (visibility controlled by CSS md:hidden / hidden md:table).
+  // With a single shared ref map, mobile <MobileStepCard> refs (rendered
+  // second in JSX) overwrite the desktop <tr> refs. scrollIntoView on a
+  // display:none element is a silent browser no-op → scroll never fires.
+  // Separate maps let us pick the correct, visible element at scroll time.
+  const trRefs   = useRef<Record<string, HTMLTableRowElement | null>>({});
+  const cardRefs = useRef<Record<string, HTMLDivElement   | null>>({});
+
   const scrollContainerRef = useRef<HTMLDivElement>(null);
 
   // ── Module test list ───────────────────────────────────────
@@ -239,16 +249,30 @@ const TestExecution: React.FC<Props> = ({
   }, [currentMtId, user?.id]);
 
   // ── Auto-scroll ────────────────────────────────────────────
-  // rAF guarantees the row is painted before we measure, fixing the
-  // desktop case where setTimeout(50) was racing against table render.
-  // scrollIntoView targets the nearest scrollable ancestor
-  // (scrollContainerRef) so it works for both <tr> and <div> refs.
+  // Pick trRefs on desktop (≥768px), cardRefs on mobile.
+  // rAF ensures the element is painted before we measure.
+  // Uses explicit scrollContainerRef math to centre within the
+  // overflow container (not the browser viewport) and offset for
+  // the sticky thead so the row isn't hidden beneath it.
   useEffect(() => {
     if (!scrollTarget || loading) return;
     const rafId = requestAnimationFrame(() => {
-      const el = stepRefs.current[scrollTarget];
-      if (!el) return;
-      el.scrollIntoView({ behavior: "smooth", block: "center" });
+      const isDesktop = window.innerWidth >= 768;
+      const el        = isDesktop
+        ? trRefs.current[scrollTarget]
+        : cardRefs.current[scrollTarget];
+      const container = scrollContainerRef.current;
+      if (!el || !container) return;
+
+      const elRect      = el.getBoundingClientRect();
+      const cRect       = container.getBoundingClientRect();
+      const theadHeight = isDesktop
+        ? (container.querySelector("thead") as HTMLElement | null)?.offsetHeight ?? 0
+        : 0;
+      const scrollTo = elRect.top - cRect.top + container.scrollTop
+                       - (cRect.height - theadHeight) / 2 + elRect.height / 2
+                       + theadHeight;
+      container.scrollTo({ top: Math.max(0, scrollTo), behavior: "smooth" });
       setScrollTarget(null);
     });
     return () => cancelAnimationFrame(rafId);
@@ -425,12 +449,9 @@ const TestExecution: React.FC<Props> = ({
               <span className="text-xs text-t-muted font-medium">{progressPct}%</span>
             </div>
           </div>
-          {/* Segmented: green = pass | red = fail | gray = pending */}
           <div className="h-1.5 bg-[var(--border-color)] rounded-full overflow-hidden flex">
-            <div className="h-full bg-green-500 transition-all duration-500"
-              style={{ width: `${passPct}%` }} />
-            <div className="h-full bg-red-500 transition-all duration-500"
-              style={{ width: `${failPct}%` }} />
+            <div className="h-full bg-green-500 transition-all duration-500" style={{ width: `${passPct}%` }} />
+            <div className="h-full bg-red-500 transition-all duration-500"  style={{ width: `${failPct}%` }} />
           </div>
         </div>
 
@@ -460,31 +481,35 @@ const TestExecution: React.FC<Props> = ({
           <div className="text-center text-t-muted py-20 text-sm">No steps match your filter.</div>
         ) : (
           <>
-            {/* Desktop table */}
+            {/* Desktop table
+                Column widths adjusted: Action/Expected trimmed from 32% → 30%,
+                Actions widened from 7% → 12% so the Undo All button has room. */}
             <table className="hidden md:table w-full text-sm border-collapse table-fixed">
-              {/* sticky top-0 sticks to scrollContainerRef because it is overflow-y-auto */}
               <thead className="sticky top-0 z-10">
                 <tr className="bg-bg-surface border-b border-[var(--border-color)]">
                   <th className="text-left px-2 py-2.5 text-xs font-semibold text-t-muted uppercase tracking-wider w-[6%]  border-r border-[var(--border-color)]">S.No</th>
-                  <th className="text-left px-4 py-2.5 text-xs font-semibold text-t-muted uppercase tracking-wider w-[32%] border-r border-[var(--border-color)]">Action</th>
-                  <th className="text-left px-4 py-2.5 text-xs font-semibold text-t-muted uppercase tracking-wider w-[32%] border-r border-[var(--border-color)]">Expected Result</th>
-                  <th className="text-left px-3 py-2.5 text-xs font-semibold text-t-muted uppercase tracking-wider w-[14%] border-r border-[var(--border-color)]">Remarks</th>
+                  <th className="text-left px-4 py-2.5 text-xs font-semibold text-t-muted uppercase tracking-wider w-[30%] border-r border-[var(--border-color)]">Action</th>
+                  <th className="text-left px-4 py-2.5 text-xs font-semibold text-t-muted uppercase tracking-wider w-[30%] border-r border-[var(--border-color)]">Expected Result</th>
+                  <th className="text-left px-3 py-2.5 text-xs font-semibold text-t-muted uppercase tracking-wider w-[13%] border-r border-[var(--border-color)]">Remarks</th>
                   <th className="text-center px-2 py-2.5 text-xs font-semibold text-t-muted uppercase tracking-wider w-[9%]  border-r border-[var(--border-color)]">Status</th>
-                  {/* Actions column — Undo All lives here for admin */}
-                  <th className="text-center px-2 py-2.5 text-xs font-semibold text-t-muted uppercase tracking-wider w-[7%]">
-                    {isAdmin && doneCount > 0 ? (
-                      <button
-                        onClick={handleUndoAll}
-                        className="flex items-center justify-center gap-1 mx-auto px-2 py-1 rounded-md
-                          text-amber-500 hover:text-amber-400 text-[10px] font-bold uppercase tracking-wide
-                          bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30
-                          hover:border-amber-500/60 transition-colors leading-none"
-                      >
-                        ↩ Undo All
-                      </button>
-                    ) : (
+
+                  {/* Actions th: label always shown; Undo All button stacked below when relevant */}
+                  <th className="text-center px-2 py-2 text-xs font-semibold text-t-muted uppercase tracking-wider w-[12%]">
+                    <div className="flex flex-col items-center gap-1.5">
                       <span>Actions</span>
-                    )}
+                      {isAdmin && doneCount > 0 && (
+                        <button
+                          onClick={handleUndoAll}
+                          className="w-full px-1 py-1 rounded-md text-[10px] font-bold leading-none
+                            text-amber-500 hover:text-amber-400 normal-case tracking-normal
+                            bg-amber-500/10 hover:bg-amber-500/20
+                            border border-amber-500/30 hover:border-amber-500/60
+                            transition-colors whitespace-nowrap"
+                        >
+                          ↩ Undo All
+                        </button>
+                      )}
+                    </div>
                   </th>
                 </tr>
               </thead>
@@ -508,7 +533,7 @@ const TestExecution: React.FC<Props> = ({
                       onUpdate={handleStepUpdate}
                       onFocus={() => setFocusedStepId(step.stepId)}
                       onRemarksChange={val => { remarksMap.current[step.stepId] = val; }}
-                      rowRef={el => { stepRefs.current[step.stepId] = el; }}
+                      rowRef={el => { trRefs.current[step.stepId] = el; }}
                     />
                   )
                 )}
@@ -526,8 +551,8 @@ const TestExecution: React.FC<Props> = ({
                   {isAdmin && doneCount > 0 && (
                     <button
                       onClick={handleUndoAll}
-                      className="flex items-center gap-1 px-2 py-1 rounded-md text-amber-500
-                        hover:text-amber-400 text-[10px] font-bold uppercase tracking-wide
+                      className="flex items-center gap-1 px-2 py-1 rounded-md
+                        text-amber-500 hover:text-amber-400 text-[10px] font-bold uppercase tracking-wide
                         bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30
                         hover:border-amber-500/60 transition-colors"
                     >
@@ -553,7 +578,7 @@ const TestExecution: React.FC<Props> = ({
                       onUpdate={handleStepUpdate}
                       onFocus={() => setFocusedStepId(step.stepId)}
                       onRemarksChange={val => { remarksMap.current[step.stepId] = val; }}
-                      cardRef={el => { stepRefs.current[step.stepId] = el; }}
+                      cardRef={el => { cardRefs.current[step.stepId] = el; }}
                     />
                   )
                 )}
@@ -579,7 +604,7 @@ const TableStepRow: React.FC<{
   const [remarks, setRemarks] = useState(step.remarks || "");
   useEffect(() => { setRemarks(step.remarks || ""); }, [step.remarks]);
 
-  const rowBg       = step.status === "pass" ? "bg-green-500/5" : step.status === "fail" ? "bg-red-500/5" : "";
+  const rowBg      = step.status === "pass" ? "bg-green-500/5" : step.status === "fail" ? "bg-red-500/5" : "";
   const focusStyle: React.CSSProperties = isFocused ? { outline: "2px solid #38bdf8", outlineOffset: "-2px" } : {};
 
   return (
@@ -655,7 +680,7 @@ const MobileStepCard: React.FC<{
   const [remarks, setRemarks] = useState(step.remarks || "");
   useEffect(() => { setRemarks(step.remarks || ""); }, [step.remarks]);
 
-  const rowBg      = step.status === "pass" ? "bg-green-500/5" : step.status === "fail" ? "bg-red-500/5" : "";
+  const rowBg       = step.status === "pass" ? "bg-green-500/5" : step.status === "fail" ? "bg-red-500/5" : "";
   const accentColor = isFocused ? "#38bdf8" : step.status === "pass" ? "#22c55e" : step.status === "fail" ? "#ef4444" : "#374151";
 
   return (
@@ -681,8 +706,8 @@ const MobileStepCard: React.FC<{
       </div>
 
       {[
-        { label: "Action",   value: step.action,          cls: "text-t-primary" },
-        { label: "Expected", value: step.expected_result,  cls: "text-t-secondary" },
+        { label: "Action",   value: step.action,         cls: "text-t-primary" },
+        { label: "Expected", value: step.expected_result, cls: "text-t-secondary" },
       ].map(({ label, value, cls }) => (
         <div key={label} className="grid grid-cols-[80px_1fr] border-b border-[var(--border-color)]">
           <div className="px-3 py-2.5 border-r border-[var(--border-color)] bg-bg-card flex items-start">
