@@ -83,12 +83,6 @@ const TestExecution: React.FC<Props> = ({
   const heartbeatRef       = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // ── TWO separate ref maps — this is the key fix for auto-scroll ──
-  // Both desktop <table> and mobile <div> render simultaneously in the DOM
-  // (visibility controlled by CSS md:hidden / hidden md:table).
-  // With a single shared ref map, mobile <MobileStepCard> refs (rendered
-  // second in JSX) overwrite the desktop <tr> refs. scrollIntoView on a
-  // display:none element is a silent browser no-op → scroll never fires.
-  // Separate maps let us pick the correct, visible element at scroll time.
   const trRefs   = useRef<Record<string, HTMLTableRowElement | null>>({});
   const cardRefs = useRef<Record<string, HTMLDivElement   | null>>({});
 
@@ -249,33 +243,39 @@ const TestExecution: React.FC<Props> = ({
   }, [currentMtId, user?.id]);
 
   // ── Auto-scroll ────────────────────────────────────────────
-  // Pick trRefs on desktop (≥768px), cardRefs on mobile.
-  // rAF ensures the element is painted before we measure.
-  // Uses explicit scrollContainerRef math to centre within the
-  // overflow container (not the browser viewport) and offset for
-  // the sticky thead so the row isn't hidden beneath it.
+  // Uses a two-rAF approach: first frame lets React flush DOM mutations,
+  // second frame ensures layout is fully settled before measuring.
+  // Picks trRefs on desktop (≥768px), cardRefs on mobile so we never
+  // measure a display:none element.
   useEffect(() => {
     if (!scrollTarget || loading) return;
-    const rafId = requestAnimationFrame(() => {
-      const isDesktop = window.innerWidth >= 768;
-      const el        = isDesktop
-        ? trRefs.current[scrollTarget]
-        : cardRefs.current[scrollTarget];
-      const container = scrollContainerRef.current;
-      if (!el || !container) return;
+    let rafId1: number;
+    let rafId2: number;
+    rafId1 = requestAnimationFrame(() => {
+      rafId2 = requestAnimationFrame(() => {
+        const isDesktop = window.innerWidth >= 768;
+        const el        = isDesktop
+          ? trRefs.current[scrollTarget]
+          : cardRefs.current[scrollTarget];
+        const container = scrollContainerRef.current;
+        if (!el || !container) return;
 
-      const elRect      = el.getBoundingClientRect();
-      const cRect       = container.getBoundingClientRect();
-      const theadHeight = isDesktop
-        ? (container.querySelector("thead") as HTMLElement | null)?.offsetHeight ?? 0
-        : 0;
-      const scrollTo = elRect.top - cRect.top + container.scrollTop
-                       - (cRect.height - theadHeight) / 2 + elRect.height / 2
-                       + theadHeight;
-      container.scrollTo({ top: Math.max(0, scrollTo), behavior: "smooth" });
-      setScrollTarget(null);
+        const elRect      = el.getBoundingClientRect();
+        const cRect       = container.getBoundingClientRect();
+        const theadHeight = isDesktop
+          ? (container.querySelector("thead") as HTMLElement | null)?.offsetHeight ?? 0
+          : 0;
+        const scrollTo = elRect.top - cRect.top + container.scrollTop
+                         - (cRect.height - theadHeight) / 2 + elRect.height / 2
+                         + theadHeight;
+        container.scrollTo({ top: Math.max(0, scrollTo), behavior: "smooth" });
+        setScrollTarget(null);
+      });
     });
-    return () => cancelAnimationFrame(rafId);
+    return () => {
+      cancelAnimationFrame(rafId1);
+      cancelAnimationFrame(rafId2);
+    };
   }, [scrollTarget, loading]);
 
   // ── Step update ────────────────────────────────────────────
@@ -283,6 +283,7 @@ const TestExecution: React.FC<Props> = ({
     stepId: string, status: "pass" | "fail" | "pending", remarks: string,
   ) => {
     const idx         = steps.findIndex(s => s.stepId === stepId);
+    const step        = steps[idx];
     const nextPending = steps.slice(idx + 1).find(s => !s.is_divider && s.status === "pending");
     setSteps(prev => prev.map(s => s.stepId === stepId ? { ...s, status, remarks } : s));
     if (status !== "pending") {
@@ -292,13 +293,23 @@ const TestExecution: React.FC<Props> = ({
       setFocusedStepId(stepId);
       setScrollTarget(stepId);
     }
-    await supabase.rpc("update_step_result", {
-      p_module_test_id: currentMtId,
-      p_step_id:        stepId,
-      p_status:         status,
-      p_remarks:        remarks,
-    });
-  }, [steps, currentMtId]);
+
+    // Fire RPC + user_id stamp in parallel
+    await Promise.all([
+      supabase.rpc("update_step_result", {
+        p_module_test_id: currentMtId,
+        p_step_id:        stepId,
+        p_status:         status,
+        p_remarks:        remarks,
+      }),
+      step?.stepResultId && user?.id
+        ? supabase
+            .from("step_results")
+            .update({ user_id: user.id })
+            .eq("id", step.stepResultId)
+        : Promise.resolve(),
+    ]);
+  }, [steps, currentMtId, user]);
 
   // ── Undo All (admin) ───────────────────────────────────────
   const handleUndoAll = useCallback(async () => {
@@ -307,17 +318,28 @@ const TestExecution: React.FC<Props> = ({
     remarksMap.current = {};
     const first = actionable[0];
     if (first) { setFocusedStepId(first.stepId); setScrollTarget(first.stepId); }
-    await Promise.all(actionable.map(s =>
-      supabase.rpc("update_step_result", {
-        p_module_test_id: currentMtId,
-        p_step_id:        s.stepId,
-        p_status:         "pending",
-        p_remarks:        "",
-      })
-    ));
+
+    await Promise.all(
+      actionable.flatMap(s => [
+        supabase.rpc("update_step_result", {
+          p_module_test_id: currentMtId,
+          p_step_id:        s.stepId,
+          p_status:         "pending",
+          p_remarks:        "",
+        }),
+        // Clear user_id on undo so the column reflects "no one acted on this"
+        user?.id
+          ? supabase
+              .from("step_results")
+              .update({ user_id: null })
+              .eq("id", s.stepResultId)
+          : Promise.resolve(),
+      ])
+    );
+
     addToast("All steps reset to pending.", "info");
     log("Undo all steps", "info");
-  }, [steps, currentMtId, addToast, log]);
+  }, [steps, currentMtId, user, addToast, log]);
 
   // ── Keyboard: Enter to pass focused step ───────────────────
   useEffect(() => {
@@ -419,14 +441,28 @@ const TestExecution: React.FC<Props> = ({
           title={currentTest ? `#${currentTest.serial_no} — ${currentTest.name}` : "Test Execution"}
           subtitle={moduleName}
           actions={
-            <div className="flex items-center gap-2">
-              <button onClick={() => setShowExportModal(true)} disabled={filtered.length === 0}
-                className="flex items-center gap-1.5 px-4 py-2 bg-bg-card hover:bg-bg-surface
-                  disabled:opacity-40 disabled:cursor-not-allowed text-t-primary
-                  text-sm font-semibold rounded-lg transition border border-[var(--border-color)]">
-                📤 Export
-              </button>
-              <button onClick={handleFinish} className="btn-primary text-sm">Finish Test</button>
+            <div className="flex flex-col items-end gap-1.5">
+              <div className="flex items-center gap-2">
+                <button onClick={() => setShowExportModal(true)} disabled={filtered.length === 0}
+                  className="flex items-center gap-1.5 px-4 py-2 bg-bg-card hover:bg-bg-surface
+                    disabled:opacity-40 disabled:cursor-not-allowed text-t-primary
+                    text-sm font-semibold rounded-lg transition border border-[var(--border-color)]">
+                  📤 Export
+                </button>
+                <button onClick={handleFinish} className="btn-primary text-sm">Finish Test</button>
+              </div>
+              {isAdmin && doneCount > 0 && (
+                <button
+                  onClick={handleUndoAll}
+                  className="flex items-center gap-1.5 px-3 py-1 rounded-md text-xs font-bold
+                    text-amber-500 hover:text-amber-400
+                    bg-amber-500/10 hover:bg-amber-500/20
+                    border border-amber-500/30 hover:border-amber-500/60
+                    transition-colors whitespace-nowrap"
+                >
+                  ↩ Undo All
+                </button>
+              )}
             </div>
           }
         />
@@ -473,17 +509,15 @@ const TestExecution: React.FC<Props> = ({
         </div>
       </div>
 
-      {/* Scroll container */}
-      <div ref={scrollContainerRef} className="flex-1 min-h-0 overflow-y-auto pb-6">
+      {/* Scroll container — scroll-behavior: smooth applies to all scrolls incl. user-initiated */}
+      <div ref={scrollContainerRef} className="flex-1 min-h-0 overflow-y-auto pb-6" style={{ scrollBehavior: "smooth" }}>
         {loading ? (
           <div className="flex items-center justify-center py-20"><Spinner /></div>
         ) : filtered.length === 0 ? (
           <div className="text-center text-t-muted py-20 text-sm">No steps match your filter.</div>
         ) : (
           <>
-            {/* Desktop table
-                Column widths adjusted: Action/Expected trimmed from 32% → 30%,
-                Actions widened from 7% → 12% so the Undo All button has room. */}
+            {/* Desktop table */}
             <table className="hidden md:table w-full text-sm border-collapse table-fixed">
               <thead className="sticky top-0 z-10">
                 <tr className="bg-bg-surface border-b border-[var(--border-color)]">
@@ -492,25 +526,7 @@ const TestExecution: React.FC<Props> = ({
                   <th className="text-left px-4 py-2.5 text-xs font-semibold text-t-muted uppercase tracking-wider w-[30%] border-r border-[var(--border-color)]">Expected Result</th>
                   <th className="text-left px-3 py-2.5 text-xs font-semibold text-t-muted uppercase tracking-wider w-[13%] border-r border-[var(--border-color)]">Remarks</th>
                   <th className="text-center px-2 py-2.5 text-xs font-semibold text-t-muted uppercase tracking-wider w-[9%]  border-r border-[var(--border-color)]">Status</th>
-
-                  {/* Actions th: label always shown; Undo All button stacked below when relevant */}
-                  <th className="text-center px-2 py-2 text-xs font-semibold text-t-muted uppercase tracking-wider w-[12%]">
-                    <div className="flex flex-col items-center gap-1.5">
-                      <span>Actions</span>
-                      {isAdmin && doneCount > 0 && (
-                        <button
-                          onClick={handleUndoAll}
-                          className="w-full px-1 py-1 rounded-md text-[10px] font-bold leading-none
-                            text-amber-500 hover:text-amber-400 normal-case tracking-normal
-                            bg-amber-500/10 hover:bg-amber-500/20
-                            border border-amber-500/30 hover:border-amber-500/60
-                            transition-colors whitespace-nowrap"
-                        >
-                          ↩ Undo All
-                        </button>
-                      )}
-                    </div>
-                  </th>
+                  <th className="text-center px-2 py-2.5 text-xs font-semibold text-t-muted uppercase tracking-wider w-[12%]">RESULT</th>
                 </tr>
               </thead>
               <tbody>
@@ -546,19 +562,8 @@ const TestExecution: React.FC<Props> = ({
                 <div className="px-3 py-2 border-r border-[var(--border-color)]">
                   <span className="text-[10px] font-semibold text-t-muted uppercase tracking-wider">S.No</span>
                 </div>
-                <div className="px-3 py-2 flex items-center justify-between">
+                <div className="px-3 py-2 flex items-center">
                   <span className="text-[10px] font-semibold text-t-muted uppercase tracking-wider">Step Details</span>
-                  {isAdmin && doneCount > 0 && (
-                    <button
-                      onClick={handleUndoAll}
-                      className="flex items-center gap-1 px-2 py-1 rounded-md
-                        text-amber-500 hover:text-amber-400 text-[10px] font-bold uppercase tracking-wide
-                        bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30
-                        hover:border-amber-500/60 transition-colors"
-                    >
-                      ↩ Undo All
-                    </button>
-                  )}
                 </div>
               </div>
               <div className="flex flex-col gap-2 p-3">
