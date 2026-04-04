@@ -140,7 +140,10 @@ const TestExecution: React.FC<Props> = ({
           remarks:         sr.remarks,
           display_name:    sr.display_name ?? "",
         }))
-        .sort((a, b) => a.serial_no - b.serial_no);
+        .sort((a, b) => {
+  if (a.serial_no !== b.serial_no) return a.serial_no - b.serial_no;
+  return (a.is_divider ? 0 : 1) - (b.is_divider ? 0 : 1);
+});
 
       setSteps(merged);
       setLock(lockRes.data?.[0] ?? null);
