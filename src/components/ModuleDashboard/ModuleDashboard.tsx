@@ -20,7 +20,7 @@ import {
   exportModuleDetailCSV,
   exportModuleDetailPDF,
   FlatData,
-} from "../../utils/exportUtils";
+} from "../../utils/export";
 
 
 // ── Animation keyframes ───────────────────────────────────────────────────────
