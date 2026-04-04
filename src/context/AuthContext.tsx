@@ -38,7 +38,7 @@ const loadProfile = async (
     id:          userId,
     email,
     displayName: data?.display_name ?? email,
-    defaultRole: data?.role         ?? "tester",
+    role: data?.role         ?? "tester",
   };
 };
 
