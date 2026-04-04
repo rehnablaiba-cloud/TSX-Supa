@@ -9,6 +9,7 @@ import React, {
 import { supabase } from "../../supabase";
 import gsap from "gsap";
 import ExportModal from "../UI/ExportModal";
+import { Upload, Download, FileText, FileDown } from "lucide-react"; // ✅ Lucide
 import {
   exportDashboardCSV,
   exportDashboardPDF,
@@ -20,7 +21,6 @@ interface Props {
   onNavigate: (page: string, moduleName?: string) => void;
 }
 
-// ✅ FIX 1: updated type to include nested step with is_divider
 function getModuleStats(
   moduleTests: { id: string }[],
   stepResults: { status: string; step?: { is_divider: boolean } | null }[]
@@ -29,7 +29,7 @@ function getModuleStats(
   let total = 0, pass = 0, fail = 0, pending = 0;
 
   for (const sr of stepResults ?? []) {
-    if (sr.step?.is_divider) continue; // ✅ FIX 2: skip dividers
+    if (sr.step?.is_divider) continue;
     total++;
     if (sr.status === "pass")      pass++;
     else if (sr.status === "fail") fail++;
@@ -138,7 +138,7 @@ const Dashboard: React.FC<Props> = ({ onNavigate }) => {
           status,
           step:test_steps!test_steps_id(is_divider)
         )
-      `)                        // ✅ FIX 3: join is_divider from test_steps
+      `)
       .order("name");
 
     if (!mountedRef.current) return;
@@ -199,9 +199,9 @@ const Dashboard: React.FC<Props> = ({ onNavigate }) => {
         subtitle="Fleet summary"
         stats={globalStats}
         options={[
-          { label: "CSV",  icon: "📥", color: "bg-green-600", hoverColor: "hover:bg-green-700", onConfirm: () => exportDashboardCSV(summaries)  },
-          { label: "PDF",  icon: "📋", color: "bg-red-600",   hoverColor: "hover:bg-red-700",   onConfirm: () => exportDashboardPDF(summaries)  },
-          { label: "DOCX", icon: "📄", color: "bg-blue-600",  hoverColor: "hover:bg-blue-700",  onConfirm: () => exportDashboardDocx(summaries) },
+          { label: "CSV",  icon: <Download size={15} />, color: "bg-green-600", hoverColor: "hover:bg-green-700", onConfirm: () => exportDashboardCSV(summaries)  },
+          { label: "PDF",  icon: <FileText size={15} />, color: "bg-red-600",   hoverColor: "hover:bg-red-700",   onConfirm: () => exportDashboardPDF(summaries)  },
+          { label: "DOCX", icon: <FileDown size={15} />, color: "bg-blue-600",  hoverColor: "hover:bg-blue-700",  onConfirm: () => exportDashboardDocx(summaries) },
         ]}
       />
 
@@ -222,7 +222,8 @@ const Dashboard: React.FC<Props> = ({ onNavigate }) => {
             bg-bg-card hover:bg-bg-surface border border-[var(--border-color)] text-t-primary
             disabled:opacity-40 disabled:cursor-not-allowed"
         >
-          📤 Export
+          <Upload size={14} />  {/* ✅ Lucide */}
+          Export
         </button>
       </div>
 

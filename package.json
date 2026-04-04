@@ -8,20 +8,21 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@emotion/react": "^11.11.0",
+    "@emotion/styled": "^11.11.0",
+    "@mui/material": "^6.0.0",
     "@supabase/supabase-js": "^2.101.1",
     "gsap": "^3.12.5",
     "jspdf": "^2.5.1",
     "jspdf-autotable": "^3.8.3",
+    "jszip": "^3.10.1",
+    "lucide-react": "^1.7.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-router-dom": "^6.26.0",
     "recharts": "^3.8.1",
     "supabase": "^2.84.5",
-    "uuid": "^10.0.0",
-    "@mui/material": "^6.0.0",
-    "@emotion/react": "^11.11.0",
-    "@emotion/styled": "^11.11.0",
-    "jszip": "^3.10.1"
+    "uuid": "^10.0.0"
   },
   "devDependencies": {
     "@types/react": "^18.3.3",

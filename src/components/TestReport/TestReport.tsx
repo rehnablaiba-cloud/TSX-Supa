@@ -5,6 +5,7 @@ import Spinner from "../UI/Spinner";
 import ExportModal from "../UI/ExportModal";
 import { exportReportCSV, exportReportPDF, FlatData } from "../../utils/export";
 import { useTheme } from "../../context/ThemeContext";
+import { Upload, Download, FileText, AlertTriangle } from "lucide-react"; // ✅ Lucide
 import {
   ResponsiveContainer,
   BarChart, Bar,
@@ -338,7 +339,6 @@ const TestReport: React.FC = () => {
       };
     }), [modules]);
 
-  // ✅ FIX: sort module_tests by test.serial_no so export order matches logical test order
   const buildFlatData = (mods: ModuleRow[]): FlatData[] => {
     const flat: FlatData[] = [];
     mods.forEach(m => {
@@ -389,7 +389,8 @@ const TestReport: React.FC = () => {
             className="flex items-center gap-1.5 px-4 py-2 bg-bg-card hover:bg-bg-surface
               disabled:opacity-40 disabled:cursor-not-allowed text-t-primary
               text-sm font-semibold rounded-lg transition border border-[var(--border-color)]">
-            📤 Export
+            <Upload size={14} />
+            Export
           </button>
         }
       />
@@ -400,9 +401,9 @@ const TestReport: React.FC = () => {
         subtitle={selectedModuleName ?? "All Modules"}
         stats={exportStats()}
         options={[
-          { label: "CSV", icon: "📥", color: "bg-green-600", hoverColor: "hover:bg-green-700",
+          { label: "CSV", icon: <Download size={15} />, color: "bg-green-600", hoverColor: "hover:bg-green-700",
             onConfirm: () => exportReportCSV([], buildFlatData(modules)) },
-          { label: "PDF", icon: "📋", color: "bg-red-600", hoverColor: "hover:bg-red-700",
+          { label: "PDF", icon: <FileText size={15} />, color: "bg-red-600", hoverColor: "hover:bg-red-700",
             onConfirm: () => exportReportPDF([], buildFlatData(modules)) },
         ]}
       />
@@ -411,7 +412,7 @@ const TestReport: React.FC = () => {
         <div className="flex items-center justify-center py-20"><Spinner /></div>
       ) : error ? (
         <div className="flex flex-col items-center justify-center py-20 gap-3">
-          <span className="text-2xl">⚠️</span>
+          <AlertTriangle size={32} className="text-red-400" />
           <p className="text-sm text-red-400 font-medium">{error}</p>
           <button onClick={() => setSelectedModuleName(prev => prev)}
             className="px-4 py-2 rounded-xl bg-bg-card hover:bg-bg-surface text-sm
@@ -484,7 +485,6 @@ const TestReport: React.FC = () => {
               </div>
 
             ) : (
-              /* ── Table view ── */
               <div className="overflow-x-auto rounded-xl border border-[var(--border-color)]">
                 <table className="w-full text-sm">
                   <thead>

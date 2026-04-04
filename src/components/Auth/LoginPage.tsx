@@ -3,6 +3,7 @@ import { useAuth } from "../../context/AuthContext";
 import { useTheme } from "../../context/ThemeContext";
 import gsap from "gsap";
 import Spinner from "../UI/Spinner";
+import { TrainFront } from "lucide-react";
 
 const LoginPage: React.FC = () => {
   const [email, setEmail]       = useState("");
@@ -11,7 +12,7 @@ const LoginPage: React.FC = () => {
   const [loading, setLoading]   = useState(false);
   const cardRef = useRef<HTMLDivElement>(null);
   const { signIn } = useAuth();
-  useTheme(); // ensures dark class is applied to <html> before paint
+  useTheme();
 
   useEffect(() => {
     gsap.fromTo(
@@ -32,7 +33,6 @@ const LoginPage: React.FC = () => {
 
   return (
     <div className="grad-bg min-h-screen flex items-center justify-center p-4">
-      {/* perf: transform-gpu stops shimmer from triggering layout recalc */}
       <div className="pointer-events-none fixed inset-0 shimmer opacity-30 transform-gpu" />
 
       <div
@@ -43,8 +43,8 @@ const LoginPage: React.FC = () => {
 
         {/* Header */}
         <div className="flex flex-col items-center mb-8">
-          <div className="w-14 h-14 rounded-2xl bg-c-brand flex items-center justify-center text-2xl mb-3">
-          🧪
+          <div className="w-14 h-14 rounded-2xl bg-c-brand flex items-center justify-center mb-3">
+            <TrainFront size={28} className="text-white" />
           </div>
           <h1 className="text-2xl font-bold text-t-primary">TestPro</h1>
           <p className="text-t-muted text-sm mt-1">Test Execution Management System</p>
@@ -53,9 +53,7 @@ const LoginPage: React.FC = () => {
         {/* Form */}
         <form onSubmit={handleSubmit} className="flex flex-col gap-4">
           <div>
-            <label className="block text-xs text-t-muted mb-1.5">
-              Email
-            </label>
+            <label className="block text-xs text-t-muted mb-1.5">Email</label>
             <input
               type="email"
               required
@@ -67,9 +65,7 @@ const LoginPage: React.FC = () => {
           </div>
 
           <div>
-            <label className="block text-xs text-t-muted mb-1.5">
-              Password
-            </label>
+            <label className="block text-xs text-t-muted mb-1.5">Password</label>
             <input
               type="password"
               required
@@ -80,10 +76,6 @@ const LoginPage: React.FC = () => {
             />
           </div>
 
-          {/* 
-            Fix: always reserve space so the button doesn't jump.
-            Fade in/out instead of mount/unmount.
-          */}
           <div
             className={`
               overflow-hidden transition-all duration-300 ease-in-out
@@ -95,7 +87,6 @@ const LoginPage: React.FC = () => {
             </div>
           </div>
 
-          {/* Fix: min-h prevents button resize when swapping text ↔ spinner */}
           <button
             type="submit"
             disabled={loading}

@@ -3,6 +3,7 @@ import { supabase } from "../../supabase";
 import { useAuth } from "../../context/AuthContext";
 import Topbar from "../Layout/Topbar";
 import Spinner from "../UI/Spinner";
+import { Lock } from "lucide-react"; // ✅ only change
 import { AuditEvent } from "../../types";
 
 const DOT: Record<string, string> = {
@@ -14,7 +15,7 @@ const DOT: Record<string, string> = {
 
 const AuditLog: React.FC = () => {
   const { user }              = useAuth();
-  const isAdmin               = user?.role === "admin";
+  const isAdmin               = user?.role === "admin"; // ✅ kept as-is
   const [events, setEvents]   = useState<AuditEvent[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -38,8 +39,8 @@ const AuditLog: React.FC = () => {
         <Topbar title="Audit Log" subtitle="Admin only" />
         <div className="flex flex-col items-center justify-center flex-1 gap-4 p-8 text-center">
           <div className="w-14 h-14 rounded-full bg-red-500/10 border border-red-500/20
-            flex items-center justify-center text-2xl">
-            🔒
+            flex items-center justify-center">
+            <Lock size={24} className="text-red-400" /> {/* ✅ Lucide */}
           </div>
           <div>
             <p className="font-semibold text-t-primary">Access Restricted</p>
