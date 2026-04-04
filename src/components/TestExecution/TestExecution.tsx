@@ -82,7 +82,6 @@ const TestExecution: React.FC<Props> = ({
   const remarksMap         = useRef<Record<string, string>>({});
   const heartbeatRef       = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  // ── TWO separate ref maps — this is the key fix for auto-scroll ──
   const trRefs   = useRef<Record<string, HTMLTableRowElement | null>>({});
   const cardRefs = useRef<Record<string, HTMLDivElement   | null>>({});
 
@@ -243,10 +242,6 @@ const TestExecution: React.FC<Props> = ({
   }, [currentMtId, user?.id]);
 
   // ── Auto-scroll ────────────────────────────────────────────
-  // Uses a two-rAF approach: first frame lets React flush DOM mutations,
-  // second frame ensures layout is fully settled before measuring.
-  // Picks trRefs on desktop (≥768px), cardRefs on mobile so we never
-  // measure a display:none element.
   useEffect(() => {
     if (!scrollTarget || loading) return;
     let rafId1: number;
@@ -294,7 +289,11 @@ const TestExecution: React.FC<Props> = ({
       setScrollTarget(stepId);
     }
 
-    // Fire RPC + user_id stamp in parallel
+    // ── Write display_name (or clear it on undo) ──
+    const displayName = status === "pending"
+      ? null
+      : (user?.displayName || user?.email || "User");
+
     await Promise.all([
       supabase.rpc("update_step_result", {
         p_module_test_id: currentMtId,
@@ -302,10 +301,10 @@ const TestExecution: React.FC<Props> = ({
         p_status:         status,
         p_remarks:        remarks,
       }),
-      step?.stepResultId && user?.id
+      step?.stepResultId
         ? supabase
             .from("step_results")
-            .update({ user_id: user.id })
+            .update({ display_name: displayName })
             .eq("id", step.stepResultId)
         : Promise.resolve(),
     ]);
@@ -327,19 +326,16 @@ const TestExecution: React.FC<Props> = ({
           p_status:         "pending",
           p_remarks:        "",
         }),
-        // Clear user_id on undo so the column reflects "no one acted on this"
-        user?.id
-          ? supabase
-              .from("step_results")
-              .update({ user_id: null })
-              .eq("id", s.stepResultId)
-          : Promise.resolve(),
+        supabase
+          .from("step_results")
+          .update({ display_name: null })
+          .eq("id", s.stepResultId),
       ])
     );
 
     addToast("All steps reset to pending.", "info");
     log("Undo all steps", "info");
-  }, [steps, currentMtId, user, addToast, log]);
+  }, [steps, currentMtId, addToast, log]);
 
   // ── Keyboard: Enter to pass focused step ───────────────────
   useEffect(() => {
@@ -440,7 +436,7 @@ const TestExecution: React.FC<Props> = ({
         <Topbar
           title={currentTest ? `#${currentTest.serial_no} — ${currentTest.name}` : "Test Execution"}
           subtitle={moduleName}
-          actions={
+          RESULT={
             <div className="flex flex-col items-end gap-1.5">
               <div className="flex items-center gap-2">
                 <button onClick={() => setShowExportModal(true)} disabled={filtered.length === 0}
@@ -509,7 +505,7 @@ const TestExecution: React.FC<Props> = ({
         </div>
       </div>
 
-      {/* Scroll container — scroll-behavior: smooth applies to all scrolls incl. user-initiated */}
+      {/* Scroll container */}
       <div ref={scrollContainerRef} className="flex-1 min-h-0 overflow-y-auto pb-6" style={{ scrollBehavior: "smooth" }}>
         {loading ? (
           <div className="flex items-center justify-center py-20"><Spinner /></div>
@@ -744,7 +740,7 @@ const MobileStepCard: React.FC<{
 
       {!readonly && (
         <div className="flex items-center justify-between px-3 py-2 bg-bg-card">
-          <span className="text-[10px] font-semibold text-t-muted uppercase tracking-wider">Actions</span>
+          <span className="text-[10px] font-semibold text-t-muted uppercase tracking-wider">RESULT</span>
           <div className="flex items-center gap-2">
             {step.status !== "pending" && (
               <button onClick={e => { e.stopPropagation(); onUpdate(step.stepId, "pending", ""); }}
