@@ -25,7 +25,7 @@ const Sidebar: React.FC<Props> = ({ activePage, onNavigate, modules }) => {
   const [collapsed, setCollapsed] = useState(false);
   const [search, setSearch]       = useState("");
   const { user, signOut } = useAuth();
-  const isAdmin = user?.defaultRole === "admin";
+  const isAdmin = user?.role === "admin";
 
   const navItems = isAdmin ? [...BASE_NAV, ...ADMIN_NAV] : BASE_NAV;
 
@@ -121,7 +121,7 @@ const Sidebar: React.FC<Props> = ({ activePage, onNavigate, modules }) => {
                 {user?.displayName || user?.email}
               </p>
               <span className={isAdmin ? "badge-admin" : "badge-tester"}>
-                {user?.defaultRole}
+                {user?.role}
               </span>
             </div>
             <button

@@ -1602,7 +1602,7 @@ const MobileNav: React.FC<Props> = ({ activePage, onNavigate }) => {
   const sheetRef = useRef<HTMLDivElement>(null);
   const adminRef = useRef<HTMLDivElement>(null);
 
-  const isAdmin = user?.defaultRole === "admin";
+  const isAdmin = user?.role === "admin";
 
   const items = [
     { id: "dashboard", icon: "📊", label: "Home"   },

@@ -33,7 +33,7 @@ const UsersPanel: React.FC = () => {
   // FIX: Non-admins cannot see or interact with this panel at all.
   // RLS on profiles also blocks the underlying queries, but blocking at the
   // component level gives a clear error instead of a confusing empty table.
-  if (currentUser?.defaultRole !== "admin") {
+  if (currentUser?.role !== "admin") {
     return (
       <div className="flex-1 flex flex-col">
         <Topbar title="Users" subtitle="Admin only" />

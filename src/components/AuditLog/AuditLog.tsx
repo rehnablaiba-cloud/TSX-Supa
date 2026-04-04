@@ -14,7 +14,7 @@ const DOT: Record<string, string> = {
 
 const AuditLog: React.FC = () => {
   const { user }              = useAuth();
-  const isAdmin               = user?.defaultRole === "admin";
+  const isAdmin               = user?.role === "admin";
   const [events, setEvents]   = useState<AuditEvent[]>([]);
   const [loading, setLoading] = useState(true);
 
