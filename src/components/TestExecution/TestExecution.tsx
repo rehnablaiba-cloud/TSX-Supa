@@ -247,20 +247,23 @@ const TestExecution: React.FC<Props> = ({ moduleId, moduleName, initialModuleTes
     return () => window.removeEventListener("beforeunload", release);
   }, [currentMtId, user?.id]);
 
-  // ── Auto-scroll: snap focused step to top of container ───
-  useLayoutEffect(() => {
-    if (!scrollTarget) return;
+ // ── Auto-scroll: snap focused step to center of container ───
+useEffect(() => {
+  if (!scrollTarget || loading) return;
+  const raf = requestAnimationFrame(() => {
     const el        = stepRefs.current[scrollTarget];
     const container = scrollContainerRef.current;
-    if (el && container) {
-      const elRect        = el.getBoundingClientRect();
-      const containerRect = container.getBoundingClientRect();
-      const scrollTo      =
-        elRect.top - containerRect.top + container.scrollTop - 8;
-      container.scrollTo({ top: scrollTo, behavior: "smooth" });
-      setScrollTarget(null);
-    }
-  }, [scrollTarget]);
+    if (!el || !container) return;
+    const elRect        = el.getBoundingClientRect();
+    const containerRect = container.getBoundingClientRect();
+    const scrollTo =
+      elRect.top - containerRect.top + container.scrollTop
+      - containerRect.height / 2 + elRect.height / 2;
+    container.scrollTo({ top: Math.max(0, scrollTo), behavior: "smooth" });
+    setScrollTarget(null);
+  });
+  return () => cancelAnimationFrame(raf);
+}, [scrollTarget, loading]);
 
   // ── Step update — optimistic ──────────────────────────────
   const handleStepUpdate = useCallback(async (
