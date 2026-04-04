@@ -299,21 +299,20 @@ const TestReport: React.FC = () => {
       setLoading(true);
       setError(null);
       try {
-        let query = supabase
+     let query = supabase
   .from("modules")
   .select(`
     id, name, description,
-    module_tests!module_id (
+    module_tests (
       id,
-      test:tests!module_tests_test_id_fkey ( id, serial_no, name ),
-      step_results!module_tests_id (
+      test:tests ( id, serial_no, name ),
+      step_results (
         id, status, remarks,
         step:steps ( id, serial_no, action, expected_result, is_divider )
       )
     )
   `)
   .order("name", { ascending: true });
-          .order("name", { ascending: true });
 
         // FIX: apply filter at DB level instead of JS .filter()
         if (selectedModuleId) query = (query as any).eq("id", selectedModuleId);
