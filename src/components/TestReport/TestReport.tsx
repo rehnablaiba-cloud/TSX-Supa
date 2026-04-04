@@ -401,10 +401,20 @@ const TestReport: React.FC = () => {
         subtitle={selectedModuleName ?? "All Modules"}
         stats={exportStats()}
         options={[
-          { label: "CSV", icon: <Download size={15} />, color: "bg-green-600", hoverColor: "hover:bg-green-700",
-            onConfirm: () => exportReportCSV([], buildFlatData(modules)) },
-          { label: "PDF", icon: <FileText size={15} />, color: "bg-red-600", hoverColor: "hover:bg-red-700",
-            onConfirm: () => exportReportPDF([], buildFlatData(modules)) },
+            {
+            label: "CSV",
+            icon: <FileSpreadsheet size={16} />,
+            color: "bg-[var(--color-primary)]",
+            hoverColor: "hover:bg-[var(--color-primary-hover)]",
+            onConfirm: () => exportExecutionCSV(moduleName, currentTest?.name ?? "test", flatData),
+          },
+          {
+            label: "PDF",
+            icon: <FileText size={16} />,
+            color: "bg-[var(--color-blue)]",
+            hoverColor: "hover:bg-[var(--color-blue-hover)]",
+            onConfirm: () => exportExecutionPDF(moduleName, currentTest?.name ?? "test", flatData),
+          },
         ]}
       />
 

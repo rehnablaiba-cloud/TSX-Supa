@@ -199,9 +199,27 @@ const Dashboard: React.FC<Props> = ({ onNavigate }) => {
         subtitle="Fleet summary"
         stats={globalStats}
         options={[
-          { label: "CSV",  icon: <Download size={15} />, color: "bg-green-600", hoverColor: "hover:bg-green-700", onConfirm: () => exportDashboardCSV(summaries)  },
-          { label: "PDF",  icon: <FileText size={15} />, color: "bg-red-600",   hoverColor: "hover:bg-red-700",   onConfirm: () => exportDashboardPDF(summaries)  },
-          { label: "DOCX", icon: <FileDown size={15} />, color: "bg-blue-600",  hoverColor: "hover:bg-blue-700",  onConfirm: () => exportDashboardDocx(summaries) },
+            {
+            label: "CSV",
+            icon: <FileSpreadsheet size={16} />,
+            color: "bg-[var(--color-primary)]",
+            hoverColor: "hover:bg-[var(--color-primary-hover)]",
+            onConfirm: () => exportExecutionCSV(moduleName, currentTest?.name ?? "test", flatData),
+          },
+          {
+            label: "PDF",
+            icon: <FileText size={16} />,
+            color: "bg-[var(--color-blue)]",
+            hoverColor: "hover:bg-[var(--color-blue-hover)]",
+            onConfirm: () => exportExecutionPDF(moduleName, currentTest?.name ?? "test", flatData),
+          },
+                    {
+            label: "DOCX",
+            icon: <FileDown size={16} />,
+            color: "bg-[var(--color-blue)]",
+            hoverColor: "hover:bg-[var(--color-blue-hover)]",
+            onConfirm: () => exportExecutionPDF(moduleName, currentTest?.name ?? "test", flatData),
+          },
         ]}
       />
 

@@ -7,7 +7,7 @@ import ExportModal from "../UI/ExportModal";
 import { useToast } from "../../context/ToastContext";
 import { useAuditLog } from "../../hooks/useAuditLog";
 import { exportExecutionCSV, exportExecutionPDF, FlatData } from "../../utils/export";
-import { Lock, Upload, RotateCcw, User, Check, X, ArrowLeft } from "lucide-react";
+import { Lock, Upload, RotateCcw, User, Check, X, ArrowLeft, AlertTriangle, FileSpreadsheet, FileText } from "lucide-react";
 
 
 interface Props {
@@ -40,6 +40,69 @@ interface ModuleTestItem {
   tests_name:  string;
   test: { serial_no: number; name: string };
 }
+
+
+// ── Undo All Confirmation Modal ────────────────────────────────
+const UndoAllModal: React.FC<{
+  doneCount:  number;
+  totalCount: number;
+  onConfirm:  () => void;
+  onCancel:   () => void;
+}> = ({ doneCount, totalCount, onConfirm, onCancel }) => (
+  <div
+    className="fixed inset-0 z-50 flex items-center justify-center p-4"
+    style={{ backgroundColor: "rgba(0,0,0,0.55)", backdropFilter: "blur(4px)" }}
+    onClick={onCancel}
+  >
+    <div
+      className="relative w-full max-w-sm rounded-2xl border shadow-2xl p-6 flex flex-col gap-4"
+      style={{ backgroundColor: "var(--bg-surface)", borderColor: "var(--border-color)" }}
+      onClick={e => e.stopPropagation()}
+    >
+      {/* Icon + heading */}
+      <div className="flex flex-col items-center gap-3 text-center">
+        <div className="w-14 h-14 rounded-full bg-amber-500/10 border-2 border-amber-500/30 flex items-center justify-center">
+          <AlertTriangle size={26} className="text-amber-500" />
+        </div>
+        <div>
+          <h2 className="text-base font-bold text-t-primary">Reset All Steps?</h2>
+          <p className="text-sm text-t-muted mt-1">
+            This will mark all{" "}
+            <span className="font-semibold text-t-primary">{doneCount}</span> completed step{doneCount !== 1 ? "s" : ""} (out of{" "}
+            <span className="font-semibold text-t-primary">{totalCount}</span>) back to{" "}
+            <span className="font-semibold text-amber-500">pending</span>.
+          </p>
+        </div>
+      </div>
+
+      {/* Warning note */}
+      <div className="flex items-start gap-2 px-3 py-2.5 rounded-lg bg-amber-500/8 border border-amber-500/25 text-xs text-amber-600 dark:text-amber-400">
+        <AlertTriangle size={13} className="shrink-0 mt-0.5" />
+        <span>All remarks and results will be cleared. <strong>This cannot be undone.</strong></span>
+      </div>
+
+      {/* Actions */}
+      <div className="flex gap-2 pt-1">
+        <button
+          onClick={onCancel}
+          className="flex-1 px-4 py-2.5 rounded-xl border text-sm font-semibold text-t-secondary
+            hover:text-t-primary hover:border-[var(--color-brand)] border-[var(--border-color)]
+            bg-bg-card transition-colors"
+        >
+          Cancel
+        </button>
+        <button
+          onClick={onConfirm}
+          className="flex-1 px-4 py-2.5 rounded-xl text-sm font-bold text-white
+            bg-amber-500 hover:bg-amber-600 active:bg-amber-700 transition-colors
+            flex items-center justify-center gap-1.5"
+        >
+          <RotateCcw size={14} /> Yes, Reset All
+        </button>
+      </div>
+    </div>
+  </div>
+);
 
 
 // ── Locked Screen ──────────────────────────────────────────────
@@ -88,6 +151,7 @@ const TestExecution: React.FC<Props> = ({
   const [filter, setFilter]                   = useState<Filter>("all");
   const [search, setSearch]                   = useState("");
   const [showExportModal, setShowExportModal] = useState(false);
+  const [showUndoModal, setShowUndoModal]     = useState(false);
   const [scrollTarget, setScrollTarget]       = useState<string | null>(null);
   const [focusedStepId, setFocusedStepId]     = useState<string | null>(null);
 
@@ -376,6 +440,7 @@ const TestExecution: React.FC<Props> = ({
 
   // ── Undo All (admin) ───────────────────────────────────────
   const handleUndoAll = useCallback(async () => {
+    setShowUndoModal(false);
     const actionable = steps.filter(s => !s.is_divider);
     const prevSteps  = steps;
     const undoName   = user?.displayName || user?.email || "User";
@@ -507,19 +572,37 @@ const TestExecution: React.FC<Props> = ({
   return (
     <div className="flex flex-col" style={{ height: "100dvh" }}>
 
+      {/* Undo All confirmation modal */}
+      {showUndoModal && (
+        <UndoAllModal
+          doneCount={doneCount}
+          totalCount={totalCount}
+          onConfirm={handleUndoAll}
+          onCancel={() => setShowUndoModal(false)}
+        />
+      )}
 
       <ExportModal
         isOpen={showExportModal} onClose={() => setShowExportModal(false)}
         title="Export Test Results" subtitle={`${moduleName} · ${currentTest?.name ?? ""}`}
         stats={exportStats}
         options={[
-          { label: "CSV", icon: "📥", color: "bg-green-600", hoverColor: "hover:bg-green-700",
-            onConfirm: () => exportExecutionCSV(moduleName, currentTest?.name ?? "test", flatData) },
-          { label: "PDF", icon: "📋", color: "bg-red-600", hoverColor: "hover:bg-red-700",
-            onConfirm: () => exportExecutionPDF(moduleName, currentTest?.name ?? "test", flatData) },
+          {
+            label: "CSV",
+            icon: <FileSpreadsheet size={16} />,
+            color: "bg-[var(--color-primary)]",
+            hoverColor: "hover:bg-[var(--color-primary-hover)]",
+            onConfirm: () => exportExecutionCSV(moduleName, currentTest?.name ?? "test", flatData),
+          },
+          {
+            label: "PDF",
+            icon: <FileText size={16} />,
+            color: "bg-[var(--color-blue)]",
+            hoverColor: "hover:bg-[var(--color-blue-hover)]",
+            onConfirm: () => exportExecutionPDF(moduleName, currentTest?.name ?? "test", flatData),
+          },
         ]}
       />
-
 
       {/* Fixed sections */}
       <div className="flex-shrink-0">
@@ -527,32 +610,11 @@ const TestExecution: React.FC<Props> = ({
           title={currentTest ? `#${currentTest.serial_no} — ${currentTest.name}` : "Test Execution"}
           subtitle={moduleName}
           actions={
-            <div className="flex flex-col items-end gap-1.5">
-              <div className="flex items-center gap-2">
-                <button onClick={() => setShowExportModal(true)} disabled={filtered.length === 0}
-                  className="flex items-center gap-1.5 px-4 py-2 bg-bg-card hover:bg-bg-surface
-                    disabled:opacity-40 disabled:cursor-not-allowed text-t-primary
-                    text-sm font-semibold rounded-lg transition border border-[var(--border-color)]">
-                  <Upload size={14} /> Export
-                </button>
-                <button onClick={handleFinish} className="btn-primary text-sm">Finish Test</button>
-              </div>
-              {isAdmin && doneCount > 0 && (
-                <button
-                  onClick={handleUndoAll}
-                  className="flex items-center gap-1.5 px-3 py-1 rounded-md text-xs font-bold
-                    text-amber-500 hover:text-amber-400
-                    bg-amber-500/10 hover:bg-amber-500/20
-                    border border-amber-500/30 hover:border-amber-500/60
-                    transition-colors whitespace-nowrap"
-                >
-                  <RotateCcw size={12} /> Undo All
-                </button>
-              )}
-            </div>
+            <button onClick={handleFinish} className="btn-primary text-sm">
+              Finish Test
+            </button>
           }
         />
-
 
         {/* Progress bar */}
         <div className="px-4 pt-3 pb-2">
@@ -578,9 +640,23 @@ const TestExecution: React.FC<Props> = ({
           </div>
         </div>
 
+        {/* Filters row — Export on the left, filters + search on the right */}
+        <div className="flex items-center gap-2 px-4 py-2 border-b border-[var(--border-color)]">
+          {/* Export — left anchor */}
+          <button
+            onClick={() => setShowExportModal(true)}
+            disabled={filtered.length === 0}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-[var(--border-color)]
+              bg-bg-card hover:bg-bg-surface disabled:opacity-40 disabled:cursor-not-allowed
+              text-t-primary text-xs font-semibold transition shrink-0"
+          >
+            <Upload size={13} /> Export
+          </button>
 
-        {/* Filters */}
-        <div className="flex items-center gap-2 px-4 py-2 border-b border-[var(--border-color)] flex-wrap">
+          {/* Spacer */}
+          <div className="flex-1" />
+
+          {/* Filter pills */}
           <div className="flex gap-1">
             {(["all", "pass", "fail", "pending"] as Filter[]).map(f => (
               <button key={f} onClick={() => setFilter(f)}
@@ -592,14 +668,15 @@ const TestExecution: React.FC<Props> = ({
               </button>
             ))}
           </div>
+
+          {/* Search */}
           <input value={search} onChange={e => setSearch(e.target.value)}
-            placeholder="Search steps…" className="input text-xs py-1.5 w-48" />
+            placeholder="Search steps…" className="input text-xs py-1.5 w-40 shrink-0" />
         </div>
       </div>
 
-
       {/* Scroll container */}
-      <div ref={scrollContainerRef} className="flex-1 min-h-0 overflow-y-auto pb-6" style={{ scrollBehavior: "smooth" }}>
+      <div ref={scrollContainerRef} className="flex-1 min-h-0 overflow-y-auto" style={{ scrollBehavior: "smooth" }}>
         {loading ? (
           <div className="flex items-center justify-center py-20"><Spinner /></div>
         ) : filtered.length === 0 ? (
@@ -645,7 +722,6 @@ const TestExecution: React.FC<Props> = ({
               </tbody>
             </table>
 
-
             {/* Mobile */}
             <div className="md:hidden flex flex-col">
               <div className="sticky top-0 z-10 grid grid-cols-[64px_1fr] border-b border-[var(--border-color)] bg-bg-surface/80 backdrop-blur-md">
@@ -679,6 +755,28 @@ const TestExecution: React.FC<Props> = ({
                 )}
               </div>
             </div>
+
+            {/* Undo All — admin danger zone, at the bottom of the list */}
+            {isAdmin && doneCount > 0 && (
+              <div className="flex items-center justify-center py-6 px-4">
+                <div className="flex items-center gap-3 px-4 py-3 rounded-xl border border-dashed border-amber-500/30 bg-amber-500/5">
+                  <AlertTriangle size={14} className="text-amber-500 shrink-0" />
+                  <span className="text-xs text-t-muted">
+                    Admin action — resets all progress
+                  </span>
+                  <button
+                    onClick={() => setShowUndoModal(true)}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold
+                      text-amber-600 dark:text-amber-400
+                      bg-amber-500/10 hover:bg-amber-500/20
+                      border border-amber-500/30 hover:border-amber-500/60
+                      transition-colors whitespace-nowrap"
+                  >
+                    <RotateCcw size={12} /> Undo All
+                  </button>
+                </div>
+              </div>
+            )}
           </>
         )}
       </div>
