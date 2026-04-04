@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAuth } from "../../context/AuthContext";
 import { supabase } from "../../supabase";
 import Topbar from "../Layout/Topbar";
@@ -28,7 +28,7 @@ interface ExecutionStep {
   is_divider:      boolean;
   status:          "pass" | "fail" | "pending";
   remarks:         string;
-  display_name:    string;   // ← added
+  display_name:    string;
 }
 
 interface ModuleTestItem {
@@ -72,44 +72,34 @@ const TestExecution: React.FC<Props> = ({
   const { addToast } = useToast();
   const { log }      = useAuditLog();
 
-  const [currentMtId, setCurrentMtId]         = useState(initialModuleTestId);
+  // currentMtId is fixed — setCurrentMtId intentionally omitted (no test-switcher UI).
+  const currentMtId = initialModuleTestId;
+
   const [filter, setFilter]                   = useState<Filter>("all");
   const [search, setSearch]                   = useState("");
   const [showExportModal, setShowExportModal] = useState(false);
   const [scrollTarget, setScrollTarget]       = useState<string | null>(null);
   const [focusedStepId, setFocusedStepId]     = useState<string | null>(null);
 
-  const stepsInitialized   = useRef(false);
-  const remarksMap         = useRef<Record<string, string>>({});
-  const heartbeatRef       = useRef<ReturnType<typeof setInterval> | null>(null);
+  const stepsInitialized = useRef(false);
+  const remarksMap       = useRef<Record<string, string>>({});
+  const heartbeatRef     = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const trRefs   = useRef<Record<string, HTMLTableRowElement | null>>({});
   const cardRefs = useRef<Record<string, HTMLDivElement   | null>>({});
 
   const scrollContainerRef = useRef<HTMLDivElement>(null);
 
-  // ── Module test list ───────────────────────────────────────
+  // ── Module tests, steps, and lock — all fetched in parallel ──
+  // FIX (image 1): was a two-step waterfall; currentMtId is already known so
+  // we fetch moduleTests + step_results + testlocks in a single Promise.all.
   const [moduleTests, setModuleTests] = useState<ModuleTestItem[]>([]);
-  useEffect(() => {
-    supabase
-      .from("module_tests")
-      .select("id, order_index, test:tests(id, serial_no, name)")
-      .eq("module_id", moduleId)
-      .order("order_index")
-      .then(({ data }) => setModuleTests((data ?? []) as unknown as ModuleTestItem[]));
-  }, [moduleId]);
-
-  const currentMt   = moduleTests.find(mt => mt.id === currentMtId);
-  const currentTest = currentMt?.test;
-
-  // ── Steps + lock ───────────────────────────────────────────
   const [steps, setSteps]             = useState<ExecutionStep[]>([]);
   const [lock, setLock]               = useState<any>(null);
   const [loading, setLoading]         = useState(true);
   const [lockLoading, setLockLoading] = useState(true);
 
   useEffect(() => {
-    if (!currentTest?.id) return;
     setLoading(true);
     setLockLoading(true);
     stepsInitialized.current = false;
@@ -118,17 +108,24 @@ const TestExecution: React.FC<Props> = ({
 
     Promise.all([
       supabase
+        .from("module_tests")
+        .select("id, order_index, test:tests(id, serial_no, name)")
+        .eq("module_id", moduleId)
+        .order("order_index"),
+      supabase
         .from("step_results")
         .select(`
           id, module_test_id, step_id, status, remarks, display_name,
           step:steps ( id, serial_no, action, expected_result, is_divider )
-        `)                                                  // ← added display_name
+        `)
         .eq("module_test_id", currentMtId),
       supabase
         .from("testlocks")
         .select("module_test_id, user_id, locked_by_name")
         .eq("module_test_id", currentMtId),
-    ]).then(([srRes, lockRes]) => {
+    ]).then(([mtRes, srRes, lockRes]) => {
+      setModuleTests((mtRes.data ?? []) as unknown as ModuleTestItem[]);
+
       const merged: ExecutionStep[] = ((srRes.data ?? []) as any[])
         .map(sr => ({
           stepId:          sr.step.id,
@@ -140,12 +137,14 @@ const TestExecution: React.FC<Props> = ({
           is_divider:      sr.step.is_divider,
           status:          sr.status,
           remarks:         sr.remarks,
-          display_name:    sr.display_name ?? "",           // ← added
+          display_name:    sr.display_name ?? "",
         }))
         .sort((a, b) => a.serial_no - b.serial_no);
 
       setSteps(merged);
       setLock(lockRes.data?.[0] ?? null);
+
+      // Both done at the same time — no flash of undefined test name in LockedScreen.
       setLoading(false);
       setLockLoading(false);
     });
@@ -167,7 +166,7 @@ const TestExecution: React.FC<Props> = ({
         setSteps(prev => prev.map(s =>
           s.stepResultId === updated.id
             ? { ...s, status: updated.status, remarks: updated.remarks, display_name: updated.display_name ?? "" }
-            : s                                             // ← sync display_name from realtime too
+            : s
         ));
       })
       .subscribe();
@@ -176,7 +175,18 @@ const TestExecution: React.FC<Props> = ({
       supabase.removeChannel(lockChannel);
       supabase.removeChannel(srChannel);
     };
-  }, [currentMtId, currentTest?.id]);
+  }, [moduleId, currentMtId]);
+
+  const currentMt   = moduleTests.find(mt => mt.id === currentMtId);
+  const currentTest = currentMt?.test;
+
+  // ── Clean up stale ref entries when steps change ───────────
+  // FIX (image 2): old step IDs were never evicted → memory leak over long sessions.
+  useEffect(() => {
+    const live = new Set(steps.map(s => s.stepId));
+    for (const id of Object.keys(trRefs.current))   { if (!live.has(id)) delete trRefs.current[id]; }
+    for (const id of Object.keys(cardRefs.current)) { if (!live.has(id)) delete cardRefs.current[id]; }
+  }, [steps]);
 
   // ── Auto-focus first pending step after load ───────────────
   useEffect(() => {
@@ -211,7 +221,8 @@ const TestExecution: React.FC<Props> = ({
     if (!user) return;
     let cancelled = false;
     (async () => {
-      const { data, error } = await supabase.from("testlocks").upsert(
+      // Insert our lock row (ignore if another user already holds it).
+      await supabase.from("testlocks").upsert(
         {
           module_test_id: currentMtId,
           user_id:        user.id,
@@ -219,9 +230,19 @@ const TestExecution: React.FC<Props> = ({
           locked_at:      new Date().toISOString(),
         },
         { onConflict: "module_test_id", ignoreDuplicates: true }
-      ).select().single();
+      );
       if (cancelled) return;
-      if (!error && data?.user_id === user.id) startHeartbeat();
+
+      // FIX (image 3 — critical): ignoreDuplicates:true returns no data on a no-op
+      // (e.g. page refresh where we already own the row), so data?.user_id check
+      // always failed → heartbeat never started → lock expired mid-session.
+      // Fix: always query ownership explicitly after the upsert attempt.
+      const { data: owned } = await supabase
+        .from("testlocks")
+        .select("user_id")
+        .eq("module_test_id", currentMtId)
+        .single();
+      if (!cancelled && owned?.user_id === user.id) startHeartbeat();
     })();
     return () => {
       cancelled = true;
@@ -229,15 +250,28 @@ const TestExecution: React.FC<Props> = ({
       supabase.from("testlocks").delete()
         .eq("module_test_id", currentMtId).eq("user_id", user.id);
     };
-  }, [currentMtId, user?.id]);
+  }, [currentMtId, user?.id, startHeartbeat, stopHeartbeat]);
 
+  // ── Lock release on tab/window close ──────────────────────
+  // FIX (image 3 — critical): sendBeacon to /api/release-lock silently fails in a
+  // Vite SPA (no such server route). Use fetch with keepalive:true so the request
+  // survives page unload without needing a server endpoint.
   useEffect(() => {
     if (!user) return;
     const release = () => {
-      navigator.sendBeacon
-        ? navigator.sendBeacon(`/api/release-lock?mtId=${currentMtId}&userId=${user.id}`)
-        : supabase.from("testlocks").delete()
-            .eq("module_test_id", currentMtId).eq("user_id", user.id);
+      const supabaseUrl  = (supabase as any).supabaseUrl  as string;
+      const supabaseKey  = (supabase as any).supabaseKey  as string;
+      fetch(
+        `${supabaseUrl}/rest/v1/testlocks?module_test_id=eq.${currentMtId}&user_id=eq.${user.id}`,
+        {
+          method:    "DELETE",
+          keepalive: true,
+          headers: {
+            apikey:        supabaseKey,
+            Authorization: `Bearer ${supabaseKey}`,
+          },
+        }
+      );
     };
     window.addEventListener("beforeunload", release);
     return () => window.removeEventListener("beforeunload", release);
@@ -276,19 +310,21 @@ const TestExecution: React.FC<Props> = ({
   }, [scrollTarget, loading]);
 
   // ── Step update ────────────────────────────────────────────
+  // FIX (image 3 — critical): no rollback on DB failure → UI and DB diverge silently.
   const handleStepUpdate = useCallback(async (
     stepId: string, status: "pass" | "fail" | "pending", remarks: string,
   ) => {
     const idx         = steps.findIndex(s => s.stepId === stepId);
     const step        = steps[idx];
     const nextPending = steps.slice(idx + 1).find(s => !s.is_divider && s.status === "pending");
-
-    // Compute display_name first so we can use it in the optimistic update too
     const displayName = status === "pending"
       ? null
       : (user?.displayName || user?.email || "User");
 
-    // Optimistic update — includes display_name so UI reflects change instantly
+    // Snapshot for rollback.
+    const prevSteps = steps;
+
+    // Optimistic update.
     setSteps(prev => prev.map(s =>
       s.stepId === stepId
         ? { ...s, status, remarks, display_name: displayName ?? "" }
@@ -303,27 +339,36 @@ const TestExecution: React.FC<Props> = ({
       setScrollTarget(stepId);
     }
 
-    await Promise.all([
-      supabase.rpc("update_step_result", {
-        p_module_test_id: currentMtId,
-        p_step_id:        stepId,
-        p_status:         status,
-        p_remarks:        remarks,
-      }),
-      step?.stepResultId
-        ? supabase
-            .from("step_results")
-            .update({ display_name: displayName })
-            .eq("id", step.stepResultId)
-        : Promise.resolve(),
-    ]);
-  }, [steps, currentMtId, user]);
+    try {
+      const [rpcRes, dnRes] = await Promise.all([
+        supabase.rpc("update_step_result", {
+          p_module_test_id: currentMtId,
+          p_step_id:        stepId,
+          p_status:         status,
+          p_remarks:        remarks,
+        }),
+        step?.stepResultId
+          ? supabase
+              .from("step_results")
+              .update({ display_name: displayName })
+              .eq("id", step.stepResultId)
+          : Promise.resolve({ error: null }),
+      ]);
+      if (rpcRes.error || (dnRes as any).error) throw rpcRes.error ?? (dnRes as any).error;
+    } catch (err) {
+      // Rollback optimistic update.
+      setSteps(prevSteps);
+      addToast("Failed to save step result. Please try again.", "error");
+    }
+  }, [steps, currentMtId, user, addToast]);
 
   // ── Undo All (admin) ───────────────────────────────────────
+  // FIX (image 3 — medium): user was missing from deps → stale closure if user changes.
+  // FIX (image 3 — critical): added rollback on failure.
   const handleUndoAll = useCallback(async () => {
     const actionable = steps.filter(s => !s.is_divider);
+    const prevSteps  = steps;
 
-    // Optimistic update — clear display_name locally too
     setSteps(prev => prev.map(s =>
       s.is_divider ? s : { ...s, status: "pending", remarks: "", display_name: "" }
     ));
@@ -331,24 +376,30 @@ const TestExecution: React.FC<Props> = ({
     const first = actionable[0];
     if (first) { setFocusedStepId(first.stepId); setScrollTarget(first.stepId); }
 
-    await Promise.all(
-      actionable.flatMap(s => [
-        supabase.rpc("update_step_result", {
-          p_module_test_id: currentMtId,
-          p_step_id:        s.stepId,
-          p_status:         "pending",
-          p_remarks:        "",
-        }),
-        supabase
-          .from("step_results")
-          .update({ display_name: null })
-          .eq("id", s.stepResultId),
-      ])
-    );
-
-    addToast("All steps reset to pending.", "info");
-    log("Undo all steps", "info");
-  }, [steps, currentMtId, addToast, log]);
+    try {
+      const results = await Promise.all(
+        actionable.flatMap(s => [
+          supabase.rpc("update_step_result", {
+            p_module_test_id: currentMtId,
+            p_step_id:        s.stepId,
+            p_status:         "pending",
+            p_remarks:        "",
+          }),
+          supabase
+            .from("step_results")
+            .update({ display_name: null })
+            .eq("id", s.stepResultId),
+        ])
+      );
+      const failed = results.find((r: any) => r.error);
+      if (failed) throw (failed as any).error;
+      addToast("All steps reset to pending.", "info");
+      log("Undo all steps", "info");
+    } catch (err) {
+      setSteps(prevSteps);
+      addToast("Failed to reset steps. Please try again.", "error");
+    }
+  }, [steps, currentMtId, user, addToast, log]);
 
   // ── Keyboard: Enter to pass focused step ───────────────────
   useEffect(() => {
@@ -374,8 +425,19 @@ const TestExecution: React.FC<Props> = ({
     onBack();
   };
 
-  // ── Export ─────────────────────────────────────────────────
-  const buildFlatData = (): FlatData[] =>
+  // ── Derived / memoised values ──────────────────────────────
+  // FIX (image 2): filtered, buildFlatData, exportStats, and progress stats were
+  // all recomputed on every render (every keystroke). Wrapped in useMemo.
+
+  const filtered = useMemo(() => steps.filter(s => {
+    if (s.is_divider) return true;
+    if (filter !== "all" && s.status !== filter) return false;
+    if (search && !`${s.action} ${s.expected_result} ${s.remarks}`
+      .toLowerCase().includes(search.toLowerCase())) return false;
+    return true;
+  }), [steps, filter, search]);
+
+  const flatData = useMemo<FlatData[]>(() =>
     steps.filter(s => !s.is_divider).map(s => ({
       module:   moduleName,
       test:     currentTest?.name ?? "",
@@ -384,37 +446,38 @@ const TestExecution: React.FC<Props> = ({
       expected: s.expected_result,
       remarks:  s.remarks || "",
       status:   s.status,
-    }));
+    })),
+  [steps, moduleName, currentTest?.name]);
 
-  const exportStats = () => {
-    const flat = buildFlatData();
-    return [
-      { label: "Total Steps", value: flat.length },
-      { label: "Pass",        value: flat.filter(s => s.status === "pass").length },
-      { label: "Fail",        value: flat.filter(s => s.status === "fail").length },
-    ];
-  };
+  const exportStats = useMemo(() => [
+    { label: "Total Steps", value: flatData.length },
+    { label: "Pass",        value: flatData.filter(s => s.status === "pass").length },
+    { label: "Fail",        value: flatData.filter(s => s.status === "fail").length },
+  ], [flatData]);
 
-  // ── Filtered steps ─────────────────────────────────────────
-  const filtered = steps.filter(s => {
-    if (s.is_divider) return true;
-    if (filter !== "all" && s.status !== filter) return false;
-    if (search && !`${s.action} ${s.expected_result} ${s.remarks}`
-      .toLowerCase().includes(search.toLowerCase())) return false;
-    return true;
-  });
-
-  // ── Progress ───────────────────────────────────────────────
-  const nonDividers = steps.filter(s => !s.is_divider);
-  const passCount   = nonDividers.filter(s => s.status === "pass").length;
-  const failCount   = nonDividers.filter(s => s.status === "fail").length;
-  const totalCount  = nonDividers.length;
-  const doneCount   = passCount + failCount;
-  const progressPct = totalCount > 0 ? Math.round((doneCount / totalCount) * 100) : 0;
-  const passPct     = totalCount > 0 ? (passCount / totalCount) * 100 : 0;
-  const failPct     = totalCount > 0 ? (failCount / totalCount) * 100 : 0;
+  const { passCount, failCount, totalCount, doneCount, progressPct, passPct, failPct } =
+    useMemo(() => {
+      const nd    = steps.filter(s => !s.is_divider);
+      const pass  = nd.filter(s => s.status === "pass").length;
+      const fail  = nd.filter(s => s.status === "fail").length;
+      const total = nd.length;
+      const done  = pass + fail;
+      return {
+        passCount:   pass,
+        failCount:   fail,
+        totalCount:  total,
+        doneCount:   done,
+        progressPct: total > 0 ? Math.round((done / total) * 100) : 0,
+        passPct:     total > 0 ? (pass / total) * 100 : 0,
+        failPct:     total > 0 ? (fail / total) * 100 : 0,
+      };
+    }, [steps]);
 
   // ── Guards ─────────────────────────────────────────────────
+  // FIX (image 3 — medium): previously lockLoading cleared before moduleTests
+  // loaded (two separate effects), so LockedScreen received undefined testName.
+  // Now all three fetches share one Promise.all, so lockLoading + moduleTests
+  // are always ready together.
   if (lockLoading) return (
     <div className="flex flex-col items-center justify-center gap-3" style={{ height: "100dvh" }}>
       <Spinner /><p className="text-xs text-t-muted">Checking lock status…</p>
@@ -435,12 +498,12 @@ const TestExecution: React.FC<Props> = ({
       <ExportModal
         isOpen={showExportModal} onClose={() => setShowExportModal(false)}
         title="Export Test Results" subtitle={`${moduleName} · ${currentTest?.name ?? ""}`}
-        stats={exportStats()}
+        stats={exportStats}
         options={[
           { label: "CSV", icon: "📥", color: "bg-green-600", hoverColor: "hover:bg-green-700",
-            onConfirm: () => exportExecutionCSV(moduleName, currentTest?.name ?? "test", buildFlatData()) },
+            onConfirm: () => exportExecutionCSV(moduleName, currentTest?.name ?? "test", flatData) },
           { label: "PDF", icon: "📋", color: "bg-red-600", hoverColor: "hover:bg-red-700",
-            onConfirm: () => exportExecutionPDF(moduleName, currentTest?.name ?? "test", buildFlatData()) },
+            onConfirm: () => exportExecutionPDF(moduleName, currentTest?.name ?? "test", flatData) },
         ]}
       />
 
@@ -658,7 +721,6 @@ const TableStepRow: React.FC<{
         />
       </td>
 
-      {/* Status + tester name stacked */}
       <td className="px-2 py-3 text-center border-r border-[var(--border-color)]">
         <div className="flex flex-col items-center gap-1.5">
           <span className={`text-xs font-bold px-2 py-0.5 rounded-full capitalize ${
@@ -720,7 +782,6 @@ const MobileStepCard: React.FC<{
       className={`rounded-xl overflow-hidden border border-[var(--border-color)] w-full cursor-pointer transition-shadow ${rowBg} ${isFocused ? "ring-2 ring-sky-400" : ""}`}
       style={{ borderLeftColor: accentColor, borderLeftWidth: 3 }}>
 
-      {/* Header: serial + enter hint + status + tester */}
       <div className="flex items-center justify-between px-3 py-2 border-b border-[var(--border-color)] bg-bg-card">
         <span className="text-xs font-mono text-t-muted tracking-wide">#{step.serial_no}</span>
         <div className="flex items-center gap-2 min-w-0">
@@ -736,7 +797,6 @@ const MobileStepCard: React.FC<{
             : "bg-[var(--border-color)] text-t-muted"}`}>
             {step.status}
           </span>
-          {/* Tester name in header, only when actioned */}
           <TesterBadge name={step.display_name} status={step.status} />
         </div>
       </div>
