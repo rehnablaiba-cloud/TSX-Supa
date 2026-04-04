@@ -5,17 +5,15 @@ import ThemeToggle from "../UI/ThemeToggle";
 
 interface Props {
   activePage: string;
-  onNavigate: (page: string, moduleId?: string) => void;
-  modules:    Module[];
+  onNavigate: (page: string, moduleName?: string) => void;
+  modules: Module[];
 }
 
-// Base nav items visible to all authenticated users
 const BASE_NAV = [
   { id: "dashboard", label: "Dashboard",  icon: "📊" },
   { id: "report",    label: "Test Report", icon: "📋" },
 ];
 
-// Admin-only nav items
 const ADMIN_NAV = [
   { id: "auditlog", label: "Audit Log", icon: "📜" },
   { id: "users",    label: "Users",     icon: "👥" },
@@ -25,7 +23,7 @@ const Sidebar: React.FC<Props> = ({ activePage, onNavigate, modules }) => {
   const [collapsed, setCollapsed] = useState(false);
   const [search, setSearch]       = useState("");
   const { user, signOut } = useAuth();
-  const isAdmin = user?.role === "admin";
+  const isAdmin = user?.defaultRole === "admin";
 
   const navItems = isAdmin ? [...BASE_NAV, ...ADMIN_NAV] : BASE_NAV;
 
@@ -88,15 +86,12 @@ const Sidebar: React.FC<Props> = ({ activePage, onNavigate, modules }) => {
             <p className="text-xs text-t-muted uppercase tracking-wider px-3 mb-2">Modules</p>
             {filtered.map(m => (
               <button
-                key={m.id}
-                onClick={() => onNavigate("module", m.id)}
+                key={m.name}
+                onClick={() => onNavigate("module", m.name)}
                 className="flex items-center gap-2 px-3 py-2 rounded-xl text-sm
                   text-t-secondary hover:bg-bg-card hover:text-t-primary
                   transition-colors w-full text-left">
-                <span
-                  className="w-2 h-2 rounded-full shrink-0"
-                  style={{ backgroundColor: m.accent_color || "var(--color-brand)" }}
-                />
+                <span className="w-2 h-2 rounded-full shrink-0 bg-[var(--color-brand)]" />
                 <span className="truncate">{m.name}</span>
               </button>
             ))}
@@ -114,14 +109,14 @@ const Sidebar: React.FC<Props> = ({ activePage, onNavigate, modules }) => {
           <div className="flex items-center gap-3">
             <div className="w-8 h-8 rounded-full bg-c-brand flex items-center justify-center
               text-sm font-bold text-white shrink-0">
-              {(user?.displayName || user?.email || "U")[0].toUpperCase()}
+              {(user?.display_name || user?.email || "U")[0].toUpperCase()}
             </div>
             <div className="flex-1 min-w-0">
               <p className="text-sm font-medium text-t-primary truncate">
-                {user?.displayName || user?.email}
+                {user?.display_name || user?.email}
               </p>
               <span className={isAdmin ? "badge-admin" : "badge-tester"}>
-                {user?.role}
+                {user?.defaultRole}
               </span>
             </div>
             <button
