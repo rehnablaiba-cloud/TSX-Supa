@@ -88,9 +88,9 @@ const Sidebar: React.FC<Props> = ({ activePage, onNavigate, modules }) => {
               Modules
             </p>
             {filtered.map(m => (
-              // ✅ FIX 2: key by m.id (stable unique PK), not m.name
+              
               <button
-                key={m.id}
+                key={m.name}
                 onClick={() => onNavigate("module", m.name)}
                 className="flex items-center gap-2 px-3 py-2 rounded-xl text-sm
                   text-t-secondary hover:bg-bg-card hover:text-t-primary
