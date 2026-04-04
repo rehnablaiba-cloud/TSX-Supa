@@ -239,22 +239,19 @@ const TestExecution: React.FC<Props> = ({
   }, [currentMtId, user?.id]);
 
   // ── Auto-scroll ────────────────────────────────────────────
-  // Works because the outer div is 100dvh (self-contained). This means
-  // scrollContainerRef is genuinely the scrolling element — not the page —
-  // so getBoundingClientRect() math and scrollTo() are correct.
+  // rAF guarantees the row is painted before we measure, fixing the
+  // desktop case where setTimeout(50) was racing against table render.
+  // scrollIntoView targets the nearest scrollable ancestor
+  // (scrollContainerRef) so it works for both <tr> and <div> refs.
   useEffect(() => {
     if (!scrollTarget || loading) return;
-    const id = setTimeout(() => {
-      const el        = stepRefs.current[scrollTarget];
-      const container = scrollContainerRef.current;
-      if (!el || !container) return;
-      const elRect   = el.getBoundingClientRect();
-      const cRect    = container.getBoundingClientRect();
-      const scrollTo = elRect.top - cRect.top + container.scrollTop - cRect.height / 2 + elRect.height / 2;
-      container.scrollTo({ top: Math.max(0, scrollTo), behavior: "smooth" });
+    const rafId = requestAnimationFrame(() => {
+      const el = stepRefs.current[scrollTarget];
+      if (!el) return;
+      el.scrollIntoView({ behavior: "smooth", block: "center" });
       setScrollTarget(null);
-    }, 50);
-    return () => clearTimeout(id);
+    });
+    return () => cancelAnimationFrame(rafId);
   }, [scrollTarget, loading]);
 
   // ── Step update ────────────────────────────────────────────
@@ -377,10 +374,6 @@ const TestExecution: React.FC<Props> = ({
   );
 
   // ── Render ─────────────────────────────────────────────────
-  // CRITICAL: height 100dvh makes this component self-contained.
-  // flex-1 + min-h-0 on the scroll container only constrains correctly
-  // when the parent has a defined height — 100dvh guarantees that
-  // regardless of how ancestors are styled.
   return (
     <div className="flex flex-col" style={{ height: "100dvh" }}>
 
@@ -396,21 +389,13 @@ const TestExecution: React.FC<Props> = ({
         ]}
       />
 
-      {/* Fixed sections — flex-shrink-0 prevents them collapsing */}
+      {/* Fixed sections */}
       <div className="flex-shrink-0">
         <Topbar
           title={currentTest ? `#${currentTest.serial_no} — ${currentTest.name}` : "Test Execution"}
           subtitle={moduleName}
           actions={
             <div className="flex items-center gap-2">
-              {isAdmin && doneCount > 0 && (
-                <button onClick={handleUndoAll}
-                  className="flex items-center gap-1.5 px-4 py-2 bg-bg-card hover:bg-bg-surface
-                    text-amber-500 hover:text-amber-400 text-sm font-semibold rounded-lg transition
-                    border border-amber-500/30 hover:border-amber-500/60">
-                  ↩ Undo All
-                </button>
-              )}
               <button onClick={() => setShowExportModal(true)} disabled={filtered.length === 0}
                 className="flex items-center gap-1.5 px-4 py-2 bg-bg-card hover:bg-bg-surface
                   disabled:opacity-40 disabled:cursor-not-allowed text-t-primary
@@ -467,8 +452,7 @@ const TestExecution: React.FC<Props> = ({
         </div>
       </div>
 
-      {/* Scroll container — flex-1 fills remaining height, min-h-0 lets
-          it shrink so overflow-y-auto activates (not the page) */}
+      {/* Scroll container */}
       <div ref={scrollContainerRef} className="flex-1 min-h-0 overflow-y-auto pb-6">
         {loading ? (
           <div className="flex items-center justify-center py-20"><Spinner /></div>
@@ -478,8 +462,7 @@ const TestExecution: React.FC<Props> = ({
           <>
             {/* Desktop table */}
             <table className="hidden md:table w-full text-sm border-collapse table-fixed">
-              {/* sticky top-0 sticks to scrollContainerRef, not the viewport,
-                  because scrollContainerRef is overflow-y-auto */}
+              {/* sticky top-0 sticks to scrollContainerRef because it is overflow-y-auto */}
               <thead className="sticky top-0 z-10">
                 <tr className="bg-bg-surface border-b border-[var(--border-color)]">
                   <th className="text-left px-2 py-2.5 text-xs font-semibold text-t-muted uppercase tracking-wider w-[6%]  border-r border-[var(--border-color)]">S.No</th>
@@ -487,7 +470,22 @@ const TestExecution: React.FC<Props> = ({
                   <th className="text-left px-4 py-2.5 text-xs font-semibold text-t-muted uppercase tracking-wider w-[32%] border-r border-[var(--border-color)]">Expected Result</th>
                   <th className="text-left px-3 py-2.5 text-xs font-semibold text-t-muted uppercase tracking-wider w-[14%] border-r border-[var(--border-color)]">Remarks</th>
                   <th className="text-center px-2 py-2.5 text-xs font-semibold text-t-muted uppercase tracking-wider w-[9%]  border-r border-[var(--border-color)]">Status</th>
-                  <th className="text-center px-2 py-2.5 text-xs font-semibold text-t-muted uppercase tracking-wider w-[7%]">Actions</th>
+                  {/* Actions column — Undo All lives here for admin */}
+                  <th className="text-center px-2 py-2.5 text-xs font-semibold text-t-muted uppercase tracking-wider w-[7%]">
+                    {isAdmin && doneCount > 0 ? (
+                      <button
+                        onClick={handleUndoAll}
+                        className="flex items-center justify-center gap-1 mx-auto px-2 py-1 rounded-md
+                          text-amber-500 hover:text-amber-400 text-[10px] font-bold uppercase tracking-wide
+                          bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30
+                          hover:border-amber-500/60 transition-colors leading-none"
+                      >
+                        ↩ Undo All
+                      </button>
+                    ) : (
+                      <span>Actions</span>
+                    )}
+                  </th>
                 </tr>
               </thead>
               <tbody>
@@ -523,8 +521,19 @@ const TestExecution: React.FC<Props> = ({
                 <div className="px-3 py-2 border-r border-[var(--border-color)]">
                   <span className="text-[10px] font-semibold text-t-muted uppercase tracking-wider">S.No</span>
                 </div>
-                <div className="px-3 py-2">
+                <div className="px-3 py-2 flex items-center justify-between">
                   <span className="text-[10px] font-semibold text-t-muted uppercase tracking-wider">Step Details</span>
+                  {isAdmin && doneCount > 0 && (
+                    <button
+                      onClick={handleUndoAll}
+                      className="flex items-center gap-1 px-2 py-1 rounded-md text-amber-500
+                        hover:text-amber-400 text-[10px] font-bold uppercase tracking-wide
+                        bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30
+                        hover:border-amber-500/60 transition-colors"
+                    >
+                      ↩ Undo All
+                    </button>
+                  )}
                 </div>
               </div>
               <div className="flex flex-col gap-2 p-3">
