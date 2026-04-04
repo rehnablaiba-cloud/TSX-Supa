@@ -5,7 +5,7 @@ import Spinner from "../UI/Spinner";
 import ExportModal from "../UI/ExportModal";
 import { exportReportCSV, exportReportPDF, FlatData } from "../../utils/export";
 import { useTheme } from "../../context/ThemeContext";
-import { Upload, Download, FileText, AlertTriangle } from "lucide-react"; // ✅ Lucide
+import { FileText, AlertTriangle } from "lucide-react"; // ✅ Lucide
 import {
   ResponsiveContainer,
   BarChart, Bar,
@@ -16,7 +16,7 @@ import {
   XAxis, YAxis, CartesianGrid, Tooltip, Legend,
 } from "recharts";
 import { PieLabelRenderProps } from "recharts";
-import { Upload, FileSpreadsheet, FileText, FileDown } from "lucide-react";
+import { Upload, FileSpreadsheet, FileText } from "lucide-react";
 
 // ── Animation keyframes ───────────────────────────────────────────────────────
 const ANIM_STYLE = `

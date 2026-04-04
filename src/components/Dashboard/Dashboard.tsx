@@ -9,14 +9,14 @@ import React, {
 import { supabase } from "../../supabase";
 import gsap from "gsap";
 import ExportModal from "../UI/ExportModal";
-import { Upload, Download, FileText, FileDown } from "lucide-react"; // ✅ Lucide
+import { Upload, FileText, FileDown } from "lucide-react"; // ✅ Lucide
 import {
   exportDashboardCSV,
   exportDashboardPDF,
   exportDashboardDocx,
   ModuleSummary,
 } from "../../utils/export";
-import { Upload, FileSpreadsheet, FileText, FileDown } from "lucide-react";
+import { FileSpreadsheet} from "lucide-react";
 
 interface Props {
   onNavigate: (page: string, moduleName?: string) => void;
