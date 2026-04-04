@@ -272,7 +272,7 @@ const RRadarChart: React.FC<{ data: ChartRow[]; ct: ChartTheme }> = ({ data, ct 
 const ModuleDashboard: React.FC<Props> = ({ moduleId, moduleName, onBack, onExecute }) => {
   useInjectStyle();
   const { user }     = useAuth();
-  const isAdmin      = user?.defaultRole === "admin";
+  const isAdmin      = user?.Role === "admin";
   const { addToast } = useToast();
   const { log }      = useAuditLog();
   const { theme }    = useTheme();

@@ -436,7 +436,7 @@ const TestExecution: React.FC<Props> = ({
         <Topbar
           title={currentTest ? `#${currentTest.serial_no} — ${currentTest.name}` : "Test Execution"}
           subtitle={moduleName}
-          RESULT={
+          actions={
             <div className="flex flex-col items-end gap-1.5">
               <div className="flex items-center gap-2">
                 <button onClick={() => setShowExportModal(true)} disabled={filtered.length === 0}
