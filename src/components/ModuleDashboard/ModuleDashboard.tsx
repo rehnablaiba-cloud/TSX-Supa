@@ -291,7 +291,7 @@ const ModuleDashboard: React.FC<Props> = ({ moduleId, moduleName, onBack, onExec
     lockRefetchTimer.current = setTimeout(() => {
       const seq = ++fetchSeq.current;
       supabase
-        .from("testlocks")
+        .from("test_locks")
         .select("module_test_id, user_id, locked_by_name")
         .then(({ data }) => {
           if (seq === fetchSeq.current) setLocks(data ?? []);
@@ -322,7 +322,7 @@ const ModuleDashboard: React.FC<Props> = ({ moduleId, moduleName, onBack, onExec
           .eq("module_name", moduleId)
           .order("tests_name"),
         supabase
-          .from("testlocks")
+          .from("test_locks")
           .select("module_test_id, user_id, locked_by_name"),
       ]);
 
@@ -353,7 +353,7 @@ const ModuleDashboard: React.FC<Props> = ({ moduleId, moduleName, onBack, onExec
     let mounted = true;
 
     const channel = supabase.channel("all-locks")
-      .on("postgres_changes", { event: "*", schema: "public", table: "testlocks" }, () => {
+      .on("postgres_changes", { event: "*", schema: "public", table: "test_locks" }, () => {
         if (mounted) refetchLocks();
       })
       .subscribe();
@@ -415,7 +415,7 @@ const ModuleDashboard: React.FC<Props> = ({ moduleId, moduleName, onBack, onExec
 
   const handleForceRelease = async (mtId: string, lockedByName: string) => {
     const { error } = await supabase
-      .from("testlocks")
+      .from("test_locks")
       .delete()
       .eq("module_test_id", mtId);
 
