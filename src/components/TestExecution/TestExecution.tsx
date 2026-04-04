@@ -513,24 +513,42 @@ const TestExecution: React.FC<Props> = ({
   }), [steps, filter, search]);
 
 
+  // ── flatData: includes dividers for PDF section headers ────
   const flatData = useMemo<FlatData[]>(() =>
-    steps.filter(s => !s.is_divider).map(s => ({
-      module:   moduleName,
-      test:     currentTest?.name ?? "",
-      serial:   s.serial_no,
-      action:   s.action,
-      expected: s.expected_result,
-      remarks:  s.remarks || "",
-      status:   s.status,
-    })),
+    steps.map(s =>
+      s.is_divider
+        ? {
+            module:     moduleName,
+            test:       currentTest?.name ?? "",
+            serial:     0,
+            action:     s.action,
+            expected:   "",
+            remarks:    "",
+            status:     "",
+            isDivider:  true,
+          }
+        : {
+            module:    moduleName,
+            test:      currentTest?.name ?? "",
+            serial:    s.serial_no,
+            action:    s.action,
+            expected:  s.expected_result,
+            remarks:   s.remarks || "",
+            status:    s.status,
+          }
+    ),
   [steps, moduleName, currentTest?.name]);
 
 
-  const exportStats = useMemo(() => [
-    { label: "Total Steps", value: flatData.length },
-    { label: "Pass",        value: flatData.filter(s => s.status === "pass").length },
-    { label: "Fail",        value: flatData.filter(s => s.status === "fail").length },
-  ], [flatData]);
+  // exportStats uses only non-divider rows
+  const exportStats = useMemo(() => {
+    const nd = flatData.filter(s => !s.isDivider);
+    return [
+      { label: "Total Steps", value: nd.length },
+      { label: "Pass",        value: nd.filter(s => s.status === "pass").length },
+      { label: "Fail",        value: nd.filter(s => s.status === "fail").length },
+    ];
+  }, [flatData]);
 
 
   const { passCount, failCount, totalCount, doneCount, progressPct, passPct, failPct } =
@@ -640,7 +658,7 @@ const TestExecution: React.FC<Props> = ({
           </div>
         </div>
 
-    {/* Filters row */}
+        {/* Filters row */}
         <div className="flex flex-col border-b border-[var(--border-color)]">
           {/* Line 1: Export + Filter pills */}
           <div className="flex items-center gap-2 px-4 py-2">
@@ -678,7 +696,7 @@ const TestExecution: React.FC<Props> = ({
             />
           </div>
         </div>
-       </div> 
+      </div>
 
       {/* Scroll container */}
       <div ref={scrollContainerRef} className="flex-1 min-h-0 overflow-y-auto" style={{ scrollBehavior: "smooth" }}>
