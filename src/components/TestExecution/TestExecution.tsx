@@ -28,6 +28,7 @@ interface ExecutionStep {
   is_divider:      boolean;
   status:          "pass" | "fail" | "pending";
   remarks:         string;
+  display_name:    string;   // ← added
 }
 
 interface ModuleTestItem {
@@ -119,9 +120,9 @@ const TestExecution: React.FC<Props> = ({
       supabase
         .from("step_results")
         .select(`
-          id, module_test_id, step_id, status, remarks,
+          id, module_test_id, step_id, status, remarks, display_name,
           step:steps ( id, serial_no, action, expected_result, is_divider )
-        `)
+        `)                                                  // ← added display_name
         .eq("module_test_id", currentMtId),
       supabase
         .from("testlocks")
@@ -139,6 +140,7 @@ const TestExecution: React.FC<Props> = ({
           is_divider:      sr.step.is_divider,
           status:          sr.status,
           remarks:         sr.remarks,
+          display_name:    sr.display_name ?? "",           // ← added
         }))
         .sort((a, b) => a.serial_no - b.serial_no);
 
@@ -164,8 +166,8 @@ const TestExecution: React.FC<Props> = ({
       }, ({ new: updated }: any) => {
         setSteps(prev => prev.map(s =>
           s.stepResultId === updated.id
-            ? { ...s, status: updated.status, remarks: updated.remarks }
-            : s
+            ? { ...s, status: updated.status, remarks: updated.remarks, display_name: updated.display_name ?? "" }
+            : s                                             // ← sync display_name from realtime too
         ));
       })
       .subscribe();
@@ -280,7 +282,19 @@ const TestExecution: React.FC<Props> = ({
     const idx         = steps.findIndex(s => s.stepId === stepId);
     const step        = steps[idx];
     const nextPending = steps.slice(idx + 1).find(s => !s.is_divider && s.status === "pending");
-    setSteps(prev => prev.map(s => s.stepId === stepId ? { ...s, status, remarks } : s));
+
+    // Compute display_name first so we can use it in the optimistic update too
+    const displayName = status === "pending"
+      ? null
+      : (user?.displayName || user?.email || "User");
+
+    // Optimistic update — includes display_name so UI reflects change instantly
+    setSteps(prev => prev.map(s =>
+      s.stepId === stepId
+        ? { ...s, status, remarks, display_name: displayName ?? "" }
+        : s
+    ));
+
     if (status !== "pending") {
       if (nextPending) { setFocusedStepId(nextPending.stepId); setScrollTarget(nextPending.stepId); }
       else setFocusedStepId(null);
@@ -288,11 +302,6 @@ const TestExecution: React.FC<Props> = ({
       setFocusedStepId(stepId);
       setScrollTarget(stepId);
     }
-
-    // ── Write display_name (or clear it on undo) ──
-    const displayName = status === "pending"
-      ? null
-      : (user?.displayName || user?.email || "User");
 
     await Promise.all([
       supabase.rpc("update_step_result", {
@@ -313,7 +322,11 @@ const TestExecution: React.FC<Props> = ({
   // ── Undo All (admin) ───────────────────────────────────────
   const handleUndoAll = useCallback(async () => {
     const actionable = steps.filter(s => !s.is_divider);
-    setSteps(prev => prev.map(s => s.is_divider ? s : { ...s, status: "pending", remarks: "" }));
+
+    // Optimistic update — clear display_name locally too
+    setSteps(prev => prev.map(s =>
+      s.is_divider ? s : { ...s, status: "pending", remarks: "", display_name: "" }
+    ));
     remarksMap.current = {};
     const first = actionable[0];
     if (first) { setFocusedStepId(first.stepId); setScrollTarget(first.stepId); }
@@ -518,11 +531,11 @@ const TestExecution: React.FC<Props> = ({
               <thead className="sticky top-0 z-10">
                 <tr className="bg-bg-surface border-b border-[var(--border-color)]">
                   <th className="text-left px-2 py-2.5 text-xs font-semibold text-t-muted uppercase tracking-wider w-[6%]  border-r border-[var(--border-color)]">S.No</th>
-                  <th className="text-left px-4 py-2.5 text-xs font-semibold text-t-muted uppercase tracking-wider w-[30%] border-r border-[var(--border-color)]">Action</th>
-                  <th className="text-left px-4 py-2.5 text-xs font-semibold text-t-muted uppercase tracking-wider w-[30%] border-r border-[var(--border-color)]">Expected Result</th>
+                  <th className="text-left px-4 py-2.5 text-xs font-semibold text-t-muted uppercase tracking-wider w-[28%] border-r border-[var(--border-color)]">Action</th>
+                  <th className="text-left px-4 py-2.5 text-xs font-semibold text-t-muted uppercase tracking-wider w-[28%] border-r border-[var(--border-color)]">Expected Result</th>
                   <th className="text-left px-3 py-2.5 text-xs font-semibold text-t-muted uppercase tracking-wider w-[13%] border-r border-[var(--border-color)]">Remarks</th>
-                  <th className="text-center px-2 py-2.5 text-xs font-semibold text-t-muted uppercase tracking-wider w-[9%]  border-r border-[var(--border-color)]">Status</th>
-                  <th className="text-center px-2 py-2.5 text-xs font-semibold text-t-muted uppercase tracking-wider w-[12%]">RESULT</th>
+                  <th className="text-center px-2 py-2.5 text-xs font-semibold text-t-muted uppercase tracking-wider w-[11%] border-r border-[var(--border-color)]">Status</th>
+                  <th className="text-center px-2 py-2.5 text-xs font-semibold text-t-muted uppercase tracking-wider w-[14%]">Result</th>
                 </tr>
               </thead>
               <tbody>
@@ -592,6 +605,18 @@ const TestExecution: React.FC<Props> = ({
   );
 };
 
+// ── Tester Badge — shared by both desktop and mobile ──────────
+const TesterBadge: React.FC<{ name: string; status: "pass" | "fail" | "pending" }> = ({ name, status }) => {
+  if (!name) return null;
+  const color = status === "pass" ? "text-green-400" : status === "fail" ? "text-red-400" : "text-t-muted";
+  return (
+    <span className={`flex items-center gap-1 text-[10px] font-medium ${color} opacity-80`}>
+      <span>👤</span>
+      <span className="truncate max-w-[96px]">{name}</span>
+    </span>
+  );
+};
+
 // ── Desktop Table Row ──────────────────────────────────────────
 const TableStepRow: React.FC<{
   step:            ExecutionStep;
@@ -632,14 +657,20 @@ const TableStepRow: React.FC<{
           className="input text-sm resize-none disabled:opacity-50 w-full"
         />
       </td>
+
+      {/* Status + tester name stacked */}
       <td className="px-2 py-3 text-center border-r border-[var(--border-color)]">
-        <span className={`text-xs font-bold px-2 py-0.5 rounded-full capitalize ${
-          step.status === "pass" ? "bg-green-500/15 text-green-400"
-          : step.status === "fail" ? "bg-red-500/15 text-red-400"
-          : "bg-[var(--border-color)] text-t-muted"}`}>
-          {step.status}
-        </span>
+        <div className="flex flex-col items-center gap-1.5">
+          <span className={`text-xs font-bold px-2 py-0.5 rounded-full capitalize ${
+            step.status === "pass" ? "bg-green-500/15 text-green-400"
+            : step.status === "fail" ? "bg-red-500/15 text-red-400"
+            : "bg-[var(--border-color)] text-t-muted"}`}>
+            {step.status}
+          </span>
+          <TesterBadge name={step.display_name} status={step.status} />
+        </div>
       </td>
+
       {!readonly ? (
         <td className="px-2 py-3">
           <div className="flex flex-col items-center gap-1">
@@ -688,21 +719,25 @@ const MobileStepCard: React.FC<{
     <div ref={cardRef} onClick={onFocus}
       className={`rounded-xl overflow-hidden border border-[var(--border-color)] w-full cursor-pointer transition-shadow ${rowBg} ${isFocused ? "ring-2 ring-sky-400" : ""}`}
       style={{ borderLeftColor: accentColor, borderLeftWidth: 3 }}>
+
+      {/* Header: serial + enter hint + status + tester */}
       <div className="flex items-center justify-between px-3 py-2 border-b border-[var(--border-color)] bg-bg-card">
         <span className="text-xs font-mono text-t-muted tracking-wide">#{step.serial_no}</span>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 min-w-0">
           {isFocused && (
-            <span className="flex items-center gap-1 text-[10px] text-sky-400 font-medium">
+            <span className="flex items-center gap-1 text-[10px] text-sky-400 font-medium shrink-0">
               <kbd className="px-1 py-0.5 rounded bg-sky-400/10 border border-sky-400/20 font-mono text-[9px]">Enter</kbd>
               to pass
             </span>
           )}
-          <span className={`text-xs font-bold px-2 py-0.5 rounded-full capitalize ${
+          <span className={`shrink-0 text-xs font-bold px-2 py-0.5 rounded-full capitalize ${
             step.status === "pass" ? "bg-green-500/15 text-green-400"
             : step.status === "fail" ? "bg-red-500/15 text-red-400"
             : "bg-[var(--border-color)] text-t-muted"}`}>
             {step.status}
           </span>
+          {/* Tester name in header, only when actioned */}
+          <TesterBadge name={step.display_name} status={step.status} />
         </div>
       </div>
 
@@ -740,7 +775,7 @@ const MobileStepCard: React.FC<{
 
       {!readonly && (
         <div className="flex items-center justify-between px-3 py-2 bg-bg-card">
-          <span className="text-[10px] font-semibold text-t-muted uppercase tracking-wider">RESULT</span>
+          <span className="text-[10px] font-semibold text-t-muted uppercase tracking-wider">Result</span>
           <div className="flex items-center gap-2">
             {step.status !== "pending" && (
               <button onClick={e => { e.stopPropagation(); onUpdate(step.stepId, "pending", ""); }}
