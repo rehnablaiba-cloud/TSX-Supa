@@ -10,10 +10,10 @@ const ALL_TABLES = [
   "profiles",
   "modules",
   "tests",
-  "steps",
+  "test_steps",
   "module_tests",
   "step_results",
-  "testlocks",
+  "test_locks",
   "auditlog",
 ] as const;
 
