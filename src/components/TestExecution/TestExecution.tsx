@@ -9,10 +9,11 @@ import { useAuditLog } from "../../hooks/useAuditLog";
 import { exportExecutionCSV, exportExecutionPDF, FlatData } from "../../utils/export";
 
 interface Props {
-  moduleId: string;
-  moduleName: string;
+  moduleId:            string;
+  moduleName:          string;
   initialModuleTestId: string;
-  onBack: () => void;
+  isAdmin?:            boolean;
+  onBack:              () => void;
 }
 
 type Filter = "all" | "pass" | "fail" | "pending";
@@ -61,7 +62,7 @@ const LockedScreen: React.FC<{ lockedByName: string; testName: string; onBack: (
 );
 
 // ── Main Component ────────────────────────────────────────────
-const TestExecution: React.FC<Props> = ({ moduleId, moduleName, initialModuleTestId, onBack }) => {
+const TestExecution: React.FC<Props> = ({ moduleId, moduleName, initialModuleTestId, isAdmin = false, onBack }) => {
   const { user }     = useAuth();
   const { addToast } = useToast();
   const { log }      = useAuditLog();
@@ -76,8 +77,6 @@ const TestExecution: React.FC<Props> = ({ moduleId, moduleName, initialModuleTes
   // ── Keyboard navigation state ─────────────────────────────
   const [focusedStepId, setFocusedStepId]     = useState<string | null>(null);
   const stepsInitialized                       = useRef(false);
-  // remarksMap lets the keyboard handler read live textarea values
-  // without needing to lift all remarks state into the parent
   const remarksMap                             = useRef<Record<string, string>>({});
 
   const heartbeatRef       = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -109,7 +108,6 @@ const TestExecution: React.FC<Props> = ({ moduleId, moduleName, initialModuleTes
     setLoading(true);
     setLockLoading(true);
 
-    // Reset keyboard nav state for this new test
     stepsInitialized.current = false;
     setFocusedStepId(null);
     remarksMap.current = {};
@@ -147,7 +145,6 @@ const TestExecution: React.FC<Props> = ({ moduleId, moduleName, initialModuleTes
       setLockLoading(false);
     });
 
-    // Real-time: lock changes
     const lockChannel = supabase.channel(`lock:${currentMtId}`)
       .on("postgres_changes", {
         event: "*", schema: "public", table: "testlocks",
@@ -157,7 +154,6 @@ const TestExecution: React.FC<Props> = ({ moduleId, moduleName, initialModuleTes
       })
       .subscribe();
 
-    // Real-time: step_result updates
     const srChannel = supabase.channel(`step_results:${currentMtId}`)
       .on("postgres_changes", {
         event: "UPDATE", schema: "public", table: "step_results",
@@ -234,7 +230,6 @@ const TestExecution: React.FC<Props> = ({ moduleId, moduleName, initialModuleTes
     };
   }, [currentMtId, user?.id]);
 
-  // Release lock on tab/window close
   useEffect(() => {
     if (!user) return;
     const release = () => {
@@ -247,23 +242,25 @@ const TestExecution: React.FC<Props> = ({ moduleId, moduleName, initialModuleTes
     return () => window.removeEventListener("beforeunload", release);
   }, [currentMtId, user?.id]);
 
- // ── Auto-scroll: snap focused step to center of container ───
-useEffect(() => {
-  if (!scrollTarget || loading) return;
-  const id = setTimeout(() => {
-    const el        = stepRefs.current[scrollTarget];
-    const container = scrollContainerRef.current;
-    if (!el || !container) return;
-    const elRect        = el.getBoundingClientRect();
-    const containerRect = container.getBoundingClientRect();
-    const scrollTo =
-      elRect.top - containerRect.top + container.scrollTop
-      - containerRect.height / 2 + elRect.height / 2;
-    container.scrollTo({ top: Math.max(0, scrollTo), behavior: "smooth" });
-    setScrollTarget(null);
-  }, 0);
-  return () => clearTimeout(id);
-}, [scrollTarget, loading]);
+  // ── Auto-scroll: center focused step in container ─────────
+  // setTimeout(0) lets React finish committing all refs before we measure.
+  // min-h-0 on the container is required for overflow-auto to actually scroll.
+  useEffect(() => {
+    if (!scrollTarget || loading) return;
+    const id = setTimeout(() => {
+      const el        = stepRefs.current[scrollTarget];
+      const container = scrollContainerRef.current;
+      if (!el || !container) return;
+      const elRect        = el.getBoundingClientRect();
+      const containerRect = container.getBoundingClientRect();
+      const scrollTo =
+        elRect.top - containerRect.top + container.scrollTop
+        - containerRect.height / 2 + elRect.height / 2;
+      container.scrollTo({ top: Math.max(0, scrollTo), behavior: "smooth" });
+      setScrollTarget(null);
+    }, 0);
+    return () => clearTimeout(id);
+  }, [scrollTarget, loading]);
 
   // ── Step update — optimistic ──────────────────────────────
   const handleStepUpdate = useCallback(async (
@@ -274,7 +271,6 @@ useEffect(() => {
 
     setSteps(prev => prev.map(s => s.stepId === stepId ? { ...s, status, remarks } : s));
 
-    // Advance keyboard focus to next pending step
     if (status !== "pending") {
       if (nextPending) {
         setFocusedStepId(nextPending.stepId);
@@ -283,7 +279,6 @@ useEffect(() => {
         setFocusedStepId(null);
       }
     } else {
-      // Undo: restore focus to the step that was just reset
       setFocusedStepId(stepId);
       setScrollTarget(stepId);
     }
@@ -296,24 +291,43 @@ useEffect(() => {
     });
   }, [steps, currentMtId]);
 
-  // ── Global keyboard handler: Enter to pass focused step ───
+  // ── Undo All (admin only) ─────────────────────────────────
+  const handleUndoAll = useCallback(async () => {
+    const actionable = steps.filter(s => !s.is_divider);
+    // Optimistic reset
+    setSteps(prev => prev.map(s => s.is_divider ? s : { ...s, status: "pending", remarks: "" }));
+    remarksMap.current = {};
+    const firstStep = actionable[0];
+    if (firstStep) {
+      setFocusedStepId(firstStep.stepId);
+      setScrollTarget(firstStep.stepId);
+    }
+    await Promise.all(
+      actionable.map(s =>
+        supabase.rpc("update_step_result", {
+          p_module_test_id: currentMtId,
+          p_step_id:        s.stepId,
+          p_status:         "pending",
+          p_remarks:        "",
+        })
+      )
+    );
+    addToast("All steps reset to pending.", "info");
+    log("Undo all steps", "info");
+  }, [steps, currentMtId, addToast, log]);
+
+  // ── Global keyboard handler ───────────────────────────────
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key !== "Enter" || e.shiftKey) return;
-      // Don't intercept if user is typing in a textarea or input
       const activeTag = (document.activeElement as HTMLElement)?.tagName;
       if (activeTag === "TEXTAREA" || activeTag === "INPUT" || activeTag === "BUTTON") return;
       if (!focusedStepId || isLockedByOther) return;
-
       const focused = steps.find(s => s.stepId === focusedStepId);
       if (!focused || focused.is_divider) return;
-
-      // Use the live remarks value from the map (typed but not yet submitted),
-      // falling back to the saved value from state
       const remarks = remarksMap.current[focusedStepId] ?? focused.remarks ?? "";
       handleStepUpdate(focusedStepId, "pass", remarks);
     };
-
     document.addEventListener("keydown", handleKeyDown);
     return () => document.removeEventListener("keydown", handleKeyDown);
   }, [focusedStepId, steps, isLockedByOther, handleStepUpdate]);
@@ -329,7 +343,7 @@ useEffect(() => {
     onBack();
   };
 
-  // ── Export ─────────────────────────────────────────────
+  // ── Export ─────────────────────────────────────────────────
   const buildFlatData = (): FlatData[] =>
     steps.filter(s => !s.is_divider).map(s => ({
       module:   moduleName,
@@ -350,7 +364,7 @@ useEffect(() => {
     ];
   };
 
-  // ── Filtered steps ────────────────────────────────────
+  // ── Filtered steps ────────────────────────────────────────
   const filtered = steps.filter(s => {
     if (s.is_divider) return true;
     if (filter !== "all" && s.status !== filter) return false;
@@ -359,13 +373,15 @@ useEffect(() => {
     return true;
   });
 
-  // ── Progress ──────────────────────────────────────────
+  // ── Progress ──────────────────────────────────────────────
   const nonDividers = steps.filter(s => !s.is_divider);
   const passCount   = nonDividers.filter(s => s.status === "pass").length;
   const failCount   = nonDividers.filter(s => s.status === "fail").length;
   const totalCount  = nonDividers.length;
   const doneCount   = passCount + failCount;
   const progressPct = totalCount > 0 ? Math.round((doneCount / totalCount) * 100) : 0;
+  const passPct     = totalCount > 0 ? (passCount / totalCount) * 100 : 0;
+  const failPct     = totalCount > 0 ? (failCount / totalCount) * 100 : 0;
 
   if (lockLoading) return (
     <div className="flex flex-col h-full">
@@ -407,6 +423,15 @@ useEffect(() => {
         subtitle={moduleName}
         actions={
           <div className="flex items-center gap-2">
+            {isAdmin && doneCount > 0 && (
+              <button
+                onClick={handleUndoAll}
+                className="flex items-center gap-1.5 px-4 py-2 bg-bg-card hover:bg-bg-surface
+                  text-amber-500 hover:text-amber-400 text-sm font-semibold rounded-lg transition
+                  border border-amber-500/30 hover:border-amber-500/60">
+                ↩ Undo All
+              </button>
+            )}
             <button
               onClick={() => setShowExportModal(true)}
               disabled={filtered.length === 0}
@@ -421,7 +446,7 @@ useEffect(() => {
       />
 
       {/* ── Progress bar ── */}
-      <div className="px-4 pt-3 pb-2">
+      <div className="px-4 pt-3 pb-2 flex-shrink-0">
         <div className="flex items-center justify-between mb-1.5">
           <div className="flex items-center gap-4 text-xs text-t-muted">
             <span><span className="text-green-400 font-semibold">{passCount}</span> pass</span>
@@ -429,7 +454,6 @@ useEffect(() => {
             <span><span className="text-t-muted font-semibold">{totalCount - doneCount}</span> pending</span>
           </div>
           <div className="flex items-center gap-3">
-            {/* Keyboard hint */}
             {focusedStepId && (
               <span className="hidden md:flex items-center gap-1.5 text-xs text-t-muted">
                 <kbd className="px-1.5 py-0.5 rounded bg-[var(--border-color)] text-t-secondary font-mono text-[10px] border border-[var(--border-color)]">
@@ -441,14 +465,21 @@ useEffect(() => {
             <span className="text-xs text-t-muted font-medium">{progressPct}%</span>
           </div>
         </div>
-        <div className="h-1.5 bg-[var(--border-color)] rounded-full overflow-hidden">
-          <div className="h-full rounded-full transition-all duration-500"
-            style={{ width: `${progressPct}%`, background: failCount > 0 ? "linear-gradient(90deg,#22c55e,#ef4444)" : "#22c55e" }} />
+        {/* Segmented bar: green = pass, red = fail, gray = pending */}
+        <div className="h-1.5 bg-[var(--border-color)] rounded-full overflow-hidden flex">
+          <div
+            className="h-full bg-green-500 transition-all duration-500"
+            style={{ width: `${passPct}%` }}
+          />
+          <div
+            className="h-full bg-red-500 transition-all duration-500"
+            style={{ width: `${failPct}%` }}
+          />
         </div>
       </div>
 
       {/* ── Filters ── */}
-      <div className="flex items-center gap-2 px-4 py-2 border-b border-[var(--border-color)] flex-wrap">
+      <div className="flex items-center gap-2 px-4 py-2 border-b border-[var(--border-color)] flex-wrap flex-shrink-0">
         <div className="flex gap-1">
           {(["all", "pass", "fail", "pending"] as Filter[]).map(f => (
             <button
@@ -466,7 +497,7 @@ useEffect(() => {
           placeholder="Search steps…" className="input text-xs py-1.5 w-48" />
       </div>
 
-      {/* ── Scroll container ── */}
+      {/* ── Scroll container — min-h-0 is required so flex-1 actually constrains ── */}
       <div ref={scrollContainerRef} className="flex-1 min-h-0 overflow-auto pb-24 md:pb-4">
         {loading ? (
           <div className="flex items-center justify-center py-20"><Spinner /></div>
@@ -476,8 +507,8 @@ useEffect(() => {
           <>
             {/* ── Desktop table ── */}
             <table className="hidden md:table w-full text-sm border-collapse table-fixed">
-              <thead>
-                <tr className="border-b border-[var(--border-color)]">
+              <thead className="sticky top-0 z-10">
+                <tr className="border-b border-[var(--border-color)] bg-bg-surface">
                   <th className="text-left px-2 py-2.5 text-xs font-semibold text-t-muted uppercase tracking-wider w-[6%] border-r border-[var(--border-color)]">S.No</th>
                   <th className="text-left px-4 py-2.5 text-xs font-semibold text-t-muted uppercase tracking-wider w-[32%] border-r border-[var(--border-color)]">Action</th>
                   <th className="text-left px-4 py-2.5 text-xs font-semibold text-t-muted uppercase tracking-wider w-[32%] border-r border-[var(--border-color)]">Expected Result</th>
@@ -575,7 +606,6 @@ const TableStepRow: React.FC<{
   const rowBg = step.status === "pass" ? "bg-green-500/5"
     : step.status === "fail" ? "bg-red-500/5" : "";
 
-  // Focused row: sky-blue outline. outline on <tr> works in all modern browsers.
   const focusedStyle: React.CSSProperties = isFocused
     ? { outline: "2px solid #38bdf8", outlineOffset: "-2px" }
     : {};
@@ -676,7 +706,6 @@ const MobileStepCard: React.FC<{
   const rowBg = step.status === "pass" ? "bg-green-500/5"
     : step.status === "fail" ? "bg-red-500/5" : "";
 
-  // Left accent: blue when focused, otherwise status colour
   const accentColor = isFocused
     ? "#38bdf8"
     : step.status === "pass" ? "#22c55e"
