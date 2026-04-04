@@ -1635,7 +1635,7 @@ const MobileNav: React.FC<Props> = ({ activePage, onNavigate }) => {
     { id: "dashboard", icon: <LayoutDashboard size={20} />, label: "Home"   },
     { id: "report",    icon: <ClipboardList size={20} />,   label: "Report" },
     { id: "auditlog",  icon: <ScrollText size={20} />,      label: "Audit"  },
-    ...(isAdmin ? [{ id: "users", icon: "👥", label: "Users" }] : []),
+    ...(isAdmin ? [{ id: "users", icon: <Users size={20} />, label: "Users" }] : []),
   ];
 
   const closeMore       = useCallback(() => setShowMore(false),       []);
