@@ -640,44 +640,44 @@ const TestExecution: React.FC<Props> = ({
           </div>
         </div>
 
-       {/* Filters row */}
-<div className="flex flex-col border-b border-[var(--border-color)]">
-  {/* Line 1: Export + Filter pills */}
-  <div className="flex items-center gap-2 px-4 py-2">
-    <button
-      onClick={() => setShowExportModal(true)}
-      disabled={filtered.length === 0}
-      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-[var(--border-color)]
-        bg-bg-card hover:bg-bg-surface disabled:opacity-40 disabled:cursor-not-allowed
-        text-t-primary text-xs font-semibold transition shrink-0"
-    >
-      <Upload size={13} /> Export
-    </button>
+    {/* Filters row */}
+        <div className="flex flex-col border-b border-[var(--border-color)]">
+          {/* Line 1: Export + Filter pills */}
+          <div className="flex items-center gap-2 px-4 py-2">
+            <button
+              onClick={() => setShowExportModal(true)}
+              disabled={filtered.length === 0}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-[var(--border-color)]
+                bg-bg-card hover:bg-bg-surface disabled:opacity-40 disabled:cursor-not-allowed
+                text-t-primary text-xs font-semibold transition shrink-0"
+            >
+              <Upload size={13} /> Export
+            </button>
 
-    <div className="flex-1" />
+            <div className="flex-1" />
 
-    <div className="flex gap-1">
-      {(["all", "pass", "fail", "pending"] as Filter[]).map(f => (
-        <button key={f} onClick={() => setFilter(f)}
-          style={filter === f ? { color: "#ffffff" } : undefined}
-          className={`px-2.5 py-1 rounded-lg text-xs font-medium transition-colors capitalize ${
-            filter === f ? "bg-c-brand" : "text-t-muted hover:text-t-primary"
-          }`}>
-          {f}
-        </button>
-      ))}
-    </div>
-  </div>
+            <div className="flex gap-1">
+              {(["all", "pass", "fail", "pending"] as Filter[]).map(f => (
+                <button key={f} onClick={() => setFilter(f)}
+                  style={filter === f ? { color: "#ffffff" } : undefined}
+                  className={`px-2.5 py-1 rounded-lg text-xs font-medium transition-colors capitalize ${
+                    filter === f ? "bg-c-brand" : "text-t-muted hover:text-t-primary"
+                  }`}>
+                  {f}
+                </button>
+              ))}
+            </div>
+          </div>
 
-  {/* Line 2: Search */}
-  <div className="px-4 pb-2">
-    <input
-      value={search} onChange={e => setSearch(e.target.value)}
-      placeholder="Search steps…"
-      className="input text-xs py-1.5 w-full"
-    />
-  </div>
-</div>
+          {/* Line 2: Search */}
+          <div className="px-4 pb-2">
+            <input
+              value={search} onChange={e => setSearch(e.target.value)}
+              placeholder="Search steps…"
+              className="input text-xs py-1.5 w-full"
+            />
+          </div>
+        </div>
 
       {/* Scroll container */}
       <div ref={scrollContainerRef} className="flex-1 min-h-0 overflow-y-auto" style={{ scrollBehavior: "smooth" }}>
