@@ -4,7 +4,6 @@ import {
   ClipboardList,
   ScrollText,
   Users,
-  FlaskConical,
   ChevronLeft,
   ChevronRight,
   LogOut,
@@ -13,6 +12,7 @@ import {
 import { useAuth } from "../../context/AuthContext";
 import { Module } from "../../types";
 import ThemeToggle from "../UI/ThemeToggle";
+import { TrainFront } from "lucide-react";
 
 
 interface Props {
@@ -77,7 +77,7 @@ const Sidebar: React.FC<Props> = ({ activePage, onNavigate, modules }) => {
         ${collapsed ? "justify-center" : "justify-between"}`}>
         {!collapsed && (
           <div className="flex items-center gap-2">
-            <FlaskConical size={20} className="text-c-brand shrink-0" />
+            <TrainFront size={28} className="text-white" />
             <span className="font-bold text-t-primary">TestPro</span>
           </div>
         )}
