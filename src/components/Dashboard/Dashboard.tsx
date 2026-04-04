@@ -16,6 +16,7 @@ import {
   exportDashboardDocx,
   ModuleSummary,
 } from "../../utils/export";
+import { Upload, FileSpreadsheet, FileText, FileDown } from "lucide-react";
 
 interface Props {
   onNavigate: (page: string, moduleName?: string) => void;
@@ -204,21 +205,21 @@ const Dashboard: React.FC<Props> = ({ onNavigate }) => {
             icon: <FileSpreadsheet size={16} />,
             color: "bg-[var(--color-primary)]",
             hoverColor: "hover:bg-[var(--color-primary-hover)]",
-            onConfirm: () => exportExecutionCSV(moduleName, currentTest?.name ?? "test", flatData),
+            onConfirm: () => exportDashboardCSV(moduleName, currentTest?.name ?? "test", flatData),
           },
           {
             label: "PDF",
             icon: <FileText size={16} />,
             color: "bg-[var(--color-blue)]",
             hoverColor: "hover:bg-[var(--color-blue-hover)]",
-            onConfirm: () => exportExecutionPDF(moduleName, currentTest?.name ?? "test", flatData),
+            onConfirm: () => exportDashboardPDF(moduleName, currentTest?.name ?? "test", flatData),
           },
                     {
             label: "DOCX",
             icon: <FileDown size={16} />,
             color: "bg-[var(--color-blue)]",
             hoverColor: "hover:bg-[var(--color-blue-hover)]",
-            onConfirm: () => exportExecutionPDF(moduleName, currentTest?.name ?? "test", flatData),
+            onConfirm: () => exportDashboardDocx(moduleName, currentTest?.name ?? "test", flatData),
           },
         ]}
       />

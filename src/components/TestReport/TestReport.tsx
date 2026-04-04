@@ -16,6 +16,7 @@ import {
   XAxis, YAxis, CartesianGrid, Tooltip, Legend,
 } from "recharts";
 import { PieLabelRenderProps } from "recharts";
+import { Upload, FileSpreadsheet, FileText, FileDown } from "lucide-react";
 
 // ── Animation keyframes ───────────────────────────────────────────────────────
 const ANIM_STYLE = `
@@ -406,14 +407,14 @@ const TestReport: React.FC = () => {
             icon: <FileSpreadsheet size={16} />,
             color: "bg-[var(--color-primary)]",
             hoverColor: "hover:bg-[var(--color-primary-hover)]",
-            onConfirm: () => exportExecutionCSV(moduleName, currentTest?.name ?? "test", flatData),
+            onConfirm: () => exportReportCSV(moduleName, currentTest?.name ?? "test", flatData),
           },
           {
             label: "PDF",
             icon: <FileText size={16} />,
             color: "bg-[var(--color-blue)]",
             hoverColor: "hover:bg-[var(--color-blue-hover)]",
-            onConfirm: () => exportExecutionPDF(moduleName, currentTest?.name ?? "test", flatData),
+            onConfirm: () => exportReportPDF(moduleName, currentTest?.name ?? "test", flatData),
           },
         ]}
       />
