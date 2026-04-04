@@ -6,7 +6,7 @@ import { useAuth } from "../../context/AuthContext";
 import { useTheme } from "../../context/ThemeContext";
 import { useToast } from "../../context/ToastContext";
 import { useAuditLog } from "../../hooks/useAuditLog";
-import { Lock, Pencil, Play } from "lucide-react";
+import { Lock, Pencil, Play, Download, FileSpreadsheet, FileText, X } from "lucide-react";
 import {
   ResponsiveContainer,
   BarChart, Bar,
@@ -16,6 +16,11 @@ import {
   RadarChart, Radar, PolarGrid, PolarAngleAxis, PolarRadiusAxis,
   XAxis, YAxis, CartesianGrid, Tooltip, Legend,
 } from "recharts";
+import {
+  exportModuleDetailCSV,
+  exportModuleDetailPDF,
+  FlatData,
+} from "../../utils/exportUtils";
 
 
 // ── Animation keyframes ───────────────────────────────────────────────────────
@@ -28,8 +33,11 @@ const ANIM_STYLE = `
   from { opacity: 0; transform: translateX(-6px); }
   to   { opacity: 1; transform: translateX(0);    }
 }
+@keyframes fadeScaleIn {
+  from { opacity: 0; transform: scale(0.95) translateY(-4px); }
+  to   { opacity: 1; transform: scale(1)    translateY(0);    }
+}
 `;
-
 
 function useInjectStyle() {
   useEffect(() => {
@@ -40,13 +48,11 @@ function useInjectStyle() {
   }, []);
 }
 
-
 const FadeWrapper: React.FC<{ animKey: string | number; children: React.ReactNode }> = ({ animKey, children }) => (
   <div key={animKey} style={{ animation: "fadeSlideIn 0.28s cubic-bezier(0.22,1,0.36,1) both" }}>
     {children}
   </div>
 );
-
 
 const StaggerRow: React.FC<{ index: number; children: React.ReactNode }> = ({ index, children }) => (
   <div style={{
@@ -61,7 +67,6 @@ const StaggerRow: React.FC<{ index: number; children: React.ReactNode }> = ({ in
 // ── Constants ─────────────────────────────────────────────────────────────────
 const COLORS = { pass: "#22c55e", fail: "#ef4444", pending: "#f59e0b" };
 
-
 type ChartType = "bar" | "area" | "line" | "pie" | "radar";
 const CHART_TYPES: { type: ChartType; label: string }[] = [
   { type: "bar",   label: "Bar"   },
@@ -70,7 +75,6 @@ const CHART_TYPES: { type: ChartType; label: string }[] = [
   { type: "pie",   label: "Pie"   },
   { type: "radar", label: "Radar" },
 ];
-
 
 interface ChartRow { name: string; pass: number; fail: number; pending: number; }
 interface ChartTheme {
@@ -86,20 +90,16 @@ interface Props {
   onExecute: (moduleTestId: string) => void;
 }
 
-
-// step_results for a module (all of them; matched to module_tests in JS)
 interface TrimmedStepResult {
   id: string;
   status: "pass" | "fail" | "pending";
   step: { id: string; is_divider: boolean; tests_name: string } | null;
 }
 
-
 interface ModuleTestRow {
   id: string;
   tests_name: string;
   test: { serial_no: number; name: string; description?: string };
-  // populated in JS by matching step.tests_name
   step_results: TrimmedStepResult[];
 }
 
@@ -122,7 +122,6 @@ const CustomTooltip: React.FC<{
     </div>
   );
 };
-
 
 const PieTooltip: React.FC<{
   active?: boolean; payload?: any[]; ct: ChartTheme;
@@ -160,7 +159,6 @@ const RBarChart: React.FC<{ data: ChartRow[]; ct: ChartTheme }> = ({ data, ct })
   </ResponsiveContainer>
 );
 
-
 const RAreaChart: React.FC<{ data: ChartRow[]; ct: ChartTheme }> = ({ data, ct }) => (
   <ResponsiveContainer width="100%" height={220}>
     <AreaChart data={data} margin={{ top: 8, right: 16, left: -16, bottom: 8 }}>
@@ -187,7 +185,6 @@ const RAreaChart: React.FC<{ data: ChartRow[]; ct: ChartTheme }> = ({ data, ct }
   </ResponsiveContainer>
 );
 
-
 const RLineChart: React.FC<{ data: ChartRow[]; ct: ChartTheme }> = ({ data, ct }) => (
   <ResponsiveContainer width="100%" height={220}>
     <LineChart data={data} margin={{ top: 8, right: 16, left: -16, bottom: 8 }}>
@@ -208,7 +205,6 @@ const RLineChart: React.FC<{ data: ChartRow[]; ct: ChartTheme }> = ({ data, ct }
   </ResponsiveContainer>
 );
 
-
 const RPieChart: React.FC<{ data: ChartRow[]; ct: ChartTheme }> = ({ data, ct }) => {
   const totals = data.reduce(
     (acc, d) => ({ pass: acc.pass + d.pass, fail: acc.fail + d.fail, pending: acc.pending + d.pending }),
@@ -219,13 +215,11 @@ const RPieChart: React.FC<{ data: ChartRow[]; ct: ChartTheme }> = ({ data, ct })
     .map(k => ({ name: k, value: totals[k], ...totals }))
     .filter(d => d.value > 0);
 
-
   if (total === 0) return (
     <div className="flex items-center justify-center h-40">
       <span className="text-sm" style={{ color: ct.muted }}>No data to display</span>
     </div>
   );
-
 
   return (
     <ResponsiveContainer width="100%" height={220}>
@@ -247,7 +241,6 @@ const RPieChart: React.FC<{ data: ChartRow[]; ct: ChartTheme }> = ({ data, ct })
     </ResponsiveContainer>
   );
 };
-
 
 const RRadarChart: React.FC<{ data: ChartRow[]; ct: ChartTheme }> = ({ data, ct }) => {
   if (data.length === 0) return (
@@ -274,6 +267,177 @@ const RRadarChart: React.FC<{ data: ChartRow[]; ct: ChartTheme }> = ({ data, ct 
 };
 
 
+// ── Export modal ──────────────────────────────────────────────────────────────
+interface ExportOption {
+  label: string;
+  icon: React.ReactNode;
+  color: string;
+  hoverColor: string;
+  onConfirm: (data: FlatData[]) => void;
+}
+
+const ExportModal: React.FC<{
+  moduleName: string;
+  options: ExportOption[];
+  onClose: () => void;
+}> = ({ moduleName, options, onClose }) => {
+  const [loading, setLoading] = useState(false);
+  const [error, setError]     = useState<string | null>(null);
+  const overlayRef            = useRef<HTMLDivElement>(null);
+
+  // Close on backdrop click
+  const handleOverlayClick = (e: React.MouseEvent) => {
+    if (e.target === overlayRef.current) onClose();
+  };
+
+  // Close on Escape
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  const fetchAndExport = async (option: ExportOption) => {
+    setLoading(true);
+    setError(null);
+    try {
+      // Fetch full step data for this module on demand
+      const [stepsRes, resultsRes] = await Promise.all([
+        supabase
+          .from("test_steps")
+          .select("id, serial_no, action, expected_result, is_divider, tests_name")
+          .eq("module_name", moduleName)
+          .order("serial_no"),
+        supabase
+          .from("step_results")
+          .select("test_steps_id, status, remarks")
+          .eq("module_name", moduleName),
+      ]);
+
+      if (stepsRes.error)   throw new Error(stepsRes.error.message);
+      if (resultsRes.error) throw new Error(resultsRes.error.message);
+
+      // Build result lookup: step_id → { status, remarks }
+      const resultMap = new Map<string, { status: string; remarks: string }>();
+      for (const r of resultsRes.data ?? []) {
+        resultMap.set(r.test_steps_id, { status: r.status ?? "pending", remarks: r.remarks ?? "" });
+      }
+
+      // Group steps by tests_name, preserving module order
+      const testsOrder = new Map<string, number>();
+      for (const step of stepsRes.data ?? []) {
+        if (!testsOrder.has(step.tests_name)) testsOrder.set(step.tests_name, testsOrder.size);
+      }
+
+      const flatData: FlatData[] = (stepsRes.data ?? [])
+        .sort((a, b) => {
+          const tOrder = (testsOrder.get(a.tests_name) ?? 0) - (testsOrder.get(b.tests_name) ?? 0);
+          return tOrder !== 0 ? tOrder : a.serial_no - b.serial_no;
+        })
+        .map(step => {
+          const res = resultMap.get(step.id);
+          return {
+            module:    moduleName,
+            test:      step.tests_name,
+            serial:    step.serial_no,
+            action:    step.action ?? "",
+            expected:  step.expected_result ?? "",
+            remarks:   res?.remarks ?? "",
+            status:    res?.status ?? "pending",
+            isDivider: step.is_divider ?? false,
+          };
+        });
+
+      option.onConfirm(flatData);
+      onClose();
+    } catch (err: any) {
+      setError(err.message ?? "Export failed. Please try again.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div
+      ref={overlayRef}
+      onClick={handleOverlayClick}
+      className="fixed inset-0 z-50 flex items-center justify-center p-4"
+      style={{ backgroundColor: "rgba(0,0,0,0.45)", backdropFilter: "blur(4px)" }}
+    >
+      <div
+        className="relative w-full max-w-sm rounded-2xl border shadow-2xl p-6"
+        style={{
+          animation: "fadeScaleIn 0.22s cubic-bezier(0.22,1,0.36,1) both",
+          backgroundColor: "var(--bg-card)",
+          borderColor: "var(--border-color)",
+        }}
+      >
+        {/* Header */}
+        <div className="flex items-start justify-between mb-1">
+          <div>
+            <h2 className="font-semibold text-t-primary text-base">Export Module</h2>
+            <p className="text-xs text-t-muted mt-0.5 truncate max-w-[220px]" title={moduleName}>
+              {moduleName}
+            </p>
+          </div>
+          <button
+            onClick={onClose}
+            className="p-1.5 rounded-lg transition-colors hover:bg-[var(--bg-hover)] text-t-muted hover:text-t-primary"
+          >
+            <X size={16} />
+          </button>
+        </div>
+
+        <p className="text-xs text-t-muted mb-5 mt-3 leading-relaxed">
+          Exports all tests and their step results for this module, grouped by test.
+        </p>
+
+        {/* Error */}
+        {error && (
+          <div className="mb-4 px-3 py-2.5 rounded-lg bg-red-500/10 border border-red-500/30 text-xs text-red-500">
+            {error}
+          </div>
+        )}
+
+        {/* Export buttons */}
+        <div className="flex flex-col gap-2.5">
+          {options.map((opt) => (
+            <button
+              key={opt.label}
+              onClick={() => fetchAndExport(opt)}
+              disabled={loading}
+              className={`
+                flex items-center gap-3 w-full px-4 py-3 rounded-xl
+                text-sm font-semibold text-white transition-all
+                ${opt.color} ${opt.hoverColor}
+                disabled:opacity-50 disabled:cursor-not-allowed
+                active:scale-[0.98]
+              `}
+            >
+              {loading ? (
+                <svg className="animate-spin w-4 h-4 shrink-0" viewBox="0 0 24 24" fill="none">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                  <path className="opacity-75" fill="currentColor"
+                    d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                </svg>
+              ) : (
+                <span className="shrink-0">{opt.icon}</span>
+              )}
+              <div className="text-left">
+                <div>{loading ? "Exporting…" : `Export as ${opt.label}`}</div>
+                <div className="text-xs font-normal opacity-80">
+                  {opt.label === "CSV" ? "Spreadsheet-compatible format" : "Formatted report document"}
+                </div>
+              </div>
+            </button>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+
 // ── Main Component ────────────────────────────────────────────────────────────
 const ModuleDashboard: React.FC<Props> = ({ moduleName, onBack, onExecute }) => {
   useInjectStyle();
@@ -283,18 +447,16 @@ const ModuleDashboard: React.FC<Props> = ({ moduleName, onBack, onExecute }) => 
   const { log }      = useAuditLog();
   const { theme }    = useTheme();
 
-
   const [moduleTests, setModuleTests]   = useState<ModuleTestRow[]>([]);
   const [loading, setLoading]           = useState(true);
   const [error, setError]               = useState<string | null>(null);
   const [locks, setLocks]               = useState<any[]>([]);
   const [selectedMtId, setSelectedMtId] = useState<string | null>(null);
   const [chartType, setChartType]       = useState<ChartType>("bar");
-
+  const [showExport, setShowExport]     = useState(false);
 
   const lockRefetchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const fetchSeq = useRef(0);
-
 
   const refetchLocks = useCallback(() => {
     if (lockRefetchTimer.current) clearTimeout(lockRefetchTimer.current);
@@ -309,16 +471,12 @@ const ModuleDashboard: React.FC<Props> = ({ moduleName, onBack, onExecute }) => 
     }, 300);
   }, []);
 
-
-  // ── Load: fetch module_tests + step_results in parallel ──────────────────
+  // ── Load ──────────────────────────────────────────────────────────────────
   useEffect(() => {
     let cancelled = false;
-
-
     const load = async () => {
       setLoading(true);
       setError(null);
-
 
       const [mtRes, srRes, locksRes] = await Promise.all([
         supabase
@@ -334,41 +492,30 @@ const ModuleDashboard: React.FC<Props> = ({ moduleName, onBack, onExecute }) => 
           .select("module_test_id, user_id, locked_by_name"),
       ]);
 
-
       if (cancelled) return;
-
-
       if (mtRes.error) { setError(mtRes.error.message); setLoading(false); return; }
       if (srRes.error) { setError(srRes.error.message); setLoading(false); return; }
 
-
       const allStepResults: TrimmedStepResult[] = (srRes.data ?? []) as any[];
-
-
       const merged: ModuleTestRow[] = ((mtRes.data ?? []) as any[])
         .map(mt => ({
           id: mt.id,
           tests_name: mt.tests_name,
           test: mt.test,
-          step_results: allStepResults.filter(
-            sr => sr.step?.tests_name === mt.tests_name
-          ),
+          step_results: allStepResults.filter(sr => sr.step?.tests_name === mt.tests_name),
         }))
         .sort((a, b) => (a.test?.serial_no ?? 0) - (b.test?.serial_no ?? 0));
-
 
       setModuleTests(merged);
       setLocks(locksRes.data ?? []);
       setLoading(false);
     };
 
-
     load();
     return () => { cancelled = true; };
   }, [moduleName]);
 
-
-  // ── Locks — real-time ──────────────────────────────────────────────────────
+  // ── Realtime locks ─────────────────────────────────────────────────────────
   useEffect(() => {
     let mounted = true;
     const channel = supabase.channel("all-locks")
@@ -383,7 +530,6 @@ const ModuleDashboard: React.FC<Props> = ({ moduleName, onBack, onExecute }) => 
     };
   }, [refetchLocks]);
 
-
   // ── Chart theme ────────────────────────────────────────────────────────────
   const chartTheme: ChartTheme = theme === "dark"
     ? { panel: "#111827", text: "#e5e7eb", muted: "#94a3b8", grid: "#334155",
@@ -391,12 +537,10 @@ const ModuleDashboard: React.FC<Props> = ({ moduleName, onBack, onExecute }) => 
     : { panel: "#ffffff", text: "#0f172a", muted: "#475569", grid: "#cbd5e1",
         border: "#cbd5e1", tooltipBg: "#ffffff", tooltipText: "#0f172a", tooltipName: "#475569" };
 
-
   const filteredMts = useMemo(() =>
     selectedMtId ? moduleTests.filter(mt => mt.id === selectedMtId) : moduleTests,
     [moduleTests, selectedMtId]
   );
-
 
   const chartData = useMemo<ChartRow[]>(() =>
     filteredMts.map(mt => {
@@ -409,10 +553,8 @@ const ModuleDashboard: React.FC<Props> = ({ moduleName, onBack, onExecute }) => 
       };
     }), [filteredMts]);
 
-
   const moduleTestIdSet = useMemo(() => new Set(moduleTests.map(mt => mt.id)), [moduleTests]);
   const scopedLocks     = useMemo(() => locks.filter(l => moduleTestIdSet.has(l.module_test_id)), [locks, moduleTestIdSet]);
-
 
   const handleExecute = (mtId: string) => {
     const lock = scopedLocks.find(l => l.module_test_id === mtId);
@@ -420,14 +562,8 @@ const ModuleDashboard: React.FC<Props> = ({ moduleName, onBack, onExecute }) => 
     onExecute(mtId);
   };
 
-
   const handleForceRelease = async (mtId: string, lockedByName: string) => {
-    const { error } = await supabase
-      .from("test_locks")
-      .delete()
-      .eq("module_test_id", mtId);
-
-
+    const { error } = await supabase.from("test_locks").delete().eq("module_test_id", mtId);
     if (error) {
       addToast("Failed to release lock: " + error.message, "error");
     } else {
@@ -436,13 +572,28 @@ const ModuleDashboard: React.FC<Props> = ({ moduleName, onBack, onExecute }) => 
     }
   };
 
+  // ── Export options ─────────────────────────────────────────────────────────
+  const exportOptions: ExportOption[] = [
+    {
+      label: "CSV",
+      icon: <FileSpreadsheet size={16} />,
+      color: "bg-[var(--color-primary)]",
+      hoverColor: "hover:bg-[var(--color-primary-hover)]",
+      onConfirm: (data) => exportModuleDetailCSV(data),
+    },
+    {
+      label: "PDF",
+      icon: <FileText size={16} />,
+      color: "bg-[var(--color-blue)]",
+      hoverColor: "hover:bg-[var(--color-blue-hover)]",
+      onConfirm: (data) => exportModuleDetailPDF(data),
+    },
+  ];
 
   const listAnimKey  = selectedMtId ?? "all";
   const chartAnimKey = `${selectedMtId ?? "all"}-${chartType}`;
 
-
   if (loading) return <div className="flex-1 flex items-center justify-center"><Spinner /></div>;
-
 
   if (error) return (
     <div className="flex-1 flex flex-col">
@@ -456,14 +607,11 @@ const ModuleDashboard: React.FC<Props> = ({ moduleName, onBack, onExecute }) => 
     </div>
   );
 
-
   return (
     <div className="flex-1 flex flex-col">
       <Topbar title={moduleName} subtitle={`${moduleTests.length} tests`} onBack={onBack} />
 
-
       <div className="p-6 flex flex-col gap-6 pb-24 md:pb-6">
-
 
         {/* ── Chart panel ── */}
         <div className="p-4 rounded-xl border"
@@ -477,14 +625,16 @@ const ModuleDashboard: React.FC<Props> = ({ moduleName, onBack, onExecute }) => 
               }}>
               {CHART_TYPES.map(({ type, label }) => (
                 <button key={type} onClick={() => setChartType(type)}
-                  style={chartType === type ? { backgroundColor: "#1d4ed8", color: "#ffffff" } : { color: chartTheme.muted }}
+                  style={chartType === type
+                    ? { backgroundColor: "#1d4ed8", color: "#ffffff" }
+                    : { color: chartTheme.muted }
+                  }
                   className="px-2.5 py-1 rounded-md text-xs font-medium transition-all">
                   {label}
                 </button>
               ))}
             </div>
           </div>
-
 
           <FadeWrapper animKey={chartAnimKey}>
             {(() => {
@@ -499,29 +649,42 @@ const ModuleDashboard: React.FC<Props> = ({ moduleName, onBack, onExecute }) => 
           </FadeWrapper>
         </div>
 
+        {/* ── Filter + Export row ── */}
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex flex-wrap items-center gap-3">
+            <label className="text-sm text-t-muted">Filter by Test</label>
+            <select
+              value={selectedMtId ?? ""}
+              onChange={(e) => setSelectedMtId(e.target.value || null)}
+              className="input text-sm"
+            >
+              <option value="">All Tests</option>
+              {moduleTests.map((mt) => (
+                <option key={mt.id} value={mt.id}>
+                  {mt.test?.serial_no} — {mt.test?.name}
+                </option>
+              ))}
+            </select>
+          </div>
 
-        {/* ── Filter ── */}
-        <div className="flex flex-wrap items-center gap-3">
-          <label className="text-sm text-t-muted">Filter by Test</label>
-          <select
-            value={selectedMtId ?? ""}
-            onChange={(e) => setSelectedMtId(e.target.value || null)}
-            className="input text-sm"
+          {/* Export button */}
+          <button
+            onClick={() => setShowExport(true)}
+            className="flex items-center gap-2 px-3.5 py-2 rounded-xl border text-sm font-medium
+              text-t-secondary hover:text-t-primary transition-all
+              hover:bg-[var(--bg-hover)] hover:border-[var(--color-primary)]
+              active:scale-[0.97]"
+            style={{ borderColor: "var(--border-color)" }}
+            title="Export module report"
           >
-            <option value="">All Tests</option>
-            {moduleTests.map((mt) => (
-              <option key={mt.id} value={mt.id}>
-                {mt.test?.serial_no} — {mt.test?.name}
-              </option>
-            ))}
-          </select>
+            <Download size={15} />
+            Export
+          </button>
         </div>
-
 
         {/* ── Test list ── */}
         <div className="flex flex-col gap-1">
           <h3 className="font-semibold text-t-secondary mb-2">Test Cases</h3>
-
 
           <FadeWrapper animKey={listAnimKey}>
             <div className="flex flex-col gap-3">
@@ -554,6 +717,15 @@ const ModuleDashboard: React.FC<Props> = ({ moduleName, onBack, onExecute }) => 
           </FadeWrapper>
         </div>
       </div>
+
+      {/* ── Export modal ── */}
+      {showExport && (
+        <ExportModal
+          moduleName={moduleName}
+          options={exportOptions}
+          onClose={() => setShowExport(false)}
+        />
+      )}
     </div>
   );
 };
@@ -577,11 +749,9 @@ const TestRow: React.FC<{
   const total   = results.length || 1;
   const rate    = Math.round((passed / total) * 100);
 
-
   const borderColor = isLockedByOther
     ? "#6b7280"
     : rate > 70 ? "#22c55e" : rate > 30 ? "#f59e0b" : "#ef4444";
-
 
   return (
     <div
@@ -623,13 +793,11 @@ const TestRow: React.FC<{
           )}
         </div>
 
-
         <div className="flex gap-2 mt-1.5 flex-wrap">
           <span className="badge-pass">{passed} Pass</span>
           <span className="badge-fail">{failed} Fail</span>
           <span className="badge-pend">{pending} Pend</span>
         </div>
-
 
         <div className={`mt-2 h-1.5 bg-[var(--border-color)] rounded-full overflow-hidden ${isLockedByOther ? "opacity-40" : ""}`}>
           <div
@@ -638,7 +806,6 @@ const TestRow: React.FC<{
           />
         </div>
       </div>
-
 
       <button
         onClick={(e) => {
