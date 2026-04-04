@@ -1585,7 +1585,7 @@ const ImportModal: React.FC<{ onClose: () => void }> = ({ onClose }) => {
 // SHEET BUTTON
 // ─────────────────────────────────────────────────────────────────────────
 const SheetButton: React.FC<{
-  icon: string; label: string; desc: string; onClick: () => void;
+  icon: React.ReactNode; label: string; desc: string; onClick: () => void;
 }> = ({ icon, label, desc, onClick }) => (
   <button onClick={onClick}
     className="flex items-center gap-4 px-4 py-3.5 rounded-xl bg-bg-card hover:bg-bg-base border border-[var(--border-color)] transition-colors text-t-primary w-full text-left">
