@@ -24,8 +24,7 @@ const Sidebar: React.FC<Props> = ({ activePage, onNavigate, modules }) => {
   const [search, setSearch]       = useState("");
   const { user, signOut } = useAuth();
 
-  // ✅ FIX 1: use defaultRole (AppUser type), not role
-  const isAdmin = user?.defaultRole === "admin";
+  const isAdmin = user?.role === "admin";
 
   const navItems = isAdmin ? [...BASE_NAV, ...ADMIN_NAV] : BASE_NAV;
 
@@ -114,16 +113,15 @@ const Sidebar: React.FC<Props> = ({ activePage, onNavigate, modules }) => {
           <div className="flex items-center gap-3">
             <div className="w-8 h-8 rounded-full bg-c-brand flex items-center justify-center
               text-sm font-bold text-white shrink-0">
-              {/* ✅ FIX 4: display_name (snake_case), not displayName */}
-              {(user?.display_name || user?.email || "U")[0].toUpperCase()}
+          
+              {(user?.displayName || user?.email || "U")[0].toUpperCase()}
             </div>
             <div className="flex-1 min-w-0">
               <p className="text-sm font-medium text-t-primary truncate">
-                {user?.display_name || user?.email}
+                {user?.displayName || user?.email}
               </p>
-              {/* ✅ FIX 5: defaultRole, not role */}
               <span className={isAdmin ? "badge-admin" : "badge-tester"}>
-                {user?.defaultRole}
+                {user?.role}
               </span>
             </div>
             <button
