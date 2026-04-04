@@ -8,29 +8,26 @@ export interface AppUser {
   disabled: boolean;
 }
 
+// ── Module ───────────────────────────────────────────────────
+// PK is `name` (text). No UUID id column.
 export interface Module {
-  id: string;
   name: string;
   description?: string;
-  accent_color?: string;
   created_at: string;
 }
 
 // ── Global test catalog ──────────────────────────────────────
-// A test is defined once and shared across all modules.
+// PK is `name` (text). serial_no is unique across the catalog.
 export interface Test {
-  id: string;
-  serial_no: number;       // unique test number across the catalog
+  serial_no: number;
   name: string;
   description?: string;
   created_at: string;
 }
 
 // ── Global step definitions (no results) ────────────────────
-// Steps define what to do; execution results live in StepResult.
+// PK is `serial_no` (integer). Steps are global — no test_id.
 export interface Step {
-  id: string;
-  test_id: string;
   serial_no: number;
   action: string;
   expected_result: string;
@@ -38,32 +35,29 @@ export interface Step {
 }
 
 // ── Junction: module ↔ test ──────────────────────────────────
-// Represents a test as it appears inside a specific module.
+// id = module_name + "_" + tests_name (composite text PK)
 export interface ModuleTest {
   id: string;
-  module_id: string;
-  test_id: string;
-  order_index: number;
-  // joined relations (optional, populated by select queries)
+  module_name: string;
+  tests_name: string;
   test?: Test;
   step_results?: StepResult[];
 }
 
 // ── Per-module execution results ─────────────────────────────
-// One row per (module_test, step). Written during test execution.
+// id = module_steps_id + "_" + steps_serial_no (composite text PK)
 export interface StepResult {
   id: string;
-  module_test_id: string;
-  step_id: string;
+  module_steps_id: string;   // FK → module_tests.id
+  steps_serial_no: number;   // FK → steps.serial_no
   status: "pass" | "fail" | "pending";
   remarks: string;
   updated_at: string;
-  // joined relations (optional)
+  display_name?: string;
   step?: Step;
 }
 
-// ── Locks are now per module_test ────────────────────────────
-// Two users can execute the same test in different modules simultaneously.
+// ── Locks ────────────────────────────────────────────────────
 export interface TestLock {
   id: string;
   module_test_id: string;

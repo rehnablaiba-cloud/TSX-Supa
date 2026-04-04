@@ -85,13 +85,14 @@ interface Props {
 interface TrimmedStepResult {
   id: string;
   status: "pass" | "fail" | "pending";
-  step: { id: string; is_divider: boolean } | null;
+  // Schema v2: step PK is serial_no (no UUID id on steps)
+  step: { serial_no: number; is_divider: boolean } | null;
 }
 
 interface ModuleTestRow {
-  id: string;
-  order_index: number;
-  test: { id: string; serial_no: number; name: string; description?: string };
+  id: string;  // composite: module_name_tests_name
+  // Schema v2: no order_index; test PK is name (no UUID id)
+  test: { serial_no: number; name: string; description?: string };
   step_results: TrimmedStepResult[];
 }
 
@@ -310,15 +311,16 @@ const ModuleDashboard: React.FC<Props> = ({ moduleId, moduleName, onBack, onExec
         supabase
           .from("module_tests")
           .select(`
-            id, order_index,
-            test:tests ( id, serial_no, name, description ),
-            step_results (
+            id,
+            test:tests ( serial_no, name, description ),
+            step_results:step_results!module_steps_id (
               id, status,
-              step:steps ( id, is_divider )
+              step:steps ( serial_no, is_divider )
             )
           `)
-          .eq("module_id", moduleId)
-          .order("order_index"),
+          // Schema v2: FK column is module_name (was module_id)
+          .eq("module_name", moduleId)
+          .order("tests_name"),
         supabase
           .from("testlocks")
           .select("module_test_id, user_id, locked_by_name"),
@@ -379,6 +381,7 @@ const ModuleDashboard: React.FC<Props> = ({ moduleId, moduleName, onBack, onExec
 
   const chartData = useMemo<ChartRow[]>(() =>
     filteredMts.map(mt => {
+      // Schema v2: step has no UUID id; use serial_no for is_divider check
       const results = (mt.step_results ?? []).filter(sr => !sr.step?.is_divider);
       return {
         name:    mt.test?.name ?? "",

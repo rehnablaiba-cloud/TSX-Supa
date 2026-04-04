@@ -129,7 +129,9 @@ const Dashboard: React.FC<Props> = ({ onNavigate }) => {
       // Append !<fk_column> to each nested select to tell PostgREST exactly which
       // FK to traverse: module_tests.module_id → modules, and
       // step_results.module_test_id → module_tests.
-      .select("id, name, description, module_tests!module_id(step_results!module_test_id(status))")
+      // Schema v2: modules PK is name (no id). module_tests FK is module_name.
+      // step_results FK to module_tests is module_steps_id (was module_test_id).
+      .select("name, description, module_tests!module_name(step_results!module_steps_id(status))")
       .order("name");
 
     if (!mountedRef.current) return;
@@ -236,8 +238,8 @@ const Dashboard: React.FC<Props> = ({ onNavigate }) => {
 
             return (
               <button
-                key={m.id}
-                onClick={() => onNavigate("module", m.id)}
+                key={m.name}
+                onClick={() => onNavigate("module", m.name)}
                 className="card text-left hover:border-c-brand/50 hover:shadow-xl transition-all duration-300 cursor-pointer group"
               >
                 {/* Name + test-count pill */}

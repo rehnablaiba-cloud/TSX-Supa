@@ -121,7 +121,8 @@ const AppInner: React.FC = () => {
   const { isLoading: authLoading, isAuthenticated, user } = useAuth(); // ← added user
   const [modules, setModules]                             = useState<Module[]>([]);
   const [page, setPage]                                   = useState<Page>("dashboard");
-  const [selectedModuleId, setSelectedModuleId]           = useState<string | null>(null);
+  // Schema v2: modules PK is `name` (text), so we track by name instead of UUID id.
+  const [selectedModuleName, setSelectedModuleName]       = useState<string | null>(null);
   const [selectedTestId, setSelectedTestId]               = useState<string | null>(null);
 
   // Derive once — used only for TestExecution (Dashboard + ModuleDashboard
@@ -164,10 +165,11 @@ const AppInner: React.FC = () => {
 
   if (!isAuthenticated) return <LoginPage />;
 
-  const selectedModule = modules.find(m => m.id === selectedModuleId);
+  // Schema v2: Module PK is name, not a UUID id field.
+  const selectedModule = modules.find(m => m.name === selectedModuleName);
 
   const navigate = (p: string, moduleId?: string) => {
-    if (p === "module" && moduleId) { setSelectedModuleId(moduleId); setPage("module"); }
+    if (p === "module" && moduleId) { setSelectedModuleName(moduleId); setPage("module"); }
     else setPage(p as Page);
   };
 
@@ -179,7 +181,7 @@ const AppInner: React.FC = () => {
       case "module":
         return selectedModule
           ? <ModuleDashboard
-              moduleId={selectedModule.id}
+              moduleId={selectedModule.name}
               moduleName={selectedModule.name}
               onBack={() => setPage("dashboard")}
               onExecute={testId => { setSelectedTestId(testId); setPage("execution"); }}
@@ -189,10 +191,10 @@ const AppInner: React.FC = () => {
       case "execution":
         return selectedModule && selectedTestId
           ? <TestExecution
-              moduleId={selectedModule.id}
+              moduleId={selectedModule.name}
               moduleName={selectedModule.name}
               initialModuleTestId={selectedTestId}
-              isAdmin={isAdmin}                      // ← fixed
+              isAdmin={isAdmin}
               onBack={() => setPage("module")}
             />
           : <Dashboard onNavigate={navigate} />;

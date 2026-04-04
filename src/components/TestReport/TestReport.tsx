@@ -64,8 +64,8 @@ interface StepResultRow {
   id: string;
   status: "pass" | "fail" | "pending";
   remarks: string;
+  // Schema v2: step PK is serial_no (no UUID id)
   step: {
-    id: string;
     serial_no: number;
     action: string;
     expected_result: string;
@@ -74,21 +74,21 @@ interface StepResultRow {
 }
 
 interface ModuleTestRow {
-  id: string;
-  test: { id: string; serial_no: number; name: string };
+  id: string;  // composite: module_name_tests_name
+  // Schema v2: test PK is name (no UUID id)
+  test: { serial_no: number; name: string };
   step_results: StepResultRow[];
 }
 
 interface ModuleRow {
-  id: string;
+  // Schema v2: module PK is name (no UUID id)
   name: string;
   description: string;
   module_tests: ModuleTestRow[];
 }
 
-// FIX: lightweight type for dropdown — no step data needed
+// Lightweight type for the dropdown
 interface ModuleOption {
-  id: string;
   name: string;
 }
 
@@ -277,45 +277,45 @@ const TestReport: React.FC = () => {
   const [modules, setModules]                   = useState<ModuleRow[]>([]);
   const [loading, setLoading]                   = useState(true);
   const [error, setError]                       = useState<string | null>(null);
-  const [selectedModuleId, setSelectedModuleId] = useState<string | null>(null);
+  // Schema v2: filter by module name (PK) instead of UUID id
+  const [selectedModuleName, setSelectedModuleName] = useState<string | null>(null);
   const [showExportModal, setShowExportModal]   = useState(false);
   const [view, setView]                         = useState<"graph" | "table">("graph");
   const [chartType, setChartType]               = useState<ChartType>("bar");
 
-  // FIX: fetch just id+name for the dropdown once — no joins needed
+  // Schema v2: modules PK is name; no UUID id column
   useEffect(() => {
     supabase
       .from("modules")
-      .select("id, name")
+      .select("name")
       .order("name")
       .then(({ data }) => setModuleOptions((data ?? []) as ModuleOption[]));
   }, []);
 
-  // FIX: re-fetch when selectedModuleId changes and filter at DB level —
-  // previously fetched everything once and filtered in JS, meaning all
-  // module/step data was always loaded even when viewing a single module
   useEffect(() => {
     const fetchData = async () => {
       setLoading(true);
       setError(null);
       try {
-     let query = supabase
-  .from("modules")
-  .select(`
-    id, name, description,
-    module_tests (
-      id,
-      test:tests ( id, serial_no, name ),
-      step_results (
-        id, status, remarks,
-        step:steps ( id, serial_no, action, expected_result, is_divider )
-      )
-    )
-  `)
-  .order("name", { ascending: true });
+        // Schema v2: modules PK is name. module_tests FK hint is module_name.
+        // step_results FK hint to module_tests is module_steps_id.
+        // steps PK is serial_no (no UUID id on step or test).
+        let query = supabase
+          .from("modules")
+          .select(`
+            name, description,
+            module_tests:module_tests!module_name (
+              id,
+              test:tests ( serial_no, name ),
+              step_results:step_results!module_steps_id (
+                id, status, remarks,
+                step:steps ( serial_no, action, expected_result, is_divider )
+              )
+            )
+          `)
+          .order("name", { ascending: true });
 
-        // FIX: apply filter at DB level instead of JS .filter()
-        if (selectedModuleId) query = (query as any).eq("id", selectedModuleId);
+        if (selectedModuleName) query = (query as any).eq("name", selectedModuleName);
 
         const { data, error: err } = await query;
         if (err) throw new Error(err.message);
@@ -327,7 +327,7 @@ const TestReport: React.FC = () => {
       }
     };
     fetchData();
-  }, [selectedModuleId]); // re-runs on filter change
+  }, [selectedModuleName]);
 
   // FIX: `modules` is already DB-filtered — no JS filter needed
   const chartTheme: ChartTheme = theme === "dark"
@@ -378,7 +378,7 @@ const TestReport: React.FC = () => {
     ];
   };
 
-  const chartAnimKey = `${selectedModuleId ?? "all"}-${chartType}`;
+  const chartAnimKey = `${selectedModuleName ?? "all"}-${chartType}`;
   const viewAnimKey  = view;
 
   return (
@@ -401,7 +401,7 @@ const TestReport: React.FC = () => {
       <ExportModal
         isOpen={showExportModal} onClose={() => setShowExportModal(false)}
         title="Export Report"
-        subtitle={selectedModuleId ? moduleOptions.find(m => m.id === selectedModuleId)?.name : "All Modules"}
+        subtitle={selectedModuleName ?? "All Modules"}
         stats={exportStats()}
         options={[
           { label: "CSV", icon: "📥", color: "bg-green-600", hoverColor: "hover:bg-green-700",
@@ -417,7 +417,7 @@ const TestReport: React.FC = () => {
         <div className="flex flex-col items-center justify-center py-20 gap-3">
           <span className="text-2xl">⚠️</span>
           <p className="text-sm text-red-400 font-medium">{error}</p>
-          <button onClick={() => setSelectedModuleId(prev => prev)}
+          <button onClick={() => setSelectedModuleName(prev => prev)}
             className="px-4 py-2 rounded-xl bg-bg-card hover:bg-bg-surface text-sm
               text-t-secondary border border-[var(--border-color)] transition">
             Retry
@@ -431,12 +431,12 @@ const TestReport: React.FC = () => {
             <div className="flex items-center gap-3">
               <label className="text-sm text-t-muted">Filter by Trainset</label>
               <select
-                value={selectedModuleId ?? ""}
-                onChange={e => setSelectedModuleId(e.target.value || null)}
+                value={selectedModuleName ?? ""}
+                onChange={e => setSelectedModuleName(e.target.value || null)}
                 className="input text-sm">
                 <option value="">All Modules</option>
-                {/* FIX: uses lightweight moduleOptions instead of full modules */}
-                {moduleOptions.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
+                {/* Schema v2: module PK is name, so key and value are both m.name */}
+                {moduleOptions.map(m => <option key={m.name} value={m.name}>{m.name}</option>)}
               </select>
             </div>
             <div className="flex items-center gap-2 rounded-xl p-1 bg-bg-card border border-[var(--border-color)] w-fit">
@@ -512,7 +512,7 @@ const TestReport: React.FC = () => {
                       const pending = results.filter(sr => sr.status === "pending").length;
                       const rate    = total > 0 ? Math.round((pass / total) * 100) : 0;
                       return (
-                        <tr key={m.id} className="hover:bg-bg-card transition-colors">
+                        <tr key={m.name} className="hover:bg-bg-card transition-colors">
                           <td className="px-4 py-3 font-semibold text-t-primary">{m.name}</td>
                           <td className="px-4 py-3 text-center text-t-secondary">{m.module_tests?.length ?? 0}</td>
                           <td className="px-4 py-3 text-center font-bold text-t-primary">{total}</td>
