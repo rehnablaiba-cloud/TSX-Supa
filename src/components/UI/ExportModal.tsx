@@ -2,7 +2,7 @@ import React from "react";
 
 interface ExportOption {
   label: string;
-  icon: string;
+  icon: React.ReactNode;   // ← accepts JSX elements
   color: string;
   hoverColor: string;
   onConfirm: () => void;
