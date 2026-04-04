@@ -305,14 +305,14 @@ const TestReport: React.FC = () => {
     id, name, description,
     module_tests!module_id (
       id,
-      test_id,
-      tests ( id, serial_no, name ),
+      test:tests!module_tests_test_id_fkey ( id, serial_no, name ),
       step_results!module_tests_id (
         id, status, remarks,
         step:steps ( id, serial_no, action, expected_result, is_divider )
       )
     )
   `)
+  .order("name", { ascending: true });
           .order("name", { ascending: true });
 
         // FIX: apply filter at DB level instead of JS .filter()
