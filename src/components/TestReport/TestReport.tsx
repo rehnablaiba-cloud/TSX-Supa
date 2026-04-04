@@ -60,7 +60,6 @@ interface ChartTheme {
 }
 
 // ── Local joined types ────────────────────────────────────────────────────────
-// step_results joined with test_steps, which includes tests_name for grouping
 interface StepResultRow {
   id: string;
   status: "pass" | "fail" | "pending";
@@ -71,7 +70,7 @@ interface StepResultRow {
     action: string;
     expected_result: string;
     is_divider: boolean;
-    tests_name: string;  // for matching to module_tests
+    tests_name: string;
   } | null;
 }
 
@@ -81,7 +80,6 @@ interface ModuleTestRow {
   test: { serial_no: number; name: string } | null;
 }
 
-// Module row: module_tests for test names + step_results via module_name FK
 interface ModuleRow {
   name: string;
   description: string;
@@ -94,7 +92,6 @@ interface ModuleOption {
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
-// Get non-divider step results for a module
 function getNonDividerResults(stepResults: StepResultRow[]): StepResultRow[] {
   return stepResults.filter(sr => !sr.step?.is_divider);
 }
@@ -271,17 +268,15 @@ const TestReport: React.FC = () => {
   useInjectStyle();
   const { theme } = useTheme();
 
-  // Module PK is now name. Use name as filter key.
-  const [moduleOptions, setModuleOptions]         = useState<ModuleOption[]>([]);
-  const [modules, setModules]                     = useState<ModuleRow[]>([]);
-  const [loading, setLoading]                     = useState(true);
-  const [error, setError]                         = useState<string | null>(null);
+  const [moduleOptions, setModuleOptions]           = useState<ModuleOption[]>([]);
+  const [modules, setModules]                       = useState<ModuleRow[]>([]);
+  const [loading, setLoading]                       = useState(true);
+  const [error, setError]                           = useState<string | null>(null);
   const [selectedModuleName, setSelectedModuleName] = useState<string | null>(null);
-  const [showExportModal, setShowExportModal]     = useState(false);
-  const [view, setView]                           = useState<"graph" | "table">("graph");
-  const [chartType, setChartType]                 = useState<ChartType>("bar");
+  const [showExportModal, setShowExportModal]       = useState(false);
+  const [view, setView]                             = useState<"graph" | "table">("graph");
+  const [chartType, setChartType]                   = useState<ChartType>("bar");
 
-  // Lightweight fetch for the dropdown
   useEffect(() => {
     supabase
       .from("modules")
@@ -290,14 +285,11 @@ const TestReport: React.FC = () => {
       .then(({ data }) => setModuleOptions((data ?? []) as ModuleOption[]));
   }, []);
 
-  // Full fetch: modules with module_tests (for test names) + step_results (for statuses)
   useEffect(() => {
     const fetchData = async () => {
       setLoading(true);
       setError(null);
       try {
-        // Fetch module_tests and step_results via their module_name FK on modules.
-        // step_results includes test_steps info (tests_name for grouping, is_divider for filter).
         let query = supabase
           .from("modules")
           .select(`
@@ -346,11 +338,14 @@ const TestReport: React.FC = () => {
       };
     }), [modules]);
 
-  // Build flat export data by matching step_results to module_tests by tests_name
+  // ✅ FIX: sort module_tests by test.serial_no so export order matches logical test order
   const buildFlatData = (mods: ModuleRow[]): FlatData[] => {
     const flat: FlatData[] = [];
     mods.forEach(m => {
-      (m.module_tests ?? []).forEach(mt => {
+      const sortedTests = [...(m.module_tests ?? [])].sort(
+        (a, b) => (a.test?.serial_no ?? 0) - (b.test?.serial_no ?? 0)
+      );
+      sortedTests.forEach(mt => {
         (m.step_results ?? [])
           .filter(sr => sr.step?.tests_name === mt.tests_name && !sr.step?.is_divider)
           .sort((a, b) => (a.step?.serial_no ?? 0) - (b.step?.serial_no ?? 0))

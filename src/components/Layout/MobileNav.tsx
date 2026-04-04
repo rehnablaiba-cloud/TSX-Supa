@@ -14,7 +14,7 @@ const ALL_TABLES = [
   "module_tests",
   "step_results",
   "test_locks",
-  "auditlog",
+  "audit_log",
 ] as const;
 
 type TableName = typeof ALL_TABLES[number];
@@ -89,7 +89,6 @@ const ExportModal: React.FC<{ onClose: () => void }> = ({ onClose }) => {
   const counts    = allData ? ALL_TABLES.map(t => ({ table: t, count: allData[t].length })) : null;
   const totalRows = counts?.reduce((s, c) => s + c.count, 0) ?? 0;
 
-  // FIX: guard against state updates after unmount
   useEffect(() => {
     let mounted = true;
     setStage("fetching");
@@ -240,8 +239,9 @@ const ModalShell: React.FC<{
 // ─────────────────────────────────────────────────────────────────────────
 // SHARED TYPES + HELPERS
 // ─────────────────────────────────────────────────────────────────────────
-interface TestOption   { id: string; serial_no: number; name: string; }
-interface ModuleOption { id: string; name: string; }
+// PKs are now name-based (text) — no more id fields on modules/tests
+interface TestOption   { serial_no: number; name: string; }
+interface ModuleOption { name: string; }
 
 const Row: React.FC<{ label: string; value: string; mono?: boolean; brand?: boolean }> = ({ label, value, mono, brand }) => (
   <div className="flex gap-2">
@@ -301,7 +301,8 @@ const ImportModulesModal: React.FC<{ onClose: () => void; onBack: () => void }> 
   useEffect(() => {
     if (stage !== "select_module") return;
     setLoadingMods(true);
-    supabase.from("modules").select("id, name").order("name")
+    // modules PK is name — select only name
+    supabase.from("modules").select("name").order("name")
       .then(({ data }) => { if (data) setModules(data as ModuleOption[]); setLoadingMods(false); });
   }, [stage]);
 
@@ -318,12 +319,13 @@ const ImportModulesModal: React.FC<{ onClose: () => void; onBack: () => void }> 
         if (!selectedMod) throw new Error("No module selected.");
         const newName = form.name.trim();
         if (!newName) throw new Error("New name is required.");
-        const { error } = await supabase.from("modules").update({ name: newName }).eq("id", selectedMod.id);
+        // PK is name — update by matching name
+        const { error } = await supabase.from("modules").update({ name: newName }).eq("name", selectedMod.name);
         if (error) throw error;
         setResultMsg(`"${selectedMod.name}" renamed to "${newName}".`);
       } else {
         if (!selectedMod) throw new Error("No module selected.");
-        const { error } = await supabase.from("modules").delete().eq("id", selectedMod.id);
+        const { error } = await supabase.from("modules").delete().eq("name", selectedMod.name);
         if (error) throw error;
         setResultMsg(`Module "${selectedMod.name}" deleted.`);
       }
@@ -375,11 +377,12 @@ const ImportModulesModal: React.FC<{ onClose: () => void; onBack: () => void }> 
         ) : (
           <div className="flex flex-col gap-2 max-h-64 overflow-y-auto pr-0.5">
             {modules.map(m => (
-              <button key={m.id} onClick={() => setSelectedMod(m)}
-                className={`flex items-center gap-3 px-4 py-3 rounded-xl border transition-all text-left ${selectedMod?.id === m.id ? "border-c-brand bg-c-brand-bg" : "border-[var(--border-color)] bg-bg-card hover:bg-bg-base"}`}>
+              // key and selection keyed on name (the PK)
+              <button key={m.name} onClick={() => setSelectedMod(m)}
+                className={`flex items-center gap-3 px-4 py-3 rounded-xl border transition-all text-left ${selectedMod?.name === m.name ? "border-c-brand bg-c-brand-bg" : "border-[var(--border-color)] bg-bg-card hover:bg-bg-base"}`}>
                 <span className="text-lg">📦</span>
-                <span className={`text-sm font-medium flex-1 ${selectedMod?.id === m.id ? "text-c-brand" : "text-t-primary"}`}>{m.name}</span>
-                {selectedMod?.id === m.id && <span className="w-4 h-4 rounded-full bg-c-brand flex items-center justify-center text-white text-[10px] font-bold shrink-0">✓</span>}
+                <span className={`text-sm font-medium flex-1 ${selectedMod?.name === m.name ? "text-c-brand" : "text-t-primary"}`}>{m.name}</span>
+                {selectedMod?.name === m.name && <span className="w-4 h-4 rounded-full bg-c-brand flex items-center justify-center text-white text-[10px] font-bold shrink-0">✓</span>}
               </button>
             ))}
           </div>
@@ -520,7 +523,8 @@ const ImportTestsModal: React.FC<{ onClose: () => void; onBack: () => void }> = 
   useEffect(() => {
     if (stage !== "select_test") return;
     setLoadingTests(true);
-    supabase.from("tests").select("id, serial_no, name").order("serial_no", { ascending: true })
+    // tests PK is name — select serial_no + name only
+    supabase.from("tests").select("serial_no, name").order("serial_no", { ascending: true })
       .then(({ data }) => { if (data) setTests(data as TestOption[]); setLoadingTests(false); });
   }, [stage]);
 
@@ -539,12 +543,13 @@ const ImportTestsModal: React.FC<{ onClose: () => void; onBack: () => void }> = 
         if (!selectedTest) throw new Error("No test selected.");
         const newName = form.name.trim();
         if (!newName) throw new Error("New name is required.");
-        const { error } = await supabase.from("tests").update({ name: newName }).eq("id", selectedTest.id);
+        // Note: updating name (PK) cascades via FK constraints — Supabase/Postgres handles this
+        const { error } = await supabase.from("tests").update({ name: newName }).eq("name", selectedTest.name);
         if (error) throw error;
         setResultMsg(`SN ${selectedTest.serial_no} renamed to "${newName}".`);
       } else {
         if (!selectedTest) throw new Error("No test selected.");
-        const { error } = await supabase.from("tests").delete().eq("id", selectedTest.id);
+        const { error } = await supabase.from("tests").delete().eq("name", selectedTest.name);
         if (error) throw error;
         setResultMsg(`Test SN ${selectedTest.serial_no} "${selectedTest.name}" deleted.`);
       }
@@ -594,14 +599,15 @@ const ImportTestsModal: React.FC<{ onClose: () => void; onBack: () => void }> = 
         ) : (
           <div className="flex flex-col gap-2 max-h-64 overflow-y-auto pr-0.5">
             {tests.map(t => (
-              <button key={t.id} onClick={() => setSelectedTest(t)}
-                className={`flex items-center gap-3 px-4 py-3 rounded-xl border transition-all text-left ${selectedTest?.id === t.id ? "border-c-brand bg-c-brand-bg" : "border-[var(--border-color)] bg-bg-card hover:bg-bg-base"}`}>
+              // key and selection keyed on name (the PK)
+              <button key={t.name} onClick={() => setSelectedTest(t)}
+                className={`flex items-center gap-3 px-4 py-3 rounded-xl border transition-all text-left ${selectedTest?.name === t.name ? "border-c-brand bg-c-brand-bg" : "border-[var(--border-color)] bg-bg-card hover:bg-bg-base"}`}>
                 <span className="text-lg">🧪</span>
                 <div className="flex-1">
-                  <p className={`text-sm font-medium ${selectedTest?.id === t.id ? "text-c-brand" : "text-t-primary"}`}>{t.name}</p>
+                  <p className={`text-sm font-medium ${selectedTest?.name === t.name ? "text-c-brand" : "text-t-primary"}`}>{t.name}</p>
                   <p className="text-xs text-t-muted">SN {t.serial_no}</p>
                 </div>
-                {selectedTest?.id === t.id && <span className="w-4 h-4 rounded-full bg-c-brand flex items-center justify-center text-white text-[10px] font-bold shrink-0">✓</span>}
+                {selectedTest?.name === t.name && <span className="w-4 h-4 rounded-full bg-c-brand flex items-center justify-center text-white text-[10px] font-bold shrink-0">✓</span>}
               </button>
             ))}
           </div>
@@ -744,7 +750,6 @@ type StepImportStage = "select_test" | "select_op" | "upload" | "preview" | "imp
 interface StepCsvRow       { serial_no: number; action: string; expected_result: string; is_divider: boolean; }
 interface StepImportSummary { written: number; skipped: number; errors: string[]; }
 
-// FIX: consistent label ("Create" not "Insert")
 const STEP_CSV_OP_META = [
   { id: "create" as StepOp, label: "Create", icon: "➕", desc: "Add new steps from CSV"         },
   { id: "update" as StepOp, label: "Update", icon: "✏️",  desc: "Overwrite existing steps by SN"  },
@@ -798,7 +803,8 @@ const ImportStepsModal: React.FC<{ onClose: () => void; onBack: () => void }> = 
   const fileRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    supabase.from("tests").select("id, serial_no, name").order("serial_no", { ascending: true })
+    // tests PK is name — select serial_no + name only
+    supabase.from("tests").select("serial_no, name").order("serial_no", { ascending: true })
       .then(({ data, error }) => {
         if (!error && data) setTests(data as TestOption[]);
         setTestsLoading(false);
@@ -817,7 +823,6 @@ const ImportStepsModal: React.FC<{ onClose: () => void; onBack: () => void }> = 
     e.target.value = "";
   };
 
-  // FIX: batch insert for create instead of sequential await-in-loop
   const handleImport = useCallback(async () => {
     if (!selectedTest) return;
     setStage("importing");
@@ -825,14 +830,15 @@ const ImportStepsModal: React.FC<{ onClose: () => void; onBack: () => void }> = 
 
     try {
       if (op === "create") {
+        // Batch insert — tests_name replaces test_id (FK → tests.name)
         const payload = rows.map(row => ({
-          test_id:         selectedTest.id,
+          tests_name:      selectedTest.name,
           serial_no:       row.serial_no,
           action:          row.action,
           expected_result: row.expected_result,
           is_divider:      row.is_divider,
         }));
-        const { data: inserted, error } = await supabase.from("steps").insert(payload).select("id");
+        const { data: inserted, error } = await supabase.from("test_steps").insert(payload).select("id");
         if (error) {
           result.errors.push(error.message);
           result.skipped += rows.length;
@@ -840,20 +846,24 @@ const ImportStepsModal: React.FC<{ onClose: () => void; onBack: () => void }> = 
           result.written = inserted?.length ?? rows.length;
         }
       } else {
-        // update / delete: must match by SN, so sequential is required
+        // update / delete: look up step id by tests_name + serial_no
         for (const row of rows) {
-          const { data: existing, error: fe } = await supabase.from("steps")
-            .select("id").eq("test_id", selectedTest.id).eq("serial_no", row.serial_no).maybeSingle();
+          const { data: existing, error: fe } = await supabase
+            .from("test_steps")
+            .select("id")
+            .eq("tests_name", selectedTest.name)
+            .eq("serial_no", row.serial_no)
+            .maybeSingle();
           if (fe || !existing) { result.errors.push(`SN ${row.serial_no}: not found — skipped.`); result.skipped++; continue; }
 
           if (op === "update") {
-            const { error } = await supabase.from("steps").update({
+            const { error } = await supabase.from("test_steps").update({
               action: row.action, expected_result: row.expected_result, is_divider: row.is_divider,
             }).eq("id", existing.id);
             if (error) { result.errors.push(`SN ${row.serial_no}: ${error.message}`); result.skipped++; }
             else result.written++;
           } else {
-            const { error } = await supabase.from("steps").delete().eq("id", existing.id);
+            const { error } = await supabase.from("test_steps").delete().eq("id", existing.id);
             if (error) { result.errors.push(`SN ${row.serial_no}: ${error.message}`); result.skipped++; }
             else result.written++;
           }
@@ -887,10 +897,11 @@ const ImportStepsModal: React.FC<{ onClose: () => void; onBack: () => void }> = 
             ) : tests.length === 0 ? (
               <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-xs text-amber-400">No tests found. Import tests first.</div>
             ) : (
-              <select defaultValue="" onChange={e => setSelectedTest(tests.find(t => t.id === e.target.value) ?? null)}
+              // option value is test name (PK)
+              <select defaultValue="" onChange={e => setSelectedTest(tests.find(t => t.name === e.target.value) ?? null)}
                 className="w-full px-4 py-3 rounded-xl bg-bg-card border border-[var(--border-color)] text-t-primary text-sm focus:outline-none focus:border-c-brand transition-colors appearance-none cursor-pointer">
                 <option value="" disabled>Choose a test…</option>
-                {tests.map(t => <option key={t.id} value={t.id}>SN {t.serial_no} — {t.name}</option>)}
+                {tests.map(t => <option key={t.name} value={t.name}>SN {t.serial_no} — {t.name}</option>)}
               </select>
             )}
           </div>
@@ -1082,10 +1093,9 @@ const ImportStepsModal: React.FC<{ onClose: () => void; onBack: () => void }> = 
 };
 
 // ─────────────────────────────────────────────────────────────────────────
-// STEP CONTEXT STRIP — extracted outside ImportStepsManualModal to avoid
-// React treating it as a new component type on every render (unmount bug)
+// STEP CONTEXT STRIP
 // ─────────────────────────────────────────────────────────────────────────
-interface StepOption   { id: string; serial_no: number; action: string; expected_result: string; is_divider: boolean; }
+interface StepOption   { id: string; serial_no: number; tests_name: string; action: string; expected_result: string; is_divider: boolean; }
 interface StepFormData { serial_no: string; action: string; expected_result: string; is_divider: boolean; }
 const EMPTY_STEP_FORM: StepFormData = { serial_no: "", action: "", expected_result: "", is_divider: false };
 
@@ -1148,16 +1158,18 @@ const ImportStepsManualModal: React.FC<{ onClose: () => void; onBack: () => void
   useEffect(() => {
     if (stage !== "select_module") return;
     setLoadingModules(true);
-    supabase.from("modules").select("id, name").order("name")
+    // modules PK is name
+    supabase.from("modules").select("name").order("name")
       .then(({ data }) => { if (data) setModules(data as ModuleOption[]); setLoadingModules(false); });
   }, [stage]);
 
   useEffect(() => {
     if (stage !== "select_test" || !selectedModule) return;
     setLoadingTests(true);
+    // module_tests uses module_name (FK → modules.name) and tests_name (FK → tests.name)
     supabase.from("module_tests")
-      .select("test_id, tests(id, serial_no, name)")
-      .eq("module_id", selectedModule.id)
+      .select("tests_name, tests(serial_no, name)")
+      .eq("module_name", selectedModule.name)
       .then(({ data }) => {
         if (data) {
           const ts = (data as any[]).map(r => r.tests).filter(Boolean) as TestOption[];
@@ -1171,9 +1183,10 @@ const ImportStepsManualModal: React.FC<{ onClose: () => void; onBack: () => void
   useEffect(() => {
     if (stage !== "select_step" || !selectedTest) return;
     setLoadingSteps(true);
-    supabase.from("steps")
-      .select("id, serial_no, action, expected_result, is_divider")
-      .eq("test_id", selectedTest.id)
+    // test_steps uses tests_name (FK → tests.name) instead of test_id
+    supabase.from("test_steps")
+      .select("id, serial_no, tests_name, action, expected_result, is_divider")
+      .eq("tests_name", selectedTest.name)
       .order("serial_no", { ascending: true })
       .then(({ data }) => { if (data) setSteps(data as StepOption[]); setLoadingSteps(false); });
   }, [stage, selectedTest]);
@@ -1185,22 +1198,29 @@ const ImportStepsManualModal: React.FC<{ onClose: () => void; onBack: () => void
         const snVal = parseFloat(form.serial_no);
         if (isNaN(snVal)) throw new Error("Invalid serial number.");
         if (!selectedTest) throw new Error("No test selected.");
-        const { error } = await supabase.from("steps").insert({
-          test_id: selectedTest.id, serial_no: snVal,
-          action: form.action.trim(), expected_result: form.expected_result.trim(), is_divider: form.is_divider,
+        // tests_name replaces test_id as the FK
+        const { error } = await supabase.from("test_steps").insert({
+          tests_name:      selectedTest.name,
+          serial_no:       snVal,
+          action:          form.action.trim(),
+          expected_result: form.expected_result.trim(),
+          is_divider:      form.is_divider,
         });
         if (error) throw error;
         setResultMsg(`Step SN ${snVal} "${form.action.trim() || "(divider)"}" created in "${selectedTest.name}".`);
       } else if (op === "update") {
         if (!selectedStep) throw new Error("No step selected.");
-        const { error } = await supabase.from("steps").update({
-          action: form.action.trim(), expected_result: form.expected_result.trim(), is_divider: form.is_divider,
+        // step id is the text PK — update by id
+        const { error } = await supabase.from("test_steps").update({
+          action:          form.action.trim(),
+          expected_result: form.expected_result.trim(),
+          is_divider:      form.is_divider,
         }).eq("id", selectedStep.id);
         if (error) throw error;
         setResultMsg(`Step SN ${selectedStep.serial_no} updated successfully.`);
       } else {
         if (!selectedStep) throw new Error("No step selected.");
-        const { error } = await supabase.from("steps").delete().eq("id", selectedStep.id);
+        const { error } = await supabase.from("test_steps").delete().eq("id", selectedStep.id);
         if (error) throw error;
         setResultMsg(`Step SN ${selectedStep.serial_no} "${selectedStep.action || "(divider)"}" deleted.`);
       }
@@ -1261,11 +1281,11 @@ const ImportStepsManualModal: React.FC<{ onClose: () => void; onBack: () => void
         ) : (
           <div className="flex flex-col gap-2 max-h-64 overflow-y-auto pr-0.5">
             {modules.map(m => (
-              <button key={m.id} onClick={() => setSelectedModule(m)}
-                className={`flex items-center gap-3 px-4 py-3 rounded-xl border transition-all text-left ${selectedModule?.id === m.id ? "border-c-brand bg-c-brand-bg" : "border-[var(--border-color)] bg-bg-card hover:bg-bg-base"}`}>
+              <button key={m.name} onClick={() => setSelectedModule(m)}
+                className={`flex items-center gap-3 px-4 py-3 rounded-xl border transition-all text-left ${selectedModule?.name === m.name ? "border-c-brand bg-c-brand-bg" : "border-[var(--border-color)] bg-bg-card hover:bg-bg-base"}`}>
                 <span className="text-lg">📦</span>
-                <span className={`text-sm font-medium flex-1 ${selectedModule?.id === m.id ? "text-c-brand" : "text-t-primary"}`}>{m.name}</span>
-                {selectedModule?.id === m.id && <span className="w-4 h-4 rounded-full bg-c-brand flex items-center justify-center text-white text-[10px] font-bold shrink-0">✓</span>}
+                <span className={`text-sm font-medium flex-1 ${selectedModule?.name === m.name ? "text-c-brand" : "text-t-primary"}`}>{m.name}</span>
+                {selectedModule?.name === m.name && <span className="w-4 h-4 rounded-full bg-c-brand flex items-center justify-center text-white text-[10px] font-bold shrink-0">✓</span>}
               </button>
             ))}
           </div>
@@ -1293,14 +1313,14 @@ const ImportStepsManualModal: React.FC<{ onClose: () => void; onBack: () => void
         ) : (
           <div className="flex flex-col gap-2 max-h-64 overflow-y-auto pr-0.5">
             {tests.map(t => (
-              <button key={t.id} onClick={() => setSelectedTest(t)}
-                className={`flex items-center gap-3 px-4 py-3 rounded-xl border transition-all text-left ${selectedTest?.id === t.id ? "border-c-brand bg-c-brand-bg" : "border-[var(--border-color)] bg-bg-card hover:bg-bg-base"}`}>
+              <button key={t.name} onClick={() => setSelectedTest(t)}
+                className={`flex items-center gap-3 px-4 py-3 rounded-xl border transition-all text-left ${selectedTest?.name === t.name ? "border-c-brand bg-c-brand-bg" : "border-[var(--border-color)] bg-bg-card hover:bg-bg-base"}`}>
                 <span className="text-lg">🧪</span>
                 <div className="flex-1">
-                  <p className={`text-sm font-medium ${selectedTest?.id === t.id ? "text-c-brand" : "text-t-primary"}`}>{t.name}</p>
+                  <p className={`text-sm font-medium ${selectedTest?.name === t.name ? "text-c-brand" : "text-t-primary"}`}>{t.name}</p>
                   <p className="text-xs text-t-muted">SN {t.serial_no}</p>
                 </div>
-                {selectedTest?.id === t.id && <span className="w-4 h-4 rounded-full bg-c-brand flex items-center justify-center text-white text-[10px] font-bold shrink-0">✓</span>}
+                {selectedTest?.name === t.name && <span className="w-4 h-4 rounded-full bg-c-brand flex items-center justify-center text-white text-[10px] font-bold shrink-0">✓</span>}
               </button>
             ))}
           </div>
@@ -1570,8 +1590,6 @@ const SheetButton: React.FC<{
 
 // ─────────────────────────────────────────────────────────────────────────
 // OUTSIDE CLICK HOOK
-// FIX: use pointerdown instead of mousedown+touchstart to prevent
-//      double-firing on touch devices
 // ─────────────────────────────────────────────────────────────────────────
 function useOutsideClick(ref: React.RefObject<HTMLElement>, active: boolean, onOutside: () => void) {
   useEffect(() => {
