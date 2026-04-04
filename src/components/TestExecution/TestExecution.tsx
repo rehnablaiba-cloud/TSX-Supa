@@ -7,18 +7,22 @@ import ExportModal from "../UI/ExportModal";
 import { useToast } from "../../context/ToastContext";
 import { useAuditLog } from "../../hooks/useAuditLog";
 import { exportExecutionCSV, exportExecutionPDF, FlatData } from "../../utils/export";
+import { Lock, Upload, RotateCcw, User, Check, X, ArrowLeft } from "lucide-react";
+
 
 interface Props {
-  moduleName:          string;   // modules.name (PK)
-  initialModuleTestId: string;   // module_tests.id = module_name||'_'||tests_name
+  moduleName:          string;
+  initialModuleTestId: string;
   isAdmin?:            boolean;
   onBack:              () => void;
 }
 
+
 type Filter = "all" | "pass" | "fail" | "pending";
 
+
 interface ExecutionStep {
-  stepId:          string;   // test_steps.id (text)
+  stepId:          string;
   stepResultId:    string;
   moduleTestId:    string;
   serial_no:       number;
@@ -30,11 +34,13 @@ interface ExecutionStep {
   display_name:    string;
 }
 
+
 interface ModuleTestItem {
   id:          string;
   tests_name:  string;
   test: { serial_no: number; name: string };
 }
+
 
 // ── Locked Screen ──────────────────────────────────────────────
 const LockedScreen: React.FC<{
@@ -43,7 +49,9 @@ const LockedScreen: React.FC<{
   onBack:       () => void;
 }> = ({ lockedByName, testName, onBack }) => (
   <div className="flex flex-col flex-1 items-center justify-center gap-6 p-8 text-center">
-    <div className="w-16 h-16 rounded-full bg-amber-500/10 border-2 border-amber-500/30 flex items-center justify-center text-3xl">🔒</div>
+    <div className="w-16 h-16 rounded-full bg-amber-500/10 border-2 border-amber-500/30 flex items-center justify-center">
+      <Lock size={28} className="text-amber-500" />
+    </div>
     <div>
       <h2 className="text-lg font-bold text-t-primary mb-1">Test In Progress</h2>
       <p className="text-t-secondary text-sm max-w-sm">
@@ -56,12 +64,13 @@ const LockedScreen: React.FC<{
       <span className="text-xs text-amber-600 dark:text-amber-400 font-medium">You'll be unblocked instantly when they finish.</span>
     </div>
     <button onClick={onBack}
-      className="px-6 py-2 rounded-xl border border-[var(--border-color)] text-t-secondary
+      className="flex items-center gap-1.5 px-6 py-2 rounded-xl border border-[var(--border-color)] text-t-secondary
         hover:text-t-primary hover:border-[var(--color-brand)] text-sm font-medium transition-colors">
-      ← Go Back
+      <ArrowLeft size={14} /> Go Back
     </button>
   </div>
 );
+
 
 // ── Main Component ─────────────────────────────────────────────
 const TestExecution: React.FC<Props> = ({
@@ -71,9 +80,10 @@ const TestExecution: React.FC<Props> = ({
   const { addToast } = useToast();
   const { log }      = useAuditLog();
 
+
   const currentMtId = initialModuleTestId;
-  // Derive tests_name: module_tests.id = module_name || '_' || tests_name
   const testsName = currentMtId.slice(moduleName.length + 1);
+
 
   const [filter, setFilter]                   = useState<Filter>("all");
   const [search, setSearch]                   = useState("");
@@ -81,19 +91,23 @@ const TestExecution: React.FC<Props> = ({
   const [scrollTarget, setScrollTarget]       = useState<string | null>(null);
   const [focusedStepId, setFocusedStepId]     = useState<string | null>(null);
 
+
   const stepsInitialized = useRef(false);
   const remarksMap       = useRef<Record<string, string>>({});
   const heartbeatRef     = useRef<ReturnType<typeof setInterval> | null>(null);
 
+
   const trRefs   = useRef<Record<string, HTMLTableRowElement | null>>({});
   const cardRefs = useRef<Record<string, HTMLDivElement   | null>>({});
   const scrollContainerRef = useRef<HTMLDivElement>(null);
+
 
   const [moduleTests, setModuleTests] = useState<ModuleTestItem[]>([]);
   const [steps, setSteps]             = useState<ExecutionStep[]>([]);
   const [lock, setLock]               = useState<any>(null);
   const [loading, setLoading]         = useState(true);
   const [lockLoading, setLockLoading] = useState(true);
+
 
   useEffect(() => {
     setLoading(true);
@@ -102,14 +116,13 @@ const TestExecution: React.FC<Props> = ({
     setFocusedStepId(null);
     remarksMap.current = {};
 
+
     Promise.all([
-      // Fetch module_tests for this module (for sidebar / context)
       supabase
         .from("module_tests")
         .select("id, tests_name, test:tests!tests_name(serial_no, name)")
         .eq("module_name", moduleName)
         .order("id"),
-      // Fetch step_results for the module; filter to this test in JS
       supabase
         .from("step_results")
         .select(`
@@ -117,7 +130,6 @@ const TestExecution: React.FC<Props> = ({
           step:test_steps!test_steps_id(id, serial_no, action, expected_result, is_divider, tests_name)
         `)
         .eq("module_name", moduleName),
-      // Lock for the specific module_test
       supabase
         .from("test_locks")
         .select("module_test_id, user_id, locked_by_name")
@@ -125,7 +137,7 @@ const TestExecution: React.FC<Props> = ({
     ]).then(([mtRes, srRes, lockRes]) => {
       setModuleTests((mtRes.data ?? []) as unknown as ModuleTestItem[]);
 
-      // Filter step_results to the current test and build ExecutionStep[]
+
       const merged: ExecutionStep[] = ((srRes.data ?? []) as any[])
         .filter(sr => sr.step?.tests_name === testsName)
         .map(sr => ({
@@ -141,9 +153,10 @@ const TestExecution: React.FC<Props> = ({
           display_name:    sr.display_name ?? "",
         }))
         .sort((a, b) => {
-  if (a.serial_no !== b.serial_no) return a.serial_no - b.serial_no;
-  return (a.is_divider ? 0 : 1) - (b.is_divider ? 0 : 1);
-});
+          if (a.serial_no !== b.serial_no) return a.serial_no - b.serial_no;
+          return (a.is_divider ? 0 : 1) - (b.is_divider ? 0 : 1);
+        });
+
 
       setSteps(merged);
       setLock(lockRes.data?.[0] ?? null);
@@ -151,7 +164,7 @@ const TestExecution: React.FC<Props> = ({
       setLockLoading(false);
     });
 
-    // Real-time: lock channel
+
     const lockChannel = supabase.channel(`lock:${currentMtId}`)
       .on("postgres_changes", {
         event: "*", schema: "public", table: "test_locks",
@@ -161,13 +174,12 @@ const TestExecution: React.FC<Props> = ({
       })
       .subscribe();
 
-    // Real-time: step_results for the module — filter by testsName in handler
+
     const srChannel = supabase.channel(`step_results:${moduleName}:${testsName}`)
       .on("postgres_changes", {
         event: "UPDATE", schema: "public", table: "step_results",
         filter: `module_name=eq.${moduleName}`,
       }, ({ new: updated }: any) => {
-        // Only process updates that belong to our current test
         setSteps(prev => {
           const match = prev.find(s => s.stepResultId === updated.id);
           if (!match) return prev;
@@ -180,23 +192,25 @@ const TestExecution: React.FC<Props> = ({
       })
       .subscribe();
 
+
     return () => {
       supabase.removeChannel(lockChannel);
       supabase.removeChannel(srChannel);
     };
   }, [moduleName, currentMtId, testsName]);
 
+
   const currentMt   = moduleTests.find(mt => mt.id === currentMtId);
   const currentTest = currentMt?.test;
 
-  // Clean up stale ref entries
+
   useEffect(() => {
     const live = new Set(steps.map(s => s.stepId));
     for (const id of Object.keys(trRefs.current))   { if (!live.has(id)) delete trRefs.current[id]; }
     for (const id of Object.keys(cardRefs.current)) { if (!live.has(id)) delete cardRefs.current[id]; }
   }, [steps]);
 
-  // Auto-focus first pending step after load
+
   useEffect(() => {
     if (steps.length === 0 || stepsInitialized.current) return;
     stepsInitialized.current = true;
@@ -207,7 +221,9 @@ const TestExecution: React.FC<Props> = ({
     }
   }, [steps]);
 
+
   const isLockedByOther = !!(lock && lock.user_id !== user?.id);
+
 
   // ── Heartbeat ──────────────────────────────────────────────
   const startHeartbeat = useCallback(() => {
@@ -220,9 +236,11 @@ const TestExecution: React.FC<Props> = ({
     }, 15000);
   }, [currentMtId, user]);
 
+
   const stopHeartbeat = useCallback(() => {
     if (heartbeatRef.current) { clearInterval(heartbeatRef.current); heartbeatRef.current = null; }
   }, []);
+
 
   // ── Lock lifecycle ─────────────────────────────────────────
   useEffect(() => {
@@ -240,6 +258,7 @@ const TestExecution: React.FC<Props> = ({
       );
       if (cancelled) return;
 
+
       const { data: owned } = await supabase
         .from("test_locks")
         .select("user_id")
@@ -254,6 +273,7 @@ const TestExecution: React.FC<Props> = ({
         .eq("module_test_id", currentMtId).eq("user_id", user.id);
     };
   }, [currentMtId, user?.id, startHeartbeat, stopHeartbeat]);
+
 
   // ── Lock release on tab/window close ──────────────────────
   useEffect(() => {
@@ -277,6 +297,7 @@ const TestExecution: React.FC<Props> = ({
     return () => window.removeEventListener("beforeunload", release);
   }, [currentMtId, user?.id]);
 
+
   // ── Auto-scroll ────────────────────────────────────────────
   useEffect(() => {
     if (!scrollTarget || loading) return;
@@ -290,6 +311,7 @@ const TestExecution: React.FC<Props> = ({
           : cardRefs.current[scrollTarget];
         const container = scrollContainerRef.current;
         if (!el || !container) return;
+
 
         const elRect      = el.getBoundingClientRect();
         const cRect       = container.getBoundingClientRect();
@@ -309,6 +331,7 @@ const TestExecution: React.FC<Props> = ({
     };
   }, [scrollTarget, loading]);
 
+
   // ── Step update ────────────────────────────────────────────
   const handleStepUpdate = useCallback(async (
     stepId: string, status: "pass" | "fail" | "pending", remarks: string,
@@ -318,12 +341,13 @@ const TestExecution: React.FC<Props> = ({
     const displayName = user?.displayName || user?.email || "User";
     const prevSteps   = steps;
 
-    // Optimistic update
+
     setSteps(prev => prev.map(s =>
       s.stepId === stepId
         ? { ...s, status, remarks, display_name: displayName }
         : s
     ));
+
 
     if (status !== "pending") {
       if (nextPending) { setFocusedStepId(nextPending.stepId); setScrollTarget(nextPending.stepId); }
@@ -333,8 +357,8 @@ const TestExecution: React.FC<Props> = ({
       setScrollTarget(stepId);
     }
 
+
     try {
-      // New RPC signature: p_module_name, p_test_steps_id, p_status, p_remarks, p_display_name
       const rpcRes = await supabase.rpc("update_step_result", {
         p_module_name:    moduleName,
         p_test_steps_id:  stepId,
@@ -349,11 +373,13 @@ const TestExecution: React.FC<Props> = ({
     }
   }, [steps, moduleName, user, addToast]);
 
+
   // ── Undo All (admin) ───────────────────────────────────────
   const handleUndoAll = useCallback(async () => {
     const actionable = steps.filter(s => !s.is_divider);
     const prevSteps  = steps;
     const undoName   = user?.displayName || user?.email || "User";
+
 
     setSteps(prev => prev.map(s =>
       s.is_divider ? s : { ...s, status: "pending", remarks: "", display_name: undoName }
@@ -361,6 +387,7 @@ const TestExecution: React.FC<Props> = ({
     remarksMap.current = {};
     const first = actionable[0];
     if (first) { setFocusedStepId(first.stepId); setScrollTarget(first.stepId); }
+
 
     try {
       const rpcResults = await Promise.all(
@@ -375,6 +402,7 @@ const TestExecution: React.FC<Props> = ({
       const rpcFailed = rpcResults.find(r => r.error);
       if (rpcFailed) throw rpcFailed.error;
 
+
       addToast("All steps reset to pending.", "info");
       log("Undo all steps", "info");
     } catch (err) {
@@ -382,6 +410,7 @@ const TestExecution: React.FC<Props> = ({
       addToast("Failed to reset steps. Please try again.", "error");
     }
   }, [steps, moduleName, user, addToast, log]);
+
 
   // ── Keyboard: Enter to pass focused step ───────────────────
   useEffect(() => {
@@ -398,6 +427,7 @@ const TestExecution: React.FC<Props> = ({
     return () => document.removeEventListener("keydown", onKeyDown);
   }, [focusedStepId, steps, isLockedByOther, handleStepUpdate]);
 
+
   const handleFinish = async () => {
     stopHeartbeat();
     if (user) await supabase.from("test_locks").delete()
@@ -407,6 +437,7 @@ const TestExecution: React.FC<Props> = ({
     onBack();
   };
 
+
   // ── Derived / memoised values ──────────────────────────────
   const filtered = useMemo(() => steps.filter(s => {
     if (s.is_divider) return true;
@@ -415,6 +446,7 @@ const TestExecution: React.FC<Props> = ({
       .toLowerCase().includes(search.toLowerCase())) return false;
     return true;
   }), [steps, filter, search]);
+
 
   const flatData = useMemo<FlatData[]>(() =>
     steps.filter(s => !s.is_divider).map(s => ({
@@ -428,11 +460,13 @@ const TestExecution: React.FC<Props> = ({
     })),
   [steps, moduleName, currentTest?.name]);
 
+
   const exportStats = useMemo(() => [
     { label: "Total Steps", value: flatData.length },
     { label: "Pass",        value: flatData.filter(s => s.status === "pass").length },
     { label: "Fail",        value: flatData.filter(s => s.status === "fail").length },
   ], [flatData]);
+
 
   const { passCount, failCount, totalCount, doneCount, progressPct, passPct, failPct } =
     useMemo(() => {
@@ -452,12 +486,14 @@ const TestExecution: React.FC<Props> = ({
       };
     }, [steps]);
 
+
   // ── Guards ─────────────────────────────────────────────────
   if (lockLoading) return (
     <div className="flex flex-col items-center justify-center gap-3" style={{ height: "100dvh" }}>
       <Spinner /><p className="text-xs text-t-muted">Checking lock status…</p>
     </div>
   );
+
 
   if (isLockedByOther) return (
     <div className="flex flex-col" style={{ height: "100dvh" }}>
@@ -466,9 +502,11 @@ const TestExecution: React.FC<Props> = ({
     </div>
   );
 
+
   // ── Render ─────────────────────────────────────────────────
   return (
     <div className="flex flex-col" style={{ height: "100dvh" }}>
+
 
       <ExportModal
         isOpen={showExportModal} onClose={() => setShowExportModal(false)}
@@ -482,6 +520,7 @@ const TestExecution: React.FC<Props> = ({
         ]}
       />
 
+
       {/* Fixed sections */}
       <div className="flex-shrink-0">
         <Topbar
@@ -494,7 +533,7 @@ const TestExecution: React.FC<Props> = ({
                   className="flex items-center gap-1.5 px-4 py-2 bg-bg-card hover:bg-bg-surface
                     disabled:opacity-40 disabled:cursor-not-allowed text-t-primary
                     text-sm font-semibold rounded-lg transition border border-[var(--border-color)]">
-                  📤 Export
+                  <Upload size={14} /> Export
                 </button>
                 <button onClick={handleFinish} className="btn-primary text-sm">Finish Test</button>
               </div>
@@ -507,12 +546,13 @@ const TestExecution: React.FC<Props> = ({
                     border border-amber-500/30 hover:border-amber-500/60
                     transition-colors whitespace-nowrap"
                 >
-                  ↩ Undo All
+                  <RotateCcw size={12} /> Undo All
                 </button>
               )}
             </div>
           }
         />
+
 
         {/* Progress bar */}
         <div className="px-4 pt-3 pb-2">
@@ -538,6 +578,7 @@ const TestExecution: React.FC<Props> = ({
           </div>
         </div>
 
+
         {/* Filters */}
         <div className="flex items-center gap-2 px-4 py-2 border-b border-[var(--border-color)] flex-wrap">
           <div className="flex gap-1">
@@ -555,6 +596,7 @@ const TestExecution: React.FC<Props> = ({
             placeholder="Search steps…" className="input text-xs py-1.5 w-48" />
         </div>
       </div>
+
 
       {/* Scroll container */}
       <div ref={scrollContainerRef} className="flex-1 min-h-0 overflow-y-auto pb-6" style={{ scrollBehavior: "smooth" }}>
@@ -603,6 +645,7 @@ const TestExecution: React.FC<Props> = ({
               </tbody>
             </table>
 
+
             {/* Mobile */}
             <div className="md:hidden flex flex-col">
               <div className="sticky top-0 z-10 grid grid-cols-[64px_1fr] border-b border-[var(--border-color)] bg-bg-surface/80 backdrop-blur-md">
@@ -643,17 +686,19 @@ const TestExecution: React.FC<Props> = ({
   );
 };
 
+
 // ── Tester Badge ──────────────────────────────────────────────
 const TesterBadge: React.FC<{ name: string; status: "pass" | "fail" | "pending" }> = ({ name, status }) => {
   if (!name) return null;
   const color = status === "pass" ? "text-green-400" : status === "fail" ? "text-red-400" : "text-t-muted";
   return (
     <span className={`flex items-center gap-1 text-[10px] font-medium ${color} opacity-80`}>
-      <span>👤</span>
+      <User size={10} />
       <span className="truncate max-w-[96px]">{name}</span>
     </span>
   );
 };
+
 
 // ── Desktop Table Row ──────────────────────────────────────────
 const TableStepRow: React.FC<{
@@ -668,8 +713,10 @@ const TableStepRow: React.FC<{
   const [remarks, setRemarks] = useState(step.remarks || "");
   useEffect(() => { setRemarks(step.remarks || ""); }, [step.remarks]);
 
+
   const rowBg      = step.status === "pass" ? "bg-green-500/5" : step.status === "fail" ? "bg-red-500/5" : "";
   const focusStyle: React.CSSProperties = isFocused ? { outline: "2px solid #38bdf8", outlineOffset: "-2px" } : {};
+
 
   return (
     <tr ref={rowRef} onClick={onFocus} style={focusStyle}
@@ -713,11 +760,11 @@ const TableStepRow: React.FC<{
               <button onClick={e => { e.stopPropagation(); onUpdate(step.stepId, "pass", remarks); }}
                 className={`flex-1 h-7 rounded-md text-xs font-bold transition-colors flex items-center justify-center ${
                   step.status === "pass" ? "bg-green-500 text-white" : "bg-green-500/10 hover:bg-green-500/25 text-green-400 border border-green-500/20"
-                }`}>✓</button>
+                }`}><Check size={13} /></button>
               <button onClick={e => { e.stopPropagation(); onUpdate(step.stepId, "fail", remarks); }}
                 className={`flex-1 h-7 rounded-md text-xs font-bold transition-colors flex items-center justify-center ${
                   step.status === "fail" ? "bg-red-500 text-white" : "bg-red-500/10 hover:bg-red-500/25 text-red-400 border border-red-500/20"
-                }`}>✗</button>
+                }`}><X size={13} /></button>
             </div>
             {step.status !== "pending" && (
               <button onClick={e => { e.stopPropagation(); onUpdate(step.stepId, "pending", ""); }}
@@ -734,6 +781,7 @@ const TableStepRow: React.FC<{
   );
 };
 
+
 // ── Mobile Step Card ───────────────────────────────────────────
 const MobileStepCard: React.FC<{
   step:            ExecutionStep;
@@ -747,13 +795,16 @@ const MobileStepCard: React.FC<{
   const [remarks, setRemarks] = useState(step.remarks || "");
   useEffect(() => { setRemarks(step.remarks || ""); }, [step.remarks]);
 
+
   const rowBg       = step.status === "pass" ? "bg-green-500/5" : step.status === "fail" ? "bg-red-500/5" : "";
   const accentColor = isFocused ? "#38bdf8" : step.status === "pass" ? "#22c55e" : step.status === "fail" ? "#ef4444" : "#374151";
+
 
   return (
     <div ref={cardRef} onClick={onFocus}
       className={`rounded-xl overflow-hidden border border-[var(--border-color)] w-full cursor-pointer transition-shadow ${rowBg} ${isFocused ? "ring-2 ring-sky-400" : ""}`}
       style={{ borderLeftColor: accentColor, borderLeftWidth: 3 }}>
+
 
       <div className="flex items-center justify-between px-3 py-2 border-b border-[var(--border-color)] bg-bg-card">
         <span className="text-xs font-mono text-t-muted tracking-wide">#{step.serial_no}</span>
@@ -774,6 +825,7 @@ const MobileStepCard: React.FC<{
         </div>
       </div>
 
+
       {[
         { label: "Action",   value: step.action,         cls: "text-t-primary" },
         { label: "Expected", value: step.expected_result, cls: "text-t-secondary" },
@@ -787,6 +839,7 @@ const MobileStepCard: React.FC<{
           </div>
         </div>
       ))}
+
 
       <div className="grid grid-cols-[80px_1fr] border-b border-[var(--border-color)]">
         <div className="px-3 py-2.5 border-r border-[var(--border-color)] bg-bg-card flex items-start">
@@ -806,6 +859,7 @@ const MobileStepCard: React.FC<{
         </div>
       </div>
 
+
       {!readonly && (
         <div className="flex items-center justify-between px-3 py-2 bg-bg-card">
           <span className="text-[10px] font-semibold text-t-muted uppercase tracking-wider">Result</span>
@@ -820,16 +874,17 @@ const MobileStepCard: React.FC<{
             <button onClick={e => { e.stopPropagation(); onUpdate(step.stepId, "pass", remarks); }}
               className={`w-8 h-8 rounded-md text-xs font-bold transition-colors flex items-center justify-center ${
                 step.status === "pass" ? "bg-green-500 text-white" : "bg-green-500/10 hover:bg-green-500/25 text-green-400 border border-green-500/20"
-              }`}>✓</button>
+              }`}><Check size={14} /></button>
             <button onClick={e => { e.stopPropagation(); onUpdate(step.stepId, "fail", remarks); }}
               className={`w-8 h-8 rounded-md text-xs font-bold transition-colors flex items-center justify-center ${
                 step.status === "fail" ? "bg-red-500 text-white" : "bg-red-500/10 hover:bg-red-500/25 text-red-400 border border-red-500/20"
-              }`}>✗</button>
+              }`}><X size={14} /></button>
           </div>
         </div>
       )}
     </div>
   );
 };
+
 
 export default TestExecution;
