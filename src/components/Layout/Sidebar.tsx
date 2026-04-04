@@ -4,15 +4,16 @@ import {
   ClipboardList,
   ScrollText,
   Users,
+  TrainFront,
   ChevronLeft,
   ChevronRight,
   LogOut,
   Search,
+  TrainFront,
 } from "lucide-react";
 import { useAuth } from "../../context/AuthContext";
 import { Module } from "../../types";
 import ThemeToggle from "../UI/ThemeToggle";
-import { TrainFront } from "lucide-react";
 
 
 interface Props {
@@ -77,7 +78,7 @@ const Sidebar: React.FC<Props> = ({ activePage, onNavigate, modules }) => {
         ${collapsed ? "justify-center" : "justify-between"}`}>
         {!collapsed && (
           <div className="flex items-center gap-2">
-            <TrainFront size={28} className="text-white" />
+            <TrainFront size={20} className="text-c-brand shrink-0" />
             <span className="font-bold text-t-primary">TestPro</span>
           </div>
         )}
