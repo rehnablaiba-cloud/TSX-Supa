@@ -250,7 +250,7 @@ const TestExecution: React.FC<Props> = ({ moduleId, moduleName, initialModuleTes
  // ── Auto-scroll: snap focused step to center of container ───
 useEffect(() => {
   if (!scrollTarget || loading) return;
-  const raf = requestAnimationFrame(() => {
+  const id = setTimeout(() => {
     const el        = stepRefs.current[scrollTarget];
     const container = scrollContainerRef.current;
     if (!el || !container) return;
@@ -261,8 +261,8 @@ useEffect(() => {
       - containerRect.height / 2 + elRect.height / 2;
     container.scrollTo({ top: Math.max(0, scrollTo), behavior: "smooth" });
     setScrollTarget(null);
-  });
-  return () => cancelAnimationFrame(raf);
+  }, 0);
+  return () => clearTimeout(id);
 }, [scrollTarget, loading]);
 
   // ── Step update — optimistic ──────────────────────────────
@@ -467,7 +467,7 @@ useEffect(() => {
       </div>
 
       {/* ── Scroll container ── */}
-      <div ref={scrollContainerRef} className="flex-1 overflow-auto pb-24 md:pb-4">
+      <div ref={scrollContainerRef} className="flex-1 min-h-0 overflow-auto pb-24 md:pb-4">
         {loading ? (
           <div className="flex items-center justify-center py-20"><Spinner /></div>
         ) : filtered.length === 0 ? (
