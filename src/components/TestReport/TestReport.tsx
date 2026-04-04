@@ -5,7 +5,7 @@ import Spinner from "../UI/Spinner";
 import ExportModal from "../UI/ExportModal";
 import { exportReportCSV, exportReportPDF, FlatData } from "../../utils/export";
 import { useTheme } from "../../context/ThemeContext";
-import { FileText, AlertTriangle } from "lucide-react"; // ✅ Lucide
+import { Upload, FileSpreadsheet, FileText, AlertTriangle } from "lucide-react";
 import {
   ResponsiveContainer,
   BarChart, Bar,
@@ -16,7 +16,6 @@ import {
   XAxis, YAxis, CartesianGrid, Tooltip, Legend,
 } from "recharts";
 import { PieLabelRenderProps } from "recharts";
-import { Upload, FileSpreadsheet, FileText } from "lucide-react";
 
 // ── Animation keyframes ───────────────────────────────────────────────────────
 const ANIM_STYLE = `
@@ -402,19 +401,19 @@ const TestReport: React.FC = () => {
         subtitle={selectedModuleName ?? "All Modules"}
         stats={exportStats()}
         options={[
-            {
+          {
             label: "CSV",
             icon: <FileSpreadsheet size={16} />,
             color: "bg-[var(--color-primary)]",
             hoverColor: "hover:bg-[var(--color-primary-hover)]",
-            onConfirm: () => exportReportCSV(moduleName, currentTest?.name ?? "test", flatData),
+            onConfirm: () => exportReportCSV([], buildFlatData(modules)),
           },
           {
             label: "PDF",
             icon: <FileText size={16} />,
             color: "bg-[var(--color-blue)]",
             hoverColor: "hover:bg-[var(--color-blue-hover)]",
-            onConfirm: () => exportReportPDF(moduleName, currentTest?.name ?? "test", flatData),
+            onConfirm: () => exportReportPDF([], buildFlatData(modules)),
           },
         ]}
       />

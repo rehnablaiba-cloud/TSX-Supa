@@ -9,14 +9,13 @@ import React, {
 import { supabase } from "../../supabase";
 import gsap from "gsap";
 import ExportModal from "../UI/ExportModal";
-import { Upload, FileText, FileDown } from "lucide-react"; // ✅ Lucide
+import { Upload, FileText, FileDown, FileSpreadsheet } from "lucide-react";
 import {
   exportDashboardCSV,
   exportDashboardPDF,
   exportDashboardDocx,
   ModuleSummary,
 } from "../../utils/export";
-import { FileSpreadsheet} from "lucide-react";
 
 interface Props {
   onNavigate: (page: string, moduleName?: string) => void;
@@ -200,26 +199,26 @@ const Dashboard: React.FC<Props> = ({ onNavigate }) => {
         subtitle="Fleet summary"
         stats={globalStats}
         options={[
-            {
+          {
             label: "CSV",
             icon: <FileSpreadsheet size={16} />,
             color: "bg-[var(--color-primary)]",
             hoverColor: "hover:bg-[var(--color-primary-hover)]",
-            onConfirm: () => exportDashboardCSV(moduleName, currentTest?.name ?? "test", flatData),
+            onConfirm: () => exportDashboardCSV(summaries),
           },
           {
             label: "PDF",
             icon: <FileText size={16} />,
             color: "bg-[var(--color-blue)]",
             hoverColor: "hover:bg-[var(--color-blue-hover)]",
-            onConfirm: () => exportDashboardPDF(moduleName, currentTest?.name ?? "test", flatData),
+            onConfirm: () => exportDashboardPDF(summaries),
           },
-                    {
+          {
             label: "DOCX",
             icon: <FileDown size={16} />,
             color: "bg-[var(--color-blue)]",
             hoverColor: "hover:bg-[var(--color-blue-hover)]",
-            onConfirm: () => exportDashboardDocx(moduleName, currentTest?.name ?? "test", flatData),
+            onConfirm: () => exportDashboardDocx(summaries),
           },
         ]}
       />
@@ -241,7 +240,7 @@ const Dashboard: React.FC<Props> = ({ onNavigate }) => {
             bg-bg-card hover:bg-bg-surface border border-[var(--border-color)] text-t-primary
             disabled:opacity-40 disabled:cursor-not-allowed"
         >
-          <Upload size={14} />  {/* ✅ Lucide */}
+          <Upload size={14} />
           Export
         </button>
       </div>
@@ -269,7 +268,6 @@ const Dashboard: React.FC<Props> = ({ onNavigate }) => {
                 onClick={() => onNavigate("module", m.name)}
                 className="card text-left hover:border-c-brand/50 hover:shadow-xl transition-all duration-300 cursor-pointer group"
               >
-                {/* Name + test-count pill */}
                 <div className="flex items-start gap-3 mb-3">
                   <span
                     className="w-3 h-3 rounded-full mt-1.5 shrink-0"
@@ -295,13 +293,11 @@ const Dashboard: React.FC<Props> = ({ onNavigate }) => {
                   </span>
                 </div>
 
-                {/* Step count row */}
                 <div className="flex items-center justify-between mb-3">
                   <span className="text-xs text-t-muted">Total Steps</span>
                   <span className="text-sm font-bold text-t-primary">{total}</span>
                 </div>
 
-                {/* Status badges */}
                 <div className="flex gap-2 mb-3">
                   <span className="badge-pass">
                     <span className="w-1.5 h-1.5 rounded-full bg-green-500 inline-block mr-1" />
@@ -317,7 +313,6 @@ const Dashboard: React.FC<Props> = ({ onNavigate }) => {
                   </span>
                 </div>
 
-                {/* Segmented progress bar */}
                 <div className="mt-1">
                   <div className="flex justify-between text-xs text-t-muted mb-1">
                     <span>Progress</span>
