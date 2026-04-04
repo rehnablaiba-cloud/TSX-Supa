@@ -9,7 +9,6 @@ import {
   ChevronRight,
   LogOut,
   Search,
-  TrainFront,
 } from "lucide-react";
 import { useAuth } from "../../context/AuthContext";
 import { Module } from "../../types";
