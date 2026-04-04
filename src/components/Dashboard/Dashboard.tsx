@@ -22,7 +22,6 @@ interface Props {
 
 function getModuleStats(moduleTests: any[]) {
   let total = 0, pass = 0, fail = 0, pending = 0;
-  // Number of test cases (rows) inside this module
   const testCount = moduleTests?.length ?? 0;
 
   for (const mt of moduleTests ?? []) {
@@ -34,10 +33,8 @@ function getModuleStats(moduleTests: any[]) {
     }
   }
 
-  // Each segment is a share of the total step count (pass + fail + pending = 100 %)
   const passPct    = total > 0 ? Math.round((pass / total) * 100) : 0;
   const failPct    = total > 0 ? Math.round((fail / total) * 100) : 0;
-  // Give any rounding remainder to the pending segment so segments always sum to 100 %
   const pendingPct = total > 0 ? 100 - passPct - failPct : 0;
 
   return { total, pass, fail, pending, passRate: passPct, failPct, pendingPct, testCount };
@@ -51,13 +48,10 @@ function buildSummaries(modules: any[]): ModuleSummary[] {
 }
 
 // ── Segmented progress bar ────────────────────────────────────────────────────
-// Three discrete colour blocks — no gradient blending between states.
-// When every step has failed the bar is 100 % red; when everything passes it
-// is 100 % green. Mixed states show proportional coloured segments side-by-side.
 interface SegmentedBarProps {
-  passRate:   number; // % of total that are pass
-  failPct:    number; // % of total that are fail
-  pendingPct: number; // % of total that are pending (remainder)
+  passRate:   number;
+  failPct:    number;
+  pendingPct: number;
   total:      number;
 }
 
@@ -65,20 +59,13 @@ const SegmentedBar: React.FC<SegmentedBarProps> = ({ passRate, failPct, pendingP
   if (total === 0) {
     return <div className="h-1.5 w-full rounded-full bg-bg-card" />;
   }
-
   return (
     <div className="h-1.5 w-full rounded-full overflow-hidden flex">
       {passRate > 0 && (
-        <div
-          className="h-full bg-green-500 transition-all duration-700"
-          style={{ width: `${passRate}%` }}
-        />
+        <div className="h-full bg-green-500 transition-all duration-700" style={{ width: `${passRate}%` }} />
       )}
       {failPct > 0 && (
-        <div
-          className="h-full bg-red-500 transition-all duration-700"
-          style={{ width: `${failPct}%` }}
-        />
+        <div className="h-full bg-red-500 transition-all duration-700" style={{ width: `${failPct}%` }} />
       )}
       {pendingPct > 0 && (
         <div
@@ -137,7 +124,12 @@ const Dashboard: React.FC<Props> = ({ onNavigate }) => {
   const fetchModules = useCallback(async (isInitial = false) => {
     const { data, error: err } = await supabase
       .from("modules")
-      .select("id, name, description, module_tests(step_results(status))")
+      // FIX: PostgREST throws "more than one relationship was found for 'modules'
+      // and 'module_tests'" when multiple foreign keys exist between the tables.
+      // Append !<fk_column> to each nested select to tell PostgREST exactly which
+      // FK to traverse: module_tests.module_id → modules, and
+      // step_results.module_test_id → module_tests.
+      .select("id, name, description, module_tests!module_id(step_results!module_test_id(status))")
       .order("name");
 
     if (!mountedRef.current) return;
@@ -174,8 +166,7 @@ const Dashboard: React.FC<Props> = ({ onNavigate }) => {
     }
   }, [initialLoad, modules.length]);
 
-  const summaries = useMemo(() => buildSummaries(modules), [modules]);
-
+  const summaries   = useMemo(() => buildSummaries(modules), [modules]);
   const globalStats = useMemo(() => [
     { label: "Total Steps", value: summaries.reduce((a, x) => a + x.total, 0) },
     { label: "Pass",        value: summaries.reduce((a, x) => a + x.pass,  0) },
@@ -199,8 +190,8 @@ const Dashboard: React.FC<Props> = ({ onNavigate }) => {
         subtitle="Fleet summary"
         stats={globalStats}
         options={[
-          { label: "CSV",  icon: "📥", color: "bg-green-600", hoverColor: "hover:bg-green-700", onConfirm: () => exportDashboardCSV(summaries) },
-          { label: "PDF",  icon: "📋", color: "bg-red-600",   hoverColor: "hover:bg-red-700",   onConfirm: () => exportDashboardPDF(summaries) },
+          { label: "CSV",  icon: "📥", color: "bg-green-600", hoverColor: "hover:bg-green-700", onConfirm: () => exportDashboardCSV(summaries)  },
+          { label: "PDF",  icon: "📋", color: "bg-red-600",   hoverColor: "hover:bg-red-700",   onConfirm: () => exportDashboardPDF(summaries)  },
           { label: "DOCX", icon: "📄", color: "bg-blue-600",  hoverColor: "hover:bg-blue-700",  onConfirm: () => exportDashboardDocx(summaries) },
         ]}
       />
@@ -237,9 +228,8 @@ const Dashboard: React.FC<Props> = ({ onNavigate }) => {
             const { total, pass, fail, pending, passRate, failPct, pendingPct, testCount } =
               getModuleStats(m.module_tests);
 
-            // Derive the label colour: green when all pass, red when all fail, default otherwise
             const passLabelColor =
-              total === 0       ? "var(--text-muted)"
+              total === 0        ? "var(--text-muted)"
               : passRate === 100 ? "#22c55e"
               : failPct  === 100 ? "#ef4444"
               :                    "var(--text-primary)";
@@ -250,7 +240,7 @@ const Dashboard: React.FC<Props> = ({ onNavigate }) => {
                 onClick={() => onNavigate("module", m.id)}
                 className="card text-left hover:border-c-brand/50 hover:shadow-xl transition-all duration-300 cursor-pointer group"
               >
-                {/* ── Name + test-count pill ───────────────────────────── */}
+                {/* Name + test-count pill */}
                 <div className="flex items-start gap-3 mb-3">
                   <span
                     className="w-3 h-3 rounded-full mt-1.5 shrink-0"
@@ -264,27 +254,25 @@ const Dashboard: React.FC<Props> = ({ onNavigate }) => {
                       <p className="text-xs text-t-muted mt-0.5 truncate">{m.description}</p>
                     )}
                   </div>
-
-                  {/* Test count badge — top-right corner of the card */}
                   <span
                     className="shrink-0 text-[10px] font-bold px-2 py-0.5 rounded-full border whitespace-nowrap tracking-wide"
                     style={{
-                      color:        "var(--color-brand)",
-                      borderColor:  "var(--color-brand)",
-                      background:   "color-mix(in srgb, var(--color-brand) 8%, transparent)",
+                      color:       "var(--color-brand)",
+                      borderColor: "var(--color-brand)",
+                      background:  "color-mix(in srgb, var(--color-brand) 8%, transparent)",
                     }}
                   >
                     {testCount} {testCount === 1 ? "Test" : "Tests"}
                   </span>
                 </div>
 
-                {/* ── Step count row ───────────────────────────────────── */}
+                {/* Step count row */}
                 <div className="flex items-center justify-between mb-3">
                   <span className="text-xs text-t-muted">Total Steps</span>
                   <span className="text-sm font-bold text-t-primary">{total}</span>
                 </div>
 
-                {/* ── Status badges ────────────────────────────────────── */}
+                {/* Status badges */}
                 <div className="flex gap-2 mb-3">
                   <span className="badge-pass">
                     <span className="w-1.5 h-1.5 rounded-full bg-green-500 inline-block mr-1" />
@@ -300,7 +288,7 @@ const Dashboard: React.FC<Props> = ({ onNavigate }) => {
                   </span>
                 </div>
 
-                {/* ── Segmented progress bar ───────────────────────────── */}
+                {/* Segmented progress bar */}
                 <div className="mt-1">
                   <div className="flex justify-between text-xs text-t-muted mb-1">
                     <span>Progress</span>
@@ -308,12 +296,6 @@ const Dashboard: React.FC<Props> = ({ onNavigate }) => {
                       {total === 0 ? "—" : `${passRate}% pass`}
                     </span>
                   </div>
-
-                  {/*
-                    SegmentedBar: green | red | grey (dimmed) side-by-side.
-                    Each segment width = its % of total steps.
-                    No blending — a 100 % failed module is purely red.
-                  */}
                   <SegmentedBar
                     passRate={passRate}
                     failPct={failPct}
