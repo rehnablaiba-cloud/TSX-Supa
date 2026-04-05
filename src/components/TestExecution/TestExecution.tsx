@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { useAuth } from "../../context/AuthContext";
 import { supabase } from "../../supabase";
 import Topbar from "../Layout/Topbar";
@@ -1035,13 +1036,14 @@ const TableStepRow: React.FC<{
 
   return (
     <>
-      {preview && (
+      {preview && createPortal(
         <ImagePreviewModal
           images={preview.urls}
           initialIndex={preview.idx}
           label={preview.label}
           onClose={() => setPreview(null)}
-        />
+        />,
+        document.body
       )}
       <tr ref={rowRef} onClick={onFocus} style={focusStyle}
         className={`border-b border-[var(--border-color)] hover:bg-bg-card transition-colors cursor-pointer ${rowBg}`}>
@@ -1177,13 +1179,14 @@ const MobileStepCard: React.FC<{
 
   return (
     <>
-      {preview && (
+      {preview && createPortal(
         <ImagePreviewModal
           images={preview.urls}
           initialIndex={preview.idx}
           label={preview.label}
           onClose={() => setPreview(null)}
-        />
+        />,
+        document.body
       )}
       <div ref={cardRef} onClick={onFocus}
         className={`rounded-xl overflow-hidden border border-[var(--border-color)] w-full cursor-pointer transition-shadow ${rowBg} ${isFocused ? "ring-2 ring-sky-400" : ""}`}
