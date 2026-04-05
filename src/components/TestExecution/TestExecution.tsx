@@ -39,7 +39,7 @@ interface ExecutionStep {
 interface ModuleTestItem {
   id:          string;
   tests_name:  string;
-  test: { serial_no: number; name: string };
+  test: { serialno: number; name: string };
 }
 
 type SignedImageMap = Record<string, string>;
@@ -205,7 +205,7 @@ const getSignedUrlsForPaths = useCallback(async (paths: string[]) => {
     Promise.all([
       supabase
         .from("module_tests")
-        .select("id, tests_name, test:tests!tests_name(serial_no, name)")
+        .select("id, tests_name, test:tests!tests_name(serialno, name)")
         .eq("module_name", moduleName)
         .order("id"),
       supabase
@@ -254,8 +254,8 @@ const getSignedUrlsForPaths = useCallback(async (paths: string[]) => {
   displayname: sr.displayname ?? "",
 }))
         .sort((a, b) => {
-          if (a.serial_no !== b.serial_no) return a.serial_no - b.serial_no;
-          return (a.is_divider ? 0 : 1) - (b.is_divider ? 0 : 1);
+          if (a.serialno !== b.serialno) return a.serialno - b.serialno;
+          return (a.isdivider ? 0 : 1) - (b.isdivider ? 0 : 1);
         });
 
 
@@ -286,7 +286,7 @@ const getSignedUrlsForPaths = useCallback(async (paths: string[]) => {
           if (!match) return prev;
           return prev.map(s =>
             s.stepResultId === updated.id
-              ? { ...s, status: updated.status, remarks: updated.remarks, display_name: updated.display_name ?? "" }
+              ? { ...s, status: updated.status, remarks: updated.remarks, displayname: updated.displayname ?? "" }
               : s
           );
         });
@@ -337,7 +337,7 @@ const getSignedUrlsForPaths = useCallback(async (paths: string[]) => {
   useEffect(() => {
     if (steps.length === 0 || stepsInitialized.current) return;
     stepsInitialized.current = true;
-    const firstPending = steps.find(s => !s.is_divider && s.status === "pending");
+    const firstPending = steps.find(s => !s.isdivider && s.status === "pending");
     if (firstPending) {
       setFocusedStepId(firstPending.stepId);
       setScrollTarget(firstPending.stepId);
@@ -460,14 +460,14 @@ const getSignedUrlsForPaths = useCallback(async (paths: string[]) => {
     stepId: string, status: "pass" | "fail" | "pending", remarks: string,
   ) => {
     const idx         = steps.findIndex(s => s.stepId === stepId);
-    const nextPending = steps.slice(idx + 1).find(s => !s.is_divider && s.status === "pending");
+    const nextPending = steps.slice(idx + 1).find(s => !s.isdivider && s.status === "pending");
     const displayName = user?.displayName || user?.email || "User";
     const prevSteps   = steps;
 
 
     setSteps(prev => prev.map(s =>
       s.stepId === stepId
-        ? { ...s, status, remarks, display_name: displayName }
+        ? { ...s, status, remarks, displayname: displayName }
         : s
     ));
 
@@ -487,7 +487,7 @@ const getSignedUrlsForPaths = useCallback(async (paths: string[]) => {
         p_test_steps_id:  stepId,
         p_status:         status,
         p_remarks:        remarks,
-        p_display_name:   displayName,
+        p_displayname:   displayName,
       });
       if (rpcRes.error) throw rpcRes.error;
     } catch (err) {
@@ -500,13 +500,13 @@ const getSignedUrlsForPaths = useCallback(async (paths: string[]) => {
   // ── Undo All (admin) ───────────────────────────────────────
   const handleUndoAll = useCallback(async () => {
     setShowUndoModal(false);
-    const actionable = steps.filter(s => !s.is_divider);
+    const actionable = steps.filter(s => !s.isdivider);
     const prevSteps  = steps;
     const undoName   = user?.displayName || user?.email || "User";
 
 
     setSteps(prev => prev.map(s =>
-      s.is_divider ? s : { ...s, status: "pending", remarks: "", display_name: undoName }
+      s.isdivider ? s : { ...s, status: "pending", remarks: "", displayname: undoName }
     ));
     remarksMap.current = {};
     const first = actionable[0];
@@ -520,7 +520,7 @@ const getSignedUrlsForPaths = useCallback(async (paths: string[]) => {
           p_test_steps_id: s.stepId,
           p_status:        "pending",
           p_remarks:       "",
-          p_display_name:  undoName,
+          p_displayname:  undoName,
         }))
       );
       const rpcFailed = rpcResults.find(r => r.error);
@@ -544,7 +544,7 @@ const getSignedUrlsForPaths = useCallback(async (paths: string[]) => {
       if (tag === "TEXTAREA" || tag === "INPUT" || tag === "BUTTON") return;
       if (!focusedStepId || isLockedByOther) return;
       const focused = steps.find(s => s.stepId === focusedStepId);
-      if (!focused || focused.is_divider) return;
+      if (!focused || focused.isdivider) return;
       handleStepUpdate(focusedStepId, "pass", remarksMap.current[focusedStepId] ?? focused.remarks ?? "");
     };
     document.addEventListener("keydown", onKeyDown);
@@ -564,7 +564,7 @@ const getSignedUrlsForPaths = useCallback(async (paths: string[]) => {
 
   // ── Derived / memoised values ──────────────────────────────
   const filtered = useMemo(() => steps.filter(s => {
-    if (s.is_divider) return true;
+    if (s.isdivider) return true;
     if (filter !== "all" && s.status !== filter) return false;
     if (search && !`${s.action} ${s.expected_result} ${s.remarks}`
       .toLowerCase().includes(search.toLowerCase())) return false;
@@ -575,7 +575,7 @@ const getSignedUrlsForPaths = useCallback(async (paths: string[]) => {
   // ── flatData: includes dividers for PDF section headers ────
   const flatData = useMemo<FlatData[]>(() =>
     steps.map(s =>
-      s.is_divider
+      s.isdivider
         ? {
             module:     moduleName,
             test:       currentTest?.name ?? "",
@@ -589,7 +589,7 @@ const getSignedUrlsForPaths = useCallback(async (paths: string[]) => {
         : {
             module:    moduleName,
             test:      currentTest?.name ?? "",
-            serial:    s.serial_no,
+            serial:    s.serialno,
             action:    s.action,
             expected:  s.expected_result,
             remarks:   s.remarks || "",
@@ -612,7 +612,7 @@ const getSignedUrlsForPaths = useCallback(async (paths: string[]) => {
 
   const { passCount, failCount, totalCount, doneCount, progressPct, passPct, failPct } =
     useMemo(() => {
-      const nd    = steps.filter(s => !s.is_divider);
+      const nd    = steps.filter(s => !s.isdivider);
       const pass  = nd.filter(s => s.status === "pass").length;
       const fail  = nd.filter(s => s.status === "fail").length;
       const total = nd.length;
@@ -795,7 +795,7 @@ const getSignedUrlsForPaths = useCallback(async (paths: string[]) => {
               </thead>
               <tbody>
                 {filtered.map(step =>
-                  step.is_divider ? (
+                  step.isdivider ? (
                     <tr key={step.stepId} className="border-b border-[var(--border-color)]">
                       <td colSpan={6} className="px-4 py-2 bg-c-brand-bg">
                         <div className="flex items-center gap-2">
@@ -833,7 +833,7 @@ const getSignedUrlsForPaths = useCallback(async (paths: string[]) => {
               </div>
               <div className="flex flex-col gap-2 p-3">
                 {filtered.map(step =>
-                  step.is_divider ? (
+                  step.isdivider ? (
                     <div key={step.stepId} className="flex items-center gap-3 py-1">
                       <div className="flex-1 h-px bg-[var(--border-color)]" />
                       <span className="text-xs font-semibold text-c-brand uppercase tracking-widest">{step.action}</span>
@@ -921,7 +921,7 @@ const TableStepRow: React.FC<{
     <tr ref={rowRef} onClick={onFocus} style={focusStyle}
       className={`border-b border-[var(--border-color)] hover:bg-bg-card transition-colors cursor-pointer ${rowBg}`}>
       <td className="px-2 py-3 text-center border-r border-[var(--border-color)]">
-        <span className="text-xs font-mono text-t-muted">{step.serial_no}</span>
+        <span className="text-xs font-mono text-t-muted">{step.serialno}</span>
       </td>
      <td className="px-4 py-3 border-r border-[var(--border-color)] align-top">
   <p className="text-sm text-t-primary leading-snug break-words">{step.action}</p>
@@ -980,7 +980,7 @@ const TableStepRow: React.FC<{
             : "bg-[var(--border-color)] text-t-muted"}`}>
             {step.status}
           </span>
-          <TesterBadge name={step.display_name} status={step.status} />
+          <TesterBadge name={step.displayname} status={step.status} />
         </div>
       </td>
       {!readonly ? (
@@ -1038,7 +1038,7 @@ const MobileStepCard: React.FC<{
 
 
       <div className="flex items-center justify-between px-3 py-2 border-b border-[var(--border-color)] bg-bg-card">
-        <span className="text-xs font-mono text-t-muted tracking-wide">#{step.serial_no}</span>
+        <span className="text-xs font-mono text-t-muted tracking-wide">#{step.serialno}</span>
         <div className="flex items-center gap-2 min-w-0">
           {isFocused && (
             <span className="flex items-center gap-1 text-[10px] text-sky-400 font-medium shrink-0">
@@ -1052,7 +1052,7 @@ const MobileStepCard: React.FC<{
             : "bg-[var(--border-color)] text-t-muted"}`}>
             {step.status}
           </span>
-          <TesterBadge name={step.display_name} status={step.status} />
+          <TesterBadge name={step.displayname} status={step.status} />
         </div>
       </div>
 
