@@ -297,11 +297,11 @@ const TestExecution: React.FC<Props> = ({
     remarksMap.current = {};
 
     Promise.all([
-      supabase
-        .from("module_tests")
-        .select("id, tests_name, test:tests!tests_name(serialno, name)")
-        .eq("module_name", moduleName)
-        .order("id"),
+    supabase
+  .from("module_tests")
+  .select("id, tests_name, test:tests(serialno, name)")
+  .eq("modulename", moduleName)
+  .order("id"),
       supabase
         .from("step_results")
         .select(`
@@ -369,7 +369,7 @@ const TestExecution: React.FC<Props> = ({
     const srChannel = supabase.channel(`step_results:${moduleName}:${testsName}`)
       .on("postgres_changes", {
         event: "UPDATE", schema: "public", table: "step_results",
-        filter: `module_name=eq.${moduleName}`,
+        filter: `modulename=eq.${moduleName}`,
       }, ({ new: updated }: any) => {
         setSteps(prev => {
           const match = prev.find(s => s.stepResultId === updated.id);
