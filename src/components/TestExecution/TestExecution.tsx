@@ -295,17 +295,17 @@ const TestExecution: React.FC<Props> = ({
     remarksMap.current = {};
 
     (async () => {
-      // ── 1. Fetch module_tests, step_results (flat — no joins), and lock ──
+      // ── 1. Fetch module_tests, step_results (via RPC), and lock in parallel ──
       const [mtRes, srRes, lockRes] = await Promise.all([
         supabase
           .from("module_tests")
           .select("id, tests_name")
           .eq("module_name", moduleName)
           .order("id"),
-        supabase
-  .from("step_results")
-  .select("id, modulename, teststepsid, status, remarks, displayname")
-  .filter("modulename", "eq", moduleName.split("#").join("%23")),
+
+        // ✅ RPC: avoids # being mangled in the URL by PostgREST
+        supabase.rpc("get_step_results_for_module", { p_module_name: moduleName }),
+
         supabase
           .from("test_locks")
           .select("module_test_id, user_id, locked_by_name")
@@ -318,18 +318,12 @@ const TestExecution: React.FC<Props> = ({
         status: string; remarks: string; displayname: string;
       }[];
 
-      // ── 2. Fetch tests by name ──
+      // ── 2. Fetch tests by name via RPC (avoids spaces breaking .in() URL) ──
       const testNames = Array.from(new Set(rawMts.map(m => m.tests_name)));
-     const testsRes = testNames.length
-  ? await supabase
-      .from("tests")
-      .select("name, serialno")
-      .filter(
-        "name",
-        "in",
-        `(${testNames.map(n => `"${n}"`).join(",")})`,   // double-quote each value
-      )
-  : { data: [] };
+      const testsRes = testNames.length
+        // ✅ RPC: avoids spaces in names causing 400 in PostgREST IN filter
+        ? await supabase.rpc("get_tests_by_names", { p_names: testNames })
+        : { data: [] };
       const testsMap = Object.fromEntries(
         ((testsRes.data ?? []) as { name: string; serialno: number }[]).map(t => [t.name, t])
       );
