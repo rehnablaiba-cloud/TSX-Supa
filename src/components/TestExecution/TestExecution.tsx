@@ -1,5 +1,4 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { createPortal } from "react-dom";
 import { useAuth } from "../../context/AuthContext";
 import { supabase } from "../../supabase";
 import Topbar from "../Layout/Topbar";
@@ -18,9 +17,7 @@ interface Props {
   onBack:              () => void;
 }
 
-
 type Filter = "all" | "pass" | "fail" | "pending";
-
 
 interface ExecutionStep {
   stepId: string;
@@ -45,6 +42,12 @@ interface ModuleTestItem {
 
 type SignedImageMap = Record<string, string>;
 
+interface ImagePreviewState {
+  urls:  string[];
+  idx:   number;
+  label: string;
+}
+
 // ── Undo All Confirmation Modal ────────────────────────────────
 const UndoAllModal: React.FC<{
   doneCount:  number;
@@ -62,7 +65,6 @@ const UndoAllModal: React.FC<{
       style={{ backgroundColor: "var(--bg-surface)", borderColor: "var(--border-color)" }}
       onClick={e => e.stopPropagation()}
     >
-      {/* Icon + heading */}
       <div className="flex flex-col items-center gap-3 text-center">
         <div className="w-14 h-14 rounded-full bg-amber-500/10 border-2 border-amber-500/30 flex items-center justify-center">
           <AlertTriangle size={26} className="text-amber-500" />
@@ -77,14 +79,10 @@ const UndoAllModal: React.FC<{
           </p>
         </div>
       </div>
-
-      {/* Warning note */}
       <div className="flex items-start gap-2 px-3 py-2.5 rounded-lg bg-amber-500/8 border border-amber-500/25 text-xs text-amber-600 dark:text-amber-400">
         <AlertTriangle size={13} className="shrink-0 mt-0.5" />
         <span>All remarks and results will be cleared. <strong>This cannot be undone.</strong></span>
       </div>
-
-      {/* Actions */}
       <div className="flex gap-2 pt-1">
         <button
           onClick={onCancel}
@@ -110,10 +108,10 @@ const UndoAllModal: React.FC<{
 
 // ── Image Preview Modal ────────────────────────────────────────
 const ImagePreviewModal: React.FC<{
-  images: string[];
+  images:       string[];
   initialIndex: number;
-  label: string;
-  onClose: () => void;
+  label:        string;
+  onClose:      () => void;
 }> = ({ images, initialIndex, label, onClose }) => {
   const [idx, setIdx] = useState(initialIndex);
   const total = images.length;
@@ -134,7 +132,6 @@ const ImagePreviewModal: React.FC<{
       style={{ backgroundColor: "rgba(0,0,0,0.88)", backdropFilter: "blur(8px)" }}
       onClick={onClose}
     >
-      {/* Close button */}
       <button
         onClick={onClose}
         className="absolute top-4 right-4 w-9 h-9 rounded-full bg-white/10 hover:bg-white/20
@@ -143,15 +140,11 @@ const ImagePreviewModal: React.FC<{
         <X size={16} />
       </button>
 
-      {/* Label + counter */}
       <div className="absolute top-4 left-4 flex items-center gap-2 z-10">
         <span className="text-xs font-semibold text-white/70 uppercase tracking-wider">{label}</span>
-        {total > 1 && (
-          <span className="text-xs text-white/40">{idx + 1} / {total}</span>
-        )}
+        {total > 1 && <span className="text-xs text-white/40">{idx + 1} / {total}</span>}
       </div>
 
-      {/* Prev arrow */}
       {total > 1 && (
         <button
           onClick={e => { e.stopPropagation(); setIdx(i => (i - 1 + total) % total); }}
@@ -163,7 +156,6 @@ const ImagePreviewModal: React.FC<{
         </button>
       )}
 
-      {/* Main image */}
       <div
         className="relative max-w-4xl max-h-[80vh] flex items-center justify-center"
         onClick={e => e.stopPropagation()}
@@ -175,7 +167,6 @@ const ImagePreviewModal: React.FC<{
         />
       </div>
 
-      {/* Next arrow */}
       {total > 1 && (
         <button
           onClick={e => { e.stopPropagation(); setIdx(i => (i + 1) % total); }}
@@ -187,7 +178,6 @@ const ImagePreviewModal: React.FC<{
         </button>
       )}
 
-      {/* Thumbnail strip */}
       {total > 1 && (
         <div
           className="absolute bottom-4 left-1/2 -translate-x-1/2 flex gap-2 z-10"
@@ -198,9 +188,7 @@ const ImagePreviewModal: React.FC<{
               key={i}
               onClick={() => setIdx(i)}
               className={`w-10 h-10 rounded-lg overflow-hidden border-2 transition-all ${
-                i === idx
-                  ? "border-white scale-110"
-                  : "border-white/25 opacity-55 hover:opacity-90"
+                i === idx ? "border-white scale-110" : "border-white/25 opacity-55 hover:opacity-90"
               }`}
             >
               <img src={url} alt="" className="w-full h-full object-cover" />
@@ -251,30 +239,34 @@ const TestExecution: React.FC<Props> = ({
   const { addToast } = useToast();
   const { log }      = useAuditLog();
 
-
   const currentMtId = initialModuleTestId;
-  const testsName = currentMtId.slice(moduleName.length + 1);
+  const testsName   = currentMtId.slice(moduleName.length + 1);
 
-
-  const [filter, setFilter]                   = useState<Filter>("all");
-  const [search, setSearch]                   = useState("");
-  const [showExportModal, setShowExportModal] = useState(false);
-  const [showUndoModal, setShowUndoModal]     = useState(false);
+  const [filter, setFilter]                           = useState<Filter>("all");
+  const [search, setSearch]                           = useState("");
+  const [showExportModal, setShowExportModal]         = useState(false);
+  const [showUndoModal, setShowUndoModal]             = useState(false);
   const [showMassImageUpload, setShowMassImageUpload] = useState(false);
-  const [scrollTarget, setScrollTarget]       = useState<string | null>(null);
-  const [focusedStepId, setFocusedStepId]     = useState<string | null>(null);
-  const [signedImageUrls, setSignedImageUrls] = useState<SignedImageMap>({});
+  const [scrollTarget, setScrollTarget]               = useState<string | null>(null);
+  const [focusedStepId, setFocusedStepId]             = useState<string | null>(null);
+  const [signedImageUrls, setSignedImageUrls]         = useState<SignedImageMap>({});
 
+  // ── Image preview state lives here — modal renders at root, never inside the table
+  const [imagePreview, setImagePreview] = useState<ImagePreviewState | null>(null);
 
-  const stepsInitialized = useRef(false);
-  const remarksMap       = useRef<Record<string, string>>({});
-  const heartbeatRef     = useRef<ReturnType<typeof setInterval> | null>(null);
+  const openImagePreview = useCallback((
+    paths: string[], clickedIdx: number, label: string,
+  ) => {
+    const urls = paths.map(p => signedImageUrls[p]).filter(Boolean);
+    if (urls.length) setImagePreview({ urls, idx: clickedIdx, label });
+  }, [signedImageUrls]);
 
-
-  const trRefs   = useRef<Record<string, HTMLTableRowElement | null>>({});
-  const cardRefs = useRef<Record<string, HTMLDivElement   | null>>({});
+  const stepsInitialized   = useRef(false);
+  const remarksMap         = useRef<Record<string, string>>({});
+  const heartbeatRef       = useRef<ReturnType<typeof setInterval> | null>(null);
+  const trRefs             = useRef<Record<string, HTMLTableRowElement | null>>({});
+  const cardRefs           = useRef<Record<string, HTMLDivElement   | null>>({});
   const scrollContainerRef = useRef<HTMLDivElement>(null);
-
 
   const [moduleTests, setModuleTests] = useState<ModuleTestItem[]>([]);
   const [steps, setSteps]             = useState<ExecutionStep[]>([]);
@@ -284,20 +276,16 @@ const TestExecution: React.FC<Props> = ({
 
   const getSignedUrlsForPaths = useCallback(async (paths: string[]) => {
     const uniquePaths = Array.from(new Set(paths.filter(Boolean)));
-
     if (!uniquePaths.length) return {};
-
     const results = await Promise.all(
       uniquePaths.map(async (path) => {
         const { data, error } = await supabase.storage
           .from("test_steps")
           .createSignedUrl(path, 60 * 60);
-
         if (error || !data?.signedUrl) return [path, ""] as const;
         return [path, data.signedUrl] as const;
       })
     );
-
     return Object.fromEntries(results.filter(([, url]) => !!url));
   }, []);
 
@@ -307,7 +295,6 @@ const TestExecution: React.FC<Props> = ({
     stepsInitialized.current = false;
     setFocusedStepId(null);
     remarksMap.current = {};
-
 
     Promise.all([
       supabase
@@ -343,35 +330,32 @@ const TestExecution: React.FC<Props> = ({
     ]).then(([mtRes, srRes, lockRes]) => {
       setModuleTests((mtRes.data ?? []) as unknown as ModuleTestItem[]);
 
-
       const merged: ExecutionStep[] = ((srRes.data ?? []) as any[])
-        .filter(sr => sr.step?.tests_name === testsName)
+        .filter(sr => sr.step?.testsname === testsName)  // matches actual DB column name
         .map((sr) => ({
-          stepId: sr.teststepsid,
-          stepResultId: sr.id,
-          moduleTestId: currentMtId,
-          serialno: sr.step.serialno,
-          action: sr.step.action,
-          expectedresult: sr.step.expectedresult,
-          actionImageUrls: sr.step.action_image_urls || [],
+          stepId:            sr.teststepsid,
+          stepResultId:      sr.id,
+          moduleTestId:      currentMtId,
+          serialno:          sr.step.serialno,
+          action:            sr.step.action,
+          expectedresult:    sr.step.expectedresult,
+          actionImageUrls:   sr.step.action_image_urls   || [],
           expectedImageUrls: sr.step.expected_image_urls || [],
-          isdivider: sr.step.isdivider,
-          status: sr.status,
-          remarks: sr.remarks,
-          displayname: sr.displayname ?? "",
+          isdivider:         sr.step.isdivider,
+          status:            sr.status,
+          remarks:           sr.remarks,
+          displayname:       sr.displayname ?? "",
         }))
         .sort((a, b) => {
           if (a.serialno !== b.serialno) return a.serialno - b.serialno;
           return (a.isdivider ? 0 : 1) - (b.isdivider ? 0 : 1);
         });
 
-
       setSteps(merged);
       setLock(lockRes.data?.[0] ?? null);
       setLoading(false);
       setLockLoading(false);
     });
-
 
     const lockChannel = supabase.channel(`lock:${currentMtId}`)
       .on("postgres_changes", {
@@ -381,7 +365,6 @@ const TestExecution: React.FC<Props> = ({
         if (eventType === "DELETE") setLock(null); else setLock(newRow);
       })
       .subscribe();
-
 
     const srChannel = supabase.channel(`step_results:${moduleName}:${testsName}`)
       .on("postgres_changes", {
@@ -400,7 +383,6 @@ const TestExecution: React.FC<Props> = ({
       })
       .subscribe();
 
-
     return () => {
       supabase.removeChannel(lockChannel);
       supabase.removeChannel(srChannel);
@@ -408,31 +390,21 @@ const TestExecution: React.FC<Props> = ({
   }, [moduleName, currentMtId, testsName]);
 
   useEffect(() => {
-    const allPaths = steps.flatMap((step) => [
-      ...(step.actionImageUrls || []),
+    const allPaths = steps.flatMap(step => [
+      ...(step.actionImageUrls   || []),
       ...(step.expectedImageUrls || []),
     ]);
-
-    if (!allPaths.length) {
-      setSignedImageUrls({});
-      return;
-    }
-
+    if (!allPaths.length) { setSignedImageUrls({}); return; }
     let cancelled = false;
-
     (async () => {
       const map = await getSignedUrlsForPaths(allPaths);
       if (!cancelled) setSignedImageUrls(map);
     })();
-
-    return () => {
-      cancelled = true;
-    };
+    return () => { cancelled = true; };
   }, [steps, getSignedUrlsForPaths]);
 
   const currentMt   = moduleTests.find(mt => mt.id === currentMtId);
   const currentTest = currentMt?.test;
-
 
   useEffect(() => {
     const live = new Set(steps.map(s => s.stepId));
@@ -440,22 +412,16 @@ const TestExecution: React.FC<Props> = ({
     for (const id of Object.keys(cardRefs.current)) { if (!live.has(id)) delete cardRefs.current[id]; }
   }, [steps]);
 
-
   useEffect(() => {
     if (steps.length === 0 || stepsInitialized.current) return;
     stepsInitialized.current = true;
     const firstPending = steps.find(s => !s.isdivider && s.status === "pending");
-    if (firstPending) {
-      setFocusedStepId(firstPending.stepId);
-      setScrollTarget(firstPending.stepId);
-    }
+    if (firstPending) { setFocusedStepId(firstPending.stepId); setScrollTarget(firstPending.stepId); }
   }, [steps]);
-
 
   const isLockedByOther = !!(lock && lock.user_id !== user?.id);
 
-
-  // ── Heartbeat ──────────────────────────────────────────────
+  // ── Heartbeat ─────────────────────────────────────────────
   const startHeartbeat = useCallback(() => {
     if (heartbeatRef.current) clearInterval(heartbeatRef.current);
     heartbeatRef.current = setInterval(async () => {
@@ -466,13 +432,11 @@ const TestExecution: React.FC<Props> = ({
     }, 15000);
   }, [currentMtId, user]);
 
-
   const stopHeartbeat = useCallback(() => {
     if (heartbeatRef.current) { clearInterval(heartbeatRef.current); heartbeatRef.current = null; }
   }, []);
 
-
-  // ── Lock lifecycle ─────────────────────────────────────────
+  // ── Lock lifecycle ────────────────────────────────────────
   useEffect(() => {
     if (!user) return;
     let cancelled = false;
@@ -487,8 +451,6 @@ const TestExecution: React.FC<Props> = ({
         { onConflict: "module_test_id", ignoreDuplicates: true }
       );
       if (cancelled) return;
-
-
       const { data: owned } = await supabase
         .from("test_locks")
         .select("user_id")
@@ -504,22 +466,17 @@ const TestExecution: React.FC<Props> = ({
     };
   }, [currentMtId, user?.id, startHeartbeat, stopHeartbeat]);
 
-
-  // ── Lock release on tab/window close ──────────────────────
+  // ── Lock release on tab close ────────────────────────────
   useEffect(() => {
     if (!user) return;
     const release = () => {
-      const supabaseUrl  = (supabase as any).supabaseUrl  as string;
-      const supabaseKey  = (supabase as any).supabaseKey  as string;
+      const supabaseUrl = (supabase as any).supabaseUrl as string;
+      const supabaseKey = (supabase as any).supabaseKey as string;
       fetch(
         `${supabaseUrl}/rest/v1/test_locks?module_test_id=eq.${currentMtId}&user_id=eq.${user.id}`,
         {
-          method:    "DELETE",
-          keepalive: true,
-          headers: {
-            apikey:        supabaseKey,
-            Authorization: `Bearer ${supabaseKey}`,
-          },
+          method: "DELETE", keepalive: true,
+          headers: { apikey: supabaseKey, Authorization: `Bearer ${supabaseKey}` },
         }
       );
     };
@@ -527,22 +484,16 @@ const TestExecution: React.FC<Props> = ({
     return () => window.removeEventListener("beforeunload", release);
   }, [currentMtId, user?.id]);
 
-
-  // ── Auto-scroll ────────────────────────────────────────────
+  // ── Auto-scroll ───────────────────────────────────────────
   useEffect(() => {
     if (!scrollTarget || loading) return;
-    let rafId1: number;
-    let rafId2: number;
+    let rafId1: number, rafId2: number;
     rafId1 = requestAnimationFrame(() => {
       rafId2 = requestAnimationFrame(() => {
         const isDesktop = window.innerWidth >= 768;
-        const el        = isDesktop
-          ? trRefs.current[scrollTarget]
-          : cardRefs.current[scrollTarget];
+        const el        = isDesktop ? trRefs.current[scrollTarget] : cardRefs.current[scrollTarget];
         const container = scrollContainerRef.current;
         if (!el || !container) return;
-
-
         const elRect      = el.getBoundingClientRect();
         const cRect       = container.getBoundingClientRect();
         const theadHeight = isDesktop
@@ -555,14 +506,10 @@ const TestExecution: React.FC<Props> = ({
         setScrollTarget(null);
       });
     });
-    return () => {
-      cancelAnimationFrame(rafId1);
-      cancelAnimationFrame(rafId2);
-    };
+    return () => { cancelAnimationFrame(rafId1); cancelAnimationFrame(rafId2); };
   }, [scrollTarget, loading]);
 
-
-  // ── Step update ────────────────────────────────────────────
+  // ── Step update ───────────────────────────────────────────
   const handleStepUpdate = useCallback(async (
     stepId: string, status: "pass" | "fail" | "pending", remarks: string,
   ) => {
@@ -571,13 +518,9 @@ const TestExecution: React.FC<Props> = ({
     const displayName = user?.displayName || user?.email || "User";
     const prevSteps   = steps;
 
-
     setSteps(prev => prev.map(s =>
-      s.stepId === stepId
-        ? { ...s, status, remarks, displayname: displayName }
-        : s
+      s.stepId === stepId ? { ...s, status, remarks, displayname: displayName } : s
     ));
-
 
     if (status !== "pending") {
       if (nextPending) { setFocusedStepId(nextPending.stepId); setScrollTarget(nextPending.stepId); }
@@ -587,30 +530,27 @@ const TestExecution: React.FC<Props> = ({
       setScrollTarget(stepId);
     }
 
-
     try {
       const rpcRes = await supabase.rpc("update_step_result", {
-        p_module_name:    moduleName,
-        p_test_steps_id:  stepId,
-        p_status:         status,
-        p_remarks:        remarks,
+        p_module_name:   moduleName,
+        p_test_steps_id: stepId,
+        p_status:        status,
+        p_remarks:       remarks,
         p_displayname:   displayName,
       });
       if (rpcRes.error) throw rpcRes.error;
-    } catch (err) {
+    } catch {
       setSteps(prevSteps);
       addToast("Failed to save step result. Please try again.", "error");
     }
   }, [steps, moduleName, user, addToast]);
 
-
-  // ── Undo All (admin) ───────────────────────────────────────
+  // ── Undo All ──────────────────────────────────────────────
   const handleUndoAll = useCallback(async () => {
     setShowUndoModal(false);
     const actionable = steps.filter(s => !s.isdivider);
     const prevSteps  = steps;
     const undoName   = user?.displayName || user?.email || "User";
-
 
     setSteps(prev => prev.map(s =>
       s.isdivider ? s : { ...s, status: "pending", remarks: "", displayname: undoName }
@@ -619,7 +559,6 @@ const TestExecution: React.FC<Props> = ({
     const first = actionable[0];
     if (first) { setFocusedStepId(first.stepId); setScrollTarget(first.stepId); }
 
-
     try {
       const rpcResults = await Promise.all(
         actionable.map(s => supabase.rpc("update_step_result", {
@@ -627,23 +566,20 @@ const TestExecution: React.FC<Props> = ({
           p_test_steps_id: s.stepId,
           p_status:        "pending",
           p_remarks:       "",
-          p_displayname:  undoName,
+          p_displayname:   undoName,
         }))
       );
       const rpcFailed = rpcResults.find(r => r.error);
       if (rpcFailed) throw rpcFailed.error;
-
-
       addToast("All steps reset to pending.", "info");
       log("Undo all steps", "info");
-    } catch (err) {
+    } catch {
       setSteps(prevSteps);
       addToast("Failed to reset steps. Please try again.", "error");
     }
   }, [steps, moduleName, user, addToast, log]);
 
-
-  // ── Keyboard: Enter to pass focused step ───────────────────
+  // ── Keyboard: Enter to pass ───────────────────────────────
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key !== "Enter" || e.shiftKey) return;
@@ -658,7 +594,6 @@ const TestExecution: React.FC<Props> = ({
     return () => document.removeEventListener("keydown", onKeyDown);
   }, [focusedStepId, steps, isLockedByOther, handleStepUpdate]);
 
-
   const handleFinish = async () => {
     stopHeartbeat();
     if (user) await supabase.from("test_locks").delete()
@@ -668,8 +603,7 @@ const TestExecution: React.FC<Props> = ({
     onBack();
   };
 
-
-  // ── Derived / memoised values ──────────────────────────────
+  // ── Derived values ────────────────────────────────────────
   const filtered = useMemo(() => steps.filter(s => {
     if (s.isdivider) return true;
     if (filter !== "all" && s.status !== filter) return false;
@@ -678,35 +612,14 @@ const TestExecution: React.FC<Props> = ({
     return true;
   }), [steps, filter, search]);
 
-
-  // ── flatData: includes dividers for PDF section headers ────
   const flatData = useMemo<FlatData[]>(() =>
     steps.map(s =>
       s.isdivider
-        ? {
-            module:     moduleName,
-            test:       currentTest?.name ?? "",
-            serial:     0,
-            action:     s.action,
-            expected:   "",
-            remarks:    "",
-            status:     "",
-            isDivider:  true,
-          }
-        : {
-            module:    moduleName,
-            test:      currentTest?.name ?? "",
-            serial:    s.serialno,
-            action:    s.action,
-            expected:  s.expectedresult,
-            remarks:   s.remarks || "",
-            status:    s.status,
-          }
+        ? { module: moduleName, test: currentTest?.name ?? "", serial: 0, action: s.action, expected: "", remarks: "", status: "", isDivider: true }
+        : { module: moduleName, test: currentTest?.name ?? "", serial: s.serialno, action: s.action, expected: s.expectedresult, remarks: s.remarks || "", status: s.status }
     ),
   [steps, moduleName, currentTest?.name]);
 
-
-  // exportStats uses only non-divider rows
   const exportStats = useMemo(() => {
     const nd = flatData.filter(s => !s.isDivider);
     return [
@@ -715,7 +628,6 @@ const TestExecution: React.FC<Props> = ({
       { label: "Fail",        value: nd.filter(s => s.status === "fail").length },
     ];
   }, [flatData]);
-
 
   const { passCount, failCount, totalCount, doneCount, progressPct, passPct, failPct } =
     useMemo(() => {
@@ -735,14 +647,12 @@ const TestExecution: React.FC<Props> = ({
       };
     }, [steps]);
 
-
-  // ── Guards ─────────────────────────────────────────────────
+  // ── Guards ────────────────────────────────────────────────
   if (lockLoading) return (
     <div className="flex flex-col items-center justify-center gap-3" style={{ height: "100dvh" }}>
       <Spinner /><p className="text-xs text-t-muted">Checking lock status…</p>
     </div>
   );
-
 
   if (isLockedByOther) return (
     <div className="flex flex-col" style={{ height: "100dvh" }}>
@@ -751,12 +661,20 @@ const TestExecution: React.FC<Props> = ({
     </div>
   );
 
-
-  // ── Render ─────────────────────────────────────────────────
+  // ── Render ────────────────────────────────────────────────
   return (
     <div className="flex flex-col" style={{ height: "100dvh" }}>
 
-      {/* Undo All confirmation modal */}
+      {/* ── Image preview modal — at root, completely outside the table ── */}
+      {imagePreview && (
+        <ImagePreviewModal
+          images={imagePreview.urls}
+          initialIndex={imagePreview.idx}
+          label={imagePreview.label}
+          onClose={() => setImagePreview(null)}
+        />
+      )}
+
       {showUndoModal && (
         <UndoAllModal
           doneCount={doneCount}
@@ -793,7 +711,7 @@ const TestExecution: React.FC<Props> = ({
         onClose={() => setShowMassImageUpload(false)}
       />
 
-      {/* Fixed sections */}
+      {/* Fixed header */}
       <div className="flex-shrink-0">
         <Topbar
           title={currentTest ? `${currentTest.serialno}. ${currentTest.name}` : "Test Execution"}
@@ -808,11 +726,7 @@ const TestExecution: React.FC<Props> = ({
                   Mass Upload Images
                 </button>
               )}
-
-              <button
-                onClick={handleFinish}
-                className="btn-primary text-sm"
-              >
+              <button onClick={handleFinish} className="btn-primary text-sm">
                 Finish Test
               </button>
             </>
@@ -843,9 +757,8 @@ const TestExecution: React.FC<Props> = ({
           </div>
         </div>
 
-        {/* Filters row */}
+        {/* Filters */}
         <div className="flex flex-col border-b border-[var(--border-color)]">
-          {/* Line 1: Export + Filter pills */}
           <div className="flex items-center gap-2 px-4 py-2">
             <button
               onClick={() => setShowExportModal(true)}
@@ -856,9 +769,7 @@ const TestExecution: React.FC<Props> = ({
             >
               <Upload size={13} /> Export
             </button>
-
             <div className="flex-1" />
-
             <div className="flex gap-1">
               {(["all", "pass", "fail", "pending"] as Filter[]).map(f => (
                 <button key={f} onClick={() => setFilter(f)}
@@ -871,8 +782,6 @@ const TestExecution: React.FC<Props> = ({
               ))}
             </div>
           </div>
-
-          {/* Line 2: Search */}
           <div className="px-4 pb-2">
             <input
               value={search} onChange={e => setSearch(e.target.value)}
@@ -891,7 +800,7 @@ const TestExecution: React.FC<Props> = ({
           <div className="text-center text-t-muted py-20 text-sm">No steps match your filter.</div>
         ) : (
           <>
-            {/* Desktop table */}
+            {/* ── Desktop table ─────────────────────────────────── */}
             <table className="hidden md:table w-full text-sm border-collapse table-fixed">
               <thead className="sticky top-0 z-10">
                 <tr className="bg-bg-surface border-b border-[var(--border-color)]">
@@ -915,6 +824,7 @@ const TestExecution: React.FC<Props> = ({
                       </td>
                     </tr>
                   ) : (
+                    // Plain <tr> — no wrappers, no fragments
                     <TableStepRow
                       key={step.stepId}
                       step={step}
@@ -923,15 +833,16 @@ const TestExecution: React.FC<Props> = ({
                       isFocused={focusedStepId === step.stepId}
                       onUpdate={handleStepUpdate}
                       onFocus={() => setFocusedStepId(step.stepId)}
-                      onRemarksChange={(val) => (remarksMap.current[step.stepId] = val)}
-                      rowRef={(el) => (trRefs.current[step.stepId] = el)}
+                      onRemarksChange={val => (remarksMap.current[step.stepId] = val)}
+                      onImageClick={openImagePreview}
+                      rowRef={el => (trRefs.current[step.stepId] = el)}
                     />
                   )
                 )}
               </tbody>
             </table>
 
-            {/* Mobile */}
+            {/* ── Mobile cards ──────────────────────────────────── */}
             <div className="md:hidden flex flex-col">
               <div className="sticky top-0 z-10 grid grid-cols-[64px_1fr] border-b border-[var(--border-color)] bg-bg-surface/80 backdrop-blur-md">
                 <div className="px-3 py-2 border-r border-[var(--border-color)]">
@@ -950,6 +861,7 @@ const TestExecution: React.FC<Props> = ({
                       <div className="flex-1 h-px bg-[var(--border-color)]" />
                     </div>
                   ) : (
+                    // Plain <div> — no wrappers, no fragments
                     <MobileStepCard
                       key={step.stepId}
                       step={step}
@@ -958,22 +870,21 @@ const TestExecution: React.FC<Props> = ({
                       isFocused={focusedStepId === step.stepId}
                       onUpdate={handleStepUpdate}
                       onFocus={() => setFocusedStepId(step.stepId)}
-                      onRemarksChange={(val) => (remarksMap.current[step.stepId] = val)}
-                      cardRef={(el) => (cardRefs.current[step.stepId] = el)}
+                      onRemarksChange={val => (remarksMap.current[step.stepId] = val)}
+                      onImageClick={openImagePreview}
+                      cardRef={el => (cardRefs.current[step.stepId] = el)}
                     />
                   )
                 )}
               </div>
             </div>
 
-            {/* Undo All — admin danger zone, at the bottom of the list */}
+            {/* Undo All */}
             {isAdmin && doneCount > 0 && (
               <div className="flex items-center justify-center py-6 px-4">
                 <div className="flex items-center gap-3 px-4 py-3 rounded-xl border border-dashed border-amber-500/30 bg-amber-500/5">
                   <AlertTriangle size={14} className="text-amber-500 shrink-0" />
-                  <span className="text-xs text-t-muted">
-                    Admin action — resets all progress
-                  </span>
+                  <span className="text-xs text-t-muted">Admin action — resets all progress</span>
                   <button
                     onClick={() => setShowUndoModal(true)}
                     className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold
@@ -1008,52 +919,189 @@ const TesterBadge: React.FC<{ name: string; status: "pass" | "fail" | "pending" 
 };
 
 
-// ── Desktop Table Row ──────────────────────────────────────────
+// ── Desktop Table Row ─────────────────────────────────────────
+// Returns a single bare <tr>. No fragment, no portal, no wrapper.
+// The parent (TestExecution) owns the preview modal.
 const TableStepRow: React.FC<{
-  step: ExecutionStep;
+  step:            ExecutionStep;
   signedImageUrls: Record<string, string>;
-  readonly: boolean;
-  isFocused: boolean;
-  onUpdate: (stepId: string, status: "pass" | "fail" | "pending", remarks: string) => void;
-  onFocus: () => void;
+  readonly:        boolean;
+  isFocused:       boolean;
+  onUpdate:        (stepId: string, status: "pass" | "fail" | "pending", remarks: string) => void;
+  onFocus:         () => void;
   onRemarksChange: (val: string) => void;
-  rowRef?: (el: HTMLTableRowElement | null) => void;
-}> = ({ step, signedImageUrls, readonly, isFocused, onUpdate, onFocus, onRemarksChange, rowRef }) => {
+  onImageClick:    (paths: string[], idx: number, label: string) => void;
+  rowRef?:         (el: HTMLTableRowElement | null) => void;
+}> = ({ step, signedImageUrls, readonly, isFocused, onUpdate, onFocus, onRemarksChange, onImageClick, rowRef }) => {
   const [remarks, setRemarks] = useState(step.remarks || "");
   useEffect(() => { setRemarks(step.remarks || ""); }, [step.remarks]);
 
-  // ── preview state ──
-  const [preview, setPreview] = useState<{ urls: string[]; idx: number; label: string } | null>(null);
-
-  const openPreview = (paths: string[], clickedIdx: number, label: string, e: React.MouseEvent) => {
-    e.stopPropagation();
-    const urls = paths.map(p => signedImageUrls[p]).filter(Boolean);
-    if (urls.length) setPreview({ urls, idx: clickedIdx, label });
-  };
-
-  const rowBg      = step.status === "pass" ? "bg-green-500/5" : step.status === "fail" ? "bg-red-500/5" : "";
+  const rowBg: string                    = step.status === "pass" ? "bg-green-500/5" : step.status === "fail" ? "bg-red-500/5" : "";
   const focusStyle: React.CSSProperties = isFocused ? { outline: "2px solid #38bdf8", outlineOffset: "-2px" } : {};
 
   return (
-    <>
-      {preview && createPortal(
-        <ImagePreviewModal
-          images={preview.urls}
-          initialIndex={preview.idx}
-          label={preview.label}
-          onClose={() => setPreview(null)}
-        />,
-        document.body
-      )}
-      <tr ref={rowRef} onClick={onFocus} style={focusStyle}
-        className={`border-b border-[var(--border-color)] hover:bg-bg-card transition-colors cursor-pointer ${rowBg}`}>
-        <td className="px-2 py-3 text-center border-r border-[var(--border-color)]">
-          <span className="text-xs font-mono text-t-muted">{step.serialno}</span>
-        </td>
+    <tr
+      ref={rowRef}
+      onClick={onFocus}
+      style={focusStyle}
+      className={`border-b border-[var(--border-color)] hover:bg-bg-card transition-colors cursor-pointer ${rowBg}`}
+    >
+      <td className="px-2 py-3 text-center border-r border-[var(--border-color)]">
+        <span className="text-xs font-mono text-t-muted">{step.serialno}</span>
+      </td>
 
-        {/* Action */}
-        <td className="px-4 py-3 border-r border-[var(--border-color)] align-top">
-          <p className="text-sm text-t-primary leading-snug break-words">{step.action}</p>
+      <td className="px-4 py-3 border-r border-[var(--border-color)] align-top">
+        <p className="text-sm text-t-primary leading-snug break-words">{step.action}</p>
+        {!!step.actionImageUrls?.length && (
+          <div className="mt-2 flex flex-wrap gap-2">
+            {step.actionImageUrls.map((path, i) =>
+              signedImageUrls[path] ? (
+                <img
+                  key={path}
+                  src={signedImageUrls[path]}
+                  alt={`Action ${i + 1}`}
+                  onClick={e => { e.stopPropagation(); onImageClick(step.actionImageUrls, i, "Action"); }}
+                  className="w-16 h-16 rounded-lg object-cover border border-[var(--border-color)]
+                    cursor-zoom-in hover:opacity-90 hover:scale-105 transition-transform"
+                />
+              ) : null
+            )}
+          </div>
+        )}
+      </td>
+
+      <td className="px-4 py-3 border-r border-[var(--border-color)] align-top">
+        <p className="text-sm text-t-secondary leading-snug break-words">{step.expectedresult}</p>
+        {!!step.expectedImageUrls?.length && (
+          <div className="mt-2 flex flex-wrap gap-2">
+            {step.expectedImageUrls.map((path, i) =>
+              signedImageUrls[path] ? (
+                <img
+                  key={path}
+                  src={signedImageUrls[path]}
+                  alt={`Expected ${i + 1}`}
+                  onClick={e => { e.stopPropagation(); onImageClick(step.expectedImageUrls, i, "Expected"); }}
+                  className="w-16 h-16 rounded-lg object-cover border border-[var(--border-color)]
+                    cursor-zoom-in hover:opacity-90 hover:scale-105 transition-transform"
+                />
+              ) : null
+            )}
+          </div>
+        )}
+      </td>
+
+      <td className="px-3 py-3 border-r border-[var(--border-color)]">
+        <textarea
+          value={remarks}
+          onChange={e => { setRemarks(e.target.value); onRemarksChange(e.target.value); }}
+          onFocus={onFocus}
+          onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); onUpdate(step.stepId, "pass", remarks); } }}
+          disabled={readonly}
+          placeholder="Remarks… (Enter to pass)"
+          rows={2}
+          className="input text-sm resize-none disabled:opacity-50 w-full"
+        />
+      </td>
+
+      <td className="px-2 py-3 text-center border-r border-[var(--border-color)]">
+        <div className="flex flex-col items-center gap-1.5">
+          <span className={`text-xs font-bold px-2 py-0.5 rounded-full capitalize ${
+            step.status === "pass" ? "bg-green-500/15 text-green-400"
+            : step.status === "fail" ? "bg-red-500/15 text-red-400"
+            : "bg-[var(--border-color)] text-t-muted"}`}>
+            {step.status}
+          </span>
+          <TesterBadge name={step.displayname} status={step.status} />
+        </div>
+      </td>
+
+      {!readonly ? (
+        <td className="px-2 py-3">
+          <div className="flex flex-col items-center gap-1">
+            <div className="flex gap-1 w-full">
+              <button
+                onClick={e => { e.stopPropagation(); onUpdate(step.stepId, "pass", remarks); }}
+                className={`flex-1 h-7 rounded-md text-xs font-bold transition-colors flex items-center justify-center ${
+                  step.status === "pass" ? "bg-green-500 text-white" : "bg-green-500/10 hover:bg-green-500/25 text-green-400 border border-green-500/20"
+                }`}
+              ><Check size={13} /></button>
+              <button
+                onClick={e => { e.stopPropagation(); onUpdate(step.stepId, "fail", remarks); }}
+                className={`flex-1 h-7 rounded-md text-xs font-bold transition-colors flex items-center justify-center ${
+                  step.status === "fail" ? "bg-red-500 text-white" : "bg-red-500/10 hover:bg-red-500/25 text-red-400 border border-red-500/20"
+                }`}
+              ><X size={13} /></button>
+            </div>
+            {step.status !== "pending" && (
+              <button
+                onClick={e => { e.stopPropagation(); onUpdate(step.stepId, "pending", ""); }}
+                className="w-full h-7 rounded-md text-xs font-semibold text-t-muted hover:text-t-primary
+                  bg-bg-card hover:bg-bg-surface border border-[var(--border-color)] transition-colors
+                  flex items-center justify-center"
+              >
+                Undo
+              </button>
+            )}
+          </div>
+        </td>
+      ) : <td className="px-2 py-3" />}
+    </tr>
+  );
+};
+
+
+// ── Mobile Step Card ──────────────────────────────────────────
+// Returns a single bare <div>. No fragment, no portal, no wrapper.
+// The parent (TestExecution) owns the preview modal.
+const MobileStepCard: React.FC<{
+  step:            ExecutionStep;
+  signedImageUrls: Record<string, string>;
+  readonly:        boolean;
+  isFocused:       boolean;
+  onUpdate:        (stepId: string, status: "pass" | "fail" | "pending", remarks: string) => void;
+  onFocus:         () => void;
+  onRemarksChange: (val: string) => void;
+  onImageClick:    (paths: string[], idx: number, label: string) => void;
+  cardRef?:        (el: HTMLDivElement | null) => void;
+}> = ({ step, signedImageUrls, readonly, isFocused, onUpdate, onFocus, onRemarksChange, onImageClick, cardRef }) => {
+  const [remarks, setRemarks] = useState(step.remarks || "");
+  useEffect(() => { setRemarks(step.remarks || ""); }, [step.remarks]);
+
+  const rowBg       = step.status === "pass" ? "bg-green-500/5" : step.status === "fail" ? "bg-red-500/5" : "";
+  const accentColor = isFocused ? "#38bdf8" : step.status === "pass" ? "#22c55e" : step.status === "fail" ? "#ef4444" : "#374151";
+
+  return (
+    <div
+      ref={cardRef}
+      onClick={onFocus}
+      className={`rounded-xl overflow-hidden border border-[var(--border-color)] w-full cursor-pointer transition-shadow ${rowBg} ${isFocused ? "ring-2 ring-sky-400" : ""}`}
+      style={{ borderLeftColor: accentColor, borderLeftWidth: 3 }}
+    >
+      <div className="flex items-center justify-between px-3 py-2 border-b border-[var(--border-color)] bg-bg-card">
+        <span className="text-xs font-mono text-t-muted tracking-wide">#{step.serialno}</span>
+        <div className="flex items-center gap-2 min-w-0">
+          {isFocused && (
+            <span className="flex items-center gap-1 text-[10px] text-sky-400 font-medium shrink-0">
+              <kbd className="px-1 py-0.5 rounded bg-sky-400/10 border border-sky-400/20 font-mono text-[9px]">Enter</kbd>
+              to pass
+            </span>
+          )}
+          <span className={`shrink-0 text-xs font-bold px-2 py-0.5 rounded-full capitalize ${
+            step.status === "pass" ? "bg-green-500/15 text-green-400"
+            : step.status === "fail" ? "bg-red-500/15 text-red-400"
+            : "bg-[var(--border-color)] text-t-muted"}`}>
+            {step.status}
+          </span>
+          <TesterBadge name={step.displayname} status={step.status} />
+        </div>
+      </div>
+
+      <div className="grid grid-cols-[80px_1fr] border-b border-[var(--border-color)]">
+        <div className="px-3 py-2.5 border-r border-[var(--border-color)] bg-bg-card flex items-start">
+          <span className="text-[10px] font-semibold text-t-muted uppercase tracking-wider mt-0.5">Action</span>
+        </div>
+        <div className="px-3 py-2.5 min-w-0">
+          <p className="text-sm leading-snug break-words text-t-primary">{step.action}</p>
           {!!step.actionImageUrls?.length && (
             <div className="mt-2 flex flex-wrap gap-2">
               {step.actionImageUrls.map((path, i) =>
@@ -1062,19 +1110,23 @@ const TableStepRow: React.FC<{
                     key={path}
                     src={signedImageUrls[path]}
                     alt={`Action ${i + 1}`}
-                    onClick={e => openPreview(step.actionImageUrls, i, "Action", e)}
-                    className="w-16 h-16 rounded-lg object-cover border border-[var(--border-color)]
+                    onClick={e => { e.stopPropagation(); onImageClick(step.actionImageUrls, i, "Action"); }}
+                    className="w-[72px] h-[72px] rounded-lg object-cover border border-[var(--border-color)]
                       cursor-zoom-in hover:opacity-90 hover:scale-105 transition-transform"
                   />
                 ) : null
               )}
             </div>
           )}
-        </td>
+        </div>
+      </div>
 
-        {/* Expected Result */}
-        <td className="px-4 py-3 border-r border-[var(--border-color)] align-top">
-          <p className="text-sm text-t-secondary leading-snug break-words">{step.expectedresult}</p>
+      <div className="grid grid-cols-[80px_1fr] border-b border-[var(--border-color)]">
+        <div className="px-3 py-2.5 border-r border-[var(--border-color)] bg-bg-card flex items-start">
+          <span className="text-[10px] font-semibold text-t-muted uppercase tracking-wider mt-0.5">Expected</span>
+        </div>
+        <div className="px-3 py-2.5 min-w-0">
+          <p className="text-sm leading-snug break-words text-t-secondary">{step.expectedresult}</p>
           {!!step.expectedImageUrls?.length && (
             <div className="mt-2 flex flex-wrap gap-2">
               {step.expectedImageUrls.map((path, i) =>
@@ -1083,18 +1135,22 @@ const TableStepRow: React.FC<{
                     key={path}
                     src={signedImageUrls[path]}
                     alt={`Expected ${i + 1}`}
-                    onClick={e => openPreview(step.expectedImageUrls, i, "Expected", e)}
-                    className="w-16 h-16 rounded-lg object-cover border border-[var(--border-color)]
+                    onClick={e => { e.stopPropagation(); onImageClick(step.expectedImageUrls, i, "Expected"); }}
+                    className="w-[72px] h-[72px] rounded-lg object-cover border border-[var(--border-color)]
                       cursor-zoom-in hover:opacity-90 hover:scale-105 transition-transform"
                   />
                 ) : null
               )}
             </div>
           )}
-        </td>
+        </div>
+      </div>
 
-        {/* Remarks */}
-        <td className="px-3 py-3 border-r border-[var(--border-color)]">
+      <div className="grid grid-cols-[80px_1fr] border-b border-[var(--border-color)]">
+        <div className="px-3 py-2.5 border-r border-[var(--border-color)] bg-bg-card flex items-start">
+          <span className="text-[10px] font-semibold text-t-muted uppercase tracking-wider mt-0.5">Remarks</span>
+        </div>
+        <div className="px-3 py-2 min-w-0">
           <textarea
             value={remarks}
             onChange={e => { setRemarks(e.target.value); onRemarksChange(e.target.value); }}
@@ -1105,209 +1161,38 @@ const TableStepRow: React.FC<{
             rows={2}
             className="input text-sm resize-none disabled:opacity-50 w-full"
           />
-        </td>
-
-        {/* Status */}
-        <td className="px-2 py-3 text-center border-r border-[var(--border-color)]">
-          <div className="flex flex-col items-center gap-1.5">
-            <span className={`text-xs font-bold px-2 py-0.5 rounded-full capitalize ${
-              step.status === "pass" ? "bg-green-500/15 text-green-400"
-              : step.status === "fail" ? "bg-red-500/15 text-red-400"
-              : "bg-[var(--border-color)] text-t-muted"}`}>
-              {step.status}
-            </span>
-            <TesterBadge name={step.displayname} status={step.status} />
-          </div>
-        </td>
-
-        {/* Result */}
-        {!readonly ? (
-          <td className="px-2 py-3">
-            <div className="flex flex-col items-center gap-1">
-              <div className="flex gap-1 w-full">
-                <button onClick={e => { e.stopPropagation(); onUpdate(step.stepId, "pass", remarks); }}
-                  className={`flex-1 h-7 rounded-md text-xs font-bold transition-colors flex items-center justify-center ${
-                    step.status === "pass" ? "bg-green-500 text-white" : "bg-green-500/10 hover:bg-green-500/25 text-green-400 border border-green-500/20"
-                  }`}><Check size={13} /></button>
-                <button onClick={e => { e.stopPropagation(); onUpdate(step.stepId, "fail", remarks); }}
-                  className={`flex-1 h-7 rounded-md text-xs font-bold transition-colors flex items-center justify-center ${
-                    step.status === "fail" ? "bg-red-500 text-white" : "bg-red-500/10 hover:bg-red-500/25 text-red-400 border border-red-500/20"
-                  }`}><X size={13} /></button>
-              </div>
-              {step.status !== "pending" && (
-                <button onClick={e => { e.stopPropagation(); onUpdate(step.stepId, "pending", ""); }}
-                  className="w-full h-7 rounded-md text-xs font-semibold text-t-muted hover:text-t-primary
-                    bg-bg-card hover:bg-bg-surface border border-[var(--border-color)] transition-colors
-                    flex items-center justify-center">
-                  Undo
-                </button>
-              )}
-            </div>
-          </td>
-        ) : <td className="px-2 py-3" />}
-      </tr>
-    </>
-  );
-};
-
-
-// ── Mobile Step Card ───────────────────────────────────────────
-const MobileStepCard: React.FC<{
-  step: ExecutionStep;
-  signedImageUrls: Record<string, string>;
-  readonly: boolean;
-  isFocused: boolean;
-  onUpdate: (stepId: string, status: "pass" | "fail" | "pending", remarks: string) => void;
-  onFocus: () => void;
-  onRemarksChange: (val: string) => void;
-  cardRef?: (el: HTMLDivElement | null) => void;
-}> = ({ step, signedImageUrls, readonly, isFocused, onUpdate, onFocus, onRemarksChange, cardRef }) => {
-  const [remarks, setRemarks] = useState(step.remarks || "");
-  useEffect(() => { setRemarks(step.remarks || ""); }, [step.remarks]);
-
-  // ── preview state ──
-  const [preview, setPreview] = useState<{ urls: string[]; idx: number; label: string } | null>(null);
-
-  const openPreview = (paths: string[], clickedIdx: number, label: string, e: React.MouseEvent) => {
-    e.stopPropagation();
-    const urls = paths.map(p => signedImageUrls[p]).filter(Boolean);
-    if (urls.length) setPreview({ urls, idx: clickedIdx, label });
-  };
-
-  const rowBg       = step.status === "pass" ? "bg-green-500/5" : step.status === "fail" ? "bg-red-500/5" : "";
-  const accentColor = isFocused ? "#38bdf8" : step.status === "pass" ? "#22c55e" : step.status === "fail" ? "#ef4444" : "#374151";
-
-  return (
-    <>
-      {preview && createPortal(
-        <ImagePreviewModal
-          images={preview.urls}
-          initialIndex={preview.idx}
-          label={preview.label}
-          onClose={() => setPreview(null)}
-        />,
-        document.body
-      )}
-      <div ref={cardRef} onClick={onFocus}
-        className={`rounded-xl overflow-hidden border border-[var(--border-color)] w-full cursor-pointer transition-shadow ${rowBg} ${isFocused ? "ring-2 ring-sky-400" : ""}`}
-        style={{ borderLeftColor: accentColor, borderLeftWidth: 3 }}>
-
-        {/* Header */}
-        <div className="flex items-center justify-between px-3 py-2 border-b border-[var(--border-color)] bg-bg-card">
-          <span className="text-xs font-mono text-t-muted tracking-wide">#{step.serialno}</span>
-          <div className="flex items-center gap-2 min-w-0">
-            {isFocused && (
-              <span className="flex items-center gap-1 text-[10px] text-sky-400 font-medium shrink-0">
-                <kbd className="px-1 py-0.5 rounded bg-sky-400/10 border border-sky-400/20 font-mono text-[9px]">Enter</kbd>
-                to pass
-              </span>
-            )}
-            <span className={`shrink-0 text-xs font-bold px-2 py-0.5 rounded-full capitalize ${
-              step.status === "pass" ? "bg-green-500/15 text-green-400"
-              : step.status === "fail" ? "bg-red-500/15 text-red-400"
-              : "bg-[var(--border-color)] text-t-muted"}`}>
-              {step.status}
-            </span>
-            <TesterBadge name={step.displayname} status={step.status} />
-          </div>
         </div>
-
-        {/* Action */}
-        <div className="grid grid-cols-[80px_1fr] border-b border-[var(--border-color)]">
-          <div className="px-3 py-2.5 border-r border-[var(--border-color)] bg-bg-card flex items-start">
-            <span className="text-[10px] font-semibold text-t-muted uppercase tracking-wider mt-0.5">Action</span>
-          </div>
-          <div className="px-3 py-2.5 min-w-0">
-            <p className="text-sm leading-snug break-words text-t-primary">{step.action}</p>
-            {!!step.actionImageUrls?.length && (
-              <div className="mt-2 flex flex-wrap gap-2">
-                {step.actionImageUrls.map((path, i) =>
-                  signedImageUrls[path] ? (
-                    <img
-                      key={path}
-                      src={signedImageUrls[path]}
-                      alt={`Action ${i + 1}`}
-                      onClick={e => openPreview(step.actionImageUrls, i, "Action", e)}
-                      className="w-[72px] h-[72px] rounded-lg object-cover border border-[var(--border-color)]
-                        cursor-zoom-in hover:opacity-90 hover:scale-105 transition-transform"
-                    />
-                  ) : null
-                )}
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* Expected */}
-        <div className="grid grid-cols-[80px_1fr] border-b border-[var(--border-color)]">
-          <div className="px-3 py-2.5 border-r border-[var(--border-color)] bg-bg-card flex items-start">
-            <span className="text-[10px] font-semibold text-t-muted uppercase tracking-wider mt-0.5">Expected</span>
-          </div>
-          <div className="px-3 py-2.5 min-w-0">
-            <p className="text-sm leading-snug break-words text-t-secondary">{step.expectedresult}</p>
-            {!!step.expectedImageUrls?.length && (
-              <div className="mt-2 flex flex-wrap gap-2">
-                {step.expectedImageUrls.map((path, i) =>
-                  signedImageUrls[path] ? (
-                    <img
-                      key={path}
-                      src={signedImageUrls[path]}
-                      alt={`Expected ${i + 1}`}
-                      onClick={e => openPreview(step.expectedImageUrls, i, "Expected", e)}
-                      className="w-[72px] h-[72px] rounded-lg object-cover border border-[var(--border-color)]
-                        cursor-zoom-in hover:opacity-90 hover:scale-105 transition-transform"
-                    />
-                  ) : null
-                )}
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* Remarks */}
-        <div className="grid grid-cols-[80px_1fr] border-b border-[var(--border-color)]">
-          <div className="px-3 py-2.5 border-r border-[var(--border-color)] bg-bg-card flex items-start">
-            <span className="text-[10px] font-semibold text-t-muted uppercase tracking-wider mt-0.5">Remarks</span>
-          </div>
-          <div className="px-3 py-2 min-w-0">
-            <textarea
-              value={remarks}
-              onChange={e => { setRemarks(e.target.value); onRemarksChange(e.target.value); }}
-              onFocus={onFocus}
-              onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); onUpdate(step.stepId, "pass", remarks); } }}
-              disabled={readonly}
-              placeholder="Remarks… (Enter to pass)"
-              rows={2}
-              className="input text-sm resize-none disabled:opacity-50 w-full"
-            />
-          </div>
-        </div>
-
-        {/* Result buttons */}
-        {!readonly && (
-          <div className="flex items-center justify-between px-3 py-2 bg-bg-card">
-            <span className="text-[10px] font-semibold text-t-muted uppercase tracking-wider">Result</span>
-            <div className="flex items-center gap-2">
-              {step.status !== "pending" && (
-                <button onClick={e => { e.stopPropagation(); onUpdate(step.stepId, "pending", ""); }}
-                  className="px-2.5 h-8 rounded-md text-xs font-semibold text-t-muted hover:text-t-primary
-                    bg-bg-card hover:bg-bg-surface border border-[var(--border-color)] transition-colors flex items-center justify-center">
-                  Undo
-                </button>
-              )}
-              <button onClick={e => { e.stopPropagation(); onUpdate(step.stepId, "pass", remarks); }}
-                className={`w-8 h-8 rounded-md text-xs font-bold transition-colors flex items-center justify-center ${
-                  step.status === "pass" ? "bg-green-500 text-white" : "bg-green-500/10 hover:bg-green-500/25 text-green-400 border border-green-500/20"
-                }`}><Check size={14} /></button>
-              <button onClick={e => { e.stopPropagation(); onUpdate(step.stepId, "fail", remarks); }}
-                className={`w-8 h-8 rounded-md text-xs font-bold transition-colors flex items-center justify-center ${
-                  step.status === "fail" ? "bg-red-500 text-white" : "bg-red-500/10 hover:bg-red-500/25 text-red-400 border border-red-500/20"
-                }`}><X size={14} /></button>
-            </div>
-          </div>
-        )}
       </div>
-    </>
+
+      {!readonly && (
+        <div className="flex items-center justify-between px-3 py-2 bg-bg-card">
+          <span className="text-[10px] font-semibold text-t-muted uppercase tracking-wider">Result</span>
+          <div className="flex items-center gap-2">
+            {step.status !== "pending" && (
+              <button
+                onClick={e => { e.stopPropagation(); onUpdate(step.stepId, "pending", ""); }}
+                className="px-2.5 h-8 rounded-md text-xs font-semibold text-t-muted hover:text-t-primary
+                  bg-bg-card hover:bg-bg-surface border border-[var(--border-color)] transition-colors flex items-center justify-center"
+              >
+                Undo
+              </button>
+            )}
+            <button
+              onClick={e => { e.stopPropagation(); onUpdate(step.stepId, "pass", remarks); }}
+              className={`w-8 h-8 rounded-md text-xs font-bold transition-colors flex items-center justify-center ${
+                step.status === "pass" ? "bg-green-500 text-white" : "bg-green-500/10 hover:bg-green-500/25 text-green-400 border border-green-500/20"
+              }`}
+            ><Check size={14} /></button>
+            <button
+              onClick={e => { e.stopPropagation(); onUpdate(step.stepId, "fail", remarks); }}
+              className={`w-8 h-8 rounded-md text-xs font-bold transition-colors flex items-center justify-center ${
+                step.status === "fail" ? "bg-red-500 text-white" : "bg-red-500/10 hover:bg-red-500/25 text-red-400 border border-red-500/20"
+              }`}
+            ><X size={14} /></button>
+          </div>
+        </div>
+      )}
+    </div>
   );
 };
 
