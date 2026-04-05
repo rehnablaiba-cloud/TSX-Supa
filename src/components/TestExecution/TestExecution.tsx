@@ -303,9 +303,9 @@ const TestExecution: React.FC<Props> = ({
           .eq("module_name", moduleName)
           .order("id"),
         supabase
-          .from("step_results")
-          .select("id, modulename, teststepsid, status, remarks, displayname")
-          .eq("modulename", moduleName),
+  .from("step_results")
+  .select("id, modulename, teststepsid, status, remarks, displayname")
+  .filter("modulename", "eq", moduleName.replaceAll("#", "%23")),
         supabase
           .from("test_locks")
           .select("module_test_id, user_id, locked_by_name")
@@ -320,9 +320,16 @@ const TestExecution: React.FC<Props> = ({
 
       // ── 2. Fetch tests by name ──
       const testNames = Array.from(new Set(rawMts.map(m => m.tests_name)));
-      const testsRes = testNames.length
-        ? await supabase.from("tests").select("name, serialno").in("name", testNames)
-        : { data: [] };
+     const testsRes = testNames.length
+  ? await supabase
+      .from("tests")
+      .select("name, serialno")
+      .filter(
+        "name",
+        "in",
+        `(${testNames.map(n => `"${n}"`).join(",")})`,   // double-quote each value
+      )
+  : { data: [] };
       const testsMap = Object.fromEntries(
         ((testsRes.data ?? []) as { name: string; serialno: number }[]).map(t => [t.name, t])
       );
