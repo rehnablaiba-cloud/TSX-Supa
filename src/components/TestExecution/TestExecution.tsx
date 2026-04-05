@@ -305,7 +305,7 @@ const TestExecution: React.FC<Props> = ({
         supabase
   .from("step_results")
   .select("id, modulename, teststepsid, status, remarks, displayname")
-  .filter("modulename", "eq", moduleName.replaceAll("#", "%23")),
+  .filter("modulename", "eq", moduleName.split("#").join("%23")),
         supabase
           .from("test_locks")
           .select("module_test_id, user_id, locked_by_name")
