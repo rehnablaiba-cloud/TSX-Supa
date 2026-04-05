@@ -8,7 +8,7 @@ import { useToast } from "../../context/ToastContext";
 import { useAuditLog } from "../../hooks/useAuditLog";
 import { exportExecutionCSV, exportExecutionPDF, FlatData } from "../../utils/export";
 import { Lock, Upload, RotateCcw, User, Check, X, ArrowLeft, AlertTriangle, FileSpreadsheet, FileText } from "lucide-react";
-
+import MassImageUploadModal from "../UI/MassImageUploadModal";
 
 interface Props {
   moduleName:          string;
@@ -22,18 +22,19 @@ type Filter = "all" | "pass" | "fail" | "pending";
 
 
 interface ExecutionStep {
-  stepId:          string;
-  stepResultId:    string;
-  moduleTestId:    string;
-  serial_no:       number;
-  action:          string;
-  expected_result: string;
-  is_divider:      boolean;
-  status:          "pass" | "fail" | "pending";
-  remarks:         string;
-  display_name:    string;
+  stepId: string;
+  stepResultId: string;
+  moduleTestId: string;
+  serialno: number;
+  action: string;
+  expectedresult: string;
+  actionImageUrls: string[];
+  expectedImageUrls: string[];
+  isdivider: boolean;
+  status: "pass" | "fail" | "pending";
+  remarks: string;
+  displayname: string;
 }
-
 
 interface ModuleTestItem {
   id:          string;
@@ -41,6 +42,7 @@ interface ModuleTestItem {
   test: { serial_no: number; name: string };
 }
 
+type SignedImageMap = Record<string, string>;
 
 // ── Undo All Confirmation Modal ────────────────────────────────
 const UndoAllModal: React.FC<{
@@ -152,8 +154,10 @@ const TestExecution: React.FC<Props> = ({
   const [search, setSearch]                   = useState("");
   const [showExportModal, setShowExportModal] = useState(false);
   const [showUndoModal, setShowUndoModal]     = useState(false);
+  const [showMassImageUpload, setShowMassImageUpload] = useState(false);
   const [scrollTarget, setScrollTarget]       = useState<string | null>(null);
   const [focusedStepId, setFocusedStepId]     = useState<string | null>(null);
+  const [signedImageUrls, setSignedImageUrls] = useState<SignedImageMap>({});
 
 
   const stepsInitialized = useRef(false);
@@ -171,7 +175,24 @@ const TestExecution: React.FC<Props> = ({
   const [lock, setLock]               = useState<any>(null);
   const [loading, setLoading]         = useState(true);
   const [lockLoading, setLockLoading] = useState(true);
+const getSignedUrlsForPaths = useCallback(async (paths: string[]) => {
+  const uniquePaths = Array.from(new Set(paths.filter(Boolean)));
 
+  if (!uniquePaths.length) return {};
+
+  const results = await Promise.all(
+    uniquePaths.map(async (path) => {
+      const { data, error } = await supabase.storage
+        .from("test_steps")
+        .createSignedUrl(path, 60 * 60);
+
+      if (error || !data?.signedUrl) return [path, ""] as const;
+      return [path, data.signedUrl] as const;
+    })
+  );
+
+  return Object.fromEntries(results.filter(([, url]) => !!url));
+}, []);
 
   useEffect(() => {
     setLoading(true);
@@ -188,11 +209,25 @@ const TestExecution: React.FC<Props> = ({
         .eq("module_name", moduleName)
         .order("id"),
       supabase
-        .from("step_results")
-        .select(`
-          id, module_name, test_steps_id, status, remarks, display_name,
-          step:test_steps!test_steps_id(id, serial_no, action, expected_result, is_divider, tests_name)
-        `)
+        .from("stepresults")
+.select(`
+  id,
+  modulename,
+  teststepsid,
+  status,
+  remarks,
+  displayname,
+  step:teststeps!teststepsid(
+    id,
+    serialno,
+    action,
+    expectedresult,
+    action_image_urls,
+    expected_image_urls,
+    isdivider,
+    testsname
+  )
+`)
         .eq("module_name", moduleName),
       supabase
         .from("test_locks")
@@ -204,18 +239,20 @@ const TestExecution: React.FC<Props> = ({
 
       const merged: ExecutionStep[] = ((srRes.data ?? []) as any[])
         .filter(sr => sr.step?.tests_name === testsName)
-        .map(sr => ({
-          stepId:          sr.test_steps_id,
-          stepResultId:    sr.id,
-          moduleTestId:    currentMtId,
-          serial_no:       sr.step.serial_no,
-          action:          sr.step.action,
-          expected_result: sr.step.expected_result,
-          is_divider:      sr.step.is_divider,
-          status:          sr.status,
-          remarks:         sr.remarks,
-          display_name:    sr.display_name ?? "",
-        }))
+       .map((sr) => ({
+  stepId: sr.teststepsid,
+  stepResultId: sr.id,
+  moduleTestId: currentMtId,
+  serialno: sr.step.serialno,
+  action: sr.step.action,
+  expectedresult: sr.step.expectedresult,
+  actionImageUrls: sr.step.action_image_urls || [],
+  expectedImageUrls: sr.step.expected_image_urls || [],
+  isdivider: sr.step.isdivider,
+  status: sr.status,
+  remarks: sr.remarks,
+  displayname: sr.displayname ?? "",
+}))
         .sort((a, b) => {
           if (a.serial_no !== b.serial_no) return a.serial_no - b.serial_no;
           return (a.is_divider ? 0 : 1) - (b.is_divider ? 0 : 1);
@@ -263,6 +300,28 @@ const TestExecution: React.FC<Props> = ({
     };
   }, [moduleName, currentMtId, testsName]);
 
+  useEffect(() => {
+  const allPaths = steps.flatMap((step) => [
+    ...(step.actionImageUrls || []),
+    ...(step.expectedImageUrls || []),
+  ]);
+
+  if (!allPaths.length) {
+    setSignedImageUrls({});
+    return;
+  }
+
+  let cancelled = false;
+
+  (async () => {
+    const map = await getSignedUrlsForPaths(allPaths);
+    if (!cancelled) setSignedImageUrls(map);
+  })();
+
+  return () => {
+    cancelled = true;
+  };
+}, [steps, getSignedUrlsForPaths]);
 
   const currentMt   = moduleTests.find(mt => mt.id === currentMtId);
   const currentTest = currentMt?.test;
@@ -621,19 +680,35 @@ const TestExecution: React.FC<Props> = ({
           },
         ]}
       />
-
+<MassImageUploadModal
+  isOpen={showMassImageUpload}
+  onClose={() => setShowMassImageUpload(false)}
+/>
       {/* Fixed sections */}
       <div className="flex-shrink-0">
         <Topbar
-          title={currentTest ? `#${currentTest.serial_no} — ${currentTest.name}` : "Test Execution"}
-          subtitle={moduleName}
-          actions={
-            <button onClick={handleFinish} className="btn-primary text-sm">
-              Finish Test
-            </button>
-          }
-        />
+  title={currentTest ? `${currentTest.serialno}. ${currentTest.name}` : "Test Execution"}
+  subtitle={moduleName}
+  actions={
+    <>
+      {isAdmin && (
+        <button
+          onClick={() => setShowMassImageUpload(true)}
+          className="px-3 py-2 rounded-xl border border-[var(--border-color)] bg-bg-card text-t-primary text-sm font-semibold hover:bg-bg-surface transition-colors"
+        >
+          Mass Upload Images
+        </button>
+      )}
 
+      <button
+        onClick={handleFinish}
+        className="btn-primary text-sm"
+      >
+        Finish Test
+      </button>
+    </>
+  }
+/>
         {/* Progress bar */}
         <div className="px-4 pt-3 pb-2">
           <div className="flex items-center justify-between mb-1.5">
@@ -731,15 +806,16 @@ const TestExecution: React.FC<Props> = ({
                     </tr>
                   ) : (
                     <TableStepRow
-                      key={step.stepId}
-                      step={step}
-                      readonly={false}
-                      isFocused={focusedStepId === step.stepId}
-                      onUpdate={handleStepUpdate}
-                      onFocus={() => setFocusedStepId(step.stepId)}
-                      onRemarksChange={val => { remarksMap.current[step.stepId] = val; }}
-                      rowRef={el => { trRefs.current[step.stepId] = el; }}
-                    />
+  key={step.stepId}
+  step={step}
+  signedImageUrls={signedImageUrls}
+  readonly={false}
+  isFocused={focusedStepId === step.stepId}
+  onUpdate={handleStepUpdate}
+  onFocus={() => setFocusedStepId(step.stepId)}
+  onRemarksChange={(val) => (remarksMap.current[step.stepId] = val)}
+  rowRef={(el) => (trRefs.current[step.stepId] = el)}
+/>
                   )
                 )}
               </tbody>
@@ -765,15 +841,16 @@ const TestExecution: React.FC<Props> = ({
                     </div>
                   ) : (
                     <MobileStepCard
-                      key={step.stepId}
-                      step={step}
-                      readonly={false}
-                      isFocused={focusedStepId === step.stepId}
-                      onUpdate={handleStepUpdate}
-                      onFocus={() => setFocusedStepId(step.stepId)}
-                      onRemarksChange={val => { remarksMap.current[step.stepId] = val; }}
-                      cardRef={el => { cardRefs.current[step.stepId] = el; }}
-                    />
+  key={step.stepId}
+  step={step}
+  signedImageUrls={signedImageUrls}
+  readonly={false}
+  isFocused={focusedStepId === step.stepId}
+  onUpdate={handleStepUpdate}
+  onFocus={() => setFocusedStepId(step.stepId)}
+  onRemarksChange={(val) => (remarksMap.current[step.stepId] = val)}
+  cardRef={(el) => (cardRefs.current[step.stepId] = el)}
+/>
                   )
                 )}
               </div>
@@ -823,14 +900,15 @@ const TesterBadge: React.FC<{ name: string; status: "pass" | "fail" | "pending" 
 
 // ── Desktop Table Row ──────────────────────────────────────────
 const TableStepRow: React.FC<{
-  step:            ExecutionStep;
-  readonly:        boolean;
-  isFocused:       boolean;
-  onUpdate:        (stepId: string, status: "pass" | "fail" | "pending", remarks: string) => void;
-  onFocus:         () => void;
+  step: ExecutionStep;
+  signedImageUrls: Record<string, string>;
+  readonly: boolean;
+  isFocused: boolean;
+  onUpdate: (stepId: string, status: "pass" | "fail" | "pending", remarks: string) => void;
+  onFocus: () => void;
   onRemarksChange: (val: string) => void;
-  rowRef?:         (el: HTMLTableRowElement | null) => void;
-}> = ({ step, readonly, isFocused, onUpdate, onFocus, onRemarksChange, rowRef }) => {
+  rowRef?: (el: HTMLTableRowElement | null) => void;
+}> = ({ step, signedImageUrls, readonly, isFocused, onUpdate, onFocus, onRemarksChange, rowRef }) => {
   const [remarks, setRemarks] = useState(step.remarks || "");
   useEffect(() => { setRemarks(step.remarks || ""); }, [step.remarks]);
 
@@ -845,12 +923,43 @@ const TableStepRow: React.FC<{
       <td className="px-2 py-3 text-center border-r border-[var(--border-color)]">
         <span className="text-xs font-mono text-t-muted">{step.serial_no}</span>
       </td>
-      <td className="px-4 py-3 border-r border-[var(--border-color)]">
-        <p className="text-sm text-t-primary leading-snug break-words">{step.action}</p>
-      </td>
-      <td className="px-4 py-3 border-r border-[var(--border-color)]">
-        <p className="text-sm text-t-secondary leading-snug break-words">{step.expected_result}</p>
-      </td>
+     <td className="px-4 py-3 border-r border-[var(--border-color)] align-top">
+  <p className="text-sm text-t-primary leading-snug break-words">{step.action}</p>
+
+  {!!step.actionImageUrls?.length && (
+    <div className="mt-2 flex flex-wrap gap-2">
+      {step.actionImageUrls.map((path, i) =>
+        signedImageUrls[path] ? (
+          <img
+            key={path}
+            src={signedImageUrls[path]}
+            alt={`Action ${i + 1}`}
+            className="w-16 h-16 rounded-lg object-cover border border-[var(--border-color)] cursor-pointer"
+          />
+        ) : null
+      )}
+    </div>
+  )}
+</td>
+
+<td className="px-4 py-3 border-r border-[var(--border-color)] align-top">
+  <p className="text-sm text-t-secondary leading-snug break-words">{step.expectedresult}</p>
+
+  {!!step.expectedImageUrls?.length && (
+    <div className="mt-2 flex flex-wrap gap-2">
+      {step.expectedImageUrls.map((path, i) =>
+        signedImageUrls[path] ? (
+          <img
+            key={path}
+            src={signedImageUrls[path]}
+            alt={`Expected ${i + 1}`}
+            className="w-16 h-16 rounded-lg object-cover border border-[var(--border-color)] cursor-pointer"
+          />
+        ) : null
+      )}
+    </div>
+  )}
+</td>
       <td className="px-3 py-3 border-r border-[var(--border-color)]">
         <textarea
           value={remarks}
@@ -905,14 +1014,15 @@ const TableStepRow: React.FC<{
 
 // ── Mobile Step Card ───────────────────────────────────────────
 const MobileStepCard: React.FC<{
-  step:            ExecutionStep;
-  readonly:        boolean;
-  isFocused:       boolean;
-  onUpdate:        (stepId: string, status: "pass" | "fail" | "pending", remarks: string) => void;
-  onFocus:         () => void;
+  step: ExecutionStep;
+  signedImageUrls: Record<string, string>;
+  readonly: boolean;
+  isFocused: boolean;
+  onUpdate: (stepId: string, status: "pass" | "fail" | "pending", remarks: string) => void;
+  onFocus: () => void;
   onRemarksChange: (val: string) => void;
-  cardRef?:        (el: HTMLDivElement | null) => void;
-}> = ({ step, readonly, isFocused, onUpdate, onFocus, onRemarksChange, cardRef }) => {
+  cardRef?: (el: HTMLDivElement | null) => void;
+}> = ({ step, signedImageUrls, readonly, isFocused, onUpdate, onFocus, onRemarksChange, cardRef }) => {
   const [remarks, setRemarks] = useState(step.remarks || "");
   useEffect(() => { setRemarks(step.remarks || ""); }, [step.remarks]);
 
@@ -946,20 +1056,57 @@ const MobileStepCard: React.FC<{
         </div>
       </div>
 
+<div className="grid grid-cols-[80px_1fr] border-b border-[var(--border-color)]">
+  <div className="px-3 py-2.5 border-r border-[var(--border-color)] bg-bg-card flex items-start">
+    <span className="text-[10px] font-semibold text-t-muted uppercase tracking-wider mt-0.5">
+      Action
+    </span>
+  </div>
+  <div className="px-3 py-2.5 min-w-0">
+    <p className="text-sm leading-snug break-words text-t-primary">{step.action}</p>
 
-      {[
-        { label: "Action",   value: step.action,         cls: "text-t-primary" },
-        { label: "Expected", value: step.expected_result, cls: "text-t-secondary" },
-      ].map(({ label, value, cls }) => (
-        <div key={label} className="grid grid-cols-[80px_1fr] border-b border-[var(--border-color)]">
-          <div className="px-3 py-2.5 border-r border-[var(--border-color)] bg-bg-card flex items-start">
-            <span className="text-[10px] font-semibold text-t-muted uppercase tracking-wider mt-0.5">{label}</span>
-          </div>
-          <div className="px-3 py-2.5 min-w-0">
-            <p className={`text-sm leading-snug break-words ${cls}`}>{value}</p>
-          </div>
-        </div>
-      ))}
+    {!!step.actionImageUrls?.length && (
+      <div className="mt-2 flex flex-wrap gap-2">
+        {step.actionImageUrls.map((path, i) =>
+          signedImageUrls[path] ? (
+            <img
+              key={path}
+              src={signedImageUrls[path]}
+              alt={`Action ${i + 1}`}
+              className="w-[72px] h-[72px] rounded-lg object-cover border border-[var(--border-color)]"
+            />
+          ) : null
+        )}
+      </div>
+    )}
+  </div>
+</div>
+
+<div className="grid grid-cols-[80px_1fr] border-b border-[var(--border-color)]">
+  <div className="px-3 py-2.5 border-r border-[var(--border-color)] bg-bg-card flex items-start">
+    <span className="text-[10px] font-semibold text-t-muted uppercase tracking-wider mt-0.5">
+      Expected
+    </span>
+  </div>
+  <div className="px-3 py-2.5 min-w-0">
+    <p className="text-sm leading-snug break-words text-t-secondary">{step.expectedresult}</p>
+
+    {!!step.expectedImageUrls?.length && (
+      <div className="mt-2 flex flex-wrap gap-2">
+        {step.expectedImageUrls.map((path, i) =>
+          signedImageUrls[path] ? (
+            <img
+              key={path}
+              src={signedImageUrls[path]}
+              alt={`Expected ${i + 1}`}
+              className="w-[72px] h-[72px] rounded-lg object-cover border border-[var(--border-color)]"
+            />
+          ) : null
+        )}
+      </div>
+    )}
+  </div>
+</div>
 
 
       <div className="grid grid-cols-[80px_1fr] border-b border-[var(--border-color)]">
