@@ -7,7 +7,7 @@ import ExportModal from "../UI/ExportModal";
 import { useToast } from "../../context/ToastContext";
 import { useAuditLog } from "../../hooks/useAuditLog";
 import { exportExecutionCSV, exportExecutionPDF, FlatData } from "../../utils/export";
-import { Lock, Upload, RotateCcw, User, Check, X, ArrowLeft, AlertTriangle, FileSpreadsheet, FileText } from "lucide-react";
+import { Lock, Upload, RotateCcw, User, Check, X, ArrowLeft, AlertTriangle, FileSpreadsheet, FileText, ChevronLeft, ChevronRight } from "lucide-react";
 import MassImageUploadModal from "../UI/MassImageUploadModal";
 
 interface Props {
@@ -107,6 +107,111 @@ const UndoAllModal: React.FC<{
 );
 
 
+// ── Image Preview Modal ────────────────────────────────────────
+const ImagePreviewModal: React.FC<{
+  images: string[];
+  initialIndex: number;
+  label: string;
+  onClose: () => void;
+}> = ({ images, initialIndex, label, onClose }) => {
+  const [idx, setIdx] = useState(initialIndex);
+  const total = images.length;
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape")     onClose();
+      if (e.key === "ArrowRight") setIdx(i => (i + 1) % total);
+      if (e.key === "ArrowLeft")  setIdx(i => (i - 1 + total) % total);
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [onClose, total]);
+
+  return (
+    <div
+      className="fixed inset-0 z-[100] flex items-center justify-center p-4"
+      style={{ backgroundColor: "rgba(0,0,0,0.88)", backdropFilter: "blur(8px)" }}
+      onClick={onClose}
+    >
+      {/* Close button */}
+      <button
+        onClick={onClose}
+        className="absolute top-4 right-4 w-9 h-9 rounded-full bg-white/10 hover:bg-white/20
+          border border-white/20 flex items-center justify-center text-white transition-colors z-10"
+      >
+        <X size={16} />
+      </button>
+
+      {/* Label + counter */}
+      <div className="absolute top-4 left-4 flex items-center gap-2 z-10">
+        <span className="text-xs font-semibold text-white/70 uppercase tracking-wider">{label}</span>
+        {total > 1 && (
+          <span className="text-xs text-white/40">{idx + 1} / {total}</span>
+        )}
+      </div>
+
+      {/* Prev arrow */}
+      {total > 1 && (
+        <button
+          onClick={e => { e.stopPropagation(); setIdx(i => (i - 1 + total) % total); }}
+          className="absolute left-3 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full
+            bg-white/10 hover:bg-white/20 border border-white/20
+            flex items-center justify-center text-white transition-colors z-10"
+        >
+          <ChevronLeft size={20} />
+        </button>
+      )}
+
+      {/* Main image */}
+      <div
+        className="relative max-w-4xl max-h-[80vh] flex items-center justify-center"
+        onClick={e => e.stopPropagation()}
+      >
+        <img
+          src={images[idx]}
+          alt={`${label} ${idx + 1}`}
+          className="max-w-full max-h-[80vh] rounded-xl object-contain shadow-2xl border border-white/10"
+        />
+      </div>
+
+      {/* Next arrow */}
+      {total > 1 && (
+        <button
+          onClick={e => { e.stopPropagation(); setIdx(i => (i + 1) % total); }}
+          className="absolute right-3 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full
+            bg-white/10 hover:bg-white/20 border border-white/20
+            flex items-center justify-center text-white transition-colors z-10"
+        >
+          <ChevronRight size={20} />
+        </button>
+      )}
+
+      {/* Thumbnail strip */}
+      {total > 1 && (
+        <div
+          className="absolute bottom-4 left-1/2 -translate-x-1/2 flex gap-2 z-10"
+          onClick={e => e.stopPropagation()}
+        >
+          {images.map((url, i) => (
+            <button
+              key={i}
+              onClick={() => setIdx(i)}
+              className={`w-10 h-10 rounded-lg overflow-hidden border-2 transition-all ${
+                i === idx
+                  ? "border-white scale-110"
+                  : "border-white/25 opacity-55 hover:opacity-90"
+              }`}
+            >
+              <img src={url} alt="" className="w-full h-full object-cover" />
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
+
+
 // ── Locked Screen ──────────────────────────────────────────────
 const LockedScreen: React.FC<{
   lockedByName: string;
@@ -175,24 +280,25 @@ const TestExecution: React.FC<Props> = ({
   const [lock, setLock]               = useState<any>(null);
   const [loading, setLoading]         = useState(true);
   const [lockLoading, setLockLoading] = useState(true);
-const getSignedUrlsForPaths = useCallback(async (paths: string[]) => {
-  const uniquePaths = Array.from(new Set(paths.filter(Boolean)));
 
-  if (!uniquePaths.length) return {};
+  const getSignedUrlsForPaths = useCallback(async (paths: string[]) => {
+    const uniquePaths = Array.from(new Set(paths.filter(Boolean)));
 
-  const results = await Promise.all(
-    uniquePaths.map(async (path) => {
-      const { data, error } = await supabase.storage
-        .from("test_steps")
-        .createSignedUrl(path, 60 * 60);
+    if (!uniquePaths.length) return {};
 
-      if (error || !data?.signedUrl) return [path, ""] as const;
-      return [path, data.signedUrl] as const;
-    })
-  );
+    const results = await Promise.all(
+      uniquePaths.map(async (path) => {
+        const { data, error } = await supabase.storage
+          .from("test_steps")
+          .createSignedUrl(path, 60 * 60);
 
-  return Object.fromEntries(results.filter(([, url]) => !!url));
-}, []);
+        if (error || !data?.signedUrl) return [path, ""] as const;
+        return [path, data.signedUrl] as const;
+      })
+    );
+
+    return Object.fromEntries(results.filter(([, url]) => !!url));
+  }, []);
 
   useEffect(() => {
     setLoading(true);
@@ -210,24 +316,24 @@ const getSignedUrlsForPaths = useCallback(async (paths: string[]) => {
         .order("id"),
       supabase
         .from("stepresults")
-.select(`
-  id,
-  modulename,
-  teststepsid,
-  status,
-  remarks,
-  displayname,
-  step:teststeps!teststepsid(
-    id,
-    serialno,
-    action,
-    expectedresult,
-    action_image_urls,
-    expected_image_urls,
-    isdivider,
-    testsname
-  )
-`)
+        .select(`
+          id,
+          modulename,
+          teststepsid,
+          status,
+          remarks,
+          displayname,
+          step:teststeps!teststepsid(
+            id,
+            serialno,
+            action,
+            expectedresult,
+            action_image_urls,
+            expected_image_urls,
+            isdivider,
+            testsname
+          )
+        `)
         .eq("module_name", moduleName),
       supabase
         .from("test_locks")
@@ -239,20 +345,20 @@ const getSignedUrlsForPaths = useCallback(async (paths: string[]) => {
 
       const merged: ExecutionStep[] = ((srRes.data ?? []) as any[])
         .filter(sr => sr.step?.tests_name === testsName)
-       .map((sr) => ({
-  stepId: sr.teststepsid,
-  stepResultId: sr.id,
-  moduleTestId: currentMtId,
-  serialno: sr.step.serialno,
-  action: sr.step.action,
-  expectedresult: sr.step.expectedresult,
-  actionImageUrls: sr.step.action_image_urls || [],
-  expectedImageUrls: sr.step.expected_image_urls || [],
-  isdivider: sr.step.isdivider,
-  status: sr.status,
-  remarks: sr.remarks,
-  displayname: sr.displayname ?? "",
-}))
+        .map((sr) => ({
+          stepId: sr.teststepsid,
+          stepResultId: sr.id,
+          moduleTestId: currentMtId,
+          serialno: sr.step.serialno,
+          action: sr.step.action,
+          expectedresult: sr.step.expectedresult,
+          actionImageUrls: sr.step.action_image_urls || [],
+          expectedImageUrls: sr.step.expected_image_urls || [],
+          isdivider: sr.step.isdivider,
+          status: sr.status,
+          remarks: sr.remarks,
+          displayname: sr.displayname ?? "",
+        }))
         .sort((a, b) => {
           if (a.serialno !== b.serialno) return a.serialno - b.serialno;
           return (a.isdivider ? 0 : 1) - (b.isdivider ? 0 : 1);
@@ -301,27 +407,27 @@ const getSignedUrlsForPaths = useCallback(async (paths: string[]) => {
   }, [moduleName, currentMtId, testsName]);
 
   useEffect(() => {
-  const allPaths = steps.flatMap((step) => [
-    ...(step.actionImageUrls || []),
-    ...(step.expectedImageUrls || []),
-  ]);
+    const allPaths = steps.flatMap((step) => [
+      ...(step.actionImageUrls || []),
+      ...(step.expectedImageUrls || []),
+    ]);
 
-  if (!allPaths.length) {
-    setSignedImageUrls({});
-    return;
-  }
+    if (!allPaths.length) {
+      setSignedImageUrls({});
+      return;
+    }
 
-  let cancelled = false;
+    let cancelled = false;
 
-  (async () => {
-    const map = await getSignedUrlsForPaths(allPaths);
-    if (!cancelled) setSignedImageUrls(map);
-  })();
+    (async () => {
+      const map = await getSignedUrlsForPaths(allPaths);
+      if (!cancelled) setSignedImageUrls(map);
+    })();
 
-  return () => {
-    cancelled = true;
-  };
-}, [steps, getSignedUrlsForPaths]);
+    return () => {
+      cancelled = true;
+    };
+  }, [steps, getSignedUrlsForPaths]);
 
   const currentMt   = moduleTests.find(mt => mt.id === currentMtId);
   const currentTest = currentMt?.test;
@@ -680,35 +786,38 @@ const getSignedUrlsForPaths = useCallback(async (paths: string[]) => {
           },
         ]}
       />
-<MassImageUploadModal
-  isOpen={showMassImageUpload}
-  onClose={() => setShowMassImageUpload(false)}
-/>
+
+      <MassImageUploadModal
+        isOpen={showMassImageUpload}
+        onClose={() => setShowMassImageUpload(false)}
+      />
+
       {/* Fixed sections */}
       <div className="flex-shrink-0">
         <Topbar
-  title={currentTest ? `${currentTest.serialno}. ${currentTest.name}` : "Test Execution"}
-  subtitle={moduleName}
-  actions={
-    <>
-      {isAdmin && (
-        <button
-          onClick={() => setShowMassImageUpload(true)}
-          className="px-3 py-2 rounded-xl border border-[var(--border-color)] bg-bg-card text-t-primary text-sm font-semibold hover:bg-bg-surface transition-colors"
-        >
-          Mass Upload Images
-        </button>
-      )}
+          title={currentTest ? `${currentTest.serialno}. ${currentTest.name}` : "Test Execution"}
+          subtitle={moduleName}
+          actions={
+            <>
+              {isAdmin && (
+                <button
+                  onClick={() => setShowMassImageUpload(true)}
+                  className="px-3 py-2 rounded-xl border border-[var(--border-color)] bg-bg-card text-t-primary text-sm font-semibold hover:bg-bg-surface transition-colors"
+                >
+                  Mass Upload Images
+                </button>
+              )}
 
-      <button
-        onClick={handleFinish}
-        className="btn-primary text-sm"
-      >
-        Finish Test
-      </button>
-    </>
-  }
-/>
+              <button
+                onClick={handleFinish}
+                className="btn-primary text-sm"
+              >
+                Finish Test
+              </button>
+            </>
+          }
+        />
+
         {/* Progress bar */}
         <div className="px-4 pt-3 pb-2">
           <div className="flex items-center justify-between mb-1.5">
@@ -806,16 +915,16 @@ const getSignedUrlsForPaths = useCallback(async (paths: string[]) => {
                     </tr>
                   ) : (
                     <TableStepRow
-  key={step.stepId}
-  step={step}
-  signedImageUrls={signedImageUrls}
-  readonly={false}
-  isFocused={focusedStepId === step.stepId}
-  onUpdate={handleStepUpdate}
-  onFocus={() => setFocusedStepId(step.stepId)}
-  onRemarksChange={(val) => (remarksMap.current[step.stepId] = val)}
-  rowRef={(el) => (trRefs.current[step.stepId] = el)}
-/>
+                      key={step.stepId}
+                      step={step}
+                      signedImageUrls={signedImageUrls}
+                      readonly={false}
+                      isFocused={focusedStepId === step.stepId}
+                      onUpdate={handleStepUpdate}
+                      onFocus={() => setFocusedStepId(step.stepId)}
+                      onRemarksChange={(val) => (remarksMap.current[step.stepId] = val)}
+                      rowRef={(el) => (trRefs.current[step.stepId] = el)}
+                    />
                   )
                 )}
               </tbody>
@@ -841,16 +950,16 @@ const getSignedUrlsForPaths = useCallback(async (paths: string[]) => {
                     </div>
                   ) : (
                     <MobileStepCard
-  key={step.stepId}
-  step={step}
-  signedImageUrls={signedImageUrls}
-  readonly={false}
-  isFocused={focusedStepId === step.stepId}
-  onUpdate={handleStepUpdate}
-  onFocus={() => setFocusedStepId(step.stepId)}
-  onRemarksChange={(val) => (remarksMap.current[step.stepId] = val)}
-  cardRef={(el) => (cardRefs.current[step.stepId] = el)}
-/>
+                      key={step.stepId}
+                      step={step}
+                      signedImageUrls={signedImageUrls}
+                      readonly={false}
+                      isFocused={focusedStepId === step.stepId}
+                      onUpdate={handleStepUpdate}
+                      onFocus={() => setFocusedStepId(step.stepId)}
+                      onRemarksChange={(val) => (remarksMap.current[step.stepId] = val)}
+                      cardRef={(el) => (cardRefs.current[step.stepId] = el)}
+                    />
                   )
                 )}
               </div>
@@ -912,102 +1021,130 @@ const TableStepRow: React.FC<{
   const [remarks, setRemarks] = useState(step.remarks || "");
   useEffect(() => { setRemarks(step.remarks || ""); }, [step.remarks]);
 
+  // ── preview state ──
+  const [preview, setPreview] = useState<{ urls: string[]; idx: number; label: string } | null>(null);
+
+  const openPreview = (paths: string[], clickedIdx: number, label: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    const urls = paths.map(p => signedImageUrls[p]).filter(Boolean);
+    if (urls.length) setPreview({ urls, idx: clickedIdx, label });
+  };
 
   const rowBg      = step.status === "pass" ? "bg-green-500/5" : step.status === "fail" ? "bg-red-500/5" : "";
   const focusStyle: React.CSSProperties = isFocused ? { outline: "2px solid #38bdf8", outlineOffset: "-2px" } : {};
 
-
   return (
-    <tr ref={rowRef} onClick={onFocus} style={focusStyle}
-      className={`border-b border-[var(--border-color)] hover:bg-bg-card transition-colors cursor-pointer ${rowBg}`}>
-      <td className="px-2 py-3 text-center border-r border-[var(--border-color)]">
-        <span className="text-xs font-mono text-t-muted">{step.serialno}</span>
-      </td>
-     <td className="px-4 py-3 border-r border-[var(--border-color)] align-top">
-  <p className="text-sm text-t-primary leading-snug break-words">{step.action}</p>
-
-  {!!step.actionImageUrls?.length && (
-    <div className="mt-2 flex flex-wrap gap-2">
-      {step.actionImageUrls.map((path, i) =>
-        signedImageUrls[path] ? (
-          <img
-            key={path}
-            src={signedImageUrls[path]}
-            alt={`Action ${i + 1}`}
-            className="w-16 h-16 rounded-lg object-cover border border-[var(--border-color)] cursor-pointer"
-          />
-        ) : null
-      )}
-    </div>
-  )}
-</td>
-
-<td className="px-4 py-3 border-r border-[var(--border-color)] align-top">
-  <p className="text-sm text-t-secondary leading-snug break-words">{step.expectedresult}</p>
-
-  {!!step.expectedImageUrls?.length && (
-    <div className="mt-2 flex flex-wrap gap-2">
-      {step.expectedImageUrls.map((path, i) =>
-        signedImageUrls[path] ? (
-          <img
-            key={path}
-            src={signedImageUrls[path]}
-            alt={`Expected ${i + 1}`}
-            className="w-16 h-16 rounded-lg object-cover border border-[var(--border-color)] cursor-pointer"
-          />
-        ) : null
-      )}
-    </div>
-  )}
-</td>
-      <td className="px-3 py-3 border-r border-[var(--border-color)]">
-        <textarea
-          value={remarks}
-          onChange={e => { setRemarks(e.target.value); onRemarksChange(e.target.value); }}
-          onFocus={onFocus}
-          onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); onUpdate(step.stepId, "pass", remarks); } }}
-          disabled={readonly}
-          placeholder="Remarks… (Enter to pass)"
-          rows={2}
-          className="input text-sm resize-none disabled:opacity-50 w-full"
+    <>
+      {preview && (
+        <ImagePreviewModal
+          images={preview.urls}
+          initialIndex={preview.idx}
+          label={preview.label}
+          onClose={() => setPreview(null)}
         />
-      </td>
-      <td className="px-2 py-3 text-center border-r border-[var(--border-color)]">
-        <div className="flex flex-col items-center gap-1.5">
-          <span className={`text-xs font-bold px-2 py-0.5 rounded-full capitalize ${
-            step.status === "pass" ? "bg-green-500/15 text-green-400"
-            : step.status === "fail" ? "bg-red-500/15 text-red-400"
-            : "bg-[var(--border-color)] text-t-muted"}`}>
-            {step.status}
-          </span>
-          <TesterBadge name={step.displayname} status={step.status} />
-        </div>
-      </td>
-      {!readonly ? (
-        <td className="px-2 py-3">
-          <div className="flex flex-col items-center gap-1">
-            <div className="flex gap-1 w-full">
-              <button onClick={e => { e.stopPropagation(); onUpdate(step.stepId, "pass", remarks); }}
-                className={`flex-1 h-7 rounded-md text-xs font-bold transition-colors flex items-center justify-center ${
-                  step.status === "pass" ? "bg-green-500 text-white" : "bg-green-500/10 hover:bg-green-500/25 text-green-400 border border-green-500/20"
-                }`}><Check size={13} /></button>
-              <button onClick={e => { e.stopPropagation(); onUpdate(step.stepId, "fail", remarks); }}
-                className={`flex-1 h-7 rounded-md text-xs font-bold transition-colors flex items-center justify-center ${
-                  step.status === "fail" ? "bg-red-500 text-white" : "bg-red-500/10 hover:bg-red-500/25 text-red-400 border border-red-500/20"
-                }`}><X size={13} /></button>
+      )}
+      <tr ref={rowRef} onClick={onFocus} style={focusStyle}
+        className={`border-b border-[var(--border-color)] hover:bg-bg-card transition-colors cursor-pointer ${rowBg}`}>
+        <td className="px-2 py-3 text-center border-r border-[var(--border-color)]">
+          <span className="text-xs font-mono text-t-muted">{step.serialno}</span>
+        </td>
+
+        {/* Action */}
+        <td className="px-4 py-3 border-r border-[var(--border-color)] align-top">
+          <p className="text-sm text-t-primary leading-snug break-words">{step.action}</p>
+          {!!step.actionImageUrls?.length && (
+            <div className="mt-2 flex flex-wrap gap-2">
+              {step.actionImageUrls.map((path, i) =>
+                signedImageUrls[path] ? (
+                  <img
+                    key={path}
+                    src={signedImageUrls[path]}
+                    alt={`Action ${i + 1}`}
+                    onClick={e => openPreview(step.actionImageUrls, i, "Action", e)}
+                    className="w-16 h-16 rounded-lg object-cover border border-[var(--border-color)]
+                      cursor-zoom-in hover:opacity-90 hover:scale-105 transition-transform"
+                  />
+                ) : null
+              )}
             </div>
-            {step.status !== "pending" && (
-              <button onClick={e => { e.stopPropagation(); onUpdate(step.stepId, "pending", ""); }}
-                className="w-full h-7 rounded-md text-xs font-semibold text-t-muted hover:text-t-primary
-                  bg-bg-card hover:bg-bg-surface border border-[var(--border-color)] transition-colors
-                  flex items-center justify-center">
-                Undo
-              </button>
-            )}
+          )}
+        </td>
+
+        {/* Expected Result */}
+        <td className="px-4 py-3 border-r border-[var(--border-color)] align-top">
+          <p className="text-sm text-t-secondary leading-snug break-words">{step.expectedresult}</p>
+          {!!step.expectedImageUrls?.length && (
+            <div className="mt-2 flex flex-wrap gap-2">
+              {step.expectedImageUrls.map((path, i) =>
+                signedImageUrls[path] ? (
+                  <img
+                    key={path}
+                    src={signedImageUrls[path]}
+                    alt={`Expected ${i + 1}`}
+                    onClick={e => openPreview(step.expectedImageUrls, i, "Expected", e)}
+                    className="w-16 h-16 rounded-lg object-cover border border-[var(--border-color)]
+                      cursor-zoom-in hover:opacity-90 hover:scale-105 transition-transform"
+                  />
+                ) : null
+              )}
+            </div>
+          )}
+        </td>
+
+        {/* Remarks */}
+        <td className="px-3 py-3 border-r border-[var(--border-color)]">
+          <textarea
+            value={remarks}
+            onChange={e => { setRemarks(e.target.value); onRemarksChange(e.target.value); }}
+            onFocus={onFocus}
+            onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); onUpdate(step.stepId, "pass", remarks); } }}
+            disabled={readonly}
+            placeholder="Remarks… (Enter to pass)"
+            rows={2}
+            className="input text-sm resize-none disabled:opacity-50 w-full"
+          />
+        </td>
+
+        {/* Status */}
+        <td className="px-2 py-3 text-center border-r border-[var(--border-color)]">
+          <div className="flex flex-col items-center gap-1.5">
+            <span className={`text-xs font-bold px-2 py-0.5 rounded-full capitalize ${
+              step.status === "pass" ? "bg-green-500/15 text-green-400"
+              : step.status === "fail" ? "bg-red-500/15 text-red-400"
+              : "bg-[var(--border-color)] text-t-muted"}`}>
+              {step.status}
+            </span>
+            <TesterBadge name={step.displayname} status={step.status} />
           </div>
         </td>
-      ) : <td className="px-2 py-3" />}
-    </tr>
+
+        {/* Result */}
+        {!readonly ? (
+          <td className="px-2 py-3">
+            <div className="flex flex-col items-center gap-1">
+              <div className="flex gap-1 w-full">
+                <button onClick={e => { e.stopPropagation(); onUpdate(step.stepId, "pass", remarks); }}
+                  className={`flex-1 h-7 rounded-md text-xs font-bold transition-colors flex items-center justify-center ${
+                    step.status === "pass" ? "bg-green-500 text-white" : "bg-green-500/10 hover:bg-green-500/25 text-green-400 border border-green-500/20"
+                  }`}><Check size={13} /></button>
+                <button onClick={e => { e.stopPropagation(); onUpdate(step.stepId, "fail", remarks); }}
+                  className={`flex-1 h-7 rounded-md text-xs font-bold transition-colors flex items-center justify-center ${
+                    step.status === "fail" ? "bg-red-500 text-white" : "bg-red-500/10 hover:bg-red-500/25 text-red-400 border border-red-500/20"
+                  }`}><X size={13} /></button>
+              </div>
+              {step.status !== "pending" && (
+                <button onClick={e => { e.stopPropagation(); onUpdate(step.stepId, "pending", ""); }}
+                  className="w-full h-7 rounded-md text-xs font-semibold text-t-muted hover:text-t-primary
+                    bg-bg-card hover:bg-bg-surface border border-[var(--border-color)] transition-colors
+                    flex items-center justify-center">
+                  Undo
+                </button>
+              )}
+            </div>
+          </td>
+        ) : <td className="px-2 py-3" />}
+      </tr>
+    </>
   );
 };
 
@@ -1026,131 +1163,148 @@ const MobileStepCard: React.FC<{
   const [remarks, setRemarks] = useState(step.remarks || "");
   useEffect(() => { setRemarks(step.remarks || ""); }, [step.remarks]);
 
+  // ── preview state ──
+  const [preview, setPreview] = useState<{ urls: string[]; idx: number; label: string } | null>(null);
+
+  const openPreview = (paths: string[], clickedIdx: number, label: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    const urls = paths.map(p => signedImageUrls[p]).filter(Boolean);
+    if (urls.length) setPreview({ urls, idx: clickedIdx, label });
+  };
 
   const rowBg       = step.status === "pass" ? "bg-green-500/5" : step.status === "fail" ? "bg-red-500/5" : "";
   const accentColor = isFocused ? "#38bdf8" : step.status === "pass" ? "#22c55e" : step.status === "fail" ? "#ef4444" : "#374151";
 
-
   return (
-    <div ref={cardRef} onClick={onFocus}
-      className={`rounded-xl overflow-hidden border border-[var(--border-color)] w-full cursor-pointer transition-shadow ${rowBg} ${isFocused ? "ring-2 ring-sky-400" : ""}`}
-      style={{ borderLeftColor: accentColor, borderLeftWidth: 3 }}>
+    <>
+      {preview && (
+        <ImagePreviewModal
+          images={preview.urls}
+          initialIndex={preview.idx}
+          label={preview.label}
+          onClose={() => setPreview(null)}
+        />
+      )}
+      <div ref={cardRef} onClick={onFocus}
+        className={`rounded-xl overflow-hidden border border-[var(--border-color)] w-full cursor-pointer transition-shadow ${rowBg} ${isFocused ? "ring-2 ring-sky-400" : ""}`}
+        style={{ borderLeftColor: accentColor, borderLeftWidth: 3 }}>
 
-
-      <div className="flex items-center justify-between px-3 py-2 border-b border-[var(--border-color)] bg-bg-card">
-        <span className="text-xs font-mono text-t-muted tracking-wide">#{step.serialno}</span>
-        <div className="flex items-center gap-2 min-w-0">
-          {isFocused && (
-            <span className="flex items-center gap-1 text-[10px] text-sky-400 font-medium shrink-0">
-              <kbd className="px-1 py-0.5 rounded bg-sky-400/10 border border-sky-400/20 font-mono text-[9px]">Enter</kbd>
-              to pass
-            </span>
-          )}
-          <span className={`shrink-0 text-xs font-bold px-2 py-0.5 rounded-full capitalize ${
-            step.status === "pass" ? "bg-green-500/15 text-green-400"
-            : step.status === "fail" ? "bg-red-500/15 text-red-400"
-            : "bg-[var(--border-color)] text-t-muted"}`}>
-            {step.status}
-          </span>
-          <TesterBadge name={step.displayname} status={step.status} />
-        </div>
-      </div>
-
-<div className="grid grid-cols-[80px_1fr] border-b border-[var(--border-color)]">
-  <div className="px-3 py-2.5 border-r border-[var(--border-color)] bg-bg-card flex items-start">
-    <span className="text-[10px] font-semibold text-t-muted uppercase tracking-wider mt-0.5">
-      Action
-    </span>
-  </div>
-  <div className="px-3 py-2.5 min-w-0">
-    <p className="text-sm leading-snug break-words text-t-primary">{step.action}</p>
-
-    {!!step.actionImageUrls?.length && (
-      <div className="mt-2 flex flex-wrap gap-2">
-        {step.actionImageUrls.map((path, i) =>
-          signedImageUrls[path] ? (
-            <img
-              key={path}
-              src={signedImageUrls[path]}
-              alt={`Action ${i + 1}`}
-              className="w-[72px] h-[72px] rounded-lg object-cover border border-[var(--border-color)]"
-            />
-          ) : null
-        )}
-      </div>
-    )}
-  </div>
-</div>
-
-<div className="grid grid-cols-[80px_1fr] border-b border-[var(--border-color)]">
-  <div className="px-3 py-2.5 border-r border-[var(--border-color)] bg-bg-card flex items-start">
-    <span className="text-[10px] font-semibold text-t-muted uppercase tracking-wider mt-0.5">
-      Expected
-    </span>
-  </div>
-  <div className="px-3 py-2.5 min-w-0">
-    <p className="text-sm leading-snug break-words text-t-secondary">{step.expectedresult}</p>
-
-    {!!step.expectedImageUrls?.length && (
-      <div className="mt-2 flex flex-wrap gap-2">
-        {step.expectedImageUrls.map((path, i) =>
-          signedImageUrls[path] ? (
-            <img
-              key={path}
-              src={signedImageUrls[path]}
-              alt={`Expected ${i + 1}`}
-              className="w-[72px] h-[72px] rounded-lg object-cover border border-[var(--border-color)]"
-            />
-          ) : null
-        )}
-      </div>
-    )}
-  </div>
-</div>
-
-
-      <div className="grid grid-cols-[80px_1fr] border-b border-[var(--border-color)]">
-        <div className="px-3 py-2.5 border-r border-[var(--border-color)] bg-bg-card flex items-start">
-          <span className="text-[10px] font-semibold text-t-muted uppercase tracking-wider mt-0.5">Remarks</span>
-        </div>
-        <div className="px-3 py-2 min-w-0">
-          <textarea
-            value={remarks}
-            onChange={e => { setRemarks(e.target.value); onRemarksChange(e.target.value); }}
-            onFocus={onFocus}
-            onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); onUpdate(step.stepId, "pass", remarks); } }}
-            disabled={readonly}
-            placeholder="Remarks… (Enter to pass)"
-            rows={2}
-            className="input text-sm resize-none disabled:opacity-50 w-full"
-          />
-        </div>
-      </div>
-
-
-      {!readonly && (
-        <div className="flex items-center justify-between px-3 py-2 bg-bg-card">
-          <span className="text-[10px] font-semibold text-t-muted uppercase tracking-wider">Result</span>
-          <div className="flex items-center gap-2">
-            {step.status !== "pending" && (
-              <button onClick={e => { e.stopPropagation(); onUpdate(step.stepId, "pending", ""); }}
-                className="px-2.5 h-8 rounded-md text-xs font-semibold text-t-muted hover:text-t-primary
-                  bg-bg-card hover:bg-bg-surface border border-[var(--border-color)] transition-colors flex items-center justify-center">
-                Undo
-              </button>
+        {/* Header */}
+        <div className="flex items-center justify-between px-3 py-2 border-b border-[var(--border-color)] bg-bg-card">
+          <span className="text-xs font-mono text-t-muted tracking-wide">#{step.serialno}</span>
+          <div className="flex items-center gap-2 min-w-0">
+            {isFocused && (
+              <span className="flex items-center gap-1 text-[10px] text-sky-400 font-medium shrink-0">
+                <kbd className="px-1 py-0.5 rounded bg-sky-400/10 border border-sky-400/20 font-mono text-[9px]">Enter</kbd>
+                to pass
+              </span>
             )}
-            <button onClick={e => { e.stopPropagation(); onUpdate(step.stepId, "pass", remarks); }}
-              className={`w-8 h-8 rounded-md text-xs font-bold transition-colors flex items-center justify-center ${
-                step.status === "pass" ? "bg-green-500 text-white" : "bg-green-500/10 hover:bg-green-500/25 text-green-400 border border-green-500/20"
-              }`}><Check size={14} /></button>
-            <button onClick={e => { e.stopPropagation(); onUpdate(step.stepId, "fail", remarks); }}
-              className={`w-8 h-8 rounded-md text-xs font-bold transition-colors flex items-center justify-center ${
-                step.status === "fail" ? "bg-red-500 text-white" : "bg-red-500/10 hover:bg-red-500/25 text-red-400 border border-red-500/20"
-              }`}><X size={14} /></button>
+            <span className={`shrink-0 text-xs font-bold px-2 py-0.5 rounded-full capitalize ${
+              step.status === "pass" ? "bg-green-500/15 text-green-400"
+              : step.status === "fail" ? "bg-red-500/15 text-red-400"
+              : "bg-[var(--border-color)] text-t-muted"}`}>
+              {step.status}
+            </span>
+            <TesterBadge name={step.displayname} status={step.status} />
           </div>
         </div>
-      )}
-    </div>
+
+        {/* Action */}
+        <div className="grid grid-cols-[80px_1fr] border-b border-[var(--border-color)]">
+          <div className="px-3 py-2.5 border-r border-[var(--border-color)] bg-bg-card flex items-start">
+            <span className="text-[10px] font-semibold text-t-muted uppercase tracking-wider mt-0.5">Action</span>
+          </div>
+          <div className="px-3 py-2.5 min-w-0">
+            <p className="text-sm leading-snug break-words text-t-primary">{step.action}</p>
+            {!!step.actionImageUrls?.length && (
+              <div className="mt-2 flex flex-wrap gap-2">
+                {step.actionImageUrls.map((path, i) =>
+                  signedImageUrls[path] ? (
+                    <img
+                      key={path}
+                      src={signedImageUrls[path]}
+                      alt={`Action ${i + 1}`}
+                      onClick={e => openPreview(step.actionImageUrls, i, "Action", e)}
+                      className="w-[72px] h-[72px] rounded-lg object-cover border border-[var(--border-color)]
+                        cursor-zoom-in hover:opacity-90 hover:scale-105 transition-transform"
+                    />
+                  ) : null
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Expected */}
+        <div className="grid grid-cols-[80px_1fr] border-b border-[var(--border-color)]">
+          <div className="px-3 py-2.5 border-r border-[var(--border-color)] bg-bg-card flex items-start">
+            <span className="text-[10px] font-semibold text-t-muted uppercase tracking-wider mt-0.5">Expected</span>
+          </div>
+          <div className="px-3 py-2.5 min-w-0">
+            <p className="text-sm leading-snug break-words text-t-secondary">{step.expectedresult}</p>
+            {!!step.expectedImageUrls?.length && (
+              <div className="mt-2 flex flex-wrap gap-2">
+                {step.expectedImageUrls.map((path, i) =>
+                  signedImageUrls[path] ? (
+                    <img
+                      key={path}
+                      src={signedImageUrls[path]}
+                      alt={`Expected ${i + 1}`}
+                      onClick={e => openPreview(step.expectedImageUrls, i, "Expected", e)}
+                      className="w-[72px] h-[72px] rounded-lg object-cover border border-[var(--border-color)]
+                        cursor-zoom-in hover:opacity-90 hover:scale-105 transition-transform"
+                    />
+                  ) : null
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Remarks */}
+        <div className="grid grid-cols-[80px_1fr] border-b border-[var(--border-color)]">
+          <div className="px-3 py-2.5 border-r border-[var(--border-color)] bg-bg-card flex items-start">
+            <span className="text-[10px] font-semibold text-t-muted uppercase tracking-wider mt-0.5">Remarks</span>
+          </div>
+          <div className="px-3 py-2 min-w-0">
+            <textarea
+              value={remarks}
+              onChange={e => { setRemarks(e.target.value); onRemarksChange(e.target.value); }}
+              onFocus={onFocus}
+              onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); onUpdate(step.stepId, "pass", remarks); } }}
+              disabled={readonly}
+              placeholder="Remarks… (Enter to pass)"
+              rows={2}
+              className="input text-sm resize-none disabled:opacity-50 w-full"
+            />
+          </div>
+        </div>
+
+        {/* Result buttons */}
+        {!readonly && (
+          <div className="flex items-center justify-between px-3 py-2 bg-bg-card">
+            <span className="text-[10px] font-semibold text-t-muted uppercase tracking-wider">Result</span>
+            <div className="flex items-center gap-2">
+              {step.status !== "pending" && (
+                <button onClick={e => { e.stopPropagation(); onUpdate(step.stepId, "pending", ""); }}
+                  className="px-2.5 h-8 rounded-md text-xs font-semibold text-t-muted hover:text-t-primary
+                    bg-bg-card hover:bg-bg-surface border border-[var(--border-color)] transition-colors flex items-center justify-center">
+                  Undo
+                </button>
+              )}
+              <button onClick={e => { e.stopPropagation(); onUpdate(step.stepId, "pass", remarks); }}
+                className={`w-8 h-8 rounded-md text-xs font-bold transition-colors flex items-center justify-center ${
+                  step.status === "pass" ? "bg-green-500 text-white" : "bg-green-500/10 hover:bg-green-500/25 text-green-400 border border-green-500/20"
+                }`}><Check size={14} /></button>
+              <button onClick={e => { e.stopPropagation(); onUpdate(step.stepId, "fail", remarks); }}
+                className={`w-8 h-8 rounded-md text-xs font-bold transition-colors flex items-center justify-center ${
+                  step.status === "fail" ? "bg-red-500 text-white" : "bg-red-500/10 hover:bg-red-500/25 text-red-400 border border-red-500/20"
+                }`}><X size={14} /></button>
+            </div>
+          </div>
+        )}
+      </div>
+    </>
   );
 };
 
