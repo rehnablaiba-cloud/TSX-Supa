@@ -251,7 +251,6 @@ const TestExecution: React.FC<Props> = ({
   const [focusedStepId, setFocusedStepId]             = useState<string | null>(null);
   const [signedImageUrls, setSignedImageUrls]         = useState<SignedImageMap>({});
 
-  // ── Image preview state lives here — modal renders at root, never inside the table
   const [imagePreview, setImagePreview] = useState<ImagePreviewState | null>(null);
 
   const openImagePreview = useCallback((
@@ -297,11 +296,11 @@ const TestExecution: React.FC<Props> = ({
     remarksMap.current = {};
 
     Promise.all([
-    supabase
-  .from("module_tests")
-  .select("id, tests_name, test:tests(serialno, name)")
-  .eq("modulename", moduleName)
-  .order("id"),
+      supabase
+        .from("module_tests")
+        .select("id, tests_name, test:tests(serialno, name)")
+        .eq("module_name", moduleName)
+        .order("id"),
       supabase
         .from("step_results")
         .select(`
@@ -311,7 +310,7 @@ const TestExecution: React.FC<Props> = ({
           status,
           remarks,
           displayname,
-          step:teststeps!teststepsid(
+          step:teststeps(
             id,
             serialno,
             action,
@@ -322,7 +321,7 @@ const TestExecution: React.FC<Props> = ({
             testsname
           )
         `)
-        .eq("modulename", moduleName),
+        .eq("module_name", moduleName),
       supabase
         .from("test_locks")
         .select("module_test_id, user_id, locked_by_name")
@@ -331,7 +330,7 @@ const TestExecution: React.FC<Props> = ({
       setModuleTests((mtRes.data ?? []) as unknown as ModuleTestItem[]);
 
       const merged: ExecutionStep[] = ((srRes.data ?? []) as any[])
-        .filter(sr => sr.step?.testsname === testsName)  // matches actual DB column name
+        .filter(sr => sr.step?.testsname === testsName)
         .map((sr) => ({
           stepId:            sr.teststepsid,
           stepResultId:      sr.id,
@@ -665,7 +664,6 @@ const TestExecution: React.FC<Props> = ({
   return (
     <div className="flex flex-col" style={{ height: "100dvh" }}>
 
-      {/* ── Image preview modal — at root, completely outside the table ── */}
       {imagePreview && (
         <ImagePreviewModal
           images={imagePreview.urls}
@@ -824,7 +822,6 @@ const TestExecution: React.FC<Props> = ({
                       </td>
                     </tr>
                   ) : (
-                    // Plain <tr> — no wrappers, no fragments
                     <TableStepRow
                       key={step.stepId}
                       step={step}
@@ -861,7 +858,6 @@ const TestExecution: React.FC<Props> = ({
                       <div className="flex-1 h-px bg-[var(--border-color)]" />
                     </div>
                   ) : (
-                    // Plain <div> — no wrappers, no fragments
                     <MobileStepCard
                       key={step.stepId}
                       step={step}
@@ -920,8 +916,6 @@ const TesterBadge: React.FC<{ name: string; status: "pass" | "fail" | "pending" 
 
 
 // ── Desktop Table Row ─────────────────────────────────────────
-// Returns a single bare <tr>. No fragment, no portal, no wrapper.
-// The parent (TestExecution) owns the preview modal.
 const TableStepRow: React.FC<{
   step:            ExecutionStep;
   signedImageUrls: Record<string, string>;
@@ -1051,8 +1045,6 @@ const TableStepRow: React.FC<{
 
 
 // ── Mobile Step Card ──────────────────────────────────────────
-// Returns a single bare <div>. No fragment, no portal, no wrapper.
-// The parent (TestExecution) owns the preview modal.
 const MobileStepCard: React.FC<{
   step:            ExecutionStep;
   signedImageUrls: Record<string, string>;
