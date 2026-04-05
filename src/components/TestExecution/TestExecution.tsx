@@ -566,7 +566,7 @@ const getSignedUrlsForPaths = useCallback(async (paths: string[]) => {
   const filtered = useMemo(() => steps.filter(s => {
     if (s.isdivider) return true;
     if (filter !== "all" && s.status !== filter) return false;
-    if (search && !`${s.action} ${s.expected_result} ${s.remarks}`
+    if (search && !`${s.action} ${s.expectedresult} ${s.remarks}`
       .toLowerCase().includes(search.toLowerCase())) return false;
     return true;
   }), [steps, filter, search]);
@@ -591,7 +591,7 @@ const getSignedUrlsForPaths = useCallback(async (paths: string[]) => {
             test:      currentTest?.name ?? "",
             serial:    s.serialno,
             action:    s.action,
-            expected:  s.expected_result,
+            expected:  s.expectedresult,
             remarks:   s.remarks || "",
             status:    s.status,
           }
