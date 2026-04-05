@@ -303,26 +303,29 @@ const TestExecution: React.FC<Props> = ({
         .eq("module_name", moduleName)
         .order("id"),
       supabase
-        .from("stepresults")
-        .select(`
-          id,
-          modulename,
-          teststepsid,
-          status,
-          remarks,
-          displayname,
-          step:teststeps!teststepsid(
-            id,
-            serialno,
-            action,
-            expectedresult,
-            action_image_urls,
-            expected_image_urls,
-            isdivider,
-            testsname
-          )
-        `)
-        .eq("module_name", moduleName),
+        // was: supabase.from("stepresults") ... .eq("module_name", moduleName)
+supabase
+  .from("step_results")           // ← match actual table name
+  .select(`
+    id,
+    modulename,
+    teststepsid,
+    status,
+    remarks,
+    displayname,
+    step:teststeps!teststepsid(
+      id,
+      serialno,
+      action,
+      expectedresult,
+      action_image_urls,
+      expected_image_urls,
+      isdivider,
+      testsname
+    )
+  `)
+  .eq("modulename", moduleName)   // ← match the column name from select
+  
       supabase
         .from("test_locks")
         .select("module_test_id, user_id, locked_by_name")
