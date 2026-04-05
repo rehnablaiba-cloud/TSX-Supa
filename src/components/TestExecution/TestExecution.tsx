@@ -35,9 +35,9 @@ interface ExecutionStep {
 }
 
 interface ModuleTestItem {
-  id:          string;
-  tests_name:  string;
-  test: { serialno: number; name: string };
+  id:         string;
+  tests_name: string;
+  test:       { serialno: number; name: string } | null;
 }
 
 type SignedImageMap = Record<string, string>;
@@ -250,8 +250,7 @@ const TestExecution: React.FC<Props> = ({
   const [scrollTarget, setScrollTarget]               = useState<string | null>(null);
   const [focusedStepId, setFocusedStepId]             = useState<string | null>(null);
   const [signedImageUrls, setSignedImageUrls]         = useState<SignedImageMap>({});
-
-  const [imagePreview, setImagePreview] = useState<ImagePreviewState | null>(null);
+  const [imagePreview, setImagePreview]               = useState<ImagePreviewState | null>(null);
 
   const openImagePreview = useCallback((
     paths: string[], clickedIdx: number, label: string,
@@ -295,56 +294,81 @@ const TestExecution: React.FC<Props> = ({
     setFocusedStepId(null);
     remarksMap.current = {};
 
-    Promise.all([
-      supabase
-        .from("module_tests")
-        .select("id, tests_name, test:tests(serialno, name)")
-        .eq("module_name", moduleName)
-        .order("id"),
-      supabase
-        .from("step_results")
-        .select(`
-          id,
-          modulename,
-          teststepsid,
-          status,
-          remarks,
-          displayname,
-          step:teststeps(
-            id,
-            serialno,
-            action,
-            expectedresult,
-            action_image_urls,
-            expected_image_urls,
-            isdivider,
-            testsname
-          )
-        `)
-        .eq("module_name", moduleName),
-      supabase
-        .from("test_locks")
-        .select("module_test_id, user_id, locked_by_name")
-        .eq("module_test_id", currentMtId),
-    ]).then(([mtRes, srRes, lockRes]) => {
-      setModuleTests((mtRes.data ?? []) as unknown as ModuleTestItem[]);
+    (async () => {
+      // ── 1. Fetch module_tests, step_results (flat — no joins), and lock ──
+      const [mtRes, srRes, lockRes] = await Promise.all([
+        supabase
+          .from("module_tests")
+          .select("id, tests_name")
+          .eq("module_name", moduleName)
+          .order("id"),
+        supabase
+          .from("step_results")
+          .select("id, modulename, teststepsid, status, remarks, displayname")
+          .eq("modulename", moduleName),
+        supabase
+          .from("test_locks")
+          .select("module_test_id, user_id, locked_by_name")
+          .eq("module_test_id", currentMtId),
+      ]);
 
-      const merged: ExecutionStep[] = ((srRes.data ?? []) as any[])
-        .filter(sr => sr.step?.testsname === testsName)
-        .map((sr) => ({
-          stepId:            sr.teststepsid,
-          stepResultId:      sr.id,
-          moduleTestId:      currentMtId,
-          serialno:          sr.step.serialno,
-          action:            sr.step.action,
-          expectedresult:    sr.step.expectedresult,
-          actionImageUrls:   sr.step.action_image_urls   || [],
-          expectedImageUrls: sr.step.expected_image_urls || [],
-          isdivider:         sr.step.isdivider,
-          status:            sr.status,
-          remarks:           sr.remarks,
-          displayname:       sr.displayname ?? "",
-        }))
+      const rawMts = (mtRes.data ?? []) as { id: string; tests_name: string }[];
+      const rawSrs = (srRes.data ?? []) as {
+        id: string; modulename: string; teststepsid: string;
+        status: string; remarks: string; displayname: string;
+      }[];
+
+      // ── 2. Fetch tests by name ──
+      const testNames = Array.from(new Set(rawMts.map(m => m.tests_name)));
+      const testsRes = testNames.length
+        ? await supabase.from("tests").select("name, serialno").in("name", testNames)
+        : { data: [] };
+      const testsMap = Object.fromEntries(
+        ((testsRes.data ?? []) as { name: string; serialno: number }[]).map(t => [t.name, t])
+      );
+
+      // ── 3. Build moduleTests ──
+      setModuleTests(rawMts.map(m => ({
+        id:         m.id,
+        tests_name: m.tests_name,
+        test:       testsMap[m.tests_name] ?? null,
+      })));
+
+      // ── 4. Fetch teststeps by id ──
+      const stepIds = rawSrs.map(sr => sr.teststepsid);
+      const stepsRes = stepIds.length
+        ? await supabase
+            .from("teststeps")
+            .select("id, serialno, action, expectedresult, action_image_urls, expected_image_urls, isdivider, testsname")
+            .in("id", stepIds)
+        : { data: [] };
+      const stepsMap = Object.fromEntries(
+        ((stepsRes.data ?? []) as any[]).map(s => [s.id, s])
+      );
+
+      // ── 5. Merge, filter to this test, sort ──
+      const merged: ExecutionStep[] = rawSrs
+        .filter(sr => {
+          const step = stepsMap[sr.teststepsid];
+          return step && step.testsname === testsName;
+        })
+        .map(sr => {
+          const step = stepsMap[sr.teststepsid];
+          return {
+            stepId:            sr.teststepsid,
+            stepResultId:      sr.id,
+            moduleTestId:      currentMtId,
+            serialno:          step.serialno,
+            action:            step.action,
+            expectedresult:    step.expectedresult,
+            actionImageUrls:   step.action_image_urls   || [],
+            expectedImageUrls: step.expected_image_urls || [],
+            isdivider:         step.isdivider,
+            status:            sr.status as "pass" | "fail" | "pending",
+            remarks:           sr.remarks,
+            displayname:       sr.displayname ?? "",
+          };
+        })
         .sort((a, b) => {
           if (a.serialno !== b.serialno) return a.serialno - b.serialno;
           return (a.isdivider ? 0 : 1) - (b.isdivider ? 0 : 1);
@@ -354,7 +378,7 @@ const TestExecution: React.FC<Props> = ({
       setLock(lockRes.data?.[0] ?? null);
       setLoading(false);
       setLockLoading(false);
-    });
+    })();
 
     const lockChannel = supabase.channel(`lock:${currentMtId}`)
       .on("postgres_changes", {
