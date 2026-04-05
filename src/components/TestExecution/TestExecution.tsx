@@ -339,7 +339,7 @@ const TestExecution: React.FC<Props> = ({
       const stepIds = rawSrs.map(sr => sr.teststepsid);
       const stepsRes = stepIds.length
   ? await supabase.rpc("get_test_steps_by_ids", { p_ids: stepIds })
-  : { data: [] };dcf
+  : { data: [] };
       const stepsMap = Object.fromEntries(
         ((stepsRes.data ?? []) as any[]).map(s => [s.id, s])
       );
