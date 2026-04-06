@@ -126,7 +126,7 @@ const AppInner: React.FC = () => {
 
   // ── PWA install prompt ───────────────────────────────────
   const [installPrompt, setInstallPrompt] = useState<any>(null);
-  const [showInstall, setShowInstall]     = useState(false);
+  const [showInstall, setShowInstall]     = useState(true);
 
   useEffect(() => {
     const handler = (e: any) => {
