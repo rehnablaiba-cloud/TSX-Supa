@@ -126,9 +126,15 @@ const AppInner: React.FC = () => {
 
   // ── PWA install prompt ───────────────────────────────────
   const [installPrompt, setInstallPrompt] = useState<any>(null);
-  const [showInstall, setShowInstall]     = useState(true);
+  const [showInstall, setShowInstall]     = useState(false);
 
   useEffect(() => {
+    // Check if already captured before component mounted (set in index.tsx)
+    if ((window as any).__installPrompt) {
+      setInstallPrompt((window as any).__installPrompt);
+      setShowInstall(true);
+    }
+
     const handler = (e: any) => {
       e.preventDefault();
       setInstallPrompt(e);
