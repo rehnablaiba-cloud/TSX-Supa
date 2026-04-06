@@ -124,6 +124,28 @@ const AppInner: React.FC = () => {
   const [selectedModuleName, setSelectedModuleName]       = useState<string | null>(null);
   const [selectedTestId, setSelectedTestId]               = useState<string | null>(null);
 
+  // ── PWA install prompt ───────────────────────────────────
+  const [installPrompt, setInstallPrompt] = useState<any>(null);
+  const [showInstall, setShowInstall]     = useState(false);
+
+  useEffect(() => {
+    const handler = (e: any) => {
+      e.preventDefault();
+      setInstallPrompt(e);
+      setShowInstall(true);
+    };
+    window.addEventListener("beforeinstallprompt", handler);
+    return () => window.removeEventListener("beforeinstallprompt", handler);
+  }, []);
+
+  const handleInstall = async () => {
+    if (!installPrompt) return;
+    installPrompt.prompt();
+    const { outcome } = await installPrompt.userChoice;
+    if (outcome === "accepted") setShowInstall(false);
+  };
+  // ─────────────────────────────────────────────────────────
+
   const isAdmin = user?.role === "admin";
 
   useEffect(() => {
@@ -162,7 +184,6 @@ const AppInner: React.FC = () => {
 
   if (!isAuthenticated) return <LoginPage />;
 
-  // Module PK is now name (text), not UUID
   const selectedModule = modules.find(m => m.name === selectedModuleName);
 
   const navigate = (p: string, moduleName?: string) => {
@@ -207,6 +228,21 @@ const AppInner: React.FC = () => {
         <Sidebar activePage={page} onNavigate={navigate} modules={modules} />
         <main className="flex-1 flex flex-col overflow-hidden min-w-0">{renderPage()}</main>
         <MobileNav activePage={page} onNavigate={p => navigate(p)} />
+
+        {/* PWA install button — only shown when browser fires beforeinstallprompt */}
+        {showInstall && (
+          <button
+            onClick={handleInstall}
+            title="Install TestPro as an app"
+            className="fixed bottom-20 right-4 z-50 flex items-center gap-1.5
+              px-2.5 py-1.5 rounded-lg text-[11px] font-semibold
+              bg-bg-surface border border-[var(--border-color)]
+              text-t-secondary hover:text-t-primary hover:border-[var(--color-brand)]
+              shadow-lg transition-colors"
+          >
+            📲 Install
+          </button>
+        )}
       </div>
     </MuiActivator>
   );

@@ -1,15 +1,23 @@
 import React from "react";
-interface Props { title: string; subtitle?: string; actions?: React.ReactNode; onBack?: () => void; }
+
+interface Props {
+  title: string;
+  subtitle?: string;
+  actions?: React.ReactNode;
+  onBack?: () => void;
+}
 
 const Topbar: React.FC<Props> = ({ title, subtitle, actions, onBack }) => (
   <header className="sticky top-0 z-30 flex items-center gap-4 px-6 py-4
     bg-bg-nav backdrop-blur
     border-b border-[var(--border-color)]">
     {onBack && (
-      <button onClick={onBack}
+      <button
+        onClick={onBack}
         className="w-9 h-9 flex items-center justify-center rounded-xl
           text-t-secondary
-          hover:bg-bg-card hover:text-t-primary transition-colors">
+          hover:bg-bg-card hover:text-t-primary transition-colors"
+      >
         ←
       </button>
     )}
@@ -20,4 +28,5 @@ const Topbar: React.FC<Props> = ({ title, subtitle, actions, onBack }) => (
     {actions && <div className="flex items-center gap-2">{actions}</div>}
   </header>
 );
+
 export default Topbar;
