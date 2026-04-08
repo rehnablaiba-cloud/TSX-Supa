@@ -3,8 +3,8 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import { supabase } from "../supabase";
 
-const IDLE_MS    = 15_000;       // ← 15s for testing (change back to 60_000)
-const WARNING_MS = 30_000;       // ← 30s for testing (change back to 5 * 60_000)
+const IDLE_MS    = 60_000;       // ← 15s for testing (change back to 60_000)
+const WARNING_MS = 5*60_000;       // ← 30s for testing (change back to 5 * 60_000)
 
 export function useSessionTimeout(
   userId: string | undefined,
