@@ -39,10 +39,8 @@ const SessionTimeoutModal: React.FC<Props> = ({ secondsLeft, onStay, onSignOut }
           </div>
 
           {/* Countdown */}
-          <div
-            className={`text-5xl font-mono font-bold tabular-nums transition-colors
-              ${urgent ? "text-red-400" : "text-amber-400"}`}
-          >
+          <div className={`text-5xl font-mono font-bold tabular-nums transition-colors
+            ${urgent ? "text-red-400" : "text-amber-400"}`}>
             {display}
           </div>
 
@@ -53,7 +51,7 @@ const SessionTimeoutModal: React.FC<Props> = ({ secondsLeft, onStay, onSignOut }
           )}
         </div>
 
-        {/* Progress bar */}
+        {/* Progress bar — drains from full to empty */}
         <div className="w-full h-1.5 rounded-full bg-bg-card overflow-hidden">
           <div
             className={`h-full rounded-full transition-all duration-1000

@@ -1,8 +1,8 @@
-// App.tsx
 import React, { useState, useEffect, useCallback } from "react";
 import { useAuth } from "./context/AuthContext";
 import { ThemeProvider, useTheme } from "./context/ThemeContext";
 import LoginPage from "./components/Auth/LoginPage";
+import SessionManager from "./components/Auth/SessionManager"; // ← NEW
 import Sidebar from "./components/Layout/Sidebar";
 import MobileNav from "./components/Layout/MobileNav";
 import Dashboard from "./components/Dashboard/Dashboard";
@@ -17,9 +17,9 @@ import { Module } from "./types";
 import { tokens, palette, TokenKey } from "./theme";
 
 type Page = "dashboard" | "module" | "execution" | "report" | "users" | "auditlog";
-
 type MuiProviderComponent = React.ComponentType<{ theme: unknown; children: React.ReactNode }>;
 
+// MuiActivator — unchanged, copy as-is from your existing file
 const MuiActivator: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { theme, muiConfig, customTokens } = useTheme();
   const [Provider, setProvider] = useState<MuiProviderComponent | null>(null);
@@ -29,20 +29,14 @@ const MuiActivator: React.FC<{ children: React.ReactNode }> = ({ children }) => 
 
   const buildMuiTheme = useCallback(async () => {
     if (!muiConfig.active) {
-      setProvider(null);
-      setMuiTheme(null);
-      setMuiError(null);
-      return;
+      setProvider(null); setMuiTheme(null); setMuiError(null); return;
     }
-
     setLoading(true);
     try {
       const { ThemeProvider: TP, createTheme } = await import("@mui/material/styles");
-
       const base = tokens[theme];
       const over = customTokens[theme];
       const tv = (key: TokenKey): string => (over[key] ?? base[key]) || "";
-
       const muiT = createTheme({
         palette: {
           mode: theme,
@@ -56,36 +50,25 @@ const MuiActivator: React.FC<{ children: React.ReactNode }> = ({ children }) => 
         },
         shape: { borderRadius: muiConfig.borderRadius },
         typography: {
-          fontFamily:        muiConfig.fontFamily,
-          fontSize:          muiConfig.fontSize,
+          fontFamily: muiConfig.fontFamily, fontSize: muiConfig.fontSize,
           fontWeightRegular: muiConfig.fontWeightRegular,
           fontWeightMedium:  muiConfig.fontWeightMedium,
           fontWeightBold:    muiConfig.fontWeightBold,
-          button: {
-            textTransform: muiConfig.buttonTextTransform as any,
-            fontWeight:    muiConfig.fontWeightMedium,
-          },
+          button: { textTransform: muiConfig.buttonTextTransform as any, fontWeight: muiConfig.fontWeightMedium },
         },
         components: {
           MuiButton:    { styleOverrides: { root: { borderRadius: muiConfig.buttonBorderRadius } } },
-          MuiTextField: { styleOverrides: { root: {
-            "& .MuiOutlinedInput-root": { borderRadius: muiConfig.textFieldBorderRadius },
-          }}},
-          MuiPaper: { styleOverrides: { root: {
-            backgroundImage: muiConfig.disablePaperBgImage ? "none" : undefined,
-          }}},
+          MuiTextField: { styleOverrides: { root: { "& .MuiOutlinedInput-root": { borderRadius: muiConfig.textFieldBorderRadius } } } },
+          MuiPaper:     { styleOverrides: { root: { backgroundImage: muiConfig.disablePaperBgImage ? "none" : undefined } } },
         },
       });
-
       setMuiTheme(muiT);
       setProvider(() => TP as unknown as MuiProviderComponent);
       setMuiError(null);
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       console.warn("MUI ThemeProvider error:", msg);
-      setMuiError(msg);
-      setProvider(null);
-      setMuiTheme(null);
+      setMuiError(msg); setProvider(null); setMuiTheme(null);
     } finally {
       setLoading(false);
     }
@@ -101,15 +84,13 @@ const MuiActivator: React.FC<{ children: React.ReactNode }> = ({ children }) => 
       <>
         <div className="fixed top-0 left-0 right-0 z-[9999] bg-pend/90 text-white text-xs py-1.5 px-4 text-center">
           {isMissing
-            ? <>⚠️ <code>@mui/material</code> not installed. Run: <code className="font-mono bg-black/20 px-1 rounded">npm i @mui/material @emotion/react @emotion/styled</code></>
-            : <>⚠️ MUI theme error — check console. App continues with Tailwind.</>
-          }
+            ? <><code>@mui/material</code> not installed.</>
+            : <>MUI theme error — check console.</>}
         </div>
         {children}
       </>
     );
   }
-
   if (muiConfig.active && loading) return <>{children}</>;
   if (Provider && muiTheme) return <Provider theme={muiTheme}>{children}</Provider>;
   return <>{children}</>;
@@ -124,22 +105,15 @@ const AppInner: React.FC = () => {
   const [selectedModuleName, setSelectedModuleName]       = useState<string | null>(null);
   const [selectedTestId, setSelectedTestId]               = useState<string | null>(null);
 
-  // ── PWA install prompt ───────────────────────────────────
   const [installPrompt, setInstallPrompt] = useState<any>(null);
   const [showInstall, setShowInstall]     = useState(false);
 
   useEffect(() => {
-    // Check if already captured before component mounted (set in index.tsx)
     if ((window as any).__installPrompt) {
       setInstallPrompt((window as any).__installPrompt);
       setShowInstall(true);
     }
-
-    const handler = (e: any) => {
-      e.preventDefault();
-      setInstallPrompt(e);
-      setShowInstall(true);
-    };
+    const handler = (e: any) => { e.preventDefault(); setInstallPrompt(e); setShowInstall(true); };
     window.addEventListener("beforeinstallprompt", handler);
     return () => window.removeEventListener("beforeinstallprompt", handler);
   }, []);
@@ -150,33 +124,21 @@ const AppInner: React.FC = () => {
     const { outcome } = await installPrompt.userChoice;
     if (outcome === "accepted") setShowInstall(false);
   };
-  // ─────────────────────────────────────────────────────────
 
   const isAdmin = user?.role === "admin";
 
   useEffect(() => {
     if (!isAuthenticated) return;
-
     const fetchModules = () =>
-      supabase
-        .from("modules")
-        .select("*")
-        .then(({ data, error }) => {
-          if (!error && data) setModules(data as Module[]);
-          else if (error) console.error("Error fetching modules:", error.message);
-        });
-
+      supabase.from("modules").select("*").then(({ data, error }) => {
+        if (!error && data) setModules(data as Module[]);
+        else if (error) console.error("Error fetching modules:", error.message);
+      });
     fetchModules();
-
     const channel = supabase
       .channel("modules_realtime")
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "modules" },
-        () => fetchModules()
-      )
+      .on("postgres_changes", { event: "*", schema: "public", table: "modules" }, () => fetchModules())
       .subscribe();
-
     return () => { supabase.removeChannel(channel); };
   }, [isAuthenticated]);
 
@@ -199,9 +161,7 @@ const AppInner: React.FC = () => {
 
   const renderPage = () => {
     switch (page) {
-      case "dashboard":
-        return <Dashboard onNavigate={navigate} />;
-
+      case "dashboard": return <Dashboard onNavigate={navigate} />;
       case "module":
         return selectedModule
           ? <ModuleDashboard
@@ -210,7 +170,6 @@ const AppInner: React.FC = () => {
               onExecute={mtId => { setSelectedTestId(mtId); setPage("execution"); }}
             />
           : <Dashboard onNavigate={navigate} />;
-
       case "execution":
         return selectedModule && selectedTestId
           ? <TestExecution
@@ -220,7 +179,6 @@ const AppInner: React.FC = () => {
               onBack={() => setPage("module")}
             />
           : <Dashboard onNavigate={navigate} />;
-
       case "report":   return <TestReport />;
       case "users":    return <UsersPanel />;
       case "auditlog": return <AuditLog />;
@@ -230,26 +188,35 @@ const AppInner: React.FC = () => {
 
   return (
     <MuiActivator>
-      <div className="flex min-h-screen bg-gray-950">
-        <Sidebar activePage={page} onNavigate={navigate} modules={modules} />
-        <main className="flex-1 flex flex-col overflow-hidden min-w-0">{renderPage()}</main>
-        <MobileNav activePage={page} onNavigate={p => navigate(p)} />
+      {/*
+        SessionManager wraps everything authenticated.
+        - Starts idle detection immediately on login
+        - Shows SessionTimeoutModal after 1 min idle
+        - Auto-signs-out + releases test_locks after 5 min warning
+      */}
+      <SessionManager>
+        <div className="flex min-h-screen bg-gray-950">
+          <Sidebar activePage={page} onNavigate={navigate} modules={modules} />
+          <main className="flex-1 flex flex-col overflow-hidden min-w-0">
+            {renderPage()}
+          </main>
+          <MobileNav activePage={page} onNavigate={p => navigate(p)} />
 
-        {/* PWA install button — only shown when browser fires beforeinstallprompt */}
-        {showInstall && (
-          <button
-            onClick={handleInstall}
-            title="Install TestPro as an app"
-            className="fixed bottom-20 right-4 z-50 flex items-center gap-1.5
-              px-2.5 py-1.5 rounded-lg text-[11px] font-semibold
-              bg-bg-surface border border-[var(--border-color)]
-              text-t-secondary hover:text-t-primary hover:border-[var(--color-brand)]
-              shadow-lg transition-colors"
-          >
-            📲 Install
-          </button>
-        )}
-      </div>
+          {showInstall && (
+            <button
+              onClick={handleInstall}
+              title="Install TestPro as an app"
+              className="fixed bottom-20 right-4 z-50 flex items-center gap-1.5
+                px-2.5 py-1.5 rounded-lg text-[11px] font-semibold
+                bg-bg-surface border border-[var(--border-color)]
+                text-t-secondary hover:text-t-primary hover:border-[var(--color-brand)]
+                shadow-lg transition-colors"
+            >
+              📲 Install
+            </button>
+          )}
+        </div>
+      </SessionManager>
     </MuiActivator>
   );
 };

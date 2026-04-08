@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import { supabase } from "../supabase";
 
-const IDLE_MS    = 60_000;        // 1 min of no activity → show warning
-const WARNING_MS = 5 * 60_000;   // 5 min countdown before auto-logout
+const IDLE_MS    = 15_000;       
+const WARNING_MS = 5 * 60_000;  // 5 min countdown before auto-logout
 
 export function useSessionTimeout(
   userId: string | undefined,
@@ -11,14 +11,14 @@ export function useSessionTimeout(
   const [warning,     setWarning]     = useState(false);
   const [secondsLeft, setSecondsLeft] = useState(Math.floor(WARNING_MS / 1000));
 
-  const idleTimer = useRef<ReturnType<typeof setTimeout>  | null>(null);
-  const countdown = useRef<ReturnType<typeof setInterval> | null>(null);
-  const inWarning = useRef(false);
-  const secLeft   = useRef(Math.floor(WARNING_MS / 1000));
+  const idleTimer  = useRef<ReturnType<typeof setTimeout>  | null>(null);
+  const countdown  = useRef<ReturnType<typeof setInterval> | null>(null);
+  const inWarning  = useRef(false);
+  const secLeft    = useRef(Math.floor(WARNING_MS / 1000));
 
-  // Keep latest callbacks in refs to avoid stale closures in event listeners
-  const userIdRef    = useRef(userId);
-  const onSignOutRef = useRef(onSignOut);
+  // Always-fresh refs — avoids stale closures in event listeners
+  const userIdRef       = useRef(userId);
+  const onSignOutRef    = useRef(onSignOut);
   useEffect(() => { userIdRef.current    = userId;    }, [userId]);
   useEffect(() => { onSignOutRef.current = onSignOut; }, [onSignOut]);
 
@@ -56,10 +56,14 @@ export function useSessionTimeout(
 
   // ── Reset idle timer on activity (no-op during warning) ────────────
   const resetIdleTimer = useCallback(() => {
-    if (inWarning.current) return;   // activity won't dismiss the warning
+    if (inWarning.current) return;
     clearTimers();
     idleTimer.current = setTimeout(startWarning, IDLE_MS);
   }, [clearTimers, startWarning]);
+
+  // Keep a ref so the event listener always calls the latest version
+  const resetIdleTimerRef = useRef(resetIdleTimer);
+  useEffect(() => { resetIdleTimerRef.current = resetIdleTimer; }, [resetIdleTimer]);
 
   // ── "Stay logged in" — dismiss warning, restart idle timer ─────────
   const stayLoggedIn = useCallback(() => {
@@ -82,19 +86,30 @@ export function useSessionTimeout(
       return;
     }
 
-    const EVENTS = ["mousemove", "mousedown", "keydown", "touchstart", "scroll"] as const;
-    const onActivity = () => resetIdleTimer();
-    EVENTS.forEach(e => document.addEventListener(e, onActivity, { passive: true }));
+    // Use ref so the listener is never stale — no eslint-disable needed
+    const onActivity = () => resetIdleTimerRef.current();
+
+    const POINTER_EVENTS = [
+      "mousemove", "mousedown", "keydown", "touchstart",
+    ] as const;
+
+    POINTER_EVENTS.forEach(e =>
+      document.addEventListener(e, onActivity, { passive: true })
+    );
+
+    // scroll via window + capture:true catches overflow-container scrolls
+    // that do NOT bubble up to document
+    window.addEventListener("scroll", onActivity, { passive: true, capture: true });
 
     // Kick off the initial idle timer
     idleTimer.current = setTimeout(startWarning, IDLE_MS);
 
     return () => {
-      EVENTS.forEach(e => document.removeEventListener(e, onActivity));
+      POINTER_EVENTS.forEach(e => document.removeEventListener(e, onActivity));
+      window.removeEventListener("scroll", onActivity, { capture: true });
       clearTimers();
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [userId]);
+  }, [userId, clearTimers, startWarning]); // no suppressions needed now
 
   return { warning, secondsLeft, stayLoggedIn, releaseAndSignOut };
 }
