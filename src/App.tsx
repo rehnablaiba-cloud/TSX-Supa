@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from "react";
 import { useAuth } from "./context/AuthContext";
 import { ThemeProvider, useTheme } from "./context/ThemeContext";
 import LoginPage from "./components/Auth/LoginPage";
-import SessionManager from "./components/Auth/SessionManager"; // ← NEW
+import SessionManager from "./components/UI/SessionManager"; // ← NEW
 import Sidebar from "./components/Layout/Sidebar";
 import MobileNav from "./components/Layout/MobileNav";
 import Dashboard from "./components/Dashboard/Dashboard";
