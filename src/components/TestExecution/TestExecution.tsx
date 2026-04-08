@@ -82,6 +82,44 @@ const DIVIDER_LEVELS: Record<number, {
 const getDividerLevel = (expectedresult: string): number =>
   parseInt(expectedresult, 10) || 1;
 
+// ── Mobile Divider Config ─────────────────────────────────────
+const MOBILE_DIVIDER_LEVELS: Record<number, {
+  bg: string; border: string; textClass: string; dotClass: string;
+  dotSize: number; fontSize: string; ml: string; py: string;
+}> = {
+  1: {
+    bg:        "bg-teal-500/10",
+    border:    "border-l-[3px] border-teal-500",
+    textClass: "text-teal-400",
+    dotClass:  "bg-teal-500",
+    dotSize:   7,
+    fontSize:  "text-[14px] font-bold tracking-widest uppercase",
+    ml:        "ml-0",
+    py:        "py-2.5",
+  },
+  2: {
+    bg:        "bg-amber-500/10",
+    border:    "border-l-[2px] border-amber-400",
+    textClass: "text-amber-400",
+    dotClass:  "bg-amber-400",
+    dotSize:   5,
+    fontSize:  "text-[12px] font-semibold tracking-wide uppercase",
+    ml:        "ml-4",
+    py:        "py-2",
+  },
+  3: {
+    bg:        "bg-sky-500/10",
+    border:    "border-l-[2px] border-sky-400",
+    textClass: "text-sky-400",
+    dotClass:  "bg-sky-400",
+    dotSize:   4,
+    fontSize:  "text-[11px] font-medium tracking-wide",
+    ml:        "ml-8",
+    py:        "py-1.5",
+  },
+};
+
+
 // ── Undo All Confirmation Modal ────────────────────────────────
 const UndoAllModal: React.FC<{
   doneCount:  number;
@@ -897,23 +935,17 @@ const TestExecution: React.FC<Props> = ({
                 {filtered.map(step =>
                   step.isdivider ? (() => {
                     const level = getDividerLevel(step.expectedresult);
-                    const s     = DIVIDER_LEVELS[level] ?? DIVIDER_LEVELS[1];
+                    const ms    = MOBILE_DIVIDER_LEVELS[level] ?? MOBILE_DIVIDER_LEVELS[1];
                     return (
                       <div
                         key={step.stepId}
-                        className={`flex items-center gap-2 py-1.5 rounded-lg ${s.bg} ${s.border} ${s.indent}`}
+                        className={`flex items-center gap-2 ${ms.py} pl-3 pr-3 rounded-r-lg ${ms.bg} ${ms.border} ${ms.ml}`}
                       >
                         <span
-                          className={`rounded-full shrink-0 ${s.dot}`}
-                          style={{
-                            width:  level === 1 ? 6 : 5,
-                            height: level === 1 ? 6 : 5,
-                          }}
+                          className={`rounded-full shrink-0 ${ms.dotClass}`}
+                          style={{ width: ms.dotSize, height: ms.dotSize }}
                         />
-                        <span className={`${s.size} ${s.text} flex-1`}>{step.action}</span>
-                        {level > 1 && (
-                          <div className={`flex-1 h-px opacity-20 ${s.text} bg-current`} />
-                        )}
+                        <span className={`${ms.fontSize} ${ms.textClass}`}>{step.action}</span>
                       </div>
                     );
                   })() : (
