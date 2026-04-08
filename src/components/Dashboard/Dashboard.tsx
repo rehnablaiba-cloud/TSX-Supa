@@ -222,42 +222,59 @@ const Dashboard: React.FC<Props> = ({ onNavigate }) => {
     return () => { mountedRef.current = false; };
   }, []);
 
-  // ── Fetch locks held by the current user ────────────────────────────────────
+  // ── Fetch locks held by the current user (flat queries — no PostgREST join) ──
   const fetchActiveLocks = useCallback(async () => {
-    // Use the auth UUID directly — matches testlocks.user_id
+    // 1. Auth session → email (locked_by_name stores email e.g. "rehnab@testpro.com")
     const { data: sessionData } = await supabase.auth.getSession();
-    const authUserId = sessionData?.session?.user?.id;
-    if (!authUserId) return;
+    const userEmail = sessionData?.session?.user?.email;
+    console.debug("[Locks] userEmail:", userEmail);
+    if (!userEmail) return;
 
-    // Query testlocks joined to module_tests + tests
-    // Schema: testlocks { id, module_test_id, user_id (uuid), locked_by_name (text), locked_at }
+    // 2. Raw lock rows for this user — filter by locked_by_name (email)
     const { data: locks, error: lockErr } = await supabase
       .from("testlocks")
-      .select(`
-        module_test_id,
-        locked_by_name,
-        locked_at,
-        module_tests:module_test_id (
-          module_name,
-          test:test_id (
-            name
-          )
-        )
-      `)
-      .eq("user_id", authUserId);
+      .select("id, module_test_id, locked_by_name, locked_at")
+      .eq("locked_by_name", userEmail);
 
+    console.debug("[Locks] raw locks:", locks, "err:", lockErr);
     if (!mountedRef.current) return;
-    if (lockErr) { console.error("Lock fetch error:", lockErr.message); return; }
+    if (lockErr || !locks || locks.length === 0) return;
 
-    const mapped: ActiveLock[] = (locks ?? [])
-      .filter((l: any) => l.module_tests)
-      .map((l: any) => ({
+    // 3. Resolve module_tests rows
+    const moduleTestIds = locks.map((l: any) => l.module_test_id);
+    const { data: moduleTests, error: mtErr } = await supabase
+      .from("module_tests")
+      .select("id, module_name, test_id")
+      .in("id", moduleTestIds);
+
+    console.debug("[Locks] moduleTests:", moduleTests, "err:", mtErr);
+    if (!mountedRef.current) return;
+    if (mtErr || !moduleTests) return;
+
+    // 4. Resolve test names
+    const testIds = [...new Set(moduleTests.map((mt: any) => mt.test_id))];
+    const { data: tests, error: tErr } = await supabase
+      .from("tests")
+      .select("id, name")
+      .in("id", testIds);
+
+    console.debug("[Locks] tests:", tests, "err:", tErr);
+    if (!mountedRef.current) return;
+
+    const testMap = Object.fromEntries((tests ?? []).map((t: any) => [t.id, t.name]));
+    const mtMap   = Object.fromEntries(moduleTests.map((mt: any) => [mt.id, mt]));
+
+    const mapped: ActiveLock[] = locks.map((l: any) => {
+      const mt = mtMap[l.module_test_id];
+      return {
         module_test_id: l.module_test_id,
-        module_name:    l.module_tests.module_name,
-        test_name:      l.module_tests.test?.name ?? "Unknown Test",
+        module_name:    mt?.module_name   ?? "Unknown Module",
+        test_name:      testMap[mt?.test_id] ?? "Unknown Test",
         locked_at:      l.locked_at ?? "",
-      }));
+      };
+    });
 
+    console.debug("[Locks] final mapped:", mapped);
     setActiveLocks(mapped);
   }, []);
 
