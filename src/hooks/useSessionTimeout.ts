@@ -1,8 +1,10 @@
+// src/hooks/useSessionTimeout.ts  — DEBUG VERSION
+// Remove the console.logs once working
 import { useEffect, useRef, useState, useCallback } from "react";
 import { supabase } from "../supabase";
 
-const IDLE_MS    = 15_000;       
-const WARNING_MS = 5 * 60_000;  // 5 min countdown before auto-logout
+const IDLE_MS    = 15_000;       // ← 15s for testing (change back to 60_000)
+const WARNING_MS = 30_000;       // ← 30s for testing (change back to 5 * 60_000)
 
 export function useSessionTimeout(
   userId: string | undefined,
@@ -16,30 +18,26 @@ export function useSessionTimeout(
   const inWarning  = useRef(false);
   const secLeft    = useRef(Math.floor(WARNING_MS / 1000));
 
-  // Always-fresh refs — avoids stale closures in event listeners
-  const userIdRef       = useRef(userId);
-  const onSignOutRef    = useRef(onSignOut);
+  const userIdRef    = useRef(userId);
+  const onSignOutRef = useRef(onSignOut);
   useEffect(() => { userIdRef.current    = userId;    }, [userId]);
   useEffect(() => { onSignOutRef.current = onSignOut; }, [onSignOut]);
 
-  // ── Clear both timers ───────────────────────────────────────────────
   const clearTimers = useCallback(() => {
     if (idleTimer.current) { clearTimeout(idleTimer.current);  idleTimer.current = null; }
     if (countdown.current) { clearInterval(countdown.current); countdown.current = null; }
   }, []);
 
-  // ── Release lock + sign out ─────────────────────────────────────────
   const releaseAndSignOut = useCallback(async () => {
+    console.log("[SessionTimeout] AUTO SIGN-OUT triggered");
     clearTimers();
     const uid = userIdRef.current;
-    if (uid) {
-      await supabase.from("test_locks").delete().eq("user_id", uid);
-    }
+    if (uid) await supabase.from("test_locks").delete().eq("user_id", uid);
     await onSignOutRef.current();
   }, [clearTimers]);
 
-  // ── Start the 5-min warning countdown ──────────────────────────────
   const startWarning = useCallback(() => {
+    console.log("[SessionTimeout] startWarning() called — showing modal");
     inWarning.current = true;
     secLeft.current   = Math.floor(WARNING_MS / 1000);
     setWarning(true);
@@ -47,69 +45,60 @@ export function useSessionTimeout(
 
     countdown.current = setInterval(() => {
       secLeft.current -= 1;
+      console.log("[SessionTimeout] countdown tick:", secLeft.current);
       setSecondsLeft(secLeft.current);
-      if (secLeft.current <= 0) {
-        releaseAndSignOut();
-      }
+      if (secLeft.current <= 0) releaseAndSignOut();
     }, 1000);
   }, [releaseAndSignOut]);
 
-  // ── Reset idle timer on activity (no-op during warning) ────────────
   const resetIdleTimer = useCallback(() => {
     if (inWarning.current) return;
     clearTimers();
     idleTimer.current = setTimeout(startWarning, IDLE_MS);
   }, [clearTimers, startWarning]);
 
-  // Keep a ref so the event listener always calls the latest version
+  // Always-fresh ref — no stale closure in listener
   const resetIdleTimerRef = useRef(resetIdleTimer);
   useEffect(() => { resetIdleTimerRef.current = resetIdleTimer; }, [resetIdleTimer]);
 
-  // ── "Stay logged in" — dismiss warning, restart idle timer ─────────
   const stayLoggedIn = useCallback(() => {
+    console.log("[SessionTimeout] stayLoggedIn() called");
     clearTimers();
     inWarning.current = false;
     secLeft.current   = Math.floor(WARNING_MS / 1000);
     setWarning(false);
     setSecondsLeft(secLeft.current);
-    if (userIdRef.current) {
-      idleTimer.current = setTimeout(startWarning, IDLE_MS);
-    }
+    if (userIdRef.current) idleTimer.current = setTimeout(startWarning, IDLE_MS);
   }, [clearTimers, startWarning]);
 
-  // ── Wire up activity listeners ──────────────────────────────────────
   useEffect(() => {
     if (!userId) {
+      console.log("[SessionTimeout] No userId — hook inactive");
       clearTimers();
       inWarning.current = false;
       setWarning(false);
       return;
     }
 
-    // Use ref so the listener is never stale — no eslint-disable needed
+    console.log("[SessionTimeout] Activated for userId:", userId,
+      `— idle timeout: ${IDLE_MS/1000}s, warning: ${WARNING_MS/1000}s`);
+
     const onActivity = () => resetIdleTimerRef.current();
 
-    const POINTER_EVENTS = [
-      "mousemove", "mousedown", "keydown", "touchstart",
-    ] as const;
-
-    POINTER_EVENTS.forEach(e =>
-      document.addEventListener(e, onActivity, { passive: true })
-    );
-
-    // scroll via window + capture:true catches overflow-container scrolls
-    // that do NOT bubble up to document
+    const POINTER_EVENTS = ["mousemove", "mousedown", "keydown", "touchstart"] as const;
+    POINTER_EVENTS.forEach(e => document.addEventListener(e, onActivity, { passive: true }));
     window.addEventListener("scroll", onActivity, { passive: true, capture: true });
 
-    // Kick off the initial idle timer
     idleTimer.current = setTimeout(startWarning, IDLE_MS);
+    console.log("[SessionTimeout] Initial idle timer started");
 
     return () => {
+      console.log("[SessionTimeout] Cleanup — removing listeners");
       POINTER_EVENTS.forEach(e => document.removeEventListener(e, onActivity));
       window.removeEventListener("scroll", onActivity, { capture: true });
       clearTimers();
     };
-  }, [userId, clearTimers, startWarning]); // no suppressions needed now
+  }, [userId, clearTimers, startWarning]);
 
   return { warning, secondsLeft, stayLoggedIn, releaseAndSignOut };
 }
