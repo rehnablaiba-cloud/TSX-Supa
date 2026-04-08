@@ -232,7 +232,7 @@ const Dashboard: React.FC<Props> = ({ onNavigate }) => {
 
     // 2. Raw lock rows for this user — filter by locked_by_name (email)
     const { data: locks, error: lockErr } = await supabase
-      .from("testlocks")
+      .from("test_locks")
       .select("id, module_test_id, locked_by_name, locked_at")
       .eq("locked_by_name", userEmail);
 
@@ -244,32 +244,22 @@ const Dashboard: React.FC<Props> = ({ onNavigate }) => {
     const moduleTestIds = locks.map((l: any) => l.module_test_id);
     const { data: moduleTests, error: mtErr } = await supabase
       .from("module_tests")
-      .select("id, module_name, test_id")
+      .select("id, module_name, tests_name")
       .in("id", moduleTestIds);
 
     console.debug("[Locks] moduleTests:", moduleTests, "err:", mtErr);
     if (!mountedRef.current) return;
     if (mtErr || !moduleTests) return;
 
-    // 4. Resolve test names
-    const testIds = [...new Set(moduleTests.map((mt: any) => mt.test_id))];
-    const { data: tests, error: tErr } = await supabase
-      .from("tests")
-      .select("id, name")
-      .in("id", testIds);
-
-    console.debug("[Locks] tests:", tests, "err:", tErr);
-    if (!mountedRef.current) return;
-
-    const testMap = Object.fromEntries((tests ?? []).map((t: any) => [t.id, t.name]));
-    const mtMap   = Object.fromEntries(moduleTests.map((mt: any) => [mt.id, mt]));
+    // 4. tests.name is the PK and module_tests.tests_name already holds it — no extra query
+    const mtMap = Object.fromEntries(moduleTests.map((mt: any) => [mt.id, mt]));
 
     const mapped: ActiveLock[] = locks.map((l: any) => {
       const mt = mtMap[l.module_test_id];
       return {
         module_test_id: l.module_test_id,
-        module_name:    mt?.module_name   ?? "Unknown Module",
-        test_name:      testMap[mt?.test_id] ?? "Unknown Test",
+        module_name:    mt?.module_name ?? "Unknown Module",
+        test_name:      mt?.tests_name  ?? "Unknown Test",
         locked_at:      l.locked_at ?? "",
       };
     });
@@ -314,7 +304,7 @@ const Dashboard: React.FC<Props> = ({ onNavigate }) => {
       .channel("dashboard-live")
       .on("postgres_changes", { event: "*", schema: "public", table: "step_results" }, () => fetchModules(false))
       .on("postgres_changes", { event: "*", schema: "public", table: "modules"      }, () => fetchModules(false))
-      .on("postgres_changes", { event: "*", schema: "public", table: "testlocks"    }, () => fetchActiveLocks())
+      .on("postgres_changes", { event: "*", schema: "public", table: "test_locks"    }, () => fetchActiveLocks())
       .subscribe();
     return () => { supabase.removeChannel(channel); };
   }, [fetchModules, fetchActiveLocks]);
