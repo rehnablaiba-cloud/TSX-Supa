@@ -9,7 +9,7 @@ import React, {
 import { supabase } from "../../supabase";
 import gsap from "gsap";
 import ExportModal from "../UI/ExportModal";
-import { Upload, FileText, FileDown, FileSpreadsheet } from "lucide-react";
+import { Upload, FileText, FileDown, FileSpreadsheet, AlertTriangle, Lock } from "lucide-react";
 import {
   exportDashboardCSV,
   exportDashboardPDF,
@@ -19,6 +19,14 @@ import {
 
 interface Props {
   onNavigate: (page: string, moduleName?: string) => void;
+}
+
+// ── Lock warning types ────────────────────────────────────────────────────────
+interface ActiveLock {
+  module_test_id: string;
+  module_name: string;
+  test_name: string;
+  locked_at: string;
 }
 
 function getModuleStats(
@@ -113,18 +121,150 @@ const SkeletonCard: React.FC = () => (
   </div>
 );
 
+// ── Lock Warning Banner ───────────────────────────────────────────────────────
+interface LockWarningBannerProps {
+  locks: ActiveLock[];
+  onNavigate: (page: string, moduleName?: string) => void;
+}
+
+const LockWarningBanner: React.FC<LockWarningBannerProps> = ({ locks, onNavigate }) => {
+  const bannerRef = useRef<HTMLDivElement>(null);
+
+  useLayoutEffect(() => {
+    if (bannerRef.current) {
+      gsap.fromTo(
+        bannerRef.current,
+        { opacity: 0, y: -8 },
+        { opacity: 1, y: 0, duration: 0.35, ease: "power2.out" }
+      );
+    }
+  }, []);
+
+  if (locks.length === 0) return null;
+
+  return (
+    <div
+      ref={bannerRef}
+      className="rounded-xl border px-4 py-3 flex flex-col gap-2"
+      style={{
+        background:   "color-mix(in srgb, #f59e0b 8%, transparent)",
+        borderColor:  "#f59e0b55",
+      }}
+    >
+      {/* Title row */}
+      <div className="flex items-center gap-2">
+        <AlertTriangle
+          size={16}
+          className="shrink-0"
+          style={{ color: "#f59e0b" }}
+        />
+        <span
+          className="text-sm font-bold tracking-wide"
+          style={{ color: "#f59e0b" }}
+        >
+          {locks.length === 1
+            ? "You have an active test lock"
+            : `You have ${locks.length} active test locks`}
+        </span>
+      </div>
+
+      {/* Per-lock rows */}
+      <div className="flex flex-col gap-1.5 pl-6">
+        {locks.map((lock) => (
+          <div
+            key={lock.module_test_id}
+            className="flex items-center justify-between gap-3 flex-wrap"
+          >
+            <div className="flex items-center gap-2 text-xs" style={{ color: "#fbbf24" }}>
+              <Lock size={11} className="shrink-0" />
+              <span>
+                <span className="font-semibold">{lock.module_name}</span>
+                <span className="mx-1 opacity-50">·</span>
+                <span>{lock.test_name}</span>
+              </span>
+            </div>
+            <button
+              onClick={() => onNavigate("module", lock.module_name)}
+              className="text-[11px] font-bold px-2.5 py-0.5 rounded-full border transition-colors"
+              style={{
+                color:            "#f59e0b",
+                borderColor:      "#f59e0b88",
+                background:       "color-mix(in srgb, #f59e0b 12%, transparent)",
+              }}
+            >
+              Resume →
+            </button>
+          </div>
+        ))}
+      </div>
+
+      {/* Footer advisory */}
+      <p className="pl-6 text-[11px] leading-snug" style={{ color: "#fbbf24", opacity: 0.8 }}>
+        Please finish or release {locks.length === 1 ? "this test" : "these tests"} before
+        signing out or closing the app — the lock will block other testers.
+      </p>
+    </div>
+  );
+};
+
 // ── Main component ────────────────────────────────────────────────────────────
 const Dashboard: React.FC<Props> = ({ onNavigate }) => {
   const [showExportModal, setShowExportModal] = useState(false);
   const [modules, setModules]                 = useState<any[]>([]);
   const [initialLoad, setInitialLoad]         = useState(true);
   const [error, setError]                     = useState<string | null>(null);
+  const [activeLocks, setActiveLocks]         = useState<ActiveLock[]>([]);
   const gridRef    = useRef<HTMLDivElement>(null);
   const mountedRef = useRef(true);
 
   useEffect(() => {
     mountedRef.current = true;
     return () => { mountedRef.current = false; };
+  }, []);
+
+  // ── Fetch locks held by the current user ────────────────────────────────────
+  const fetchActiveLocks = useCallback(async () => {
+    // Get the logged-in user's display_name from the custom users table
+    const { data: sessionData } = await supabase.auth.getSession();
+    const authUserId = sessionData?.session?.user?.id;
+    if (!authUserId) return;
+
+    // Resolve display_name (TestPro stores display_name in custom users table)
+    const { data: userRow } = await supabase
+      .from("users")
+      .select("display_name")
+      .eq("id", authUserId)
+      .single();
+
+    const displayName = userRow?.display_name;
+    if (!displayName) return;
+
+    // Query testlocks joined to module_tests + tests
+    const { data: locks } = await supabase
+      .from("testlocks")
+      .select(`
+        module_test_id,
+        module_tests:module_test_id (
+          module_name,
+          test:test_id (
+            name
+          )
+        )
+      `)
+      .eq("locked_by", displayName);
+
+    if (!mountedRef.current) return;
+
+    const mapped: ActiveLock[] = (locks ?? [])
+      .filter((l: any) => l.module_tests)
+      .map((l: any) => ({
+        module_test_id: l.module_test_id,
+        module_name:    l.module_tests.module_name,
+        test_name:      l.module_tests.test?.name ?? "Unknown Test",
+        locked_at:      l.locked_at ?? "",
+      }));
+
+    setActiveLocks(mapped);
   }, []);
 
   const fetchModules = useCallback(async (isInitial = false) => {
@@ -152,18 +292,21 @@ const Dashboard: React.FC<Props> = ({ onNavigate }) => {
     if (isInitial) setInitialLoad(false);
   }, []);
 
+  // Initial load — both in parallel
   useEffect(() => {
-    fetchModules(true);
-  }, [fetchModules]);
+    Promise.all([fetchModules(true), fetchActiveLocks()]);
+  }, [fetchModules, fetchActiveLocks]);
 
+  // Realtime subscriptions
   useEffect(() => {
     const channel = supabase
       .channel("dashboard-live")
       .on("postgres_changes", { event: "*", schema: "public", table: "step_results" }, () => fetchModules(false))
       .on("postgres_changes", { event: "*", schema: "public", table: "modules"      }, () => fetchModules(false))
+      .on("postgres_changes", { event: "*", schema: "public", table: "testlocks"    }, () => fetchActiveLocks())
       .subscribe();
     return () => { supabase.removeChannel(channel); };
-  }, [fetchModules]);
+  }, [fetchModules, fetchActiveLocks]);
 
   useLayoutEffect(() => {
     if (!initialLoad && gridRef.current && gridRef.current.children.length > 0) {
@@ -181,6 +324,12 @@ const Dashboard: React.FC<Props> = ({ onNavigate }) => {
     { label: "Pass",        value: summaries.reduce((a, x) => a + x.pass,  0) },
     { label: "Fail",        value: summaries.reduce((a, x) => a + x.fail,  0) },
   ], [summaries]);
+
+  // Set of locked module names for card highlighting
+  const lockedModuleNames = useMemo(
+    () => new Set(activeLocks.map((l) => l.module_name)),
+    [activeLocks]
+  );
 
   if (error) return (
     <div className="p-6">
@@ -245,6 +394,11 @@ const Dashboard: React.FC<Props> = ({ onNavigate }) => {
         </button>
       </div>
 
+      {/* ── Active lock warning banner ── */}
+      {!initialLoad && activeLocks.length > 0 && (
+        <LockWarningBanner locks={activeLocks} onNavigate={onNavigate} />
+      )}
+
       {/* Grid */}
       {initialLoad ? (
         <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
@@ -255,6 +409,8 @@ const Dashboard: React.FC<Props> = ({ onNavigate }) => {
           {modules.map((m: any) => {
             const { total, pass, fail, pending, passRate, failPct, pendingPct, testCount } =
               getModuleStats(m.module_tests ?? [], m.step_results ?? []);
+
+            const isLocked = lockedModuleNames.has(m.name);
 
             const passLabelColor =
               total === 0        ? "var(--text-muted)"
@@ -267,11 +423,19 @@ const Dashboard: React.FC<Props> = ({ onNavigate }) => {
                 key={m.name}
                 onClick={() => onNavigate("module", m.name)}
                 className="card text-left hover:border-c-brand/50 hover:shadow-xl transition-all duration-300 cursor-pointer group"
+                style={
+                  isLocked
+                    ? {
+                        borderColor: "#f59e0b55",
+                        boxShadow:   "0 0 0 1px #f59e0b33",
+                      }
+                    : undefined
+                }
               >
                 <div className="flex items-start gap-3 mb-3">
                   <span
                     className="w-3 h-3 rounded-full mt-1.5 shrink-0"
-                    style={{ backgroundColor: "var(--color-brand)" }}
+                    style={{ backgroundColor: isLocked ? "#f59e0b" : "var(--color-brand)" }}
                   />
                   <div className="flex-1 min-w-0">
                     <h3 className="font-semibold text-t-primary group-hover:text-c-brand transition-colors truncate">
@@ -281,16 +445,33 @@ const Dashboard: React.FC<Props> = ({ onNavigate }) => {
                       <p className="text-xs text-t-muted mt-0.5 truncate">{m.description}</p>
                     )}
                   </div>
-                  <span
-                    className="shrink-0 text-[10px] font-bold px-2 py-0.5 rounded-full border whitespace-nowrap tracking-wide"
-                    style={{
-                      color:       "var(--color-brand)",
-                      borderColor: "var(--color-brand)",
-                      background:  "color-mix(in srgb, var(--color-brand) 8%, transparent)",
-                    }}
-                  >
-                    {testCount} {testCount === 1 ? "Test" : "Tests"}
-                  </span>
+
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    {/* Lock pill — only shown when this module has an active lock */}
+                    {isLocked && (
+                      <span
+                        className="flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full border whitespace-nowrap"
+                        style={{
+                          color:       "#f59e0b",
+                          borderColor: "#f59e0b88",
+                          background:  "color-mix(in srgb, #f59e0b 10%, transparent)",
+                        }}
+                      >
+                        <Lock size={9} />
+                        Locked
+                      </span>
+                    )}
+                    <span
+                      className="text-[10px] font-bold px-2 py-0.5 rounded-full border whitespace-nowrap tracking-wide"
+                      style={{
+                        color:       "var(--color-brand)",
+                        borderColor: "var(--color-brand)",
+                        background:  "color-mix(in srgb, var(--color-brand) 8%, transparent)",
+                      }}
+                    >
+                      {testCount} {testCount === 1 ? "Test" : "Tests"}
+                    </span>
+                  </div>
                 </div>
 
                 <div className="flex items-center justify-between mb-3">
