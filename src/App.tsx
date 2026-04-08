@@ -4,7 +4,7 @@ import { ThemeProvider, useTheme } from "./context/ThemeContext";
 import { SessionLogProvider, useSessionLog } from "./context/SessionLogContext"; // ← NEW
 import SessionLog from "./components/DevTools/SessionLog";                       // ← NEW
 import SessionManager from "./components/Auth/SessionManager";
-import LoginPage from "./components/Auth/LoginPage";
+import LoginPage from "./components/UI/LoginPage";
 import Sidebar from "./components/Layout/Sidebar";
 import MobileNav from "./components/Layout/MobileNav";
 import Dashboard from "./components/Dashboard/Dashboard";
