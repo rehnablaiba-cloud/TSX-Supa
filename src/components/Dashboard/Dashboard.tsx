@@ -224,26 +224,19 @@ const Dashboard: React.FC<Props> = ({ onNavigate }) => {
 
   // ── Fetch locks held by the current user ────────────────────────────────────
   const fetchActiveLocks = useCallback(async () => {
-    // Get the logged-in user's display_name from the custom users table
+    // Use the auth UUID directly — matches testlocks.user_id
     const { data: sessionData } = await supabase.auth.getSession();
     const authUserId = sessionData?.session?.user?.id;
     if (!authUserId) return;
 
-    // Resolve display_name (TestPro stores display_name in custom users table)
-    const { data: userRow } = await supabase
-      .from("users")
-      .select("display_name")
-      .eq("id", authUserId)
-      .single();
-
-    const displayName = userRow?.display_name;
-    if (!displayName) return;
-
     // Query testlocks joined to module_tests + tests
-    const { data: locks } = await supabase
+    // Schema: testlocks { id, module_test_id, user_id (uuid), locked_by_name (text), locked_at }
+    const { data: locks, error: lockErr } = await supabase
       .from("testlocks")
       .select(`
         module_test_id,
+        locked_by_name,
+        locked_at,
         module_tests:module_test_id (
           module_name,
           test:test_id (
@@ -251,9 +244,10 @@ const Dashboard: React.FC<Props> = ({ onNavigate }) => {
           )
         )
       `)
-      .eq("locked_by", displayName);
+      .eq("user_id", authUserId);
 
     if (!mountedRef.current) return;
+    if (lockErr) { console.error("Lock fetch error:", lockErr.message); return; }
 
     const mapped: ActiveLock[] = (locks ?? [])
       .filter((l: any) => l.module_tests)
