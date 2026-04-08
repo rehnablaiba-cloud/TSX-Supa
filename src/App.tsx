@@ -1,8 +1,10 @@
 import React, { useState, useEffect, useCallback } from "react";
 import { useAuth } from "./context/AuthContext";
 import { ThemeProvider, useTheme } from "./context/ThemeContext";
+import { SessionLogProvider, useSessionLog } from "./context/SessionLogContext"; // ← NEW
+import SessionLog from "./components/DevTools/SessionLog";                       // ← NEW
+import SessionManager from "./components/Auth/SessionManager";
 import LoginPage from "./components/Auth/LoginPage";
-import SessionManager from "./components/UI/SessionManager"; // ← NEW
 import Sidebar from "./components/Layout/Sidebar";
 import MobileNav from "./components/Layout/MobileNav";
 import Dashboard from "./components/Dashboard/Dashboard";
@@ -19,18 +21,16 @@ import { tokens, palette, TokenKey } from "./theme";
 type Page = "dashboard" | "module" | "execution" | "report" | "users" | "auditlog";
 type MuiProviderComponent = React.ComponentType<{ theme: unknown; children: React.ReactNode }>;
 
-// MuiActivator — unchanged, copy as-is from your existing file
+// MuiActivator — unchanged from your original
 const MuiActivator: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { theme, muiConfig, customTokens } = useTheme();
   const [Provider, setProvider] = useState<MuiProviderComponent | null>(null);
   const [muiTheme, setMuiTheme] = useState<unknown>(null);
   const [muiError, setMuiError] = useState<string | null>(null);
-  const [loading, setLoading]   = useState(false);
+  const [loading,  setLoading]  = useState(false);
 
   const buildMuiTheme = useCallback(async () => {
-    if (!muiConfig.active) {
-      setProvider(null); setMuiTheme(null); setMuiError(null); return;
-    }
+    if (!muiConfig.active) { setProvider(null); setMuiTheme(null); setMuiError(null); return; }
     setLoading(true);
     try {
       const { ThemeProvider: TP, createTheme } = await import("@mui/material/styles");
@@ -62,30 +62,22 @@ const MuiActivator: React.FC<{ children: React.ReactNode }> = ({ children }) => 
           MuiPaper:     { styleOverrides: { root: { backgroundImage: muiConfig.disablePaperBgImage ? "none" : undefined } } },
         },
       });
-      setMuiTheme(muiT);
-      setProvider(() => TP as unknown as MuiProviderComponent);
-      setMuiError(null);
+      setMuiTheme(muiT); setProvider(() => TP as unknown as MuiProviderComponent); setMuiError(null);
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       console.warn("MUI ThemeProvider error:", msg);
       setMuiError(msg); setProvider(null); setMuiTheme(null);
-    } finally {
-      setLoading(false);
-    }
+    } finally { setLoading(false); }
   }, [theme, muiConfig, customTokens]);
 
   useEffect(() => { buildMuiTheme(); }, [buildMuiTheme]);
 
   if (muiConfig.active && muiError) {
-    const isMissing = muiError.includes("Cannot find module") ||
-                      muiError.includes("Failed to fetch") ||
-                      muiError.includes("not found");
+    const isMissing = muiError.includes("Cannot find module") || muiError.includes("Failed to fetch") || muiError.includes("not found");
     return (
       <>
         <div className="fixed top-0 left-0 right-0 z-[9999] bg-pend/90 text-white text-xs py-1.5 px-4 text-center">
-          {isMissing
-            ? <><code>@mui/material</code> not installed.</>
-            : <>MUI theme error — check console.</>}
+          {isMissing ? <><code>@mui/material</code> not installed.</> : <>MUI theme error — check console.</>}
         </div>
         {children}
       </>
@@ -100,19 +92,17 @@ const MuiActivator: React.FC<{ children: React.ReactNode }> = ({ children }) => 
 
 const AppInner: React.FC = () => {
   const { isLoading: authLoading, isAuthenticated, user } = useAuth();
-  const [modules, setModules]                             = useState<Module[]>([]);
-  const [page, setPage]                                   = useState<Page>("dashboard");
-  const [selectedModuleName, setSelectedModuleName]       = useState<string | null>(null);
-  const [selectedTestId, setSelectedTestId]               = useState<string | null>(null);
+  const { log } = useSessionLog(); // ← NEW
+  const [modules, setModules]                       = useState<Module[]>([]);
+  const [page, setPage]                             = useState<Page>("dashboard");
+  const [selectedModuleName, setSelectedModuleName] = useState<string | null>(null);
+  const [selectedTestId, setSelectedTestId]         = useState<string | null>(null);
 
   const [installPrompt, setInstallPrompt] = useState<any>(null);
-  const [showInstall, setShowInstall]     = useState(false);
+  const [showInstall,   setShowInstall]   = useState(false);
 
   useEffect(() => {
-    if ((window as any).__installPrompt) {
-      setInstallPrompt((window as any).__installPrompt);
-      setShowInstall(true);
-    }
+    if ((window as any).__installPrompt) { setInstallPrompt((window as any).__installPrompt); setShowInstall(true); }
     const handler = (e: any) => { e.preventDefault(); setInstallPrompt(e); setShowInstall(true); };
     window.addEventListener("beforeinstallprompt", handler);
     return () => window.removeEventListener("beforeinstallprompt", handler);
@@ -127,20 +117,45 @@ const AppInner: React.FC = () => {
 
   const isAdmin = user?.role === "admin";
 
+  // ── Log auth state ───────────────────────────────────────────────
   useEffect(() => {
     if (!isAuthenticated) return;
+    log("success", "auth", `Signed in as ${user?.email ?? "unknown"} (${user?.role ?? "?"})`);
+  }, [isAuthenticated]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Fetch modules + log realtime ─────────────────────────────────
+  useEffect(() => {
+    if (!isAuthenticated) return;
+
     const fetchModules = () =>
       supabase.from("modules").select("*").then(({ data, error }) => {
-        if (!error && data) setModules(data as Module[]);
-        else if (error) console.error("Error fetching modules:", error.message);
+        if (!error && data) {
+          setModules(data as Module[]);
+          log("success", "query", `SELECT modules → ${data.length} rows`);
+        } else if (error) {
+          log("error", "query", `SELECT modules failed: ${error.message}`, JSON.stringify(error));
+          console.error("Error fetching modules:", error.message);
+        }
       });
+
     fetchModules();
+
     const channel = supabase
       .channel("modules_realtime")
-      .on("postgres_changes", { event: "*", schema: "public", table: "modules" }, () => fetchModules())
-      .subscribe();
+      .on("postgres_changes", { event: "*", schema: "public", table: "modules" }, (payload) => {
+        log("info", "realtime", `modules → ${payload.eventType}`);
+        fetchModules();
+      })
+      .subscribe((status) => {
+        log(
+          status === "SUBSCRIBED" ? "success" : "warn",
+          "realtime",
+          `modules_realtime channel: ${status}`
+        );
+      });
+
     return () => { supabase.removeChannel(channel); };
-  }, [isAuthenticated]);
+  }, [isAuthenticated]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (authLoading) {
     return (
@@ -154,9 +169,16 @@ const AppInner: React.FC = () => {
 
   const selectedModule = modules.find(m => m.name === selectedModuleName);
 
+  // ── Logged navigation ────────────────────────────────────────────
   const navigate = (p: string, moduleName?: string) => {
-    if (p === "module" && moduleName) { setSelectedModuleName(moduleName); setPage("module"); }
-    else setPage(p as Page);
+    if (p === "module" && moduleName) {
+      setSelectedModuleName(moduleName);
+      setPage("module");
+      log("info", "nav", `Navigate → module: ${moduleName}`);
+    } else {
+      setPage(p as Page);
+      log("info", "nav", `Navigate → ${p}`);
+    }
   };
 
   const renderPage = () => {
@@ -166,8 +188,12 @@ const AppInner: React.FC = () => {
         return selectedModule
           ? <ModuleDashboard
               moduleName={selectedModule.name}
-              onBack={() => setPage("dashboard")}
-              onExecute={mtId => { setSelectedTestId(mtId); setPage("execution"); }}
+              onBack={() => { setPage("dashboard"); log("info", "nav", "Back → dashboard"); }}
+              onExecute={mtId => {
+                setSelectedTestId(mtId);
+                setPage("execution");
+                log("info", "nav", `Execute test: ${mtId}`);
+              }}
             />
           : <Dashboard onNavigate={navigate} />;
       case "execution":
@@ -176,7 +202,7 @@ const AppInner: React.FC = () => {
               moduleName={selectedModule.name}
               initialModuleTestId={selectedTestId}
               isAdmin={isAdmin}
-              onBack={() => setPage("module")}
+              onBack={() => { setPage("module"); log("info", "nav", "Back → module"); }}
             />
           : <Dashboard onNavigate={navigate} />;
       case "report":   return <TestReport />;
@@ -188,34 +214,24 @@ const AppInner: React.FC = () => {
 
   return (
     <MuiActivator>
-      {/*
-        SessionManager wraps everything authenticated.
-        - Starts idle detection immediately on login
-        - Shows SessionTimeoutModal after 1 min idle
-        - Auto-signs-out + releases test_locks after 5 min warning
-      */}
       <SessionManager>
         <div className="flex min-h-screen bg-gray-950">
-          <Sidebar activePage={page} onNavigate={navigate} modules={modules} />
-          <main className="flex-1 flex flex-col overflow-hidden min-w-0">
-            {renderPage()}
-          </main>
+          <Sidebar   activePage={page} onNavigate={navigate} modules={modules} />
+          <main className="flex-1 flex flex-col overflow-hidden min-w-0">{renderPage()}</main>
           <MobileNav activePage={page} onNavigate={p => navigate(p)} />
-
           {showInstall && (
-            <button
-              onClick={handleInstall}
-              title="Install TestPro as an app"
+            <button onClick={handleInstall} title="Install TestPro as an app"
               className="fixed bottom-20 right-4 z-50 flex items-center gap-1.5
                 px-2.5 py-1.5 rounded-lg text-[11px] font-semibold
                 bg-bg-surface border border-[var(--border-color)]
                 text-t-secondary hover:text-t-primary hover:border-[var(--color-brand)]
-                shadow-lg transition-colors"
-            >
+                shadow-lg transition-colors">
               📲 Install
             </button>
           )}
         </div>
+        {/* Floating session log — admin only, renders above everything */}
+        <SessionLog />
       </SessionManager>
     </MuiActivator>
   );
@@ -225,7 +241,9 @@ const AppInner: React.FC = () => {
 
 const App: React.FC = () => (
   <ThemeProvider>
-    <AppInner />
+    <SessionLogProvider>   {/* ← wraps AppInner so useSessionLog() works everywhere */}
+      <AppInner />
+    </SessionLogProvider>
   </ThemeProvider>
 );
 
