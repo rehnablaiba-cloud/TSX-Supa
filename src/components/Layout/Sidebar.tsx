@@ -11,6 +11,7 @@ import {
   Search,
 } from "lucide-react";
 import { useAuth } from "../../context/AuthContext";
+import { supabase } from "../../supabase";
 import { Module } from "../../types";
 import ThemeToggle from "../UI/ThemeToggle";
 
@@ -49,9 +50,12 @@ const Sidebar: React.FC<Props> = ({ activePage, onNavigate, modules }) => {
   );
 
 
-  // FIX 6: signOut with error handling
+  // Release test lock then sign out
   const handleSignOut = async () => {
     try {
+      if (user?.id) {
+        await supabase.from("test_locks").delete().eq("user_id", user.id);
+      }
       await signOut();
     } catch (err) {
       console.error("Sign out failed:", err);
@@ -59,7 +63,6 @@ const Sidebar: React.FC<Props> = ({ activePage, onNavigate, modules }) => {
   };
 
 
-  // FIX 3 + FIX 8: center button when collapsed, clear search on collapse
   const handleCollapseToggle = () => {
     setCollapsed(p => !p);
     setSearch("");
@@ -72,7 +75,7 @@ const Sidebar: React.FC<Props> = ({ activePage, onNavigate, modules }) => {
       transition-all duration-300 ${collapsed ? "w-16" : "w-64"} h-screen sticky top-0 shrink-0`}>
 
 
-      {/* Header — FIX 3: justify-center when collapsed */}
+      {/* Header */}
       <div className={`flex items-center px-4 py-4 border-b border-[var(--border-color)]
         ${collapsed ? "justify-center" : "justify-between"}`}>
         {!collapsed && (
@@ -107,7 +110,6 @@ const Sidebar: React.FC<Props> = ({ activePage, onNavigate, modules }) => {
 
       {/* Nav items */}
       <nav className="flex-1 overflow-y-auto py-3 px-2 flex flex-col gap-1">
-        {/* FIX 7: skeleton while auth isLoading */}
         {isLoading ? (
           <div className="flex flex-col gap-1 px-1">
             {[...Array(2)].map((_, i) => (
@@ -159,7 +161,6 @@ const Sidebar: React.FC<Props> = ({ activePage, onNavigate, modules }) => {
           <ThemeToggle />
         </div>
 
-        {/* FIX 7: hide user row while auth isLoading */}
         {!isLoading && (
           !collapsed ? (
             <div className="flex items-center gap-3">

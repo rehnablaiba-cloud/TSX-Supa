@@ -2,8 +2,8 @@ import React, { useRef, useEffect, useState, useCallback } from "react";
 
 import { useAuth } from "../../context/AuthContext";
 import { useTheme } from "../../context/ThemeContext";
-import ThemeEditor from "../ThemeEditor/ThemeEditorPanel";
 import { supabase } from "../../supabase";
+import ThemeEditor from "../ThemeEditor/ThemeEditorPanel";
 import {
   BarChart2, FileJson, Table2, Database,
   Package, FlaskConical, Hash, FolderOpen,
@@ -248,7 +248,6 @@ const ModalShell: React.FC<{
 // ─────────────────────────────────────────────────────────────────────────
 // SHARED TYPES + HELPERS
 // ─────────────────────────────────────────────────────────────────────────
-// PKs are now name-based (text) — no more id fields on modules/tests
 interface TestOption   { serial_no: number; name: string; }
 interface ModuleOption { name: string; }
 
@@ -310,7 +309,6 @@ const ImportModulesModal: React.FC<{ onClose: () => void; onBack: () => void }> 
   useEffect(() => {
     if (stage !== "select_module") return;
     setLoadingMods(true);
-    // modules PK is name — select only name
     supabase.from("modules").select("name").order("name")
       .then(({ data }) => { if (data) setModules(data as ModuleOption[]); setLoadingMods(false); });
   }, [stage]);
@@ -328,7 +326,6 @@ const ImportModulesModal: React.FC<{ onClose: () => void; onBack: () => void }> 
         if (!selectedMod) throw new Error("No module selected.");
         const newName = form.name.trim();
         if (!newName) throw new Error("New name is required.");
-        // PK is name — update by matching name
         const { error } = await supabase.from("modules").update({ name: newName }).eq("name", selectedMod.name);
         if (error) throw error;
         setResultMsg(`"${selectedMod.name}" renamed to "${newName}".`);
@@ -386,7 +383,6 @@ const ImportModulesModal: React.FC<{ onClose: () => void; onBack: () => void }> 
         ) : (
           <div className="flex flex-col gap-2 max-h-64 overflow-y-auto pr-0.5">
             {modules.map(m => (
-              // key and selection keyed on name (the PK)
               <button key={m.name} onClick={() => setSelectedMod(m)}
                 className={`flex items-center gap-3 px-4 py-3 rounded-xl border transition-all text-left ${selectedMod?.name === m.name ? "border-c-brand bg-c-brand-bg" : "border-[var(--border-color)] bg-bg-card hover:bg-bg-base"}`}>
                 <Package size={18} />
@@ -532,7 +528,6 @@ const ImportTestsModal: React.FC<{ onClose: () => void; onBack: () => void }> = 
   useEffect(() => {
     if (stage !== "select_test") return;
     setLoadingTests(true);
-    // tests PK is name — select serial_no + name only
     supabase.from("tests").select("serial_no, name").order("serial_no", { ascending: true })
       .then(({ data }) => { if (data) setTests(data as TestOption[]); setLoadingTests(false); });
   }, [stage]);
@@ -552,7 +547,6 @@ const ImportTestsModal: React.FC<{ onClose: () => void; onBack: () => void }> = 
         if (!selectedTest) throw new Error("No test selected.");
         const newName = form.name.trim();
         if (!newName) throw new Error("New name is required.");
-        // Note: updating name (PK) cascades via FK constraints — Supabase/Postgres handles this
         const { error } = await supabase.from("tests").update({ name: newName }).eq("name", selectedTest.name);
         if (error) throw error;
         setResultMsg(`SN ${selectedTest.serial_no} renamed to "${newName}".`);
@@ -608,7 +602,6 @@ const ImportTestsModal: React.FC<{ onClose: () => void; onBack: () => void }> = 
         ) : (
           <div className="flex flex-col gap-2 max-h-64 overflow-y-auto pr-0.5">
             {tests.map(t => (
-              // key and selection keyed on name (the PK)
               <button key={t.name} onClick={() => setSelectedTest(t)}
                 className={`flex items-center gap-3 px-4 py-3 rounded-xl border transition-all text-left ${selectedTest?.name === t.name ? "border-c-brand bg-c-brand-bg" : "border-[var(--border-color)] bg-bg-card hover:bg-bg-base"}`}>
                 <FlaskConical size={18} />
@@ -812,7 +805,6 @@ const ImportStepsModal: React.FC<{ onClose: () => void; onBack: () => void }> = 
   const fileRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    // tests PK is name — select serial_no + name only
     supabase.from("tests").select("serial_no, name").order("serial_no", { ascending: true })
       .then(({ data, error }) => {
         if (!error && data) setTests(data as TestOption[]);
@@ -839,7 +831,6 @@ const ImportStepsModal: React.FC<{ onClose: () => void; onBack: () => void }> = 
 
     try {
       if (op === "create") {
-        // Batch insert — tests_name replaces test_id (FK → tests.name)
         const payload = rows.map(row => ({
           tests_name:      selectedTest.name,
           serial_no:       row.serial_no,
@@ -855,7 +846,6 @@ const ImportStepsModal: React.FC<{ onClose: () => void; onBack: () => void }> = 
           result.written = inserted?.length ?? rows.length;
         }
       } else {
-        // update / delete: look up step id by tests_name + serial_no
         for (const row of rows) {
           const { data: existing, error: fe } = await supabase
             .from("test_steps")
@@ -906,7 +896,6 @@ const ImportStepsModal: React.FC<{ onClose: () => void; onBack: () => void }> = 
             ) : tests.length === 0 ? (
               <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-xs text-amber-400">No tests found. Import tests first.</div>
             ) : (
-              // option value is test name (PK)
               <select defaultValue="" onChange={e => setSelectedTest(tests.find(t => t.name === e.target.value) ?? null)}
                 className="w-full px-4 py-3 rounded-xl bg-bg-card border border-[var(--border-color)] text-t-primary text-sm focus:outline-none focus:border-c-brand transition-colors appearance-none cursor-pointer">
                 <option value="" disabled>Choose a test…</option>
@@ -1167,7 +1156,6 @@ const ImportStepsManualModal: React.FC<{ onClose: () => void; onBack: () => void
   useEffect(() => {
     if (stage !== "select_module") return;
     setLoadingModules(true);
-    // modules PK is name
     supabase.from("modules").select("name").order("name")
       .then(({ data }) => { if (data) setModules(data as ModuleOption[]); setLoadingModules(false); });
   }, [stage]);
@@ -1175,7 +1163,6 @@ const ImportStepsManualModal: React.FC<{ onClose: () => void; onBack: () => void
   useEffect(() => {
     if (stage !== "select_test" || !selectedModule) return;
     setLoadingTests(true);
-    // module_tests uses module_name (FK → modules.name) and tests_name (FK → tests.name)
     supabase.from("module_tests")
       .select("tests_name, tests(serial_no, name)")
       .eq("module_name", selectedModule.name)
@@ -1192,7 +1179,6 @@ const ImportStepsManualModal: React.FC<{ onClose: () => void; onBack: () => void
   useEffect(() => {
     if (stage !== "select_step" || !selectedTest) return;
     setLoadingSteps(true);
-    // test_steps uses tests_name (FK → tests.name) instead of test_id
     supabase.from("test_steps")
       .select("id, serial_no, tests_name, action, expected_result, is_divider")
       .eq("tests_name", selectedTest.name)
@@ -1207,7 +1193,6 @@ const ImportStepsManualModal: React.FC<{ onClose: () => void; onBack: () => void
         const snVal = parseFloat(form.serial_no);
         if (isNaN(snVal)) throw new Error("Invalid serial number.");
         if (!selectedTest) throw new Error("No test selected.");
-        // tests_name replaces test_id as the FK
         const { error } = await supabase.from("test_steps").insert({
           tests_name:      selectedTest.name,
           serial_no:       snVal,
@@ -1219,7 +1204,6 @@ const ImportStepsManualModal: React.FC<{ onClose: () => void; onBack: () => void
         setResultMsg(`Step SN ${snVal} "${form.action.trim() || "(divider)"}" created in "${selectedTest.name}".`);
       } else if (op === "update") {
         if (!selectedStep) throw new Error("No step selected.");
-        // step id is the text PK — update by id
         const { error } = await supabase.from("test_steps").update({
           action:          form.action.trim(),
           expected_result: form.expected_result.trim(),
@@ -1545,10 +1529,10 @@ const ImportModal: React.FC<{ onClose: () => void }> = ({ onClose }) => {
   if (target === "steps_manual") return <ImportStepsManualModal onClose={onClose} onBack={() => setTarget(null)} />;
 
   const options: { id: ImportTarget; icon: React.ReactNode; label: string; desc: string; badge: string }[] = [
-    { id: "modules",      icon: <Package size={22} />, label: "Modules",     desc: "Create · update · delete module records", badge: "Manual" },
+    { id: "modules",      icon: <Package size={22} />,     label: "Modules",     desc: "Create · update · delete module records", badge: "Manual" },
     { id: "tests",        icon: <FlaskConical size={22} />, label: "Tests",       desc: "Manual create · update · delete",         badge: "Manual" },
-    { id: "steps_manual", icon: <Hash size={22} />, label: "Steps",       desc: "Search by module › test › step",          badge: "Manual" },
-    { id: "steps",        icon: <FolderOpen size={22} />, label: "Steps (CSV)", desc: "Select test · op · upload CSV",            badge: "CSV"    },
+    { id: "steps_manual", icon: <Hash size={22} />,         label: "Steps",       desc: "Search by module › test › step",          badge: "Manual" },
+    { id: "steps",        icon: <FolderOpen size={22} />,   label: "Steps (CSV)", desc: "Select test · op · upload CSV",            badge: "CSV"    },
   ];
 
   return (
@@ -1644,6 +1628,19 @@ const MobileNav: React.FC<Props> = ({ activePage, onNavigate }) => {
   useOutsideClick(sheetRef, showMore,       closeMore);
   useOutsideClick(adminRef, showAdminPanel, closeAdminPanel);
 
+  // Release test lock then sign out
+  const handleSignOut = useCallback(async () => {
+    try {
+      if (user?.id) {
+        await supabase.from("test_locks").delete().eq("user_id", user.id);
+      }
+      await signOut();
+    } catch (err) {
+      console.error("Sign out failed:", err);
+    }
+    setShowMore(false);
+  }, [user?.id, signOut]);
+
   return (
     <>
       {/* ── Admin-only modals ─────────────────────────────────────────── */}
@@ -1695,7 +1692,7 @@ const MobileNav: React.FC<Props> = ({ activePage, onNavigate }) => {
               </div>
             </button>
             <div className="border-t border-[var(--border-color)]" />
-            <button onClick={() => { signOut(); setShowMore(false); }}
+            <button onClick={handleSignOut}
               className="flex items-center gap-4 px-4 py-3.5 rounded-xl bg-red-50 dark:bg-red-500/10 hover:bg-red-100 dark:hover:bg-red-500/20 transition-colors text-red-600 dark:text-red-400 border border-red-200 dark:border-red-500/20">
               <LogOut size={22} />
               <div className="text-left">
