@@ -358,7 +358,7 @@ const TestExecution: React.FC<Props> = ({
     const results = await Promise.all(
       uniquePaths.map(async path => {
         const { data, error } = await supabase.storage
-          .from("teststeps")
+          .from("test_steps")
           .createSignedUrl(path, 60 * 60);
         if (error || !data?.signedUrl) return [path, path] as const;
         return [path, data.signedUrl] as const;
@@ -379,13 +379,13 @@ const TestExecution: React.FC<Props> = ({
     (async () => {
       const [mtRes, srRes, lockRes] = await Promise.all([
         supabase
-          .from("moduletests")
+          .from("module_tests")
           .select("id, testsname")
           .eq("modulename", moduleName)
           .order("id"),
-        supabase.rpc("get_step_results_for_module", { pmodulename: moduleName }),
+        supabase.rpc("get_step_results_for_module", { p_module_name: moduleName }),
         supabase
-          .from("testlocks")
+          .from("test_locks")
           .select("moduletestid, userid, lockedbyname")
           .eq("moduletestid", currentMtId),
       ]);
@@ -398,7 +398,7 @@ const TestExecution: React.FC<Props> = ({
 
       const testNames = Array.from(new Set(rawMts.map(m => m.testsname)));
       const testsRes  = testNames.length
-        ? await supabase.rpc("get_tests_by_names", { pnames: testNames })
+        ? await supabase.rpc("get_tests_by_names", { p_names: testNames })
         : { data: [] };
       const testsMap  = Object.fromEntries(
         ((testsRes.data ?? []) as { name: string; serialno: number }[])
@@ -420,7 +420,7 @@ const TestExecution: React.FC<Props> = ({
 
       const stepIds  = rawSrs.map(sr => sr.teststepsid);
       const stepsRes = stepIds.length
-        ? await supabase.rpc("get_test_steps_by_ids", { pids: stepIds })
+        ? await supabase.rpc("get_test_steps_by_ids", { p_ids: stepIds })
         : { data: [] };
       const stepsMap = Object.fromEntries(
         ((stepsRes.data ?? []) as any[]).map(s => [s.id, s])
@@ -501,11 +501,10 @@ const TestExecution: React.FC<Props> = ({
     if (heartbeatRef.current) clearInterval(heartbeatRef.current);
     heartbeatRef.current = setInterval(async () => {
       if (user) {
-        await supabase
-          .from("testlocks")
-          .update({ lockedat: new Date().toISOString() })
-          .eq("moduletestid", currentMtId)
-          .eq("userid", user.id);
+        await supabase.rpc("update_lock_heartbeat", {
+          p_module_test_id: currentMtId,
+          p_user_id:        user.id,
+        });
       }
     }, 15000);
   }, [currentMtId, user]);
@@ -520,7 +519,7 @@ const TestExecution: React.FC<Props> = ({
     if (!user) return;
     let cancelled = false;
     (async () => {
-      await supabase.from("testlocks").upsert(
+      await supabase.from("test_locks").upsert(
         {
           moduletestid: currentMtId,
           userid:       user.id,
@@ -531,7 +530,7 @@ const TestExecution: React.FC<Props> = ({
       );
       if (cancelled) return;
       const { data: owned } = await supabase
-        .from("testlocks")
+        .from("test_locks")
         .select("userid")
         .eq("moduletestid", currentMtId)
         .single();
@@ -540,7 +539,7 @@ const TestExecution: React.FC<Props> = ({
     return () => {
       cancelled = true;
       stopHeartbeat();
-      supabase.from("testlocks").delete().eq("moduletestid", currentMtId).eq("userid", user.id);
+      supabase.from("test_locks").delete().eq("moduletestid", currentMtId).eq("userid", user.id);
     };
   }, [currentMtId, user?.id, startHeartbeat, stopHeartbeat]);
 
@@ -548,7 +547,7 @@ const TestExecution: React.FC<Props> = ({
   useEffect(() => {
     const lockChannel = supabase
       .channel(`lock-${currentMtId}`)
-      .on("postgres_changes", { event: "*", schema: "public", table: "testlocks", filter: `moduletestid=eq.${currentMtId}` },
+      .on("postgres_changes", { event: "*", schema: "public", table: "test_locks", filter: `moduletestid=eq.${currentMtId}` },
         ({ eventType, new: newRow }: any) => {
           if (eventType === "DELETE") setLock(null);
           else setLock(newRow);
@@ -557,8 +556,8 @@ const TestExecution: React.FC<Props> = ({
       .subscribe();
 
     const srChannel = supabase
-      .channel(`stepresults-${moduleName}-${testsName}`)
-      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "stepresults", filter: `modulename=eq.${moduleName}` },
+      .channel(`step_results-${moduleName}-${testsName}`)
+      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "step_results", filter: `modulename=eq.${moduleName}` },
         ({ new: updated }: any) => {
           setSteps(prev => {
             const match = prev.find(s => s.stepResultId === updated.id);
@@ -622,9 +621,9 @@ const TestExecution: React.FC<Props> = ({
 
       try {
         const rpcRes = await supabase.rpc("update_step_result", {
-          pmodulename:  moduleName,
-          pteststepsid: stepId,
-          pstatus:      status,
+          p_module_name:  moduleName,
+          p_test_steps_id: stepId,
+          p_status:      status,
           premarks:     remarks,
           pdisplayname: displayName,
         });
@@ -658,9 +657,9 @@ const TestExecution: React.FC<Props> = ({
       const rpcResults = await Promise.all(
         actionable.map(s =>
           supabase.rpc("update_step_result", {
-            pmodulename:  moduleName,
-            pteststepsid: s.stepId,
-            pstatus:      "pending",
+            p_module_name:  moduleName,
+            p_test_steps_id: s.stepId,
+            p_status:      "pending",
             premarks:     "",
             pdisplayname: undoName,
           })
@@ -700,7 +699,7 @@ const TestExecution: React.FC<Props> = ({
   const handleFinish = async () => {
     stopHeartbeat();
     if (user) {
-      await supabase.from("testlocks").delete().eq("moduletestid", currentMtId).eq("userid", user.id);
+      await supabase.from("test_locks").delete().eq("moduletestid", currentMtId).eq("userid", user.id);
     }
     log(`Finished test ${currentTest?.name}`, "pass");
     addToast(`Test ${currentTest?.name} completed!`, "success");
