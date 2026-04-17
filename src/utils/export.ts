@@ -25,28 +25,23 @@ const MUTED       = [130, 130, 130] as [number, number, number];
 const FAINT       = [190, 190, 190] as [number, number, number];
 const WHITE       = [255, 255, 255] as [number, number, number];
 
-// Table header fill
-const HDR_BG      = [235, 235, 237] as [number, number, number]; // cool grey
+const HDR_BG      = [235, 235, 237] as [number, number, number];
 const HDR_TXT     = [55,  55,  65 ] as [number, number, number];
 
-// Status row fills — very light material tints
-const PASS_BG     = [232, 247, 237] as [number, number, number]; // light green-50
-const FAIL_BG     = [254, 235, 235] as [number, number, number]; // light red-50
-const ROW_ALT     = [249, 249, 251] as [number, number, number]; // neutral row alt
+const PASS_BG     = [232, 247, 237] as [number, number, number];
+const FAIL_BG     = [254, 235, 235] as [number, number, number];
+const ROW_ALT     = [249, 249, 251] as [number, number, number];
 
-// Divider fills
-const DIV1_BG     = [255, 243, 224] as [number, number, number]; // orange-50
-const DIV2_BG     = [227, 242, 253] as [number, number, number]; // blue-50
-const DIV3_BG     = [255, 248, 225] as [number, number, number]; // amber-50
+const DIV1_BG     = [255, 243, 224] as [number, number, number];
+const DIV2_BG     = [227, 242, 253] as [number, number, number];
+const DIV3_BG     = [255, 248, 225] as [number, number, number];
 
-// Ink colours
 const GREEN_INK   = [20,  110,  50] as [number, number, number];
 const RED_INK     = [180,  30,  30] as [number, number, number];
 const AMBER_INK   = [130,  80,   0] as [number, number, number];
 const BLUE_INK    = [20,   70, 180] as [number, number, number];
 const ORANGE_INK  = [190,  80,   0] as [number, number, number];
 
-// Module / test section headers
 const MOD_BG      = [232, 240, 254] as [number, number, number];
 const MOD_TXT     = [20,   60, 160] as [number, number, number];
 const TEST_BG     = [240, 240, 255] as [number, number, number];
@@ -65,7 +60,6 @@ const statusBg = (s: string): [number, number, number] =>
 
 const pad2 = (n: number) => String(n).padStart(2, "0");
 
-// Divider level → fill + text colour
 const dividerStyle = (level: number) => {
   if (level === 1) return { bg: DIV1_BG, txt: ORANGE_INK };
   if (level === 2) return { bg: DIV2_BG, txt: BLUE_INK };
@@ -281,7 +275,7 @@ const tableDefaults = (doc: jsPDF, startY: number) => ({
 });
 
 
-// ── Step row builder — shared across execution & detail ───────
+// ── Step row builder ──────────────────────────────────────────
 const buildStepRow = (step: FlatData) => {
   const bg = statusBg(step.status);
   const sc = statusColor(step.status);
@@ -291,7 +285,7 @@ const buildStepRow = (step: FlatData) => {
       styles: {
         halign:    "center" as const,
         fillColor: bg,
-        textColor: DARK,          // high-contrast SN
+        textColor: DARK,
         fontStyle: "bold" as const,
         fontSize:  8.5,
       },
@@ -326,7 +320,7 @@ const buildDividerRow = (d: FlatData, colSpan: number) => {
       textColor: txt,
       fontStyle: "bold" as const,
       fontSize:  8,
-      lineColor: FAINT as [number,number,number],
+      lineColor: FAINT as [number, number, number],
       lineWidth: 0.3,
       cellPadding: { top: 4, bottom: 4, left: 10, right: 4 },
     },
@@ -338,15 +332,15 @@ const buildDividerRow = (d: FlatData, colSpan: number) => {
 // 1. DASHBOARD EXPORTS
 // ─────────────────────────────────────────────────────────────
 export const exportDashboardCSV = (summaries: ModuleSummary[]) => {
-  const headers = "#,Module,Description,Tests,Total Steps,Pass,Fail,Pending,Pass Rate (%)
-";
+  const headers = "#,Module,Description,Tests,Total Steps,Pass,Fail,Pending,Pass Rate (%)\n";
   const rows = summaries.map((s, i) =>
     [pad2(i + 1), `"${s.name}"`, `"${s.description || ""}"`,
      s.testCount ?? "", s.total, s.pass, s.fail, s.pending, `${s.passRate}%`].join(",")
-  ).join("
-");
-  download(new Blob(["﻿" + headers + rows], { type: "text/csv" }),
-    `TestPro_Dashboard_${today()}.csv`);
+  ).join("\n");
+  download(
+    new Blob(["\uFEFF" + headers + rows], { type: "text/csv" }),
+    `TestPro_Dashboard_${today()}.csv`
+  );
 };
 
 export const exportDashboardPDF = (summaries: ModuleSummary[]) => {
@@ -437,15 +431,15 @@ const buildTestSummaries = (data: FlatData[]): TestSummaryRow[] => {
 
 export const exportReportCSV = (_modules: Module[], data: FlatData[]) => {
   const summaries = buildTestSummaries(data);
-  const headers   = "#,Module,Test,Total Steps,Pass,Fail,Pending,Pass Rate (%)
-";
+  const headers   = "#,Module,Test,Total Steps,Pass,Fail,Pending,Pass Rate (%)\n";
   const rows      = summaries.map((s, i) =>
     [pad2(i + 1), `"${s.module}"`, `"${s.test}"`,
      s.total, s.pass, s.fail, s.pending, `${s.passRate}%`].join(",")
-  ).join("
-");
-  download(new Blob(["﻿" + headers + rows], { type: "text/csv" }),
-    `TestPro_Report_${today()}.csv`);
+  ).join("\n");
+  download(
+    new Blob(["\uFEFF" + headers + rows], { type: "text/csv" }),
+    `TestPro_Report_${today()}.csv`
+  );
 };
 
 export const exportReportPDF = (_modules: Module[], data: FlatData[]) => {
@@ -475,7 +469,7 @@ export const exportReportPDF = (_modules: Module[], data: FlatData[]) => {
         styles: {
           fillColor: MOD_BG, textColor: MOD_TXT,
           fontStyle: "bold" as const, fontSize: 7.5,
-          lineColor: FAINT as [number,number,number], lineWidth: 0.3,
+          lineColor: FAINT as [number, number, number], lineWidth: 0.3,
           cellPadding: { top: 3.5, bottom: 3.5, left: 8, right: 4 },
         },
       }]);
@@ -518,7 +512,6 @@ export const exportReportPDF = (_modules: Module[], data: FlatData[]) => {
   openPrintPreview(doc);
 };
 
-// Backward-compat aliases
 export const exportAllCSV    = exportReportCSV;
 export const exportAllPDF    = exportReportPDF;
 export const exportModuleCSV = (_name: string, data: FlatData[]) => exportReportCSV([], data);
@@ -547,17 +540,20 @@ export const exportModuleDetailCSV = (data: FlatData[]) => {
       lastTest = d.test;
     }
     lines.push([
-      `"${d.module}"`, `"${d.test}"`, d.serial,
-      `"${d.action.replace(/"/g, '""')}"`  ,
-      `"${d.expected.replace(/"/g, '""')}"`  ,
-      `"${d.remarks.replace(/"/g, '""')}"`  ,
+      `"${d.module}"`,
+      `"${d.test}"`,
+      d.serial,
+      `"${d.action.replace(/"/g, '""')}"`,
+      `"${d.expected.replace(/"/g, '""')}"`,
+      `"${d.remarks.replace(/"/g, '""')}"`,
       d.status,
     ].join(","));
   }
 
-  download(new Blob(["﻿" + lines.join("
-")], { type: "text/csv" }),
-    `TestPro_ModuleDetail_${today()}.csv`);
+  download(
+    new Blob(["\uFEFF" + lines.join("\n")], { type: "text/csv" }),
+    `TestPro_ModuleDetail_${today()}.csv`
+  );
 };
 
 export const exportModuleDetailPDF = (data: FlatData[]) => {
@@ -608,7 +604,7 @@ export const exportModuleDetailPDF = (data: FlatData[]) => {
       styles: {
         fillColor: MOD_BG, textColor: MOD_TXT,
         fontStyle: "bold" as const, fontSize: 8,
-        lineColor: FAINT as [number,number,number], lineWidth: 0.35,
+        lineColor: FAINT as [number, number, number], lineWidth: 0.35,
         cellPadding: { top: 4.5, bottom: 4.5, left: 10, right: 6 },
       },
     }]);
@@ -619,26 +615,24 @@ export const exportModuleDetailPDF = (data: FlatData[]) => {
       const tPending = test.steps.filter(s => s.status === "pending").length;
       const tRate    = test.steps.length > 0 ? Math.round((tPass / test.steps.length) * 100) : 0;
 
-      // ✅ Test header: serial no + test name (not generic)
       body.push([{
         content: `    ${pad2(test.serial)}.  ${test.name}   ·   P: ${tPass}  F: ${tFail}  N: ${tPending}   ${tRate}% pass`,
         colSpan: 5,
         styles: {
           fillColor: TEST_BG, textColor: TEST_TXT,
           fontStyle: "bold" as const, fontSize: 7.5,
-          lineColor: FAINT as [number,number,number], lineWidth: 0.3,
+          lineColor: FAINT as [number, number, number], lineWidth: 0.3,
           cellPadding: { top: 3, bottom: 3, left: 20, right: 6 },
         },
       }]);
 
-      // Dividers and steps interleaved
-      for (const d of data.filter(
-        row => row.module === test.steps[0]?.module && row.test === test.name
+      for (const row of data.filter(
+        r => r.module === test.steps[0]?.module && r.test === test.name
       )) {
-        if (d.isDivider) {
-          body.push(buildDividerRow(d, 5));
+        if (row.isDivider) {
+          body.push(buildDividerRow(row, 5));
         } else {
-          body.push(buildStepRow(d));
+          body.push(buildStepRow(row));
         }
       }
     }
@@ -667,25 +661,26 @@ export const exportModuleDetailPDF = (data: FlatData[]) => {
 // 4. TEST EXECUTION EXPORTS
 // ─────────────────────────────────────────────────────────────
 export const exportExecutionCSV = (moduleName: string, testName: string, data: FlatData[]) => {
-  const headers = "#,Action,Expected Result,Remarks,Status
-";
+  const headers = "#,Action,Expected Result,Remarks,Status\n";
   const rows = data.map(d => {
     if (d.isDivider) return `,"${d.action.replace(/"/g, '""')}","","",""`;
-    return [d.serial,
-      `"${d.action.replace(/"/g, '""')}"`  ,
-      `"${d.expected.replace(/"/g, '""')}"`  ,
-      `"${d.remarks.replace(/"/g, '""')}"`  ,
-      d.status].join(",");
-  }).join("
-");
-  download(new Blob(["﻿" + headers + rows], { type: "text/csv" }),
-    `${moduleName}_${testName}_${today()}.csv`);
+    return [
+      d.serial,
+      `"${d.action.replace(/"/g, '""')}"`,
+      `"${d.expected.replace(/"/g, '""')}"`,
+      `"${d.remarks.replace(/"/g, '""')}"`,
+      d.status,
+    ].join(",");
+  }).join("\n");
+  download(
+    new Blob(["\uFEFF" + headers + rows], { type: "text/csv" }),
+    `${moduleName}_${testName}_${today()}.csv`
+  );
 };
 
 export const exportExecutionPDF = (moduleName: string, testName: string, data: FlatData[]) => {
   const doc = new jsPDF({ orientation: "landscape" });
 
-  // ✅ Title = "T001 · Test Name", subtitle = module
   const contentY = drawHeader(doc, testName, moduleName);
 
   const nd      = data.filter(d => !d.isDivider);
@@ -720,7 +715,6 @@ export const exportExecutionPDF = (moduleName: string, testName: string, data: F
 
 
 // ── Helpers ───────────────────────────────────────────────────
-// ── Print Preview — open in new tab for browser print dialog ──
 const openPrintPreview = (doc: jsPDF) => {
   const url = doc.output("bloburl");
   const win = window.open(url as unknown as string, "_blank");
@@ -765,4 +759,4 @@ const docxWrapper = (title: string, body: string) => `
   </body></html>`;
 
 const downloadDocx = (html: string, filename: string) =>
-  download(new Blob(["﻿", html], { type: "application/msword" }), filename);
+  download(new Blob(["\uFEFF", html], { type: "application/msword" }), filename);
