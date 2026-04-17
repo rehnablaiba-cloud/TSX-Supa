@@ -17,10 +17,10 @@ export function useSessionTimeout(
   const inWarning      = useRef(false);
   const secLeft        = useRef(Math.floor(WARNING_MS / 1000));
 
-  // ── NEW: wall-clock anchors ──────────────────────────────────────────────
-  const lastActivityAt = useRef<number>(Date.now()); // updated on every activity
-  const warningStartAt = useRef<number | null>(null); // set when warning begins
-  // ────────────────────────────────────────────────────────────────────────
+  // ── Wall-clock anchors ────────────────────────────────────────────────────
+  const lastActivityAt = useRef<number>(Date.now());
+  const warningStartAt = useRef<number | null>(null);
+  // ─────────────────────────────────────────────────────────────────────────
 
   const userIdRef    = useRef(userId);
   const onSignOutRef = useRef(onSignOut);
@@ -40,15 +40,14 @@ export function useSessionTimeout(
   }, [clearTimers]);
 
   const startWarning = useCallback(() => {
-    inWarning.current    = true;
-    warningStartAt.current = Date.now(); // ← anchor for background tab calc
-    secLeft.current      = Math.floor(WARNING_MS / 1000);
+    inWarning.current      = true;
+    warningStartAt.current = Date.now();
+    secLeft.current        = Math.floor(WARNING_MS / 1000);
     setWarning(true);
     setSecondsLeft(secLeft.current);
 
     countdown.current = setInterval(() => {
-      // Use wall-clock so ticks that fire late still show the right number
-      const elapsed = Date.now() - (warningStartAt.current ?? Date.now());
+      const elapsed   = Date.now() - (warningStartAt.current ?? Date.now());
       const remaining = Math.max(0, Math.floor((WARNING_MS - elapsed) / 1000));
       secLeft.current = remaining;
       setSecondsLeft(remaining);
@@ -58,7 +57,7 @@ export function useSessionTimeout(
 
   const resetIdleTimer = useCallback(() => {
     if (inWarning.current) return;
-    lastActivityAt.current = Date.now(); // ← record when activity happened
+    lastActivityAt.current = Date.now();
     clearTimers();
     idleTimer.current = setTimeout(startWarning, IDLE_MS);
   }, [clearTimers, startWarning]);
@@ -79,29 +78,28 @@ export function useSessionTimeout(
     }
   }, [clearTimers, startWarning]);
 
-  // ── Page Visibility handler ──────────────────────────────────────────────
+  // ── Page Visibility handler ───────────────────────────────────────────────
   const handleVisibilityChange = useCallback(() => {
     if (!userIdRef.current) return;
 
     if (document.visibilityState === "hidden") {
-      // Tab going into background — timers will be throttled/frozen.
-      // Just clear them; wall-clock refs are already up to date.
+      // Timers will be throttled/frozen in background — clear them.
+      // Wall-clock refs stay accurate.
       clearTimers();
       return;
     }
 
-    // Tab became visible again — calculate actual elapsed time.
+    // Tab became visible — compute actual elapsed time.
     const now = Date.now();
 
     if (inWarning.current && warningStartAt.current !== null) {
-      // We were already in the warning phase when hidden.
-      const elapsed  = now - warningStartAt.current;
+      // Was already in the warning phase when hidden.
+      const elapsed   = now - warningStartAt.current;
       const remaining = Math.max(0, Math.floor((WARNING_MS - elapsed) / 1000));
       if (remaining <= 0) {
         releaseAndSignOut();
         return;
       }
-      // Resume the countdown from the correct remaining time.
       secLeft.current = remaining;
       setSecondsLeft(remaining);
       countdown.current = setInterval(() => {
@@ -114,44 +112,46 @@ export function useSessionTimeout(
       return;
     }
 
-    // We were in the normal idle phase when hidden.
+    // Was in the normal idle phase when hidden.
     const idleElapsed = now - lastActivityAt.current;
 
     if (idleElapsed >= IDLE_MS + WARNING_MS) {
-      // Been idle longer than the full idle + warning window → sign out now.
+      // Idle longer than the full idle + warning window → sign out immediately.
       releaseAndSignOut();
-  } else if (idleElapsed >= IDLE_MS) {
-  const alreadyIntoWarning = idleElapsed - IDLE_MS;
-  const remaining = Math.max(0, Math.floor((WARNING_MS - alreadyIntoWarning) / 1000));
+    } else if (idleElapsed >= IDLE_MS) {
+      // ✅ FIXED: do NOT call startWarning() here — it would overwrite
+      // warningStartAt with Date.now() and reset the countdown to the full
+      // WARNING_MS even though part of the warning period has already elapsed.
+      const alreadyIntoWarning = idleElapsed - IDLE_MS;
+      const remaining          = Math.max(0, Math.floor((WARNING_MS - alreadyIntoWarning) / 1000));
 
-  if (remaining <= 0) {
-    releaseAndSignOut();
-    return;
-  }
+      if (remaining <= 0) {
+        releaseAndSignOut();
+        return;
+      }
 
-  // ✅ Set anchor BEFORE anything else — do NOT call startWarning() here,
-  // it would overwrite warningStartAt with Date.now() and reset the counter.
-  inWarning.current      = true;
-  warningStartAt.current = now - alreadyIntoWarning; // backdated correctly
-  secLeft.current        = remaining;
-  setWarning(true);
-  setSecondsLeft(remaining);
+      // Set the anchor BEFORE touching any React state, so the interval
+      // callback always sees the correct (backdated) warningStartAt.
+      inWarning.current      = true;
+      warningStartAt.current = now - alreadyIntoWarning; // backdated anchor
+      secLeft.current        = remaining;
+      setWarning(true);
+      setSecondsLeft(remaining);
 
-  countdown.current = setInterval(() => {
-    const e = Date.now() - (warningStartAt.current ?? now);
-    const r = Math.max(0, Math.floor((WARNING_MS - e) / 1000));
-    secLeft.current = r;
-    setSecondsLeft(r);
-    if (r <= 0) releaseAndSignOut();
-  }, 1000);
-}
+      countdown.current = setInterval(() => {
+        const e = Date.now() - (warningStartAt.current ?? now);
+        const r = Math.max(0, Math.floor((WARNING_MS - e) / 1000));
+        secLeft.current = r;
+        setSecondsLeft(r);
+        if (r <= 0) releaseAndSignOut();
+      }, 1000);
     } else {
       // Still within the idle window — restart the remaining idle time.
-      const remaining = IDLE_MS - idleElapsed;
+      const remaining   = IDLE_MS - idleElapsed;
       idleTimer.current = setTimeout(startWarning, remaining);
     }
   }, [clearTimers, releaseAndSignOut, startWarning]);
-  // ────────────────────────────────────────────────────────────────────────
+  // ─────────────────────────────────────────────────────────────────────────
 
   useEffect(() => {
     if (!userId) {
