@@ -696,11 +696,30 @@ const TestExecution: React.FC<Props> = ({
     return true;
   }), [steps, filter, search]);
 
+  // ── FIX 1: populate dividerLevel so export colours work ───
   const flatData = useMemo<FlatData[]>(() =>
     steps.map(s =>
       s.isdivider
-        ? { module: moduleName, test: currentTest?.name ?? "", serial: 0, action: s.action, expected: "", remarks: "", status: "", isDivider: true }
-        : { module: moduleName, test: currentTest?.name ?? "", serial: s.serialno, action: s.action, expected: s.expectedresult, remarks: s.remarks || "", status: s.status }
+        ? {
+            module:       moduleName,
+            test:         currentTest?.name ?? "",
+            serial:       0,
+            action:       s.action,
+            expected:     s.expectedresult,           // keep raw value as fallback
+            remarks:      "",
+            status:       "",
+            isDivider:    true,
+            dividerLevel: getDividerLevel(s.expectedresult), // explicit level
+          }
+        : {
+            module:   moduleName,
+            test:     currentTest?.name ?? "",
+            serial:   s.serialno,
+            action:   s.action,
+            expected: s.expectedresult,
+            remarks:  s.remarks || "",
+            status:   s.status,
+          }
     ),
   [steps, moduleName, currentTest?.name]);
 
@@ -730,6 +749,11 @@ const TestExecution: React.FC<Props> = ({
         failPct:     total > 0 ? (fail / total) * 100 : 0,
       };
     }, [steps]);
+
+  // ── FIX 2: include serial number in export title ──────────
+  const exportTestName = currentTest
+    ? `${currentTest.serialno}. ${currentTest.name}`
+    : "test";
 
   if (lockLoading) return (
     <div className="flex flex-col items-center justify-center gap-3" style={{ height: "100dvh" }}>
@@ -775,14 +799,14 @@ const TestExecution: React.FC<Props> = ({
             icon: <FileSpreadsheet size={16} />,
             color: "bg-[var(--color-primary)]",
             hoverColor: "hover:bg-[var(--color-primary-hover)]",
-            onConfirm: () => exportExecutionCSV(moduleName, currentTest?.name ?? "test", flatData),
+            onConfirm: () => exportExecutionCSV(moduleName, exportTestName, flatData),
           },
           {
             label: "PDF",
             icon: <FileText size={16} />,
             color: "bg-[var(--color-blue)]",
             hoverColor: "hover:bg-[var(--color-blue-hover)]",
-            onConfirm: () => exportExecutionPDF(moduleName, currentTest?.name ?? "test", flatData),
+            onConfirm: () => exportExecutionPDF(moduleName, exportTestName, flatData),
           },
         ]}
       />
