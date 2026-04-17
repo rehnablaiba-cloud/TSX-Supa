@@ -2,6 +2,7 @@ import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import { Module } from "../types";
 
+
 // ── Shared Types ──────────────────────────────────────────────
 export interface FlatData {
   module: string; test: string; serial: number;
@@ -15,89 +16,128 @@ export interface ModuleSummary {
   total: number; pass: number; fail: number; pending: number; passRate: number;
 }
 
-// ── Palette ───────────────────────────────────────────────────
-const ACCENT     = [37,  99, 235] as [number, number, number]; // blue-600
-const DARK       = [15,  23,  42] as [number, number, number];
-const MID        = [51,  65,  85] as [number, number, number];
-const MUTED      = [100,116, 139] as [number, number, number];
-const RULE       = [226,232, 240] as [number, number, number];
-const WHITE      = [255,255, 255] as [number, number, number];
-const ROW_ALT    = [248,250, 252] as [number, number, number];
-const GREEN      = [22, 163,  74] as [number, number, number];
-const RED        = [220,  38,  38] as [number, number, number];
-const AMBER      = [161,  98,   7] as [number, number, number];
 
-const PASS_BG    = [240,253, 244] as [number, number, number];
-const FAIL_BG    = [254,242, 242] as [number, number, number];
-const DIVIDER_BG = [255,247, 237] as [number, number, number];
-const DIVIDER_TXT= [180, 83,   9] as [number, number, number];
-const MODULE_BG  = [239,246, 255] as [number, number, number];
-const MODULE_TXT = [29,  78, 216] as [number, number, number];
-const TEST_BG    = [245,245, 255] as [number, number, number];
-const TEST_TXT   = [67,  56, 202] as [number, number, number];
+// ── Palette — ink-only, printer-safe ─────────────────────────
+// No solid fills. Strokes, hairlines, and text only.
+const BLACK       = [0,   0,   0  ] as [number, number, number];
+const DARK        = [30,  30,  30 ] as [number, number, number];
+const MID         = [80,  80,  80 ] as [number, number, number];
+const MUTED       = [130, 130, 130] as [number, number, number];
+const FAINT       = [190, 190, 190] as [number, number, number];
+const WHITE       = [255, 255, 255] as [number, number, number];
+const ROW_ALT     = [250, 250, 250] as [number, number, number]; // barely-there tint
+
+// Semantic text colours (dark enough for print, no fills)
+const GREEN_INK   = [20,  110,  50] as [number, number, number];
+const RED_INK     = [180,  30,  30] as [number, number, number];
+const AMBER_INK   = [140,  90,   0] as [number, number, number];
+const BLUE_INK    = [20,   70, 180] as [number, number, number];
+
 
 // ── Utilities ─────────────────────────────────────────────────
 const statusColor = (s: string): [number, number, number] =>
-  s === "pass" ? GREEN : s === "fail" ? RED : AMBER;
+  s === "pass" ? GREEN_INK : s === "fail" ? RED_INK : AMBER_INK;
 
 const statusLabel = (s: string) =>
   s === "pass" ? "PASS" : s === "fail" ? "FAIL" : "PENDING";
 
 const pad2 = (n: number) => String(n).padStart(2, "0");
 
-// ── Draw filled circle with letter icon ───────────────────────
-const drawCircleIcon = (
+
+// ── Line icon set (drawn with doc primitives) ─────────────────
+// Each icon draws into a small bounding box: cx±r, cy±r
+type IconType = "total" | "pass" | "fail" | "pending" | "tests";
+
+const drawLineIcon = (
   doc: jsPDF,
   cx: number, cy: number, r: number,
   color: [number, number, number],
-  letter: string
+  icon: IconType
 ) => {
-  doc.setFillColor(...color);
-  doc.circle(cx, cy, r, "F");
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(r * 1.7);
-  doc.setTextColor(255, 255, 255);
-  doc.text(letter, cx, cy + r * 0.52, { align: "center" });
+  doc.setDrawColor(...color);
+  doc.setLineWidth(0.55);
+
+  switch (icon) {
+    case "total": {
+      // List lines
+      const lx = cx - r * 0.55;
+      const rx = cx + r * 0.55;
+      [-0.55, 0, 0.55].forEach(oy => {
+        doc.line(lx, cy + r * oy, rx, cy + r * oy);
+      });
+      break;
+    }
+    case "pass": {
+      // Checkmark ✓
+      doc.line(cx - r * 0.6, cy, cx - r * 0.05, cy + r * 0.55);
+      doc.line(cx - r * 0.05, cy + r * 0.55, cx + r * 0.65, cy - r * 0.55);
+      break;
+    }
+    case "fail": {
+      // × cross
+      doc.line(cx - r * 0.55, cy - r * 0.55, cx + r * 0.55, cy + r * 0.55);
+      doc.line(cx + r * 0.55, cy - r * 0.55, cx - r * 0.55, cy + r * 0.55);
+      break;
+    }
+    case "pending": {
+      // Clock circle + hands
+      doc.circle(cx, cy, r * 0.7, "S");
+      doc.line(cx, cy - r * 0.45, cx, cy);
+      doc.line(cx, cy, cx + r * 0.35, cy + r * 0.2);
+      break;
+    }
+    case "tests": {
+      // # hash
+      const g = r * 0.38;
+      doc.line(cx - g, cy - r * 0.55, cx - g, cy + r * 0.55);
+      doc.line(cx + g, cy - r * 0.55, cx + g, cy + r * 0.55);
+      doc.line(cx - r * 0.55, cy - g, cx + r * 0.55, cy - g);
+      doc.line(cx - r * 0.55, cy + g, cx + r * 0.55, cy + g);
+      break;
+    }
+  }
 };
 
-// ── Shared header (no branding) ───────────────────────────────
-// Returns the Y position where body content should begin
+
+// ── Shared header ─────────────────────────────────────────────
 const drawHeader = (doc: jsPDF, title: string, subtitle?: string): number => {
   const W = doc.internal.pageSize.getWidth();
 
-  // Thin top accent stripe only
-  doc.setFillColor(...ACCENT);
-  doc.rect(0, 0, W, 1.5, "F");
+  // Top rule — single hairline
+  doc.setDrawColor(...DARK);
+  doc.setLineWidth(0.6);
+  doc.line(14, 5, W - 14, 5);
 
-  // Centered title
+  // Title
   doc.setFont("helvetica", "bold");
-  doc.setFontSize(15);
+  doc.setFontSize(14);
   doc.setTextColor(...DARK);
-  doc.text(title, W / 2, 15, { align: "center" });
+  doc.text(title, W / 2, 14, { align: "center" });
 
-  let lineY = 20;
+  let lineY = 19;
 
   if (subtitle) {
     doc.setFont("helvetica", "normal");
     doc.setFontSize(8);
     doc.setTextColor(...MUTED);
-    doc.text(subtitle, W / 2, 22, { align: "center" });
-    lineY = 27;
+    doc.text(subtitle, W / 2, 21, { align: "center" });
+    lineY = 26;
   }
 
-  // Generated timestamp right-aligned
+  // Generated timestamp
   doc.setFont("helvetica", "normal");
   doc.setFontSize(6.5);
   doc.setTextColor(...MUTED);
   doc.text(`Generated: ${new Date().toLocaleString()}`, W - 14, lineY - 1, { align: "right" });
 
-  // Horizontal rule
-  doc.setDrawColor(...RULE);
-  doc.setLineWidth(0.3);
+  // Bottom rule — light hairline
+  doc.setDrawColor(...FAINT);
+  doc.setLineWidth(0.25);
   doc.line(14, lineY + 2, W - 14, lineY + 2);
 
-  return lineY + 7; // content start Y
+  return lineY + 7;
 };
+
 
 // ── Shared footer ─────────────────────────────────────────────
 const drawFooter = (doc: jsPDF) => {
@@ -106,7 +146,7 @@ const drawFooter = (doc: jsPDF) => {
   const pages = (doc.internal as any).getNumberOfPages();
   for (let i = 1; i <= pages; i++) {
     doc.setPage(i);
-    doc.setDrawColor(...RULE);
+    doc.setDrawColor(...FAINT);
     doc.setLineWidth(0.25);
     doc.line(14, H - 12, W - 14, H - 12);
     doc.setFont("helvetica", "normal");
@@ -117,12 +157,13 @@ const drawFooter = (doc: jsPDF) => {
   }
 };
 
-// ── Stats cards with icon circles ────────────────────────────
+
+// ── Stats bar — outline cards, line icons, no fills ───────────
 interface ExtraCard {
   label: string;
   value: string;
   color: [number, number, number];
-  icon: string;
+  icon: IconType;
 }
 
 const drawStatsBar = (
@@ -131,14 +172,14 @@ const drawStatsBar = (
   startY: number,
   extraCards?: ExtraCard[]
 ): number => {
-  const W = doc.internal.pageSize.getWidth();
+  const W       = doc.internal.pageSize.getWidth();
   const usableW = W - 28;
 
   const cards: ExtraCard[] = [
-    { label: "Total Steps", value: String(total),   color: DARK,  icon: "T" },
-    { label: "Passed",      value: String(pass),    color: GREEN, icon: "P" },
-    { label: "Failed",      value: String(fail),    color: RED,   icon: "F" },
-    { label: "Pending",     value: String(pending), color: AMBER, icon: "N" },
+    { label: "Total Steps", value: String(total),   color: DARK,     icon: "total"   },
+    { label: "Passed",      value: String(pass),    color: GREEN_INK, icon: "pass"   },
+    { label: "Failed",      value: String(fail),    color: RED_INK,   icon: "fail"   },
+    { label: "Pending",     value: String(pending), color: AMBER_INK, icon: "pending" },
     ...(extraCards ?? []),
   ];
 
@@ -149,50 +190,55 @@ const drawStatsBar = (
     const x = 14 + i * (cardW + 3);
     const y = startY;
 
-    // Card: white fill with light border (no heavy solid)
+    // Outline-only card — no fill
     doc.setFillColor(...WHITE);
-    doc.setDrawColor(...RULE);
-    doc.setLineWidth(0.25);
+    doc.setDrawColor(...FAINT);
+    doc.setLineWidth(0.3);
     doc.roundedRect(x, y, cardW, cardH, 2, 2, "FD");
 
-    // Left accent stripe
-    doc.setFillColor(...card.color);
-    doc.roundedRect(x, y, 2.5, cardH, 1, 1, "F");
+    // Left accent rule (thin line, not filled rect)
+    doc.setDrawColor(...card.color);
+    doc.setLineWidth(1.2);
+    doc.line(x + 1.5, y + 3, x + 1.5, y + cardH - 3);
+    doc.setLineWidth(0.3);
 
-    // Icon circle (top-right corner)
-    drawCircleIcon(doc, x + cardW - 8, y + 7, 4, card.color, card.icon);
+    // Line icon — top-right
+    drawLineIcon(doc, x + cardW - 8, y + 7.5, 3.5, card.color, card.icon);
 
-    // Large value
+    // Value
     doc.setFont("helvetica", "bold");
     doc.setFontSize(14);
     doc.setTextColor(...card.color);
     doc.text(card.value, x + 7, y + 13);
 
-    // Small label
+    // Label
     doc.setFont("helvetica", "normal");
     doc.setFontSize(6);
     doc.setTextColor(...MUTED);
     doc.text(card.label.toUpperCase(), x + 7, y + 19);
   });
 
-  // Pass-rate progress bar
-  const rate    = total > 0 ? Math.round((pass / total) * 100) : 0;
-  const barY    = startY + cardH + 4;
-  const barH    = 3;
+  // Pass-rate bar — outline only, filled segment drawn with stroke
+  const rate  = total > 0 ? Math.round((pass / total) * 100) : 0;
+  const barY  = startY + cardH + 4;
+  const barH  = 3;
 
-  doc.setFillColor(...ROW_ALT);
-  doc.setDrawColor(...RULE);
-  doc.setLineWidth(0.2);
+  // Track (outline)
+  doc.setDrawColor(...FAINT);
+  doc.setFillColor(...WHITE);
+  doc.setLineWidth(0.25);
   doc.roundedRect(14, barY, usableW, barH, 1.5, 1.5, "FD");
 
+  // Fill segment (thin solid for the fill portion — minimal ink)
   if (rate > 0) {
-    doc.setFillColor(...GREEN);
+    doc.setFillColor(...GREEN_INK);
+    doc.setDrawColor(...GREEN_INK);
     doc.roundedRect(14, barY, (usableW * rate) / 100, barH, 1.5, 1.5, "F");
   }
 
   doc.setFont("helvetica", "bold");
   doc.setFontSize(7);
-  doc.setTextColor(...GREEN);
+  doc.setTextColor(...GREEN_INK);
   doc.text(`${rate}% pass rate`, 14, barY + barH + 5);
 
   doc.setFont("helvetica", "normal");
@@ -206,23 +252,24 @@ const drawStatsBar = (
   return barY + barH + 11;
 };
 
-// ── Shared table defaults ─────────────────────────────────────
+
+// ── Table defaults — no heavy fills, minimal ink ──────────────
 const tableDefaults = (doc: jsPDF, startY: number) => ({
   startY,
   styles: {
     fontSize: 8,
     cellPadding: { top: 3.5, bottom: 3.5, left: 4, right: 4 },
     textColor: DARK,
-    lineColor: RULE,
+    lineColor: FAINT,
     lineWidth: 0.2,
     fillColor: WHITE,
   } as any,
   headStyles: {
-    fillColor: ROW_ALT,
-    textColor: MUTED,
+    fillColor: WHITE,
+    textColor: MID,
     fontStyle: "bold" as const,
-    lineColor: RULE,
-    lineWidth: 0.2,
+    lineColor: FAINT,
+    lineWidth: 0.35,
     fontSize: 7,
     cellPadding: { top: 4, bottom: 4, left: 4, right: 4 },
   },
@@ -230,8 +277,20 @@ const tableDefaults = (doc: jsPDF, startY: number) => ({
   margin: { top: 34, left: 14, right: 14, bottom: 16 },
 });
 
+
+// ── Section / divider row styles — outline box, no solid fill ─
+const sectionRowStyle = (textColor: [number,number,number]) => ({
+  fillColor: WHITE as [number,number,number],
+  textColor,
+  fontStyle: "bold" as const,
+  fontSize: 7.5,
+  lineColor: FAINT as [number,number,number],
+  lineWidth: 0.4,
+});
+
+
 // ─────────────────────────────────────────────────────────────
-// 1. DASHBOARD EXPORTS  — includes test count column
+// 1. DASHBOARD EXPORTS
 // ─────────────────────────────────────────────────────────────
 export const exportDashboardCSV = (summaries: ModuleSummary[]) => {
   const headers = "#,Module,Description,Tests,Total Steps,Pass,Fail,Pending,Pass Rate (%)\n";
@@ -266,7 +325,7 @@ export const exportDashboardPDF = (summaries: ModuleSummary[]) => {
   const totalTests = summaries.reduce((a, s) => a + (s.testCount ?? 0), 0);
 
   const afterStats = drawStatsBar(doc, total, pass, fail, pending, contentY, [
-    { label: "Total Tests", value: String(totalTests), color: ACCENT, icon: "#" },
+    { label: "Total Tests", value: String(totalTests), color: BLUE_INK, icon: "tests" },
   ]);
 
   autoTable(doc, {
@@ -287,11 +346,11 @@ export const exportDashboardPDF = (summaries: ModuleSummary[]) => {
       0: { cellWidth: 10,  halign: "center", textColor: MUTED as any },
       1: { cellWidth: 36,  fontStyle: "bold" },
       2: { cellWidth: 52 },
-      3: { cellWidth: 18,  halign: "center", textColor: ACCENT as any, fontStyle: "bold" },
+      3: { cellWidth: 18,  halign: "center", textColor: BLUE_INK as any, fontStyle: "bold" },
       4: { cellWidth: 22,  halign: "center" },
-      5: { cellWidth: 18,  halign: "center", textColor: GREEN as any, fontStyle: "bold" },
-      6: { cellWidth: 18,  halign: "center", textColor: RED   as any, fontStyle: "bold" },
-      7: { cellWidth: 18,  halign: "center", textColor: AMBER as any },
+      5: { cellWidth: 18,  halign: "center", textColor: GREEN_INK as any, fontStyle: "bold" },
+      6: { cellWidth: 18,  halign: "center", textColor: RED_INK  as any, fontStyle: "bold" },
+      7: { cellWidth: 18,  halign: "center", textColor: AMBER_INK as any },
       8: { halign: "center", fontStyle: "bold" },
     },
   });
@@ -326,8 +385,9 @@ export const exportDashboardDocx = (summaries: ModuleSummary[]) => {
   downloadDocx(html, `TestPro_Dashboard_${today()}.doc`);
 };
 
+
 // ─────────────────────────────────────────────────────────────
-// 2. REPORT PAGE EXPORTS — module › test summary (no step rows)
+// 2. REPORT PAGE EXPORTS
 // ─────────────────────────────────────────────────────────────
 interface TestSummaryRow {
   module: string; test: string;
@@ -376,50 +436,40 @@ export const exportReportPDF = (_modules: Module[], data: FlatData[]) => {
   const pending = summaries.reduce((a, s) => a + s.pending, 0);
 
   const afterStats = drawStatsBar(doc, total, pass, fail, pending, contentY, [
-    { label: "Total Tests", value: String(summaries.length), color: ACCENT, icon: "#" },
+    { label: "Total Tests", value: String(summaries.length), color: BLUE_INK, icon: "tests" },
   ]);
 
   const body: any[] = [];
-  let lastModule = "";
+  let lastModule   = "";
   let globalSerial = 0;
 
   for (const s of summaries) {
-    // Module section header
     if (s.module !== lastModule) {
       lastModule = s.module;
       body.push([{
-        content: s.module.toUpperCase(),
+        content: `▸  ${s.module.toUpperCase()}`,
         colSpan: 8,
         styles: {
-          fillColor: MODULE_BG, textColor: MODULE_TXT,
-          fontStyle: "bold" as const, fontSize: 7.5,
+          ...sectionRowStyle(BLUE_INK),
           cellPadding: { top: 3.5, bottom: 3.5, left: 8, right: 4 },
         },
       }]);
     }
 
     globalSerial++;
-    const bg = s.fail > 0 ? FAIL_BG
-             : s.pass === s.total && s.total > 0 ? PASS_BG
-             : WHITE;
+    const passRateColor = s.passRate === 100 ? GREEN_INK
+                        : s.passRate === 0 && s.total > 0 ? RED_INK
+                        : DARK;
 
     body.push([
-      { content: pad2(globalSerial),    styles: { fillColor: bg, textColor: MUTED,  halign: "center" as const, fontSize: 7 } },
-      { content: s.module,              styles: { fillColor: bg, textColor: MUTED,  fontSize: 7 } },
-      { content: s.test,                styles: { fillColor: bg, textColor: DARK,   fontStyle: "bold" as const } },
-      { content: String(s.total),       styles: { fillColor: bg, textColor: DARK,   halign: "center" as const } },
-      { content: String(s.pass),        styles: { fillColor: bg, textColor: GREEN,  halign: "center" as const, fontStyle: "bold" as const } },
-      { content: String(s.fail),        styles: { fillColor: bg, textColor: RED,    halign: "center" as const, fontStyle: "bold" as const } },
-      { content: String(s.pending),     styles: { fillColor: bg, textColor: AMBER,  halign: "center" as const } },
-      {
-        content: `${s.passRate}%`,
-        styles: {
-          fillColor:  bg,
-          textColor:  s.passRate === 100 ? GREEN : s.passRate === 0 && s.total > 0 ? RED : DARK,
-          halign:     "center" as const,
-          fontStyle:  "bold"   as const,
-        },
-      },
+      { content: pad2(globalSerial),    styles: { textColor: MUTED,      halign: "center" as const, fontSize: 7 } },
+      { content: s.module,              styles: { textColor: MUTED,      fontSize: 7 } },
+      { content: s.test,                styles: { textColor: DARK,       fontStyle: "bold" as const } },
+      { content: String(s.total),       styles: { textColor: DARK,       halign: "center" as const } },
+      { content: String(s.pass),        styles: { textColor: GREEN_INK,  halign: "center" as const, fontStyle: "bold" as const } },
+      { content: String(s.fail),        styles: { textColor: RED_INK,    halign: "center" as const, fontStyle: "bold" as const } },
+      { content: String(s.pending),     styles: { textColor: AMBER_INK,  halign: "center" as const } },
+      { content: `${s.passRate}%`,      styles: { textColor: passRateColor, halign: "center" as const, fontStyle: "bold" as const } },
     ]);
   }
 
@@ -427,7 +477,7 @@ export const exportReportPDF = (_modules: Module[], data: FlatData[]) => {
     ...tableDefaults(doc, afterStats),
     head: [["#", "Module", "Test Name", "Steps", "Pass", "Fail", "Pending", "Pass Rate"]],
     body,
-    alternateRowStyles: { fillColor: WHITE }, // section headers control their own fill
+    alternateRowStyles: { fillColor: WHITE },
     columnStyles: {
       0: { cellWidth: 12,  halign: "center" },
       1: { cellWidth: 34 },
@@ -450,9 +500,9 @@ export const exportAllPDF    = exportReportPDF;
 export const exportModuleCSV = (_name: string, data: FlatData[]) => exportReportCSV([], data);
 export const exportModulePDF = (_name: string, data: FlatData[]) => exportReportPDF([], data);
 
+
 // ─────────────────────────────────────────────────────────────
-// 3. MODULE DETAIL EXPORTS — module › test › full step rows
-//    (new export for module dashboard button)
+// 3. MODULE DETAIL EXPORTS
 // ─────────────────────────────────────────────────────────────
 export const exportModuleDetailCSV = (data: FlatData[]) => {
   const lines: string[] = ["Module,Test,#,Action,Expected Result,Remarks,Status"];
@@ -501,7 +551,6 @@ export const exportModuleDetailPDF = (data: FlatData[]) => {
 
   const afterStats = drawStatsBar(doc, nd.length, pass, fail, pending, contentY);
 
-  // ── Group: module → test → steps ─────────────────────────────
   type TestBlock   = { name: string; steps: FlatData[] };
   type ModuleBlock = { name: string; tests: TestBlock[] };
 
@@ -523,62 +572,56 @@ export const exportModuleDetailPDF = (data: FlatData[]) => {
     mod.tests[testIdx.get(tkey)!].steps.push(d);
   }
 
-  // ── Build body rows ───────────────────────────────────────────
   const body: any[] = [];
 
   for (const mod of modules) {
     const allSteps = mod.tests.flatMap(t => t.steps);
     const mPass    = allSteps.filter(s => s.status === "pass").length;
     const mFail    = allSteps.filter(s => s.status === "fail").length;
-    const mPending = allSteps.filter(s => s.status === "pending").length;
     const mRate    = allSteps.length > 0 ? Math.round((mPass / allSteps.length) * 100) : 0;
 
-    // Module header row
+    // Module header row — outline only
     body.push([{
-      content: `${mod.name.toUpperCase()}   |   ${mod.tests.length} test${mod.tests.length !== 1 ? "s" : ""}   ${allSteps.length} steps   ${mRate}% pass rate`,
+      content: `▸  ${mod.name.toUpperCase()}   ·   ${mod.tests.length} test${mod.tests.length !== 1 ? "s" : ""}   ${allSteps.length} steps   ${mRate}% pass rate`,
       colSpan: 5,
       styles: {
-        fillColor: MODULE_BG, textColor: MODULE_TXT,
-        fontStyle: "bold" as const, fontSize: 8,
+        ...sectionRowStyle(BLUE_INK),
         cellPadding: { top: 4.5, bottom: 4.5, left: 10, right: 6 },
+        fontSize: 8,
       },
     }]);
 
-    // Test sub-sections
     mod.tests.forEach((test, ti) => {
       const tPass    = test.steps.filter(s => s.status === "pass").length;
       const tFail    = test.steps.filter(s => s.status === "fail").length;
       const tPending = test.steps.filter(s => s.status === "pending").length;
       const tRate    = test.steps.length > 0 ? Math.round((tPass / test.steps.length) * 100) : 0;
 
-      // Test sub-header row (with serial number)
+      // Test sub-header row — subtle indent, dark text
       body.push([{
-        content: `  ${pad2(ti + 1)}. ${test.name}   P: ${tPass}  F: ${tFail}  N: ${tPending}  |  ${tRate}% pass`,
+        content: `    ${pad2(ti + 1)}.  ${test.name}   P: ${tPass}  F: ${tFail}  N: ${tPending}   ${tRate}% pass`,
         colSpan: 5,
         styles: {
-          fillColor: TEST_BG, textColor: TEST_TXT,
-          fontStyle: "bold" as const, fontSize: 7.5,
-          cellPadding: { top: 3, bottom: 3, left: 18, right: 6 },
+          ...sectionRowStyle(MID),
+          fontSize: 7.5,
+          cellPadding: { top: 3, bottom: 3, left: 20, right: 6 },
         },
       }]);
 
-      // Step rows
       for (const step of test.steps) {
-        const bg = step.status === "pass" ? PASS_BG
-                 : step.status === "fail" ? FAIL_BG
-                 : WHITE;
         const sc = statusColor(step.status);
         body.push([
-          { content: String(step.serial),      styles: { halign: "center" as const, fillColor: bg, textColor: MUTED } },
-          { content: step.action,              styles: { fillColor: bg, textColor: DARK } },
-          { content: step.expected,            styles: { fillColor: bg, textColor: MID  } },
-          { content: step.remarks,             styles: { fillColor: bg, textColor: MID  } },
+          { content: String(step.serial), styles: { halign: "center" as const, textColor: MUTED } },
+          { content: step.action,         styles: { textColor: DARK } },
+          { content: step.expected,       styles: { textColor: MID  } },
+          { content: step.remarks,        styles: { textColor: MID  } },
           {
             content: statusLabel(step.status),
             styles: {
               halign:    "center" as const,
-              fillColor: bg, textColor: sc,
-              fontStyle: "bold" as const, fontSize: 7.5,
+              textColor: sc,
+              fontStyle: "bold" as const,
+              fontSize: 7.5,
             },
           },
         ]);
@@ -604,13 +647,14 @@ export const exportModuleDetailPDF = (data: FlatData[]) => {
   doc.save(`TestPro_ModuleDetail_${today()}.pdf`);
 };
 
+
 // ─────────────────────────────────────────────────────────────
-// 4. TEST EXECUTION EXPORTS — single test, full step rows
+// 4. TEST EXECUTION EXPORTS
 // ─────────────────────────────────────────────────────────────
 export const exportExecutionCSV = (moduleName: string, testName: string, data: FlatData[]) => {
   const headers = "#,Action,Expected Result,Remarks,Status\n";
   const rows = data.map(d => {
-    if (d.isDivider) return `,"${d.action.replace(/"/g, '""')}",,,""`; // section label row
+    if (d.isDivider) return `,"${d.action.replace(/"/g, '""')}",,,""`; 
     return [
       d.serial,
       `"${d.action.replace(/"/g, '""')}"`,
@@ -628,7 +672,6 @@ export const exportExecutionCSV = (moduleName: string, testName: string, data: F
 export const exportExecutionPDF = (moduleName: string, testName: string, data: FlatData[]) => {
   const doc = new jsPDF({ orientation: "landscape" });
 
-  // Title = test name, subtitle = module name (no branding)
   const contentY = drawHeader(doc, testName, moduleName);
 
   const nd      = data.filter(d => !d.isDivider);
@@ -640,31 +683,27 @@ export const exportExecutionPDF = (moduleName: string, testName: string, data: F
 
   const body = data.map(d => {
     if (d.isDivider) return [{
-      content: d.action.toUpperCase(),
+      content: `—  ${d.action.toUpperCase()}`,
       colSpan: 5,
       styles: {
-        fillColor: DIVIDER_BG, textColor: DIVIDER_TXT,
-        fontStyle: "bold" as const, fontSize: 7.5,
+        ...sectionRowStyle(AMBER_INK),
         cellPadding: { top: 3.5, bottom: 3.5, left: 10, right: 4 },
       },
     }];
 
-    const bg = d.status === "pass" ? PASS_BG
-             : d.status === "fail" ? FAIL_BG
-             : WHITE;
     const sc = statusColor(d.status);
-
     return [
-      { content: String(d.serial),      styles: { halign: "center" as const, fillColor: bg, textColor: MUTED } },
-      { content: d.action,              styles: { fillColor: bg, textColor: DARK } },
-      { content: d.expected,            styles: { fillColor: bg, textColor: MID  } },
-      { content: d.remarks,             styles: { fillColor: bg, textColor: MID  } },
+      { content: String(d.serial), styles: { halign: "center" as const, textColor: MUTED } },
+      { content: d.action,         styles: { textColor: DARK } },
+      { content: d.expected,       styles: { textColor: MID  } },
+      { content: d.remarks,        styles: { textColor: MID  } },
       {
         content: statusLabel(d.status),
         styles: {
           halign:    "center" as const,
-          fillColor: bg, textColor: sc,
-          fontStyle: "bold" as const, fontSize: 7.5,
+          textColor: sc,
+          fontStyle: "bold" as const,
+          fontSize: 7.5,
         },
       },
     ];
@@ -687,6 +726,7 @@ export const exportExecutionPDF = (moduleName: string, testName: string, data: F
   drawFooter(doc);
   doc.save(`${moduleName}_${testName}_${today()}.pdf`);
 };
+
 
 // ── Helpers ───────────────────────────────────────────────────
 const today = () => new Date().toISOString().split("T")[0];
