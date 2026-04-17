@@ -120,15 +120,31 @@ export function useSessionTimeout(
     if (idleElapsed >= IDLE_MS + WARNING_MS) {
       // Been idle longer than the full idle + warning window → sign out now.
       releaseAndSignOut();
-    } else if (idleElapsed >= IDLE_MS) {
-      // Past the idle threshold → jump straight into the warning.
-      const alreadyIntoWarning = idleElapsed - IDLE_MS;
-      warningStartAt.current = now - alreadyIntoWarning; // backdate anchor
-      startWarning();
-      // Correct the displayed seconds immediately
-      const remaining = Math.max(0, Math.floor((WARNING_MS - alreadyIntoWarning) / 1000));
-      secLeft.current = remaining;
-      setSecondsLeft(remaining);
+  } else if (idleElapsed >= IDLE_MS) {
+  const alreadyIntoWarning = idleElapsed - IDLE_MS;
+  const remaining = Math.max(0, Math.floor((WARNING_MS - alreadyIntoWarning) / 1000));
+
+  if (remaining <= 0) {
+    releaseAndSignOut();
+    return;
+  }
+
+  // ✅ Set anchor BEFORE anything else — do NOT call startWarning() here,
+  // it would overwrite warningStartAt with Date.now() and reset the counter.
+  inWarning.current      = true;
+  warningStartAt.current = now - alreadyIntoWarning; // backdated correctly
+  secLeft.current        = remaining;
+  setWarning(true);
+  setSecondsLeft(remaining);
+
+  countdown.current = setInterval(() => {
+    const e = Date.now() - (warningStartAt.current ?? now);
+    const r = Math.max(0, Math.floor((WARNING_MS - e) / 1000));
+    secLeft.current = r;
+    setSecondsLeft(r);
+    if (r <= 0) releaseAndSignOut();
+  }, 1000);
+}
     } else {
       // Still within the idle window — restart the remaining idle time.
       const remaining = IDLE_MS - idleElapsed;
