@@ -383,14 +383,10 @@ const TestExecution: React.FC<Props> = ({
         status: string; remarks: string; displayname: string;
       }[];
 
-      // ── Direct query replacing broken get_tests_by_names RPC ──
       const testNames = Array.from(new Set(rawMts.map(m => m.tests_name)));
-      const testsRes = testNames.length
-        ? await supabase
-            .from("tests")
-            .select("name, serialno")
-            .in("name", testNames)
-        : { data: [] };
+const testsRes = testNames.length
+  ? await supabase.rpc("get_tests_by_names", { p_names: testNames })
+  : { data: [] };
 
       const testsMap = Object.fromEntries(
         ((testsRes.data ?? []) as { name: string; serialno: number }[]).map(t => [t.name, t])
