@@ -248,7 +248,8 @@ const ModalShell: React.FC<{
 // ─────────────────────────────────────────────────────────────────────────
 // SHARED TYPES + HELPERS
 // ─────────────────────────────────────────────────────────────────────────
-interface TestOption   { serial_no: number; name: string; }
+// FIX 1: serial_no is text in the tests table
+interface TestOption   { serial_no: string; name: string; }
 interface ModuleOption { name: string; }
 
 const Row: React.FC<{ label: string; value: string; mono?: boolean; brand?: boolean }> = ({ label, value, mono, brand }) => (
@@ -505,6 +506,7 @@ const ImportModulesModal: React.FC<{ onClose: () => void; onBack: () => void }> 
 // ─────────────────────────────────────────────────────────────────────────
 // IMPORT TESTS MODAL
 // ─────────────────────────────────────────────────────────────────────────
+// FIX 1: serial_no is text — no parseFloat, no number input
 type TestOp          = "create" | "update" | "delete";
 type TestManualStage = "select_op" | "select_test" | "fill_form" | "confirm" | "submitting" | "done";
 interface TestFormData { serial_no: string; name: string; }
@@ -536,13 +538,13 @@ const ImportTestsModal: React.FC<{ onClose: () => void; onBack: () => void }> = 
     setStage("submitting"); setErrMsg("");
     try {
       if (op === "create") {
-        const snVal = parseFloat(form.serial_no);
-        if (isNaN(snVal)) throw new Error("Serial number must be a valid number.");
+        const sn = form.serial_no.trim();
+        if (!sn) throw new Error("Serial number is required.");
         const trimmed = form.name.trim();
         if (!trimmed) throw new Error("Test name is required.");
-        const { error } = await supabase.from("tests").insert({ serial_no: snVal, name: trimmed });
+        const { error } = await supabase.from("tests").insert({ serial_no: sn, name: trimmed });
         if (error) throw error;
-        setResultMsg(`Test SN ${snVal} "${trimmed}" created.`);
+        setResultMsg(`Test SN ${sn} "${trimmed}" created.`);
       } else if (op === "update") {
         if (!selectedTest) throw new Error("No test selected.");
         const newName = form.name.trim();
@@ -618,7 +620,7 @@ const ImportTestsModal: React.FC<{ onClose: () => void; onBack: () => void }> = 
           <button onClick={() => setStage("select_op")} className="flex-1 px-4 py-2.5 rounded-xl border border-[var(--border-color)] text-t-secondary hover:text-t-primary text-sm font-medium transition-colors">← Back</button>
           <button
             onClick={() => {
-              if (op === "update") { setForm({ serial_no: String(selectedTest?.serial_no ?? ""), name: selectedTest?.name ?? "" }); setStage("fill_form"); }
+              if (op === "update") { setForm({ serial_no: selectedTest?.serial_no ?? "", name: selectedTest?.name ?? "" }); setStage("fill_form"); }
               else setStage("confirm");
             }}
             disabled={!selectedTest}
@@ -645,7 +647,8 @@ const ImportTestsModal: React.FC<{ onClose: () => void; onBack: () => void }> = 
         {op === "create" && (
           <div className="flex flex-col gap-1.5">
             <label className="text-xs font-semibold text-t-muted uppercase tracking-wider">Serial No</label>
-            <input type="number" step="0.1" value={form.serial_no}
+            {/* FIX 1: text input — serial_no is a text column */}
+            <input type="text" value={form.serial_no}
               onChange={e => setForm(f => ({ ...f, serial_no: e.target.value }))}
               placeholder="e.g. 1.1"
               className="w-full px-4 py-3 rounded-xl bg-bg-card border border-[var(--border-color)] text-t-primary text-sm placeholder:text-t-muted focus:outline-none focus:border-c-brand transition-colors" />
@@ -687,13 +690,13 @@ const ImportTestsModal: React.FC<{ onClose: () => void; onBack: () => void }> = 
           )}
           {op === "update" && selectedTest && (
             <div className="flex flex-col gap-2 text-xs">
-              <Row label="Serial No" value={String(selectedTest.serial_no)} mono brand />
+              <Row label="Serial No" value={selectedTest.serial_no} mono brand />
               <DiffRow label="Name"  before={selectedTest.name} after={form.name.trim()} />
             </div>
           )}
           {op === "delete" && selectedTest && (
             <div className="flex flex-col gap-2 text-xs">
-              <Row label="Serial No" value={String(selectedTest.serial_no)} mono brand />
+              <Row label="Serial No" value={selectedTest.serial_no} mono brand />
               <Row label="Name"      value={selectedTest.name} />
               <div className="mt-1 flex items-center gap-2 text-red-400 font-semibold"><AlertTriangle size={14} /><span>This action cannot be undone.</span></div>
             </div>
@@ -758,36 +761,72 @@ const STEP_CSV_OP_META = [
   { id: "delete" as StepOp, label: "Delete", icon: <Trash2 size={20} />, desc: "Remove steps by serial_no"       },
 ];
 
+// FIX 2: Proper RFC-4180 CSV parser — handles quoted fields with embedded newlines (Alt+Enter)
+function parseCsvToRecords(text: string): string[][] {
+  const records: string[][] = [];
+  let row: string[] = [];
+  let cell = "";
+  let inQuote = false;
+  const src = text.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+
+  for (let i = 0; i < src.length; i++) {
+    const ch = src[i];
+    if (inQuote) {
+      if (ch === '"') {
+        // Escaped quote "" → literal "
+        if (src[i + 1] === '"') { cell += '"'; i++; }
+        else inQuote = false;
+      } else {
+        cell += ch; // embedded newline preserved as-is
+      }
+    } else {
+      if (ch === '"') {
+        inQuote = true;
+      } else if (ch === ",") {
+        row.push(cell); cell = "";
+      } else if (ch === "\n") {
+        row.push(cell); cell = "";
+        // skip completely blank lines
+        if (row.some(c => c !== "")) records.push(row);
+        row = [];
+      } else {
+        cell += ch;
+      }
+    }
+  }
+  // flush last cell / row
+  row.push(cell);
+  if (row.some(c => c !== "")) records.push(row);
+
+  return records;
+}
+
 function parseStepsCsv(text: string): { rows: StepCsvRow[]; errors: string[] } {
-  const lines  = text.replace(/\r\n/g, "\n").replace(/\r/g, "\n").split("\n");
   const errors: string[] = [];
   const rows:   StepCsvRow[] = [];
 
-  if (lines.length < 2) { errors.push("File is empty."); return { rows, errors }; }
+  const records = parseCsvToRecords(text);
+  if (records.length < 2) { errors.push("File is empty."); return { rows, errors }; }
 
-  const header = lines[0].split(",").map(h => h.trim().toLowerCase().replace(/\s+/g, "_"));
+  const header = records[0].map(h => h.trim().toLowerCase().replace(/\s+/g, "_"));
   const iSn  = header.indexOf("serial_no");
   const iAct = header.indexOf("action");
   const iRes = header.indexOf("expected_result");
   const iDiv = header.indexOf("is_divider");
-  const missing = ([iSn < 0 && "serial_no", iAct < 0 && "action", iRes < 0 && "expected_result", iDiv < 0 && "is_divider"] as (string | false)[]).filter(Boolean) as string[];
+  const missing = (
+    [iSn < 0 && "serial_no", iAct < 0 && "action", iRes < 0 && "expected_result", iDiv < 0 && "is_divider"] as (string | false)[]
+  ).filter(Boolean) as string[];
   if (missing.length) { errors.push(`Missing columns: ${missing.join(", ")}`); return { rows, errors }; }
 
-  for (let i = 1; i < lines.length; i++) {
-    const raw = lines[i].trim(); if (!raw) continue;
-    const cells: string[] = []; let cur = "", inQ = false;
-    for (const ch of raw) {
-      if (ch === '"') { inQ = !inQ; continue; }
-      if (ch === "," && !inQ) { cells.push(cur.trim()); cur = ""; } else cur += ch;
-    }
-    cells.push(cur.trim());
-    const snVal = parseInt(cells[iSn] ?? "", 10);
+  for (let i = 1; i < records.length; i++) {
+    const cells = records[i];
+    const snVal = parseInt(cells[iSn]?.trim() ?? "", 10);
     if (isNaN(snVal) || snVal < 1) { errors.push(`Row ${i + 1}: invalid serial_no — skipped.`); continue; }
     rows.push({
       serial_no:       snVal,
       action:          cells[iAct] ?? "",
       expected_result: cells[iRes] ?? "",
-      is_divider:      /^(true|1|yes)$/i.test(cells[iDiv] ?? ""),
+      is_divider:      /^(true|1|yes)$/i.test(cells[iDiv]?.trim() ?? ""),
     });
   }
   return { rows, errors };
@@ -1169,7 +1208,7 @@ const ImportStepsManualModal: React.FC<{ onClose: () => void; onBack: () => void
       .then(({ data }) => {
         if (data) {
           const ts = (data as any[]).map(r => r.tests).filter(Boolean) as TestOption[];
-          ts.sort((a, b) => a.serial_no - b.serial_no);
+          ts.sort((a, b) => String(a.serial_no).localeCompare(String(b.serial_no), undefined, { numeric: true }));
           setTests(ts);
         }
         setLoadingTests(false);
@@ -1628,7 +1667,6 @@ const MobileNav: React.FC<Props> = ({ activePage, onNavigate }) => {
   useOutsideClick(sheetRef, showMore,       closeMore);
   useOutsideClick(adminRef, showAdminPanel, closeAdminPanel);
 
-  // Release test lock then sign out
   const handleSignOut = useCallback(async () => {
     try {
       if (user?.id) {
@@ -1643,12 +1681,10 @@ const MobileNav: React.FC<Props> = ({ activePage, onNavigate }) => {
 
   return (
     <>
-      {/* ── Admin-only modals ─────────────────────────────────────────── */}
       {isAdmin && showThemeEditor && <ThemeEditor onClose={() => setShowThemeEditor(false)} />}
       {isAdmin && showImport      && <ImportModal onClose={() => setShowImport(false)} />}
       {isAdmin && showExport      && <ExportModal onClose={() => setShowExport(false)} />}
 
-      {/* ── Admin Tools bottom sheet ──────────────────────────────────── */}
       {isAdmin && showAdminPanel && (
         <div className="md:hidden fixed inset-0 z-[60] flex items-end">
           <div className="absolute inset-0 bg-black/40" onClick={() => setShowAdminPanel(false)} />
@@ -1673,7 +1709,6 @@ const MobileNav: React.FC<Props> = ({ activePage, onNavigate }) => {
         </div>
       )}
 
-      {/* ── More bottom sheet ─────────────────────────────────────────── */}
       {showMore && (
         <div className="md:hidden fixed inset-0 z-50 flex items-end">
           <div className="absolute inset-0 bg-black/40" onClick={() => setShowMore(false)} />
@@ -1704,7 +1739,6 @@ const MobileNav: React.FC<Props> = ({ activePage, onNavigate }) => {
         </div>
       )}
 
-      {/* ── Bottom nav bar ────────────────────────────────────────────── */}
       <nav className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-bg-nav backdrop-blur border-t border-[var(--border-color)] flex items-center justify-around px-2 py-2">
         {items.map(item => (
           <button key={item.id} onClick={() => onNavigate(item.id)}
