@@ -654,15 +654,26 @@ const TestExecution: React.FC<Props> = ({
     }
   }, [steps, moduleName, user, addToast, log]);
 
+  // ── Global keyboard shortcuts ──────────────────────────────
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key !== "Enter" || e.shiftKey) return;
+      // Ignore if typing in an input, textarea, or button
       const tag = (document.activeElement as HTMLElement)?.tagName;
       if (tag === "TEXTAREA" || tag === "INPUT" || tag === "BUTTON") return;
       if (!focusedStepId || isLockedByOther) return;
       const focused = steps.find(s => s.stepId === focusedStepId);
       if (!focused || focused.isdivider) return;
-      handleStepUpdate(focusedStepId, "pass", remarksMap.current[focusedStepId] ?? focused.remarks ?? "");
+
+      // P or Enter → pass
+      if (e.key === "p" || e.key === "P" || e.key === "Enter") {
+        e.preventDefault();
+        handleStepUpdate(focusedStepId, "pass", remarksMap.current[focusedStepId] ?? focused.remarks ?? "");
+      }
+      // F → fail
+      else if (e.key === "f" || e.key === "F") {
+        e.preventDefault();
+        handleStepUpdate(focusedStepId, "fail", remarksMap.current[focusedStepId] ?? focused.remarks ?? "");
+      }
     };
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);
@@ -812,10 +823,20 @@ const TestExecution: React.FC<Props> = ({
               <span><span className="text-t-muted font-semibold">{totalCount - doneCount}</span> pending</span>
             </div>
             <div className="flex items-center gap-3">
+              {/* ── Keyboard shortcut hints (desktop only) ── */}
               {focusedStepId && (
-                <span className="hidden md:flex items-center gap-1.5 text-xs text-t-muted">
-                  <kbd className="px-1.5 py-0.5 rounded bg-[var(--border-color)] text-t-secondary font-mono text-[10px] border border-[var(--border-color)]">Enter</kbd>
-                  to pass
+                <span className="hidden md:flex items-center gap-2 text-xs text-t-muted">
+                  <span className="flex items-center gap-1">
+                    <kbd className="px-1.5 py-0.5 rounded bg-green-500/10 text-green-400 font-mono text-[10px] border border-green-500/20">P</kbd>
+                    <span className="text-[var(--border-color)] mx-0.5">/</span>
+                    <kbd className="px-1.5 py-0.5 rounded bg-green-500/10 text-green-400 font-mono text-[10px] border border-green-500/20">Enter</kbd>
+                    <span className="text-green-400 ml-1">pass</span>
+                  </span>
+                  <span className="text-[var(--border-color)]">·</span>
+                  <span className="flex items-center gap-1">
+                    <kbd className="px-1.5 py-0.5 rounded bg-red-500/10 text-red-400 font-mono text-[10px] border border-red-500/20">F</kbd>
+                    <span className="text-red-400 ml-1">fail</span>
+                  </span>
                 </span>
               )}
               <span className="text-xs text-t-muted font-medium">{progressPct}%</span>
@@ -1080,7 +1101,12 @@ const TableStepRow: React.FC<{
           value={remarks}
           onChange={e => { setRemarks(e.target.value); onRemarksChange(e.target.value); }}
           onFocus={onFocus}
-          onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); onUpdate(step.stepId, "pass", remarks); } }}
+          onKeyDown={e => {
+            if (e.key === "Enter" && !e.shiftKey) {
+              e.preventDefault();
+              onUpdate(step.stepId, "pass", remarks);
+            }
+          }}
           disabled={readonly}
           placeholder="Remarks… (Enter to pass)"
           rows={2}
@@ -1146,9 +1172,9 @@ const MobileStepCard: React.FC<{
   onImageClick:    (paths: string[], idx: number, label: string) => void;
   cardRef?:        (el: HTMLDivElement | null) => void;
 }> = ({ step, signedImageUrls, readonly, isFocused, onUpdate, onFocus, onRemarksChange, onImageClick, cardRef }) => {
-  const [remarks, setRemarks]             = useState(step.remarks || "");
+  const [remarks, setRemarks]                     = useState(step.remarks || "");
   const [showRemarksDialog, setShowRemarksDialog] = useState(false);
-  const [draftRemarks, setDraftRemarks]   = useState(remarks);
+  const [draftRemarks, setDraftRemarks]           = useState(remarks);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => { setRemarks(step.remarks || ""); }, [step.remarks]);
@@ -1157,7 +1183,6 @@ const MobileStepCard: React.FC<{
     e.stopPropagation();
     setDraftRemarks(remarks);
     setShowRemarksDialog(true);
-    // Slight delay so the dialog is mounted before we focus
     setTimeout(() => textareaRef.current?.focus(), 80);
   };
 
@@ -1189,7 +1214,6 @@ const MobileStepCard: React.FC<{
             style={{ backgroundColor: "var(--bg-surface)" }}
             onClick={e => e.stopPropagation()}
           >
-            {/* Dialog header */}
             <div className="flex items-center justify-between">
               <span className="text-xs font-semibold text-t-muted uppercase tracking-wider">
                 Remarks — Step #{step.serialno}
@@ -1203,7 +1227,6 @@ const MobileStepCard: React.FC<{
               </button>
             </div>
 
-            {/* Textarea */}
             <textarea
               ref={textareaRef}
               value={draftRemarks}
@@ -1217,7 +1240,6 @@ const MobileStepCard: React.FC<{
               className="input text-sm resize-none w-full"
             />
 
-            {/* Actions */}
             <div className="flex gap-2">
               <button
                 onClick={discardRemarks}
@@ -1249,10 +1271,14 @@ const MobileStepCard: React.FC<{
         <div className="flex items-center justify-between px-3 py-2 border-b border-[var(--border-color)] bg-bg-card">
           <span className="text-xs font-mono text-t-muted tracking-wide">#{step.serialno}</span>
           <div className="flex items-center gap-2 min-w-0">
+            {/* ── Keyboard shortcut hints (mobile) ── */}
             {isFocused && (
-              <span className="flex items-center gap-1 text-[10px] text-sky-400 font-medium shrink-0">
-                <kbd className="px-1 py-0.5 rounded bg-sky-400/10 border border-sky-400/20 font-mono text-[9px]">Enter</kbd>
-                to pass
+              <span className="flex items-center gap-1.5 text-[10px] font-medium shrink-0">
+                <kbd className="px-1 py-0.5 rounded bg-green-500/10 text-green-400 border border-green-500/20 font-mono text-[9px]">P</kbd>
+                <span className="text-green-400">pass</span>
+                <span className="text-t-muted opacity-40">·</span>
+                <kbd className="px-1 py-0.5 rounded bg-red-500/10 text-red-400 border border-red-500/20 font-mono text-[9px]">F</kbd>
+                <span className="text-red-400">fail</span>
               </span>
             )}
             <span className={`shrink-0 text-xs font-bold px-2 py-0.5 rounded-full capitalize ${
@@ -1265,7 +1291,7 @@ const MobileStepCard: React.FC<{
           </div>
         </div>
 
-        {/* Action row — whitespace-pre-wrap preserves Alt+Enter line breaks */}
+        {/* Action row */}
         <div className="grid grid-cols-[80px_1fr] border-b border-[var(--border-color)]">
           <div className="px-3 py-2.5 border-r border-[var(--border-color)] bg-bg-card flex items-start">
             <span className="text-[10px] font-semibold text-t-muted uppercase tracking-wider mt-0.5">Action</span>
@@ -1291,7 +1317,7 @@ const MobileStepCard: React.FC<{
           </div>
         </div>
 
-        {/* Expected row — whitespace-pre-wrap preserves Alt+Enter line breaks */}
+        {/* Expected row */}
         <div className="grid grid-cols-[80px_1fr] border-b border-[var(--border-color)]">
           <div className="px-3 py-2.5 border-r border-[var(--border-color)] bg-bg-card flex items-start">
             <span className="text-[10px] font-semibold text-t-muted uppercase tracking-wider mt-0.5">Expected</span>
@@ -1317,10 +1343,9 @@ const MobileStepCard: React.FC<{
           </div>
         </div>
 
-        {/* Result row: remarks pill + undo + pass/fail buttons */}
+        {/* Result row */}
         {!readonly && (
           <div className="flex items-center gap-2 px-3 py-2 bg-bg-card">
-            {/* Remarks pill — opens dialog on tap */}
             <button
               onClick={openDialog}
               className={`flex-1 min-w-0 flex items-center gap-1.5 px-3 h-8 rounded-full border
@@ -1336,7 +1361,6 @@ const MobileStepCard: React.FC<{
               )}
             </button>
 
-            {/* Undo — only visible when step is not pending */}
             {step.status !== "pending" && (
               <button
                 onClick={e => { e.stopPropagation(); onUpdate(step.stepId, "pending", ""); }}
@@ -1348,7 +1372,6 @@ const MobileStepCard: React.FC<{
               </button>
             )}
 
-            {/* Pass */}
             <button
               onClick={e => { e.stopPropagation(); onUpdate(step.stepId, "pass", remarks); }}
               className={`shrink-0 w-8 h-8 rounded-md text-xs font-bold transition-colors flex items-center justify-center ${
@@ -1358,7 +1381,6 @@ const MobileStepCard: React.FC<{
               }`}
             ><Check size={14} /></button>
 
-            {/* Fail */}
             <button
               onClick={e => { e.stopPropagation(); onUpdate(step.stepId, "fail", remarks); }}
               className={`shrink-0 w-8 h-8 rounded-md text-xs font-bold transition-colors flex items-center justify-center ${
