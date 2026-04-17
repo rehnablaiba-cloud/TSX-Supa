@@ -383,15 +383,15 @@ const TestExecution: React.FC<Props> = ({
         status: string; remarks: string; displayname: string;
       }[];
 
+      // ── Direct query replacing broken get_tests_by_names RPC ──
       const testNames = Array.from(new Set(rawMts.map(m => m.tests_name)));
       const testsRes = testNames.length
-       // ✅ Direct query — no RPC needed
-const testsRes = testNames.length
-  ? await supabase
-      .from("tests")
-      .select("name, serialno")
-      .in("name", testNames)
-  : { data: [] };
+        ? await supabase
+            .from("tests")
+            .select("name, serialno")
+            .in("name", testNames)
+        : { data: [] };
+
       const testsMap = Object.fromEntries(
         ((testsRes.data ?? []) as { name: string; serialno: number }[]).map(t => [t.name, t])
       );
@@ -701,7 +701,6 @@ const testsRes = testNames.length
     return true;
   }), [steps, filter, search]);
 
-  // ── FIX 1: populate dividerLevel so export colours work ───
   const flatData = useMemo<FlatData[]>(() =>
     steps.map(s =>
       s.isdivider
@@ -710,11 +709,11 @@ const testsRes = testNames.length
             test:         currentTest?.name ?? "",
             serial:       0,
             action:       s.action,
-            expected:     s.expectedresult,           // keep raw value as fallback
+            expected:     s.expectedresult,
             remarks:      "",
             status:       "",
             isDivider:    true,
-            dividerLevel: getDividerLevel(s.expectedresult), // explicit level
+            dividerLevel: getDividerLevel(s.expectedresult),
           }
         : {
             module:   moduleName,
@@ -755,7 +754,6 @@ const testsRes = testNames.length
       };
     }, [steps]);
 
-  // ── FIX 2: include serial number in export title ──────────
   const exportTestName = currentTest
     ? `${currentTest.serialno}. ${currentTest.name}`
     : "test";
@@ -852,7 +850,6 @@ const testsRes = testNames.length
               <span><span className="text-t-muted font-semibold">{totalCount - doneCount}</span> pending</span>
             </div>
             <div className="flex items-center gap-3">
-              {/* ── Keyboard shortcut hints (desktop only) ── */}
               {focusedStepId && (
                 <span className="hidden md:flex items-center gap-2 text-xs text-t-muted">
                   <span className="flex items-center gap-1">
@@ -1083,7 +1080,6 @@ const TableStepRow: React.FC<{
         <span className="text-xs font-mono text-t-muted">{step.serialno}</span>
       </td>
 
-      {/* ── Action — whitespace-pre-wrap preserves Alt+Enter line breaks */}
       <td className="px-4 py-3 border-r border-[var(--border-color)] align-top">
         <p className="text-sm text-t-primary leading-snug break-words whitespace-pre-wrap">{step.action}</p>
         {!!step.actionImageUrls?.length && (
@@ -1104,7 +1100,6 @@ const TableStepRow: React.FC<{
         )}
       </td>
 
-      {/* ── Expected Result — whitespace-pre-wrap preserves Alt+Enter line breaks */}
       <td className="px-4 py-3 border-r border-[var(--border-color)] align-top">
         <p className="text-sm text-t-secondary leading-snug break-words whitespace-pre-wrap">{step.expectedresult}</p>
         {!!step.expectedImageUrls?.length && (
@@ -1231,7 +1226,6 @@ const MobileStepCard: React.FC<{
 
   return (
     <>
-      {/* ── Remarks bottom-sheet dialog ── */}
       {showRemarksDialog && (
         <div
           className="fixed inset-0 z-[200] flex items-end justify-center"
@@ -1289,18 +1283,15 @@ const MobileStepCard: React.FC<{
         </div>
       )}
 
-      {/* ── Card ── */}
       <div
         ref={cardRef}
         onClick={onFocus}
         className={`rounded-xl overflow-hidden border border-[var(--border-color)] w-full cursor-pointer transition-shadow ${rowBg} ${isFocused ? "ring-2 ring-sky-400" : ""}`}
         style={{ borderLeftColor: accentColor, borderLeftWidth: 3 }}
       >
-        {/* Card header: serial + status badge */}
         <div className="flex items-center justify-between px-3 py-2 border-b border-[var(--border-color)] bg-bg-card">
           <span className="text-xs font-mono text-t-muted tracking-wide">#{step.serialno}</span>
           <div className="flex items-center gap-2 min-w-0">
-            {/* ── Keyboard shortcut hints (mobile) ── */}
             {isFocused && (
               <span className="flex items-center gap-1.5 text-[10px] font-medium shrink-0">
                 <kbd className="px-1 py-0.5 rounded bg-green-500/10 text-green-400 border border-green-500/20 font-mono text-[9px]">P</kbd>
@@ -1320,7 +1311,6 @@ const MobileStepCard: React.FC<{
           </div>
         </div>
 
-        {/* Action row */}
         <div className="grid grid-cols-[80px_1fr] border-b border-[var(--border-color)]">
           <div className="px-3 py-2.5 border-r border-[var(--border-color)] bg-bg-card flex items-start">
             <span className="text-[10px] font-semibold text-t-muted uppercase tracking-wider mt-0.5">Action</span>
@@ -1346,7 +1336,6 @@ const MobileStepCard: React.FC<{
           </div>
         </div>
 
-        {/* Expected row */}
         <div className="grid grid-cols-[80px_1fr] border-b border-[var(--border-color)]">
           <div className="px-3 py-2.5 border-r border-[var(--border-color)] bg-bg-card flex items-start">
             <span className="text-[10px] font-semibold text-t-muted uppercase tracking-wider mt-0.5">Expected</span>
@@ -1372,7 +1361,6 @@ const MobileStepCard: React.FC<{
           </div>
         </div>
 
-        {/* Result row */}
         {!readonly && (
           <div className="flex items-center gap-2 px-3 py-2 bg-bg-card">
             <button
