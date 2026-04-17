@@ -318,7 +318,8 @@ const TestExecution: React.FC<Props> = ({
   const { log }      = useAuditLog();
 
   const currentMtId = initialModuleTestId;
-  const testsName   = currentMtId.slice(moduleName.length + 1);
+  const [testsName, setTestsName] = useState<string>("");
+  // testsName is resolved inside the data fetch effect from actual DB data
 
   const [filter, setFilter]               = useState<Filter>("all");
   const [search, setSearch]               = useState("");
@@ -373,6 +374,7 @@ const TestExecution: React.FC<Props> = ({
     stepsInitialized.current = false;
     setFocusedStepId(null);
     remarksMap.current = {};
+    setTestsName(""); // reset on module change
 
     (async () => {
       const [mtRes, srRes, lockRes] = await Promise.all([
@@ -381,7 +383,7 @@ const TestExecution: React.FC<Props> = ({
           .select("id, testsname")
           .eq("modulename", moduleName)
           .order("id"),
-        supabase.rpc("getstepresultsformodule", { pmodulename: moduleName }),
+        supabase.rpc("get_step_results_for_module", { pmodulename: moduleName }),
         supabase
           .from("testlocks")
           .select("moduletestid, userid, lockedbyname")
@@ -396,12 +398,17 @@ const TestExecution: React.FC<Props> = ({
 
       const testNames = Array.from(new Set(rawMts.map(m => m.testsname)));
       const testsRes  = testNames.length
-        ? await supabase.rpc("gettestsbynames", { pnames: testNames })
+        ? await supabase.rpc("get_tests_by_names", { pnames: testNames })
         : { data: [] };
       const testsMap  = Object.fromEntries(
         ((testsRes.data ?? []) as { name: string; serialno: number }[])
           .map(t => [t.name, t])
       );
+
+      // Resolve testsName from the actual DB record matching currentMtId
+      const currentMtRecord = rawMts.find(m => m.id === currentMtId);
+      const resolvedTestsName = currentMtRecord?.testsname ?? "";
+      setTestsName(resolvedTestsName);
 
       setModuleTests(
         rawMts.map(m => ({
@@ -413,7 +420,7 @@ const TestExecution: React.FC<Props> = ({
 
       const stepIds  = rawSrs.map(sr => sr.teststepsid);
       const stepsRes = stepIds.length
-        ? await supabase.rpc("getteststepsbyids", { pids: stepIds })
+        ? await supabase.rpc("get_test_steps_by_ids", { pids: stepIds })
         : { data: [] };
       const stepsMap = Object.fromEntries(
         ((stepsRes.data ?? []) as any[]).map(s => [s.id, s])
@@ -422,7 +429,8 @@ const TestExecution: React.FC<Props> = ({
       const merged: ExecutionStep[] = rawSrs
         .filter(sr => {
           const step = stepsMap[sr.teststepsid];
-          return step && step.testsname === testsName;
+          // Use resolvedTestsName (local var) — state update is async so testsName isn't set yet
+          return step && step.testsname === resolvedTestsName;
         })
         .map(sr => {
           const step = stepsMap[sr.teststepsid];
@@ -451,7 +459,7 @@ const TestExecution: React.FC<Props> = ({
       setLoading(false);
       setLockLoading(false);
     })();
-  }, [moduleName, currentMtId, testsName]);
+  }, [moduleName, currentMtId]);
 
   // ── Sign images ───────────────────────────────────────────
   useEffect(() => {
@@ -613,7 +621,7 @@ const TestExecution: React.FC<Props> = ({
       }
 
       try {
-        const rpcRes = await supabase.rpc("updatestepresult", {
+        const rpcRes = await supabase.rpc("update_step_result", {
           pmodulename:  moduleName,
           pteststepsid: stepId,
           pstatus:      status,
@@ -649,7 +657,7 @@ const TestExecution: React.FC<Props> = ({
     try {
       const rpcResults = await Promise.all(
         actionable.map(s =>
-          supabase.rpc("updatestepresult", {
+          supabase.rpc("update_step_result", {
             pmodulename:  moduleName,
             pteststepsid: s.stepId,
             pstatus:      "pending",
