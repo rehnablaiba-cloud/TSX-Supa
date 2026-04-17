@@ -2,7 +2,6 @@ import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import { Module } from "../types";
 
-
 // ── Shared Types ──────────────────────────────────────────────
 export interface FlatData {
   module: string; test: string; serial: number;
@@ -16,7 +15,6 @@ export interface ModuleSummary {
   testCount?: number;
   total: number; pass: number; fail: number; pending: number; passRate: number;
 }
-
 
 // ── Palette ───────────────────────────────────────────────────
 const DARK        = [30,  30,  30 ] as [number, number, number];
@@ -32,21 +30,22 @@ const PASS_BG     = [232, 247, 237] as [number, number, number];
 const FAIL_BG     = [254, 235, 235] as [number, number, number];
 const ROW_ALT     = [249, 249, 251] as [number, number, number];
 
-const DIV1_BG     = [255, 243, 224] as [number, number, number];
-const DIV2_BG     = [227, 242, 253] as [number, number, number];
-const DIV3_BG     = [255, 248, 225] as [number, number, number];
+// Divider backgrounds — distinct per level
+const DIV1_BG     = [255, 243, 224] as [number, number, number]; // orange-tint  (level 1)
+const DIV2_BG     = [227, 242, 253] as [number, number, number]; // blue-tint    (level 2)
+const DIV3_BG     = [232, 245, 233] as [number, number, number]; // green-tint   (level 3)
 
 const GREEN_INK   = [20,  110,  50] as [number, number, number];
 const RED_INK     = [180,  30,  30] as [number, number, number];
 const AMBER_INK   = [130,  80,   0] as [number, number, number];
 const BLUE_INK    = [20,   70, 180] as [number, number, number];
 const ORANGE_INK  = [190,  80,   0] as [number, number, number];
+const GREEN_DIV   = [27,  94,  32 ] as [number, number, number]; // text for level 3
 
 const MOD_BG      = [232, 240, 254] as [number, number, number];
 const MOD_TXT     = [20,   60, 160] as [number, number, number];
 const TEST_BG     = [240, 240, 255] as [number, number, number];
 const TEST_TXT    = [55,  50, 180] as [number, number, number];
-
 
 // ── Utilities ─────────────────────────────────────────────────
 const statusColor = (s: string): [number, number, number] =>
@@ -60,12 +59,32 @@ const statusBg = (s: string): [number, number, number] =>
 
 const pad2 = (n: number) => String(n).padStart(2, "0");
 
+/**
+ * Returns bg + text colour for a divider level.
+ * Level is determined in this order:
+ *   1. d.dividerLevel  (explicit, set by data layer)
+ *   2. parseInt(d.expected, 10)  (legacy: level stored in expected column)
+ *   3. Falls back to 1
+ *
+ * Level 1 → orange   (main section header)
+ * Level 2 → blue     (sub-section)
+ * Level 3 → green    (sub-sub-section)
+ */
 const dividerStyle = (level: number) => {
-  if (level === 1) return { bg: DIV1_BG, txt: ORANGE_INK };
-  if (level === 2) return { bg: DIV2_BG, txt: BLUE_INK };
-  return              { bg: DIV3_BG, txt: AMBER_INK };
+  if (level === 2) return { bg: DIV2_BG, txt: BLUE_INK   };
+  if (level === 3) return { bg: DIV3_BG, txt: GREEN_DIV  };
+  return              { bg: DIV1_BG, txt: ORANGE_INK };  // level 1 default
 };
 
+/** Resolves the true divider level from a FlatData row */
+const resolveDividerLevel = (d: FlatData): number => {
+  if (d.dividerLevel && d.dividerLevel >= 1 && d.dividerLevel <= 3)
+    return d.dividerLevel;
+  const fromExpected = parseInt(d.expected, 10);
+  if (!isNaN(fromExpected) && fromExpected >= 1 && fromExpected <= 3)
+    return fromExpected;
+  return 1;
+};
 
 // ── Line icon set ─────────────────────────────────────────────
 type IconType = "total" | "pass" | "fail" | "pending" | "tests";
@@ -108,7 +127,6 @@ const drawLineIcon = (
   }
 };
 
-
 // ── Shared header ─────────────────────────────────────────────
 const drawHeader = (doc: jsPDF, title: string, subtitle?: string): number => {
   const W = doc.internal.pageSize.getWidth();
@@ -117,18 +135,22 @@ const drawHeader = (doc: jsPDF, title: string, subtitle?: string): number => {
   doc.setLineWidth(0.6);
   doc.line(14, 5, W - 14, 5);
 
+  // Guard: ensure title is never empty
+  const safeTitle    = (title    && title.trim())    ? title.trim()    : "Unnamed Test";
+  const safeSubtitle = (subtitle && subtitle.trim()) ? subtitle.trim() : undefined;
+
   doc.setFont("helvetica", "bold");
   doc.setFontSize(14);
   doc.setTextColor(...DARK);
-  doc.text(title, W / 2, 14, { align: "center" });
+  doc.text(safeTitle, W / 2, 14, { align: "center" });
 
   let lineY = 19;
 
-  if (subtitle) {
+  if (safeSubtitle) {
     doc.setFont("helvetica", "normal");
     doc.setFontSize(8);
     doc.setTextColor(...MUTED);
-    doc.text(subtitle, W / 2, 21, { align: "center" });
+    doc.text(safeSubtitle, W / 2, 21, { align: "center" });
     lineY = 26;
   }
 
@@ -143,7 +165,6 @@ const drawHeader = (doc: jsPDF, title: string, subtitle?: string): number => {
 
   return lineY + 7;
 };
-
 
 // ── Shared footer ─────────────────────────────────────────────
 const drawFooter = (doc: jsPDF) => {
@@ -162,7 +183,6 @@ const drawFooter = (doc: jsPDF) => {
     doc.text(`Page ${i} of ${pages}`, W - 14, H - 6, { align: "right" });
   }
 };
-
 
 // ── Stats bar ─────────────────────────────────────────────────
 interface ExtraCard {
@@ -249,7 +269,6 @@ const drawStatsBar = (
   return barY + barH + 11;
 };
 
-
 // ── Table defaults ────────────────────────────────────────────
 const tableDefaults = (doc: jsPDF, startY: number) => ({
   startY,
@@ -273,7 +292,6 @@ const tableDefaults = (doc: jsPDF, startY: number) => ({
   alternateRowStyles: { fillColor: ROW_ALT },
   margin: { top: 34, left: 14, right: 14, bottom: 16 },
 });
-
 
 // ── Step row builder ──────────────────────────────────────────
 const buildStepRow = (step: FlatData) => {
@@ -306,14 +324,27 @@ const buildStepRow = (step: FlatData) => {
   ];
 };
 
-
 // ── Divider row builder ───────────────────────────────────────
+/**
+ * Builds a full-width divider row with correct per-level colour.
+ *
+ * Colour mapping (ASCII prefixes — jsPDF built-in fonts are Latin-1 only):
+ *   Level 1  >>  orange bg / orange text  (main section)
+ *   Level 2   >  blue   bg / blue   text  (sub-section)
+ *   Level 3   -  green  bg / green  text  (detail)
+ */
 const buildDividerRow = (d: FlatData, colSpan: number) => {
-  const level = d.dividerLevel ?? 1;
+  const level = resolveDividerLevel(d);
   const { bg, txt } = dividerStyle(level);
-  const prefix = level === 1 ? "▶" : level === 2 ? "▸" : "–";
+
+  // ASCII-only prefixes: jsPDF Helvetica does not support Unicode arrows
+  const prefix = level === 1 ? ">>" : level === 2 ? " >" : "  -";
+
+  // Strip any leading markdown-style hashes from the action text
+  const label = d.action.replace(/^#{1,3}\s*/, "").toUpperCase();
+
   return [{
-    content: `${prefix}  ${d.action.toUpperCase()}`,
+    content: `${prefix}  ${label}`,
     colSpan,
     styles: {
       fillColor: bg,
@@ -322,11 +353,15 @@ const buildDividerRow = (d: FlatData, colSpan: number) => {
       fontSize:  8,
       lineColor: FAINT as [number, number, number],
       lineWidth: 0.3,
-      cellPadding: { top: 4, bottom: 4, left: 10, right: 4 },
+      cellPadding: {
+        top:    level === 1 ? 4.5 : level === 2 ? 3.5 : 3,
+        bottom: level === 1 ? 4.5 : level === 2 ? 3.5 : 3,
+        left:   level === 1 ? 10  : level === 2 ? 16  : 22,
+        right:  4,
+      },
     },
   }];
 };
-
 
 // ─────────────────────────────────────────────────────────────
 // 1. DASHBOARD EXPORTS
@@ -361,8 +396,8 @@ export const exportDashboardPDF = (summaries: ModuleSummary[]) => {
     ...tableDefaults(doc, afterStats),
     head: [["#", "Module", "Description", "Tests", "Total Steps", "Pass", "Fail", "Pending", "Pass Rate"]],
     body: summaries.map((s, i) => [
-      pad2(i + 1), s.name, s.description || "—",
-      s.testCount ?? "—", s.total, s.pass, s.fail, s.pending, `${s.passRate}%`,
+      pad2(i + 1), s.name, s.description || "-",
+      s.testCount ?? "-", s.total, s.pass, s.fail, s.pending, `${s.passRate}%`,
     ]),
     columnStyles: {
       0: { cellWidth: 10,  halign: "center", textColor: MUTED as any },
@@ -386,14 +421,14 @@ export const exportDashboardDocx = (summaries: ModuleSummary[]) => {
     <tr>
       <td align="center" style="color:#64748b">${pad2(i + 1)}</td>
       <td><b>${s.name}</b></td><td>${s.description || ""}</td>
-      <td align="center" style="color:#2563eb"><b>${s.testCount ?? "—"}</b></td>
+      <td align="center" style="color:#2563eb"><b>${s.testCount ?? "-"}</b></td>
       <td align="center">${s.total}</td>
       <td align="center" style="color:#16a34a"><b>${s.pass}</b></td>
       <td align="center" style="color:#dc2626"><b>${s.fail}</b></td>
       <td align="center" style="color:#d97706"><b>${s.pending}</b></td>
       <td align="center"><b>${s.passRate}%</b></td>
     </tr>`).join("");
-  const html = docxWrapper("Dashboard Report — All Modules", `
+  const html = docxWrapper("Dashboard Report - All Modules", `
     <table border="1" style="border-collapse:collapse;width:100%">
       <thead><tr style="background:#f1f5f9;color:#475569">
         <th>#</th><th>Module</th><th>Description</th><th>Tests</th>
@@ -401,7 +436,6 @@ export const exportDashboardDocx = (summaries: ModuleSummary[]) => {
       </tr></thead><tbody>${rows}</tbody></table>`);
   downloadDocx(html, `TestPro_Dashboard_${today()}.doc`);
 };
-
 
 // ─────────────────────────────────────────────────────────────
 // 2. REPORT PAGE EXPORTS
@@ -445,7 +479,7 @@ export const exportReportCSV = (_modules: Module[], data: FlatData[]) => {
 export const exportReportPDF = (_modules: Module[], data: FlatData[]) => {
   const doc       = new jsPDF({ orientation: "landscape" });
   const summaries = buildTestSummaries(data);
-  const contentY  = drawHeader(doc, "Test Report", "All Modules · Test Summary");
+  const contentY  = drawHeader(doc, "Test Report", "All Modules - Test Summary");
 
   const total   = summaries.reduce((a, s) => a + s.total,   0);
   const pass    = summaries.reduce((a, s) => a + s.pass,    0);
@@ -464,7 +498,7 @@ export const exportReportPDF = (_modules: Module[], data: FlatData[]) => {
     if (s.module !== lastModule) {
       lastModule = s.module;
       body.push([{
-        content: `▶  ${s.module.toUpperCase()}`,
+        content: `>>  ${s.module.toUpperCase()}`,
         colSpan: 8,
         styles: {
           fillColor: MOD_BG, textColor: MOD_TXT,
@@ -517,7 +551,6 @@ export const exportAllPDF    = exportReportPDF;
 export const exportModuleCSV = (_name: string, data: FlatData[]) => exportReportCSV([], data);
 export const exportModulePDF = (_name: string, data: FlatData[]) => exportReportPDF([], data);
 
-
 // ─────────────────────────────────────────────────────────────
 // 3. MODULE DETAIL EXPORTS
 // ─────────────────────────────────────────────────────────────
@@ -558,7 +591,7 @@ export const exportModuleDetailCSV = (data: FlatData[]) => {
 
 export const exportModuleDetailPDF = (data: FlatData[]) => {
   const doc      = new jsPDF({ orientation: "landscape" });
-  const contentY = drawHeader(doc, "Module Detail Report", "All Modules · Full Step Results");
+  const contentY = drawHeader(doc, "Module Detail Report", "All Modules - Full Step Results");
 
   const nd      = data.filter(d => !d.isDivider);
   const pass    = nd.filter(d => d.status === "pass").length;
@@ -599,7 +632,7 @@ export const exportModuleDetailPDF = (data: FlatData[]) => {
     const mRate    = allSteps.length > 0 ? Math.round((mPass / allSteps.length) * 100) : 0;
 
     body.push([{
-      content: `▶  ${mod.name.toUpperCase()}   ·   ${mod.tests.length} test${mod.tests.length !== 1 ? "s" : ""}   ${allSteps.length} steps   ${mRate}% pass rate`,
+      content: `>>  ${mod.name.toUpperCase()}   |   ${mod.tests.length} test${mod.tests.length !== 1 ? "s" : ""}   ${allSteps.length} steps   ${mRate}% pass rate`,
       colSpan: 5,
       styles: {
         fillColor: MOD_BG, textColor: MOD_TXT,
@@ -616,7 +649,7 @@ export const exportModuleDetailPDF = (data: FlatData[]) => {
       const tRate    = test.steps.length > 0 ? Math.round((tPass / test.steps.length) * 100) : 0;
 
       body.push([{
-        content: `    ${pad2(test.serial)}.  ${test.name}   ·   P: ${tPass}  F: ${tFail}  N: ${tPending}   ${tRate}% pass`,
+        content: `    ${pad2(test.serial)}.  ${test.name}   |   P: ${tPass}  F: ${tFail}  N: ${tPending}   ${tRate}% pass`,
         colSpan: 5,
         styles: {
           fillColor: TEST_BG, textColor: TEST_TXT,
@@ -656,7 +689,6 @@ export const exportModuleDetailPDF = (data: FlatData[]) => {
   openPrintPreview(doc);
 };
 
-
 // ─────────────────────────────────────────────────────────────
 // 4. TEST EXECUTION EXPORTS
 // ─────────────────────────────────────────────────────────────
@@ -681,7 +713,12 @@ export const exportExecutionCSV = (moduleName: string, testName: string, data: F
 export const exportExecutionPDF = (moduleName: string, testName: string, data: FlatData[]) => {
   const doc = new jsPDF({ orientation: "landscape" });
 
-  const contentY = drawHeader(doc, testName, moduleName);
+  // Guard: always show a meaningful title even if caller passes empty string
+  const safeTestName   = (testName   && testName.trim())   ? testName.trim()   : "Unnamed Test";
+  const safeModuleName = (moduleName && moduleName.trim()) ? moduleName.trim() : "Unknown Module";
+
+  // title = test name (large, top), subtitle = module name (small, below title)
+  const contentY = drawHeader(doc, safeTestName, safeModuleName);
 
   const nd      = data.filter(d => !d.isDivider);
   const pass    = nd.filter(d => d.status === "pass").length;
@@ -712,7 +749,6 @@ export const exportExecutionPDF = (moduleName: string, testName: string, data: F
   drawFooter(doc);
   openPrintPreview(doc);
 };
-
 
 // ── Helpers ───────────────────────────────────────────────────
 const openPrintPreview = (doc: jsPDF) => {
