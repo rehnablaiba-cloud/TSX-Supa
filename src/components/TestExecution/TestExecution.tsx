@@ -37,7 +37,7 @@ interface ExecutionStep {
 interface ModuleTestItem {
   id:         string;
   tests_name: string;
-  test:       { serialno: number; name: string } | null;
+  test:       { serialno: string; name: string } | null;
 }
 
 type SignedImageMap = Record<string, string>;
@@ -389,7 +389,7 @@ const testsRes = testNames.length
   : { data: [] };
 
       const testsMap = Object.fromEntries(
-        ((testsRes.data ?? []) as { name: string; serialno: number }[]).map(t => [t.name, t])
+        ((testsRes.data ?? []) as { name: string; serialno: string }[]).map(t => [t.name, t])
       );
 
       setModuleTests(rawMts.map(m => ({
