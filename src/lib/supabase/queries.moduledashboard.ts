@@ -60,7 +60,7 @@ export async function fetchModuleDashboard(
   const [mtRes, srRes, locksRes] = await Promise.all([
     supabase
       .from("module_tests")
-      .select("id, testsname, test:tests!testsname(serial_no, name, description)")
+     .select('id, testsname, test:tests!module_tests_testsname_fkey(serialno, name, description)')
       .eq("module_name", module_name)
       .order("id"),
     supabase
