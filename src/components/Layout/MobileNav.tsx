@@ -110,8 +110,7 @@ const ExportDataModal: React.FC<{ onClose: () => void }> = ({ onClose }) => {
       } else if (format === 'sql') {
         const lines = [`-- TestPro full dump ${new Date().toLocaleString()}`, `-- Tables: ${ALL_TABLES.join(', ')}`];
         for (const t of ALL_TABLES) { lines.push(`-- ${t}`); lines.push(toSql(t, allData[t])); }
-        downloadBlob(new Blob([lines.join('
-')], { type: 'text/plain' }), `testpro-full-${stamp}.sql`);
+        downloadBlob(new Blob([lines.join('\n')], { type: 'text/plain' }), `testpro-full-${stamp}.sql`);
       } else {
         const JSZip = (await import('jszip')).default;
         const zip = new JSZip();
