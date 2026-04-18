@@ -12,7 +12,7 @@ import ModuleDashboard from "./components/ModuleDashboard/ModuleDashboard";
 import TestExecution from "./components/TestExecution/TestExecution";
 import TestReport from "./components/TestReport/TestReport";
 import UsersPanel from "./components/Users/UsersPanel";
-import audit_log from "./components/audit_log/audit_log";
+import audit_log from "./components/auditlog/auditlog";
 import Spinner from "./components/UI/Spinner";
 import { supabase } from "./supabase";
 import { Module } from "./types";
