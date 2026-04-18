@@ -10,9 +10,9 @@
 //   fetchTestsForModule         → imported from lib/supabase/queries
 
 import React, { useRef, useEffect, useState, useCallback } from 'react';
-import useAuth from '../context/AuthContext';
-import useTheme from '../context/ThemeContext';
-import supabase from '../../supabase';
+import { useAuth }  from '../../context/AuthContext';
+import { useTheme } from '../../context/ThemeContext';
+import { supabase } from '../../supabase';
 import ThemeEditor from '../ThemeEditor/ThemeEditorPanel';
 import {
   BarChart2, FileJson, Table2, Database,
@@ -25,16 +25,16 @@ import {
 } from 'lucide-react';
 
 // ── Phase 2: extracted utilities ──────────────────────────────────────────────
-import { downloadBlob, toCsv, toSql } from '../../../utils/export';
-import { parseCsvToRecords, parseStepsCsv } from '../../../utils/csvParser';
+import { downloadBlob, toCsv, toSql } from '../../utils/export';
+import { parseCsvToRecords, parseStepsCsv } from '../../utils/csvParser';
 import ModalShell from '../UI/ModalShell';
 import { Row, DiffRow } from '../UI/ReviewRow';
-import type { TestOption, ModuleOption, StepInput } from '../../../types';
+import type { TestOption, ModuleOption, StepInput } from '../../types';
 import {
   releaseLocksAndSignOut,
   fetchModuleOptions,
   fetchTestsForModule,
-} from '../../../lib/supabase/queries';
+} from '../../lib/supabase/queries';
 
 // ── All tables (FK-safe order for SQL inserts) ────────────────────────────────
 const ALL_TABLES = [
@@ -343,7 +343,7 @@ const ImportTestsModal: React.FC<{ onClose: () => void; onDone: () => void }> = 
 
   useEffect(() => {
     supabase.from('tests').select('serialno, name').order('serialno')
-      .then(({ data }) => setTests((data ?? []) as TestOption[]));
+      .then(({ data }: { data: any }) => setTests((data ?? []) as TestOption[]));
   }, []);
 
   const handleOpSelect = (o: TestOp) => {
@@ -871,7 +871,7 @@ const MobileNav: React.FC<Props> = ({ activePage, onNavigate }) => {
         <div className="fixed inset-0 z-70 md:hidden">
           <div className="absolute inset-0 bg-black/50" onClick={close} />
           <div className="absolute inset-x-0 bottom-0 max-h-[90vh] overflow-y-auto bg-bg-surface rounded-t-2xl border-t border-[var(--border-color)]">
-            <ThemeEditor />
+            <ThemeEditor onClose={close} />
           </div>
         </div>
       )}

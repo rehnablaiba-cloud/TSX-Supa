@@ -7,7 +7,7 @@ import {
 
 import { useAuth }        from "../../context/AuthContext";
 import { useToast }       from "../../context/ToastContext";
-import supabase           from "../../supabase"; // realtime only
+import {supabase}           from "../../supabase"; // realtime only
 import Topbar             from "../Layout/Topbar";
 import Spinner            from "../UI/Spinner";
 import ExportModal        from "../UI/ExportModal";

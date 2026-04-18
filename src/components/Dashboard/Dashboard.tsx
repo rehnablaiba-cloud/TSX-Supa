@@ -4,7 +4,7 @@ import React, {
   useEffect, useLayoutEffect, useRef,
   useState, useCallback, useMemo,
 } from 'react';
-import supabase from '../../supabase';
+import {supabase} from '../../supabase';
 import gsap from 'gsap';
 import ExportModal from '../UI/ExportModal';
 import SegmentedBar       from '../UI/SegmentedBar';

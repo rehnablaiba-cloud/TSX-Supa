@@ -18,7 +18,7 @@ interface ProfileRow {
 const UsersPanel: React.FC = () => {
   const { user: currentUser } = useAuth();
   const { addToast } = useToast();
-  const { log } = useAuditLog();
+  const log = useAuditLog();
   const [users, setUsers]               = useState<AppUser[]>([]);
   const [search, setSearch]             = useState("");
   const [showForm, setShowForm]         = useState(false);

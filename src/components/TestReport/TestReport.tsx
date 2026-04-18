@@ -11,15 +11,15 @@
 //   2.1-C1  getChartTheme                        → utils/chartTheme
 
 import React, { useEffect, useRef, useState, useMemo, useCallback } from 'react';
-import supabase from '../../supabase';
+import {supabase} from '../../supabase';
 import Spinner from '../UI/Spinner';
 import Topbar from '../Layout/Topbar';
-import useTheme from '../context/ThemeContext';
+import { useTheme } from '../../context/ThemeContext';
 import {
   FileSpreadsheet, FileText, ChevronDown, ChevronUp,
   CheckCircle2, XCircle, Clock, BarChart2, TableIcon,
 } from 'lucide-react';
-import { exportTestReportCSV, exportTestReportPDF } from '../../utils/export';
+import { exportReportCSV, exportReportPDF } from '../../utils/export';
 
 // ── Phase 2.1 shared imports ──────────────────────────────────────────────────
 import { useInjectStyle }  from '../../utils/animation';
@@ -33,7 +33,7 @@ import {
   RPieChart,
   RRadarChart,
 } from '../ModuleDashboard/charts';
-import type { ChartRow, CHART_TYPES } from '../ModuleDashboard/charts';
+import type { ChartRow, ChartType } from '../ModuleDashboard/charts/types';
 import { CHART_TYPES }              from '../ModuleDashboard/charts';
 
 // ── Props / DB types ──────────────────────────────────────────────────────────
@@ -184,11 +184,11 @@ const TestReport: React.FC<Props> = ({ moduleTestId, onBack }) => {
         onBack={onBack}
         actions={
           <div className="flex items-center gap-2">
-            <button onClick={() => exportTestReportCSV(results, meta)}
+            <button onClick={() => exportReportCSV(results, meta)}
               className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg bg-bg-card hover:bg-bg-surface border border-[var(--border-color)] text-t-primary transition">
               <FileSpreadsheet size={13} />CSV
             </button>
-            <button onClick={() => exportTestReportPDF(results, meta)}
+            <button onClick={() => exportReportPDF(results, meta)}
               className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg bg-bg-card hover:bg-bg-surface border border-[var(--border-color)] text-t-primary transition">
               <FileText size={13} />PDF
             </button>
