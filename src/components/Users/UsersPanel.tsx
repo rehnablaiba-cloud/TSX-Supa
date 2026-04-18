@@ -4,7 +4,7 @@ import { supabase } from "../../supabase";
 import ConfirmDialog from "../UI/ConfirmDialog";
 import Topbar from "../Layout/Topbar";
 import { useToast } from "../../context/ToastContext";
-import { useAuditLog } from "../../hooks/useAuditLog";
+import  useAuditLog  from "../../hooks/useAuditLog";
 import { AppUser, Role } from "../../types";
 
 // ─── Profile row shape returned by Supabase ───────────────────────────────────

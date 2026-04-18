@@ -33,7 +33,7 @@ import {
   RPieChart,
   RRadarChart,
 } from '../ModuleDashboard/charts';
-import type { ChartRow, ChartType } from '../ModuleDashboard/charts';
+import type { ChartRow, CHART_TYPES } from '../ModuleDashboard/charts';
 import { CHART_TYPES }              from '../ModuleDashboard/charts';
 
 // ── Props / DB types ──────────────────────────────────────────────────────────

@@ -2,7 +2,7 @@
  * queries.testreport.ts
  * All supabase data calls extracted from TestReport.tsx
  */
-import supabase from "../../supabase";
+import {supabase} from "../../supabase";
 
 export interface ReportModule {
   name:        string;

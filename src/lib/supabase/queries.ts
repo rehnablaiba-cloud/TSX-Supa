@@ -1,65 +1,110 @@
 // src/lib/supabase/queries.ts
-// Central shared query layer.
-// Phase 1: modules list, sign-out lock
-// Phase 2 (A1): q<T> shared wrapper — replaces 3-line error pattern repeated ~30×
-//         (A3): single releaseLocksAndSignOut definition
-//         (A4): single fetchModuleOptions definition
-//         (A5): single fetchTestsForModule definition
+import { supabase } from '../../supabase';
+import type { ModuleOption, TestOption } from '../../types';
 
-import supabase from '../../supabase';
-import type { Module, TestOption, ModuleOption } from '../../types';
-
-// ── A1: Shared throw-on-error wrapper ─────────────────────────────────────────
-// Usage: return q<MyType>(supabase.from('table').select('...'));
-// Eliminates the repeated:
-//   const { data, error } = await ...;
-//   if (error) throw new Error(error.message);
-//   return (data ?? []) as T[];
+// ── Generic wrapper ───────────────────────────────────────────────────────────
 export async function q<T>(
-  promise: PromiseLike<{ data: T[] | null; error: { message: string } | null }>
+  table: string,
+  query: (b: ReturnType<typeof supabase.from>) => Promise<{ data: T[] | null; error: unknown }>
 ): Promise<T[]> {
-  const { data, error } = await promise;
-  if (error) throw new Error(error.message);
+  const { data, error } = await query(supabase.from(table));
+  if (error) throw error;
   return data ?? [];
 }
 
-// ── A4: fetchModuleOptions ─────────────────────────────────────────────────────
-// Single definition — previously duplicated in queries.dashboard.ts
-// and queries.mobilenav.ts
-export async function fetchModuleOptions(): Promise<ModuleOption[]> {
-  return q<ModuleOption>(
-    supabase.from('modules').select('name, description').order('name')
-  );
-}
-
-// ── A5: fetchTestsForModule ────────────────────────────────────────────────────
-// Single definition — previously duplicated in queries.mobilenav.ts
-// and queries.moduledashboard.ts
-export async function fetchTestsForModule(
-  moduleName: string
-): Promise<{ id: string; testsname: string }[]> {
-  return q(
-    supabase
-      .from('moduletests')
-      .select('id, testsname')
-      .eq('modulename', moduleName)
-      .order('id')
-  );
-}
-
-// ── A3: releaseLocksAndSignOut ─────────────────────────────────────────────────
-// Single definition — previously duplicated in queries.ts + queries.mobilenav.ts
+// ── Auth ──────────────────────────────────────────────────────────────────────
 export async function releaseLocksAndSignOut(
   userId: string,
   signOut: () => Promise<void>
 ): Promise<void> {
-  await supabase.from('testlocks').delete().eq('userid', userId);
+  try { await supabase.from('testlocks').delete().eq('userid', userId); }
+  catch (err) { console.error('Failed to release locks on sign out', err); }
   await signOut();
 }
 
-// ── Phase 1 (unchanged): fetchModulesForSidebar ───────────────────────────────
-export async function fetchModulesForSidebar(): Promise<Module[]> {
-  return q<Module>(
-    supabase.from('modules').select('name, description').order('name')
-  );
+// ── Module / Test options ─────────────────────────────────────────────────────
+export async function fetchModuleOptions(): Promise<ModuleOption[]> {
+  const { data, error } = await supabase.from('modules').select('name').order('name');
+  if (error) throw error;
+  return (data ?? []) as ModuleOption[];
 }
+export async function fetchModulesForSidebar(): Promise<ModuleOption[]> {
+  return fetchModuleOptions();
+}
+export async function fetchTestsForModule(
+  moduleName: string
+): Promise<{ id: string; testsname: string }[]> {
+  const { data, error } = await supabase
+    .from('moduletests').select('id, testsname')
+    .eq('modulename', moduleName).order('testsname');
+  if (error) throw error;
+  return (data ?? []) as { id: string; testsname: string }[];
+}
+
+// ── Export all ────────────────────────────────────────────────────────────────
+export const ALL_TABLES = [
+  'modules', 'moduletests', 'teststeps', 'stepresults',
+  'testlocks', 'auditlog', 'users'
+] as const;
+export type AllData = Record<string, Record<string, unknown>[]>;
+
+export async function fetchAllTables(): Promise<AllData> {
+  const result: AllData = {};
+  for (const table of ALL_TABLES) {
+    const { data, error } = await supabase.from(table).select('*');
+    if (error) throw error;
+    result[table] = (data ?? []) as Record<string, unknown>[];
+  }
+  return result;
+}
+
+// ── AuditLog ──────────────────────────────────────────────────────────────────
+export async function fetchAuditLog(
+  limit = 200
+): Promise<Record<string, unknown>[]> {
+  const { data, error } = await supabase
+    .from('auditlog').select('*').order('created_at', { ascending: false }).limit(limit);
+  if (error) throw error;
+  return (data ?? []) as Record<string, unknown>[];
+}
+
+// ── Tests (for ImportStepsModal) ──────────────────────────────────────────────
+export async function fetchTests(
+  moduleName: string
+): Promise<{ id: string; testsname: string }[]> {
+  return fetchTestsForModule(moduleName);
+}
+export async function findStepBySerialNo(
+  testId: string, serialno: number
+): Promise<Record<string, unknown> | null> {
+  const { data, error } = await supabase
+    .from('teststeps').select('*')
+    .eq('moduletestid', testId).eq('serialno', serialno).maybeSingle();
+  if (error) throw error;
+  return data as Record<string, unknown> | null;
+}
+export async function bulkCreateSteps(
+  steps: Record<string, unknown>[]
+): Promise<void> {
+  const { error } = await supabase.from('teststeps').insert(steps);
+  if (error) throw error;
+}
+export async function updateStep(
+  id: string, payload: Record<string, unknown>
+): Promise<void> {
+  const { error } = await supabase.from('teststeps').update(payload).eq('id', id);
+  if (error) throw error;
+}
+export async function deleteStep(id: string): Promise<void> {
+  const { error } = await supabase.from('teststeps').delete().eq('id', id);
+  if (error) throw error;
+}
+
+// ── TestExecution ─────────────────────────────────────────────────────────────
+export * from './queries.testexecution';
+
+// ── Re-exports from sub-query files ──────────────────────────────────────────
+export * from './queries.mobilenav';
+export * from './queries.moduledashboard';
+export * from './queries.dashboard';
+export * from './queries.testreport';

@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback } from "react";
-import supabase from "../../supabase";
+import {supabase} from "../../supabase";
 import ModalShell from "../UI/ModalShell";
 import { Hash, Package, FlaskConical, Plus, Pencil, Trash2, AlertTriangle, Check, Minus } from "lucide-react";
 import {

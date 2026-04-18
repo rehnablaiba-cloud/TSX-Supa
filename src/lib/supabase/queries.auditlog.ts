@@ -2,7 +2,7 @@
  * queries.auditlog.ts
  * Supabase call extracted from useAuditLog.ts
  */
-import supabase from "../../supabase";
+import {supabase} from "../../supabase";
 
 export interface AuditEventPayload {
   userid:   string;

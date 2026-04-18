@@ -4,7 +4,7 @@
  * Add / merge these exports into your existing queries.ts
  */
 
-import supabase from "../../supabase";
+import {supabase} from "../../supabase";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 

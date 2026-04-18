@@ -4,7 +4,7 @@
  * Merge / re-export these from your central queries.ts if desired.
  */
 
-import supabase from "../../supabase";
+import {supabase} from "../../supabase";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
