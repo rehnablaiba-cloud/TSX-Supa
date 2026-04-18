@@ -1,10 +1,6 @@
 import { useAuth } from "../context/AuthContext";
 import { insertAuditEvent } from "../lib/supabase/queries.auditlog";
 
-/**
- * Returns a fire-and-forget `log(action, severity?)` helper.
- * The actual supabase call lives in queries.auditlog.ts.
- */
 const useAuditLog = () => {
   const user = useAuth();
 

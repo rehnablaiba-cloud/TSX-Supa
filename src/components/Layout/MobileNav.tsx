@@ -25,7 +25,7 @@ import {
 } from 'lucide-react';
 
 // ── Phase 2: extracted utilities ──────────────────────────────────────────────
-import { downloadBlob, toCsv, toSql } from '../../utils/export';
+import { downloadBlob, toCsv, toSql } from '../../utils/fileUtils';
 import { parseCsvToRecords, parseStepsCsv } from '../../utils/csvParser';
 import ModalShell from '../UI/ModalShell';
 import { Row, DiffRow } from '../UI/ReviewRow';

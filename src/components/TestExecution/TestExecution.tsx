@@ -7,7 +7,7 @@ import {
 
 import { useAuth }        from "../../context/AuthContext";
 import { useToast }       from "../../context/ToastContext";
-import {supabase}           from "../../supabase"; // realtime only
+import { supabase }       from "../../supabase";
 import Topbar             from "../Layout/Topbar";
 import Spinner            from "../UI/Spinner";
 import ExportModal        from "../UI/ExportModal";
@@ -16,7 +16,6 @@ import useAuditLog        from "../../hooks/useAuditLog";
 import { exportExecutionCSV, exportExecutionPDF } from "../../utils/export";
 import type { FlatData }  from "../../utils/export";
 
-// ── CHANGED: all supabase data calls → queries.ts ─────────────────────────────
 import {
   fetchTestExecution,
   acquireLock,
@@ -25,7 +24,7 @@ import {
   upsertStepResult,
   resetAllStepResults,
   fetchSignedUrls,
-} from "../../lib/supabase/queries";
+} from "../../lib/supabase/queries.testexecution";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Types
@@ -70,32 +69,23 @@ interface ImagePreviewState {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Divider level config — unchanged
+// Divider level config
 // ─────────────────────────────────────────────────────────────────────────────
-
-const DIVIDER_LEVELS: Record<number, {
-  dot: string; text: string; bg: string; border: string;
-  indent: string; size: string;
-}> = {
-  1: { dot: "bg-c-brand",   text: "text-c-brand",   bg: "bg-c-brand-bg",    border: "border-l-[3px] border-c-brand",   indent: "px-4",  size: "text-xs font-bold tracking-widest uppercase"   },
-  2: { dot: "bg-amber-400", text: "text-amber-400", bg: "bg-amber-500/5",   border: "border-l-[2px] border-amber-400", indent: "px-8",  size: "text-xs font-semibold tracking-wider uppercase" },
-  3: { dot: "bg-sky-400",   text: "text-sky-400",   bg: "bg-sky-500/5",     border: "border-l-[2px] border-sky-400",   indent: "px-12", size: "text-[11px] font-medium tracking-wide"         },
-};
 
 const MOBILE_DIVIDER_LEVELS: Record<number, {
   bg: string; border: string; textClass: string; dotClass: string;
   dotSize: number; fontSize: string; ml: string; py: string;
 }> = {
-  1: { bg: "bg-teal-500/10",   border: "border-l-[3px] border-teal-500",  textClass: "text-teal-400",  dotClass: "bg-teal-500",  dotSize: 7, fontSize: "text-[14px] font-bold tracking-widest uppercase",  ml: "ml-0", py: "py-2.5" },
-  2: { bg: "bg-amber-500/10",  border: "border-l-[2px] border-amber-400", textClass: "text-amber-400", dotClass: "bg-amber-400", dotSize: 5, fontSize: "text-[12px] font-semibold tracking-wide uppercase", ml: "ml-4", py: "py-2"   },
-  3: { bg: "bg-sky-500/10",    border: "border-l-[2px] border-sky-400",   textClass: "text-sky-400",   dotClass: "bg-sky-400",   dotSize: 4, fontSize: "text-[11px] font-medium tracking-wide",            ml: "ml-8", py: "py-1.5" },
+  1: { bg: "bg-teal-500/10",  border: "border-l-[3px] border-teal-500",  textClass: "text-teal-400",  dotClass: "bg-teal-500",  dotSize: 7, fontSize: "text-[14px] font-bold tracking-widest uppercase",  ml: "ml-0", py: "py-2.5" },
+  2: { bg: "bg-amber-500/10", border: "border-l-[2px] border-amber-400", textClass: "text-amber-400", dotClass: "bg-amber-400", dotSize: 5, fontSize: "text-[12px] font-semibold tracking-wide uppercase", ml: "ml-4", py: "py-2"   },
+  3: { bg: "bg-sky-500/10",   border: "border-l-[2px] border-sky-400",   textClass: "text-sky-400",   dotClass: "bg-sky-400",   dotSize: 4, fontSize: "text-[11px] font-medium tracking-wide",            ml: "ml-8", py: "py-1.5" },
 };
 
 const getDividerLevel = (expected_result: string): number =>
   Math.min(Math.max(parseInt(expected_result, 10) || 1, 1), 3);
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Sub-components — unchanged from original
+// Sub-components
 // ─────────────────────────────────────────────────────────────────────────────
 
 const UndoAllModal: React.FC<{
@@ -148,9 +138,9 @@ const ImagePreviewModal: React.FC<{
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape")      onClose();
-      if (e.key === "ArrowRight")  setIdx(i => (i + 1) % total);
-      if (e.key === "ArrowLeft")   setIdx(i => (i - 1 + total) % total);
+      if (e.key === "Escape")     onClose();
+      if (e.key === "ArrowRight") setIdx(i => (i + 1) % total);
+      if (e.key === "ArrowLeft")  setIdx(i => (i - 1 + total) % total);
     };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
@@ -228,9 +218,9 @@ const LockedScreen: React.FC<{ lockedByName: string; testName: string; onBack: (
 const TestExecution: React.FC<Props> = ({
   moduleName, initialModuleTestId, isAdmin = false, onBack,
 }) => {
-  const user     = useAuth();
-  const addToast = useToast();
-  const log      = useAuditLog();
+  const { user }     = useAuth();
+  const { addToast } = useToast();
+  const log          = useAuditLog();
 
   const currentMtId = initialModuleTestId;
   const testsName   = currentMtId.slice(moduleName.length + 1);
@@ -250,31 +240,37 @@ const TestExecution: React.FC<Props> = ({
   const [expandedRemarks, setExpandedRemarks] = useState<Set<string>>(new Set());
 
   const mountedRef = useRef(true);
-  useEffect(() => { mountedRef.current = true; return () => { mountedRef.current = false; }; }, []);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => { mountedRef.current = false; };
+  }, []);
 
-  // ── CHANGED: fetchTestExecution() from queries.ts ─────────────────────────
+  // ── Load data ─────────────────────────────────────────────────────────────
   const load = useCallback(async () => {
     try {
-      const { steps: raw, moduleTests: mts, lockedBy } = await fetchTestExecution(moduleName, currentMtId, user?.display_name ?? user?.email ?? "");
+      const { stepResults, moduleTests: mts } = await fetchTestExecution(currentMtId);
       if (!mountedRef.current) return;
 
-      if (lockedBy) {
-        setLockedByOther(lockedBy);
-        setLoading(false);
-        return;
-      }
+      setModuleTests(mts as ModuleTestItem[]);
 
-      setLockedByOther(null);
-      setModuleTests(mts);
-      setSteps(raw as ExecutionStep[]);
+      const mapped: ExecutionStep[] = stepResults.map(sr => ({
+        stepId:            sr.step?.id ?? "",
+        stepResultId:      sr.id,
+        moduleTestId:      currentMtId,
+        serialno:          sr.step?.serialno ?? 0,
+        action:            sr.step?.action ?? "",
+        expected_result:   sr.step?.expectedresult ?? "",
+        actionImageUrls:   sr.step?.actionimageurls ?? [],
+        expectedImageUrls: sr.step?.expectedimageurls ?? [],
+        is_divider:        sr.step?.isdivider ?? false,
+        status:            sr.status,
+        remarks:           sr.remarks,
+        display_name:      sr.display_name,
+      }));
+      setSteps(mapped);
 
-      // collect all storage paths and fetch signed URLs
-      const allPaths = (raw as ExecutionStep[]).flatMap(s => [
-        ...s.actionImageUrls,
-        ...s.expectedImageUrls,
-      ]);
+      const allPaths = mapped.flatMap(s => [...s.actionImageUrls, ...s.expectedImageUrls]);
       if (allPaths.length > 0) {
-        // ── CHANGED: fetchSignedUrls() from queries.ts ─────────────────────
         const map = await fetchSignedUrls(allPaths);
         if (mountedRef.current) setSignedImages(prev => ({ ...prev, ...map }));
       }
@@ -283,18 +279,29 @@ const TestExecution: React.FC<Props> = ({
     } finally {
       if (mountedRef.current) setLoading(false);
     }
-  }, [moduleName, currentMtId, user, addToast]);
+  }, [currentMtId, addToast]);
 
-  // ── CHANGED: acquireLock() from queries.ts ────────────────────────────────
+  // ── Acquire lock on mount ─────────────────────────────────────────────────
   useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
-        await acquireLock(currentMtId, user?.display_name ?? user?.email ?? "");
-        if (!cancelled) await load();
+        const result = await acquireLock(
+          currentMtId,
+          user?.id ?? "",
+          user?.displayName ?? user?.email ?? ""
+        );
+        if (!cancelled) {
+          if (!result.success) {
+            setLockedByOther(result.holder ?? "Another user");
+            setLoading(false);
+          } else {
+            await load();
+          }
+        }
       } catch (e: any) {
         if (!cancelled) {
-          setLockedByOther(e?.lockedBy ?? "Another user");
+          setLockedByOther("Another user");
           setLoading(false);
         }
       }
@@ -302,26 +309,26 @@ const TestExecution: React.FC<Props> = ({
     return () => { cancelled = true; };
   }, [currentMtId, user, load]);
 
-  // ── CHANGED: releaseLock() from queries.ts ────────────────────────────────
+  // ── Release lock on unmount ───────────────────────────────────────────────
   useEffect(() => {
     return () => {
-      releaseLock(currentMtId).catch(() => {});
+      releaseLock(currentMtId, user?.id ?? "").catch(() => {});
     };
-  }, [currentMtId]);
+  }, [currentMtId, user]);
 
-  // Realtime — supabase channel kept directly (lifecycle-bound)
+  // ── Realtime ──────────────────────────────────────────────────────────────
   useEffect(() => {
     const channel = supabase
       .channel(`execution-${currentMtId}`)
-      .on("postgres_changes", { event: "*", schema: "public", table: "step_results",
-        filter: `module_test_id=eq.${currentMtId}` }, () => load())
-      .on("postgres_changes", { event: "*", schema: "public", table: "test_locks",
-        filter: `module_test_id=eq.${currentMtId}` }, () => load())
+      .on("postgres_changes", { event: "*", schema: "public", table: "stepresults",
+        filter: `moduletestid=eq.${currentMtId}` }, () => load())
+      .on("postgres_changes", { event: "*", schema: "public", table: "testlocks",
+        filter: `moduletestid=eq.${currentMtId}` }, () => load())
       .subscribe();
     return () => { supabase.removeChannel(channel); };
   }, [currentMtId, load]);
 
-  // ── CHANGED: upsertStepResult() from queries.ts ───────────────────────────
+  // ── Set step status ───────────────────────────────────────────────────────
   const handleSetStatus = useCallback(async (
     step: ExecutionStep,
     status: "pass" | "fail" | "pending",
@@ -330,17 +337,17 @@ const TestExecution: React.FC<Props> = ({
     setSaving(step.stepId);
     try {
       await upsertStepResult({
-        stepResultId:  step.stepResultId,
-        moduleTestId:  currentMtId,
-        stepId:        step.stepId,
+        teststepsid:  step.stepId,
+        moduletestid: currentMtId,
         status,
-        remarks:       remarks ?? step.remarks,
-        display_name:  user?.display_name ?? user?.email ?? "",
+        remarks:      remarks ?? step.remarks,
+        display_name: user?.displayName ?? user?.email ?? "",
+        user_id:      user?.id ?? "",
       });
       setSteps(prev => prev.map(s =>
         s.stepId === step.stepId ? { ...s, status, remarks: remarks ?? s.remarks } : s
       ));
-      log(`Step ${step.serialno} → ${status}`, "step_result");
+      log(`Step ${step.serialno} → ${status}`);
     } catch (e: any) {
       addToast(e?.message ?? "Failed to save result", "error");
     } finally {
@@ -348,14 +355,14 @@ const TestExecution: React.FC<Props> = ({
     }
   }, [currentMtId, user, log, addToast]);
 
-  // ── CHANGED: resetAllStepResults() from queries.ts ────────────────────────
+  // ── Reset all ─────────────────────────────────────────────────────────────
   const handleUndoAll = useCallback(async () => {
     setShowUndoModal(false);
     setSaving("all");
     try {
       await resetAllStepResults(currentMtId);
       setSteps(prev => prev.map(s => ({ ...s, status: "pending", remarks: "" })));
-      log("Reset all step results", "step_result");
+      log("Reset all step results");
       addToast("All steps reset to pending", "info");
     } catch (e: any) {
       addToast(e?.message ?? "Failed to reset steps", "error");
@@ -364,7 +371,7 @@ const TestExecution: React.FC<Props> = ({
     }
   }, [currentMtId, log, addToast]);
 
-  // ── CHANGED: forceReleaseLock() from queries.ts ───────────────────────────
+  // ── Force release lock ────────────────────────────────────────────────────
   const handleForceRelease = useCallback(async () => {
     if (!isAdmin) return;
     try {
@@ -376,7 +383,7 @@ const TestExecution: React.FC<Props> = ({
     }
   }, [isAdmin, currentMtId, load, addToast]);
 
-  // Derived state
+  // ── Derived state ─────────────────────────────────────────────────────────
   const doneSteps    = useMemo(() => steps.filter(s => !s.is_divider && s.status !== "pending"), [steps]);
   const totalSteps   = useMemo(() => steps.filter(s => !s.is_divider), [steps]);
   const passCount    = useMemo(() => steps.filter(s => !s.is_divider && s.status === "pass").length,    [steps]);
@@ -391,19 +398,21 @@ const TestExecution: React.FC<Props> = ({
     return true;
   }), [steps, filter, search]);
 
+  const testName = moduleTests.find(mt => mt.id === currentMtId)?.test?.name ?? testsName;
+
   const exportData: FlatData[] = useMemo(() => steps
     .filter(s => !s.is_divider)
     .map(s => ({
-      serialno:        s.serialno,
-      action:          s.action,
-      expected_result: s.expected_result,
-      status:          s.status,
-      remarks:         s.remarks,
-      display_name:    s.display_name,
-    })), [steps]);
+      module:   moduleName,
+      test:     testName,
+      serial:   s.serialno,
+      action:   s.action,
+      expected: s.expected_result,
+      remarks:  s.remarks,
+      status:   s.status,
+    })), [steps, moduleName, testName]);
 
-  const testName = moduleTests.find(mt => mt.id === currentMtId)?.test?.name ?? testsName;
-
+  // ── Render ────────────────────────────────────────────────────────────────
   if (loading) return (
     <div className="flex-1 flex flex-col">
       <Topbar title={testName} subtitle={moduleName} onBack={onBack} />
@@ -414,11 +423,7 @@ const TestExecution: React.FC<Props> = ({
   if (lockedByOther) return (
     <div className="flex-1 flex flex-col">
       <Topbar title={testName} subtitle={moduleName} onBack={onBack} />
-      <LockedScreen
-        lockedByName={lockedByOther}
-        testName={testName}
-        onBack={onBack}
-      />
+      <LockedScreen lockedByName={lockedByOther} testName={testName} onBack={onBack} />
       {isAdmin && (
         <div className="p-4 flex justify-center">
           <button onClick={handleForceRelease}
@@ -436,7 +441,7 @@ const TestExecution: React.FC<Props> = ({
       <Topbar
         title={testName}
         subtitle={moduleName}
-        onBack={() => { releaseLock(currentMtId).catch(() => {}); onBack(); }}
+        onBack={() => { releaseLock(currentMtId, user?.id ?? "").catch(() => {}); onBack(); }}
         actions={
           <div className="flex items-center gap-2">
             <button onClick={() => setShowMassUpload(true)}
@@ -472,8 +477,8 @@ const TestExecution: React.FC<Props> = ({
           <span className="font-semibold text-t-primary">{progressPct}%</span>
         </div>
         <div className="h-1.5 w-full rounded-full bg-bg-card overflow-hidden flex">
-          {passCount    > 0 && <div className="h-full bg-green-500 transition-all duration-500" style={{ width: `${totalSteps.length > 0 ? (passCount    / totalSteps.length) * 100 : 0}%` }} />}
-          {failCount    > 0 && <div className="h-full bg-red-500   transition-all duration-500" style={{ width: `${totalSteps.length > 0 ? (failCount    / totalSteps.length) * 100 : 0}%` }} />}
+          {passCount > 0 && <div className="h-full bg-green-500 transition-all duration-500" style={{ width: `${totalSteps.length > 0 ? (passCount / totalSteps.length) * 100 : 0}%` }} />}
+          {failCount > 0 && <div className="h-full bg-red-500   transition-all duration-500" style={{ width: `${totalSteps.length > 0 ? (failCount / totalSteps.length) * 100 : 0}%` }} />}
         </div>
       </div>
 
@@ -499,8 +504,8 @@ const TestExecution: React.FC<Props> = ({
 
         {filteredSteps.map(step => {
           if (step.is_divider) {
-            const lvl   = getDividerLevel(step.expected_result);
-            const cfg   = MOBILE_DIVIDER_LEVELS[lvl] ?? MOBILE_DIVIDER_LEVELS[1];
+            const lvl = getDividerLevel(step.expected_result);
+            const cfg = MOBILE_DIVIDER_LEVELS[lvl] ?? MOBILE_DIVIDER_LEVELS[1];
             return (
               <div key={step.stepId}
                 className={`rounded-xl ${cfg.bg} ${cfg.border} ${cfg.ml} ${cfg.py} px-4 flex items-center gap-2`}>
@@ -627,19 +632,37 @@ const TestExecution: React.FC<Props> = ({
       )}
       {showMassUpload && (
         <MassImageUploadModal
-          moduleTestId={currentMtId}
-          moduleName={moduleName}
+          isOpen={showMassUpload}
           onClose={() => { setShowMassUpload(false); load(); }}
         />
       )}
       {showExport && (
         <ExportModal
-          moduleName={moduleName}
-          options={[
-            { label: "CSV",  icon: <FileSpreadsheet size={16} />, color: "bg-[var(--color-primary)]", hoverColor: "hover:bg-[var(--color-primary-hover)]", onConfirm: () => exportExecutionCSV(testName, exportData) },
-            { label: "PDF",  icon: <FileText        size={16} />, color: "bg-[var(--color-blue)]",    hoverColor: "hover:bg-[var(--color-blue-hover)]",    onConfirm: () => exportExecutionPDF(testName, exportData) },
-          ]}
+          isOpen={showExport}
           onClose={() => setShowExport(false)}
+          title={testName}
+          subtitle={moduleName}
+          stats={[
+            { label: "Pass",    value: passCount    },
+            { label: "Fail",    value: failCount    },
+            { label: "Pending", value: pendingCount },
+          ]}
+          options={[
+            {
+              label:      "CSV",
+              icon:       <FileSpreadsheet size={16} />,
+              color:      "bg-[var(--color-primary)]",
+              hoverColor: "hover:bg-[var(--color-primary-hover)]",
+              onConfirm:  () => exportExecutionCSV(moduleName, testName, exportData),
+            },
+            {
+              label:      "PDF",
+              icon:       <FileText size={16} />,
+              color:      "bg-[var(--color-blue)]",
+              hoverColor: "hover:bg-[var(--color-blue-hover)]",
+              onConfirm:  () => exportExecutionPDF(moduleName, testName, exportData),
+            },
+          ]}
         />
       )}
     </div>
