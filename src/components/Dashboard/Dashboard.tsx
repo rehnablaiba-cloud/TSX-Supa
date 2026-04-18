@@ -175,35 +175,6 @@ const Dashboard: React.FC<Props> = ({ onNavigate }) => {
     [summaries]
   );
 
-  const pieData = useMemo(
-    () => [
-      {
-        name: "Pass",
-        value: globalStats[1].value,
-        pass: globalStats[1].value,
-        fail: 0,
-        pending: 0,
-      },
-      {
-        name: "Fail",
-        value: globalStats[2].value,
-        pass: 0,
-        fail: globalStats[2].value,
-        pending: 0,
-      },
-      {
-        name: "Pending",
-        value:
-          globalStats[0].value - globalStats[1].value - globalStats[2].value,
-        pass: 0,
-        fail: 0,
-        pending:
-          globalStats[0].value - globalStats[1].value - globalStats[2].value,
-      },
-    ],
-    [globalStats]
-  );
-
   // ── Error state ───────────────────────────────────────────────────────────
   if (error)
     return (
@@ -285,16 +256,10 @@ const Dashboard: React.FC<Props> = ({ onNavigate }) => {
             <p className="text-xs text-t-muted mb-3">
               Pass / Fail / Pending breakdown per module
             </p>
-            <RBarChart
-              data={barData}
-              keys={["pass", "fail", "pending"]}
-              colors={["#22c55e", "#ef4444", "#94a3b8"]}
-              theme={chartTheme}
-              height={220}
-            />
+            <RBarChart data={barData} ct={chartTheme} />
           </div>
 
-          {/* Fleet-wide pie / donut */}
+          {/* Fleet-wide donut */}
           <div className="card p-4 flex flex-col items-center justify-center">
             <p className="text-sm font-semibold text-t-primary mb-1">
               Fleet Total
@@ -302,12 +267,7 @@ const Dashboard: React.FC<Props> = ({ onNavigate }) => {
             <p className="text-xs text-t-muted mb-3">
               Overall step result distribution
             </p>
-            <RPieChart
-              data={pieData}
-              colors={["#22c55e", "#ef4444", "#94a3b8"]}
-              theme={chartTheme}
-              height={220}
-            />
+            <RPieChart data={barData} ct={chartTheme} height={220} showLabel />
           </div>
         </div>
       )}
