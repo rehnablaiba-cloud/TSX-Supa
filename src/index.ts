@@ -4,7 +4,7 @@ export type Role = 'admin' | 'tester';
 
 export interface AppUser {
   id: string;
-  displayname: string;
+  display_name: string;
   email: string;
   defaultRole: Role;
   disabled: boolean;
@@ -16,43 +16,43 @@ export interface Module {
   createdat: string;
 }
 
-// Global test catalog — PK is name (text). serialno is float.
+// Global test catalog — PK is name (text). serial_no is float.
 export interface Test {
-  serialno: number;
+  serial_no: number;
   name: string;          // PK text
   description?: string;
   createdat: string;
 }
 
-// Global step definitions — PK: id = testsname|serialno (text)
+// Global step definitions — PK: id = testsname|serial_no (text)
 export interface Step {
   id: string;            // text PK, built by trigger
-  serialno: number;
+  serial_no: number;
   testsname: string;     // FK tests.name
   action: string;
-  expectedresult: string;
-  isdivider: boolean;
+  expected_result: string;
+  is_divider: boolean;
 }
 
-// Junction: module ↔ test — PK: id = modulename|testsname (text)
+// Junction: module ↔ test — PK: id = module_name|testsname (text)
 export interface ModuleTest {
   id: string;
-  modulename: string;    // FK modules.name
+  module_name: string;    // FK modules.name
   testsname: string;     // FK tests.name
   // joined relations (optional)
   test?: Test;
-  stepresults?: StepResult[];
+  step_results?: StepResult[];
 }
 
-// Per-module execution results — PK: id = modulename|teststepsid (text)
+// Per-module execution results — PK: id = module_name|test_stepsid (text)
 export interface StepResult {
   id: string;
-  modulename: string;    // FK modules.name
-  teststepsid: string;   // FK teststeps.id
+  module_name: string;    // FK modules.name
+  test_stepsid: string;   // FK test_steps.id
   status: 'pass' | 'fail' | 'pending';
   remarks: string;
   updatedat: string;
-  displayname?: string;
+  display_name?: string;
   // joined relations (optional)
   step?: Step;
 }
@@ -60,15 +60,15 @@ export interface StepResult {
 // Locks are per moduletest
 export interface TestLock {
   id: string;
-  moduletestid: string;  // FK moduletests.id
-  userid: string;
-  lockedbyname: string;
-  lockedat: string;
+  module_test_id: string;  // FK module_tests.id
+  user_id: string;
+  locked_by_name: string;
+  locked_at: string;
 }
 
 export interface AuditEvent {
   id: string;
-  userid: string;
+  user_id: string;
   username: string;
   action: string;
   severity: 'pass' | 'fail' | 'warn' | 'info';
@@ -85,18 +85,18 @@ export interface Toast {
 // Import types used by CSV import flow
 export interface ImportRow {
   testnumber: number;
-  testname: string;
+  test_name: string;
   stepsn: number;
   action: string;
-  expectedresult: string;
-  isdivider: boolean;
+  expected_result: string;
+  is_divider: boolean;
 }
 
 // ── Phase 2: A2 — Shared option interfaces ────────────────────────────────────
 // Previously re-declared independently in queries.mobilenav.ts,
 // queries.moduledashboard.ts, queries.testexecution.ts, queries.testreport.ts
 export interface TestOption {
-  serialno: string;
+  serial_no: string;
   name: string;
 }
 
@@ -108,8 +108,8 @@ export interface ModuleOption {
 // Replaces CsvStepRow (queries.mobilenav.ts) + ManualStepPayload (queries.testexecution.ts)
 // Both had identical shapes.
 export interface StepInput {
-  serialno: number;
+  serial_no: number;
   action: string;
-  expectedresult: string;
-  isdivider: boolean;
+  expected_result: string;
+  is_divider: boolean;
 }

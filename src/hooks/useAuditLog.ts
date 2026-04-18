@@ -1,7 +1,7 @@
 import { useAuth } from "../context/AuthContext";
-import { insertAuditEvent } from "../lib/supabase/queries.auditlog";
+import { insertAuditEvent } from "../lib/supabase/queries.audit_log";
 
-const useAuditLog = () => {
+const useaudit_log = () => {
   const { user } = useAuth();
 
   const log = (
@@ -10,8 +10,8 @@ const useAuditLog = () => {
   ) => {
     if (!user) return;
     insertAuditEvent({
-      userid:   user.id,
-      username: user.displayName ?? user.email ?? "unknown",
+      user_id:   user.id,
+      username: user.display_name ?? user.email ?? "unknown",
       action,
       severity,
     });
@@ -20,4 +20,4 @@ const useAuditLog = () => {
   return log;
 };
 
-export default useAuditLog;
+export default useaudit_log;

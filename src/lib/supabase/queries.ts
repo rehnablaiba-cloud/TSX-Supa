@@ -14,10 +14,10 @@ export async function q<T>(
 
 // ── Auth ──────────────────────────────────────────────────────────────────────
 export async function releaseLocksAndSignOut(
-  userId: string,
+  user_id: string,
   signOut: () => Promise<void>
 ): Promise<void> {
-  try { await supabase.from('testlocks').delete().eq('userid', userId); }
+  try { await supabase.from('test_locks').delete().eq('user_id', user_id); }
   catch (err) { console.error('Failed to release locks on sign out', err); }
   await signOut();
 }
@@ -32,21 +32,21 @@ export async function fetchModulesForSidebar(): Promise<ModuleOption[]> {
   return fetchModuleOptions();
 }
 export async function fetchTestsForModule(
-  moduleName: string
+  module_name: string
 ): Promise<{ id: string; testsname: string }[]> {
   const { data, error } = await supabase
-    .from('moduletests').select('id, testsname')
-    .eq('modulename', moduleName).order('testsname');
+    .from('module_tests').select('id, testsname')
+    .eq('module_name', module_name).order('testsname');
   if (error) throw error;
   return (data ?? []) as { id: string; testsname: string }[];
 }
 
-// ── AuditLog ──────────────────────────────────────────────────────────────────
-export async function fetchAuditLog(
+// ── audit_log ──────────────────────────────────────────────────────────────────
+export async function fetchaudit_log(
   limit = 200
 ): Promise<Record<string, unknown>[]> {
   const { data, error } = await supabase
-    .from('auditlog').select('*').order('created_at', { ascending: false }).limit(limit);
+    .from('audit_log').select('*').order('created_at', { ascending: false }).limit(limit);
   if (error) throw error;
   return (data ?? []) as Record<string, unknown>[];
 }
@@ -55,18 +55,18 @@ export async function fetchAuditLog(
 /** Returns all tests — no module filter needed for the CSV import flow */
 export async function fetchTests(): Promise<TestOption[]> {
   const { data, error } = await supabase
-    .from('tests').select('serialno, name').order('serialno');
+    .from('tests').select('serial_no, name').order('serial_no');
   if (error) throw error;
   return (data ?? []) as TestOption[];
 }
 
-export async function findStepBySerialNo(
+export async function findStepByserial_no(
   testsname: string,
-  serialno: number
+  serial_no: number
 ): Promise<{ id: string } | null> {
   const { data, error } = await supabase
-    .from('teststeps').select('id')
-    .eq('testsname', testsname).eq('serialno', serialno).maybeSingle();
+    .from('test_steps').select('id')
+    .eq('testsname', testsname).eq('serial_no', serial_no).maybeSingle();
   if (error) throw error;
   return data as { id: string } | null;
 }
@@ -76,7 +76,7 @@ export async function bulkCreateSteps(
   rows: Record<string, unknown>[]
 ): Promise<{ written: number; errors: string[] }> {
   const payload = rows.map(r => ({ ...r, testsname }));
-  const { error } = await supabase.from('teststeps').insert(payload);
+  const { error } = await supabase.from('test_steps').insert(payload);
   if (error) return { written: 0, errors: [error.message] };
   return { written: rows.length, errors: [] };
 }
@@ -84,12 +84,12 @@ export async function bulkCreateSteps(
 export async function updateStep(
   id: string, payload: Record<string, unknown>
 ): Promise<void> {
-  const { error } = await supabase.from('teststeps').update(payload).eq('id', id);
+  const { error } = await supabase.from('test_steps').update(payload).eq('id', id);
   if (error) throw error;
 }
 
 export async function deleteStep(id: string): Promise<void> {
-  const { error } = await supabase.from('teststeps').delete().eq('id', id);
+  const { error } = await supabase.from('test_steps').delete().eq('id', id);
   if (error) throw error;
 }
 
@@ -107,6 +107,6 @@ export {
   releaseLock,
   forceReleaseLock,
   upsertStepResult,
-  resetAllStepResults,
+  resetAllstep_results,
   fetchSignedUrls,
 } from './queries.testexecution';

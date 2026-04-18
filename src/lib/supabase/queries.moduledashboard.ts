@@ -10,43 +10,43 @@ import {supabase} from "../../supabase";
 export interface RawModuleTest {
   id: string;
   testsname: string;
-  test: { serialno: number; name: string; description?: string } | null;
+  test: { serial_no: number; name: string; description?: string } | null;
 }
 
 export interface RawStepResultMD {
   id: string;
-  modulename: string;
-  teststepsid: string;
+  module_name: string;
+  test_stepsid: string;
   status: string;
   remarks: string;
-  displayname: string;
+  display_name: string;
 }
 
 export interface RawLock {
-  moduletestid: string;
-  userid: string;
-  lockedbyname: string;
+  module_test_id: string;
+  user_id: string;
+  locked_by_name: string;
 }
 
 export interface RawTest {
   name: string;
-  serialno: string;
+  serial_no: string;
 }
 
 export interface RawStep {
   id: string;
-  serialno: number;
+  serial_no: number;
   action: string;
-  expectedresult: string;
-  actionimageurls: string[];
-  expectedimageurls: string[];
-  isdivider: boolean;
+  expected_result: string;
+  action_image_urls: string[];
+  expected_image_urls: string[];
+  is_divider: boolean;
   testsname: string;
 }
 
 export interface ModuleDashboardData {
-  moduleTests: RawModuleTest[];
-  stepResults: RawStepResultMD[];
+  module_tests: RawModuleTest[];
+  step_results: RawStepResultMD[];
   locks: RawLock[];
   tests: Record<string, RawTest>;
   steps: Record<string, RawStep>;
@@ -54,20 +54,20 @@ export interface ModuleDashboardData {
 
 // ─── fetchModuleDashboard ─────────────────────────────────────────────────────
 export async function fetchModuleDashboard(
-  moduleName: string,
+  module_name: string,
   currentMtId: string
 ): Promise<ModuleDashboardData> {
   const [mtRes, srRes, locksRes] = await Promise.all([
     supabase
-      .from("moduletests")
-      .select("id, testsname, test:tests!testsname(serialno, name, description)")
-      .eq("modulename", moduleName)
+      .from("module_tests")
+      .select("id, testsname, test:tests!testsname(serial_no, name, description)")
+      .eq("module_name", module_name)
       .order("id"),
     supabase
-      .rpc("getstepresultsformodule", { p_modulename: moduleName }),
+      .rpc("getstep_resultsformodule", { p_module_name: module_name }),
     supabase
-      .from("testlocks")
-      .select("moduletestid, userid, lockedbyname"),
+      .from("test_locks")
+      .select("module_test_id, user_id, locked_by_name"),
   ]);
 
   if (mtRes.error)    throw new Error(mtRes.error.message);
@@ -76,27 +76,27 @@ export async function fetchModuleDashboard(
   const rawMts   = (mtRes.data ?? []) as unknown as RawModuleTest[];
   const rawSrs   = (srRes.data ?? []) as RawStepResultMD[];
 
-  const testNames = Array.from(new Set(rawMts.map(m => m.testsname)));
+  const test_names = Array.from(new Set(rawMts.map(m => m.testsname)));
   const testsMap: Record<string, RawTest> = {};
-  if (testNames.length > 0) {
-    const testsRes = await supabase.rpc("gettestsbynames", { p_names: testNames });
+  if (test_names.length > 0) {
+    const testsRes = await supabase.rpc("gettestsbynames", { p_names: test_names });
     ((testsRes.data ?? []) as (RawTest & { name: string })[]).forEach(t => {
       testsMap[t.name] = t;
     });
   }
 
-  const stepIds = rawSrs.map(sr => sr.teststepsid);
+  const stepIds = rawSrs.map(sr => sr.test_stepsid);
   const stepsMap: Record<string, RawStep> = {};
   if (stepIds.length > 0) {
-    const stepsRes = await supabase.rpc("getteststepsbyids", { p_ids: stepIds });
+    const stepsRes = await supabase.rpc("gettest_stepsbyids", { p_ids: stepIds });
     ((stepsRes.data ?? []) as RawStep[]).forEach(s => {
       stepsMap[s.id] = s;
     });
   }
 
   return {
-    moduleTests: rawMts,
-    stepResults: rawSrs,
+    module_tests: rawMts,
+    step_results: rawSrs,
     locks:       (locksRes.data ?? []) as RawLock[],
     tests:       testsMap,
     steps:       stepsMap,
@@ -106,106 +106,106 @@ export async function fetchModuleDashboard(
 // ─── fetchModuleLocks ─────────────────────────────────────────────────────────
 export async function fetchModuleLocks(): Promise<RawLock[]> {
   const { data, error } = await supabase
-    .from("testlocks")
-    .select("moduletestid, userid, lockedbyname");
+    .from("test_locks")
+    .select("module_test_id, user_id, locked_by_name");
   if (error) throw new Error(error.message);
   return (data ?? []) as RawLock[];
 }
 
 // ─── acquireModuleLock ────────────────────────────────────────────────────────
 export async function acquireModuleLock(
-  moduleTestId: string,
-  userId: string,
-  displayName: string
+  module_test_id: string,
+  user_id: string,
+  display_name: string
 ): Promise<boolean> {
   const { error: upsertErr } = await supabase
-    .from("testlocks")
+    .from("test_locks")
     .upsert(
       {
-        moduletestid: moduleTestId,
-        userid:       userId,
-        lockedbyname: displayName,
-        lockedat:     new Date().toISOString(),
+        module_test_id: module_test_id,
+        user_id:       user_id,
+        locked_by_name: display_name,
+        locked_at:     new Date().toISOString(),
       },
-      { onConflict: "moduletestid", ignoreDuplicates: true }
+      { onConflict: "module_test_id", ignoreDuplicates: true }
     );
   if (upsertErr) throw new Error(upsertErr.message);
 
   const { data: owned } = await supabase
-    .from("testlocks")
-    .select("userid")
-    .eq("moduletestid", moduleTestId)
+    .from("test_locks")
+    .select("user_id")
+    .eq("module_test_id", module_test_id)
     .single();
 
-  return (owned as any)?.userid === userId;
+  return (owned as any)?.user_id === user_id;
 }
 
 // ─── releaseModuleLock ────────────────────────────────────────────────────────
 export async function releaseModuleLock(
-  moduleTestId: string,
-  userId: string
+  module_test_id: string,
+  user_id: string
 ): Promise<void> {
   const { error } = await supabase
-    .from("testlocks")
+    .from("test_locks")
     .delete()
-    .eq("moduletestid", moduleTestId)
-    .eq("userid", userId);
+    .eq("module_test_id", module_test_id)
+    .eq("user_id", user_id);
   if (error) throw new Error(error.message);
 }
 
 // ─── forceReleaseModuleLock ───────────────────────────────────────────────────
-export async function forceReleaseModuleLock(moduleTestId: string): Promise<void> {
+export async function forceReleaseModuleLock(module_test_id: string): Promise<void> {
   const { error } = await supabase
-    .from("testlocks")
+    .from("test_locks")
     .delete()
-    .eq("moduletestid", moduleTestId);
+    .eq("module_test_id", module_test_id);
   if (error) throw new Error(error.message);
 }
 
 // ─── heartbeatModuleLock ──────────────────────────────────────────────────────
 export async function heartbeatModuleLock(
-  moduleTestId: string,
-  userId: string
+  module_test_id: string,
+  user_id: string
 ): Promise<void> {
   await supabase
-    .from("testlocks")
-    .update({ lockedat: new Date().toISOString() })
-    .eq("moduletestid", moduleTestId)
-    .eq("userid", userId);
+    .from("test_locks")
+    .update({ locked_at: new Date().toISOString() })
+    .eq("module_test_id", module_test_id)
+    .eq("user_id", user_id);
 }
 
 // ─── updateModuleStepResult ───────────────────────────────────────────────────
 export async function updateModuleStepResult(params: {
-  moduleName:   string;
+  module_name:   string;
   stepId:       string;
   status:       "pass" | "fail" | "pending";
   remarks:      string;
-  displayName:  string;
+  display_name:  string;
 }): Promise<void> {
   const { error } = await supabase.rpc("updatestepresult", {
-    p_modulename:   params.moduleName,
-    p_teststepsid:  params.stepId,
+    p_module_name:   params.module_name,
+    p_test_stepsid:  params.stepId,
     p_status:       params.status,
     p_remarks:      params.remarks,
-    p_displayname:  params.displayName,
+    p_display_name:  params.display_name,
   });
   if (error) throw error;
 }
 
-// ─── resetAllModuleStepResults ────────────────────────────────────────────────
-export async function resetAllModuleStepResults(params: {
-  moduleName:  string;
+// ─── resetAllModulestep_results ────────────────────────────────────────────────
+export async function resetAllModulestep_results(params: {
+  module_name:  string;
   steps:       { stepId: string }[];
-  displayName: string;
+  display_name: string;
 }): Promise<void> {
   const results = await Promise.all(
     params.steps.map(s =>
       supabase.rpc("updatestepresult", {
-        p_modulename:   params.moduleName,
-        p_teststepsid:  s.stepId,
+        p_module_name:   params.module_name,
+        p_test_stepsid:  s.stepId,
         p_status:       "pending",
         p_remarks:      "",
-        p_displayname:  params.displayName,
+        p_display_name:  params.display_name,
       })
     )
   );
@@ -214,20 +214,20 @@ export async function resetAllModuleStepResults(params: {
 }
 
 // ─── fetchExportStepData ──────────────────────────────────────────────────────
-export async function fetchExportStepData(moduleName: string): Promise<{
-  steps:   { id: string; serialno: number; action: string; expectedresult: string; isdivider: boolean; testsname: string }[];
-  results: { teststepsid: string; status: string; remarks: string }[];
+export async function fetchExportStepData(module_name: string): Promise<{
+  steps:   { id: string; serial_no: number; action: string; expected_result: string; is_divider: boolean; testsname: string }[];
+  results: { test_stepsid: string; status: string; remarks: string }[];
 }> {
   const [stepsRes, resultsRes] = await Promise.all([
     supabase
-      .from("teststeps")
-      .select("id, serialno, action, expectedresult, isdivider, testsname")
-      .eq("modulename", moduleName)
-      .order("serialno"),
+      .from("test_steps")
+      .select("id, serial_no, action, expected_result, is_divider, testsname")
+      .eq("module_name", module_name)
+      .order("serial_no"),
     supabase
-      .from("stepresults")
-      .select("teststepsid, status, remarks")
-      .eq("modulename", moduleName),
+      .from("step_results")
+      .select("test_stepsid, status, remarks")
+      .eq("module_name", module_name),
   ]);
 
   if (stepsRes.error)   throw new Error(stepsRes.error.message);
@@ -249,7 +249,7 @@ export async function fetchModuleSignedUrls(
   const results = await Promise.all(
     unique.map(async path => {
       const { data, error } = await supabase.storage
-        .from("teststeps")
+        .from("test_steps")
         .createSignedUrl(path, 60 * 60);
       if (error || !data?.signedUrl) return [path, ""] as const;
       return [path, data.signedUrl] as const;

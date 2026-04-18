@@ -9,7 +9,7 @@ import type { ActiveLock } from '../../types';
 
 interface Props {
   locks:      ActiveLock[];
-  onNavigate: (page: string, moduleName?: string) => void;
+  onNavigate: (page: string, module_name?: string) => void;
 }
 
 const LockWarningBanner: React.FC<Props> = ({ locks, onNavigate }) => {
@@ -38,17 +38,17 @@ const LockWarningBanner: React.FC<Props> = ({ locks, onNavigate }) => {
 
       <div className="flex flex-col gap-1.5 pl-6">
         {locks.map(lock => (
-          <div key={lock.moduletestid} className="flex items-center justify-between gap-3 flex-wrap">
+          <div key={lock.module_test_id} className="flex items-center justify-between gap-3 flex-wrap">
             <div className="flex items-center gap-2 text-xs" style={{ color: '#fbbf24' }}>
               <Lock size={11} className="shrink-0" />
               <span>
-                <span className="font-semibold">{lock.modulename}</span>
+                <span className="font-semibold">{lock.module_name}</span>
                 <span className="mx-1 opacity-50">›</span>
-                {lock.testname}
+                {lock.test_name}
               </span>
             </div>
             <button
-              onClick={() => onNavigate('module', lock.modulename)}
+              onClick={() => onNavigate('module', lock.module_name)}
               className="text-[11px] font-bold px-2.5 py-0.5 rounded-full border transition-colors"
               style={{ color: '#f59e0b', borderColor: '#f59e0b88', background: 'color-mix(in srgb, #f59e0b 12%, transparent)' }}>
               Resume

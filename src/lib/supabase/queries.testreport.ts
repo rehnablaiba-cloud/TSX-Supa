@@ -11,26 +11,26 @@ export interface ReportModule {
 
 export interface ReportStep {
   id:             string;
-  serialno:       number;
+  serial_no:       number;
   testsname:      string;
-  modulename:     string;
+  module_name:     string;
   action:         string;
-  expectedresult: string;
-  isdivider:      boolean;
+  expected_result: string;
+  is_divider:      boolean;
 }
 
 export interface ReportStepResult {
-  teststepsid: string;
-  modulename:  string;
+  test_stepsid: string;
+  module_name:  string;
   status:      string;
   remarks:     string;
-  displayname: string | null;
+  display_name: string | null;
 }
 
 export interface TestReportData {
   modules:     ReportModule[];
   steps:       ReportStep[];
-  stepResults: ReportStepResult[];
+  step_results: ReportStepResult[];
 }
 
 /**
@@ -45,13 +45,13 @@ export async function fetchTestReportData(): Promise<TestReportData> {
       .order("name"),
 
     supabase
-      .from("teststeps")
-      .select("id, serialno, testsname, modulename, action, expectedresult, isdivider")
-      .order("serialno", { ascending: true }),
+      .from("test_steps")
+      .select("id, serial_no, testsname, module_name, action, expected_result, is_divider")
+      .order("serial_no", { ascending: true }),
 
     supabase
-      .from("stepresults")
-      .select("teststepsid, modulename, status, remarks, displayname"),
+      .from("step_results")
+      .select("test_stepsid, module_name, status, remarks, display_name"),
   ]);
 
   if (modulesRes.error) throw new Error(modulesRes.error.message);
@@ -61,22 +61,22 @@ export async function fetchTestReportData(): Promise<TestReportData> {
   return {
     modules:     (modulesRes.data  ?? []) as ReportModule[],
     steps:       (stepsRes.data    ?? []) as ReportStep[],
-    stepResults: (resultsRes.data  ?? []) as ReportStepResult[],
+    step_results: (resultsRes.data  ?? []) as ReportStepResult[],
   };
 }
 
 /**
  * Lightweight re-fetch of step results only — used when a realtime
- * update fires on the stepresults table (avoids re-fetching modules/steps).
+ * update fires on the step_results table (avoids re-fetching modules/steps).
  */
-export async function fetchReportStepResults(
-  moduleName?: string
+export async function fetchReportstep_results(
+  module_name?: string
 ): Promise<ReportStepResult[]> {
   let query = supabase
-    .from("stepresults")
-    .select("teststepsid, modulename, status, remarks, displayname");
+    .from("step_results")
+    .select("test_stepsid, module_name, status, remarks, display_name");
 
-  if (moduleName) query = query.eq("modulename", moduleName);
+  if (module_name) query = query.eq("module_name", module_name);
 
   const { data, error } = await query;
   if (error) throw new Error(error.message);

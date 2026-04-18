@@ -1,11 +1,11 @@
 /**
- * queries.auditlog.ts
- * Supabase call extracted from useAuditLog.ts
+ * queries.audit_log.ts
+ * Supabase call extracted from useaudit_log.ts
  */
 import {supabase} from "../../supabase";
 
 export interface AuditEventPayload {
-  userid:   string;
+  user_id:   string;
   username: string;
   action:   string;
   severity: "pass" | "fail" | "warn" | "info";
@@ -17,9 +17,9 @@ export interface AuditEventPayload {
  */
 export function insertAuditEvent(payload: AuditEventPayload): void {
   supabase
-    .from("auditlog")
+    .from("audit_log")
     .insert(payload)
     .then(({ error }) => {
-      if (error) console.error("[auditlog]", error);
+      if (error) console.error("[audit_log]", error);
     });
 }

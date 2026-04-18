@@ -6,7 +6,7 @@ import { Module } from "../types";
 export interface FlatData {
   module: string; test: string; serial: number;
   action: string; expected: string; remarks: string; status: string;
-  isDivider?: boolean;
+  is_divider?: boolean;
   dividerLevel?: number; // 1 | 2 | 3
 }
 
@@ -448,7 +448,7 @@ interface TestSummaryRow {
 const buildTestSummaries = (data: FlatData[]): TestSummaryRow[] => {
   const map = new Map<string, TestSummaryRow>();
   for (const d of data) {
-    if (d.isDivider) continue;
+    if (d.is_divider) continue;
     const key = `${d.module}|||${d.test}`;
     if (!map.has(key))
       map.set(key, { module: d.module, test: d.test, total: 0, pass: 0, fail: 0, pending: 0, passRate: 0 });
@@ -561,7 +561,7 @@ export const exportModuleDetailCSV = (data: FlatData[]) => {
   let testSerial = 0;
 
   for (const d of data) {
-    if (d.isDivider) continue;
+    if (d.is_divider) continue;
     if (d.module !== lastModule) {
       if (lastModule !== "") lines.push("");
       lines.push(`"=== ${d.module} ===","","","","","",""`);
@@ -593,7 +593,7 @@ export const exportModuleDetailPDF = (data: FlatData[]) => {
   const doc      = new jsPDF({ orientation: "landscape" });
   const contentY = drawHeader(doc, "Module Detail Report", "All Modules - Full Step Results");
 
-  const nd      = data.filter(d => !d.isDivider);
+  const nd      = data.filter(d => !d.is_divider);
   const pass    = nd.filter(d => d.status === "pass").length;
   const fail    = nd.filter(d => d.status === "fail").length;
   const pending = nd.filter(d => d.status === "pending").length;
@@ -662,7 +662,7 @@ export const exportModuleDetailPDF = (data: FlatData[]) => {
       for (const row of data.filter(
         r => r.module === test.steps[0]?.module && r.test === test.name
       )) {
-        if (row.isDivider) {
+        if (row.is_divider) {
           body.push(buildDividerRow(row, 5));
         } else {
           body.push(buildStepRow(row));
@@ -692,10 +692,10 @@ export const exportModuleDetailPDF = (data: FlatData[]) => {
 // ─────────────────────────────────────────────────────────────
 // 4. TEST EXECUTION EXPORTS
 // ─────────────────────────────────────────────────────────────
-export const exportExecutionCSV = (moduleName: string, testName: string, data: FlatData[]) => {
+export const exportExecutionCSV = (module_name: string, test_name: string, data: FlatData[]) => {
   const headers = "#,Action,Expected Result,Remarks,Status\n";
   const rows = data.map(d => {
-    if (d.isDivider) return `,"${d.action.replace(/"/g, '""')}","","",""`;
+    if (d.is_divider) return `,"${d.action.replace(/"/g, '""')}","","",""`;
     return [
       d.serial,
       `"${d.action.replace(/"/g, '""')}"`,
@@ -706,21 +706,21 @@ export const exportExecutionCSV = (moduleName: string, testName: string, data: F
   }).join("\n");
   download(
     new Blob(["\uFEFF" + headers + rows], { type: "text/csv" }),
-    `${moduleName}_${testName}_${today()}.csv`
+    `${module_name}_${test_name}_${today()}.csv`
   );
 };
 
-export const exportExecutionPDF = (moduleName: string, testName: string, data: FlatData[]) => {
+export const exportExecutionPDF = (module_name: string, test_name: string, data: FlatData[]) => {
   const doc = new jsPDF({ orientation: "landscape" });
 
   // Guard: always show a meaningful title even if caller passes empty string
-  const safeTestName   = (testName   && testName.trim())   ? testName.trim()   : "Unnamed Test";
-  const safeModuleName = (moduleName && moduleName.trim()) ? moduleName.trim() : "Unknown Module";
+  const safetest_name   = (test_name   && test_name.trim())   ? test_name.trim()   : "Unnamed Test";
+  const safemodule_name = (module_name && module_name.trim()) ? module_name.trim() : "Unknown Module";
 
   // title = test name (large, top), subtitle = module name (small, below title)
-  const contentY = drawHeader(doc, safeTestName, safeModuleName);
+  const contentY = drawHeader(doc, safetest_name, safemodule_name);
 
-  const nd      = data.filter(d => !d.isDivider);
+  const nd      = data.filter(d => !d.is_divider);
   const pass    = nd.filter(d => d.status === "pass").length;
   const fail    = nd.filter(d => d.status === "fail").length;
   const pending = nd.filter(d => d.status === "pending").length;
@@ -728,7 +728,7 @@ export const exportExecutionPDF = (moduleName: string, testName: string, data: F
   const afterStats = drawStatsBar(doc, nd.length, pass, fail, pending, contentY);
 
   const body = data.map(d => {
-    if (d.isDivider) return buildDividerRow(d, 5);
+    if (d.is_divider) return buildDividerRow(d, 5);
     return buildStepRow(d);
   });
 

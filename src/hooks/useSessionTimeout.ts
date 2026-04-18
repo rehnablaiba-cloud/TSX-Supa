@@ -6,7 +6,7 @@ const IDLE_MS    = 60_000;
 const WARNING_MS = 5 * 60_000;
 
 export function useSessionTimeout(
-  userId: string | undefined,
+  user_id: string | undefined,
   onSignOut: () => Promise<void>,
 ) {
   const [warning,     setWarning]     = useState(false);
@@ -22,9 +22,9 @@ export function useSessionTimeout(
   const warningStartAt = useRef<number | null>(null);
   // ─────────────────────────────────────────────────────────────────────────
 
-  const userIdRef    = useRef(userId);
+  const user_idRef    = useRef(user_id);
   const onSignOutRef = useRef(onSignOut);
-  useEffect(() => { userIdRef.current    = userId;    }, [userId]);
+  useEffect(() => { user_idRef.current    = user_id;    }, [user_id]);
   useEffect(() => { onSignOutRef.current = onSignOut; }, [onSignOut]);
 
   const clearTimers = useCallback(() => {
@@ -34,7 +34,7 @@ export function useSessionTimeout(
 
   const releaseAndSignOut = useCallback(async () => {
     clearTimers();
-    const uid = userIdRef.current;
+    const uid = user_idRef.current;
     if (uid) await supabase.from("test_locks").delete().eq("user_id", uid);
     await onSignOutRef.current();
   }, [clearTimers]);
@@ -72,7 +72,7 @@ export function useSessionTimeout(
     secLeft.current        = Math.floor(WARNING_MS / 1000);
     setWarning(false);
     setSecondsLeft(secLeft.current);
-    if (userIdRef.current) {
+    if (user_idRef.current) {
       lastActivityAt.current = Date.now();
       idleTimer.current = setTimeout(startWarning, IDLE_MS);
     }
@@ -80,7 +80,7 @@ export function useSessionTimeout(
 
   // ── Page Visibility handler ───────────────────────────────────────────────
   const handleVisibilityChange = useCallback(() => {
-    if (!userIdRef.current) return;
+    if (!user_idRef.current) return;
 
     if (document.visibilityState === "hidden") {
       // Timers will be throttled/frozen in background — clear them.
@@ -154,7 +154,7 @@ export function useSessionTimeout(
   // ─────────────────────────────────────────────────────────────────────────
 
   useEffect(() => {
-    if (!userId) {
+    if (!user_id) {
       clearTimers();
       inWarning.current = false;
       setWarning(false);
@@ -176,7 +176,7 @@ export function useSessionTimeout(
       document.removeEventListener("visibilitychange", handleVisibilityChange);
       clearTimers();
     };
-  }, [userId, clearTimers, startWarning, handleVisibilityChange]);
+  }, [user_id, clearTimers, startWarning, handleVisibilityChange]);
 
   return { warning, secondsLeft, stayLoggedIn, releaseAndSignOut };
 }

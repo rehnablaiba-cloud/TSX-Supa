@@ -13,7 +13,7 @@ const OP_META: { id: TestOp; label: string; icon: React.ReactNode; desc: string 
   { id: "delete", label: "Delete", icon: <Trash2 size={20} />, desc: "Remove a test permanently" },
 ];
 
-interface FormData { serialno: string; name: string; }
+interface FormData { serial_no: string; name: string; }
 
 interface Props { onClose: () => void; onBack: () => void; }
 
@@ -23,14 +23,14 @@ const ImportTestsModal: React.FC<Props> = ({ onClose, onBack }) => {
   const [tests,      setTests]     = useState<TestOption[]>([]);
   const [loading,    setLoading]   = useState(false);
   const [selected,   setSelected]  = useState<TestOption | null>(null);
-  const [form,       setForm]      = useState<FormData>({ serialno: "", name: "" });
+  const [form,       setForm]      = useState<FormData>({ serial_no: "", name: "" });
   const [errMsg,     setErrMsg]    = useState("");
   const [resultMsg,  setResultMsg] = useState("");
 
   useEffect(() => {
     if (stage !== "selecttest") return;
     setLoading(true);
-    supabase.from("tests").select("serialno, name").order("serialno", { ascending: true })
+    supabase.from("tests").select("serial_no, name").order("serial_no", { ascending: true })
       .then(({ data }) => { if (data) setTests(data as TestOption[]); setLoading(false); });
   }, [stage]);
 
@@ -38,11 +38,11 @@ const ImportTestsModal: React.FC<Props> = ({ onClose, onBack }) => {
     setStage("submitting"); setErrMsg("");
     try {
       if (op === "create") {
-        const sn = form.serialno.trim();
+        const sn = form.serial_no.trim();
         if (!sn) throw new Error("Serial number is required.");
         const trimmed = form.name.trim();
         if (!trimmed) throw new Error("Test name is required.");
-        const { error } = await supabase.from("tests").insert({ serialno: sn, name: trimmed });
+        const { error } = await supabase.from("tests").insert({ serial_no: sn, name: trimmed });
         if (error) throw error;
         setResultMsg(`Test SN ${sn} "${trimmed}" created.`);
       } else if (op === "update") {
@@ -51,12 +51,12 @@ const ImportTestsModal: React.FC<Props> = ({ onClose, onBack }) => {
         if (!newName) throw new Error("New name is required.");
         const { error } = await supabase.from("tests").update({ name: newName }).eq("name", selected.name);
         if (error) throw error;
-        setResultMsg(`SN ${selected.serialno} renamed to "${newName}".`);
+        setResultMsg(`SN ${selected.serial_no} renamed to "${newName}".`);
       } else {
         if (!selected) throw new Error("No test selected.");
         const { error } = await supabase.from("tests").delete().eq("name", selected.name);
         if (error) throw error;
-        setResultMsg(`Test SN ${selected.serialno} "${selected.name}" deleted.`);
+        setResultMsg(`Test SN ${selected.serial_no} "${selected.name}" deleted.`);
       }
       setStage("done");
     } catch (e: any) { setErrMsg(e?.message ?? "Unexpected error."); setStage("confirm"); }
@@ -64,7 +64,7 @@ const ImportTestsModal: React.FC<Props> = ({ onClose, onBack }) => {
 
   const reset = useCallback(() => {
     setStage("selectop"); setSelected(null);
-    setForm({ serialno: "", name: "" }); setResultMsg(""); setErrMsg("");
+    setForm({ serial_no: "", name: "" }); setResultMsg(""); setErrMsg("");
   }, []);
 
   const SUBTITLE: Record<TestManualStage, string> = {
@@ -87,7 +87,7 @@ const ImportTestsModal: React.FC<Props> = ({ onClose, onBack }) => {
         </div>
         <NavButtons
           onBack={onBack}
-          onNext={() => op === "create" ? (setForm({ serialno: "", name: "" }), setStage("fillform")) : setStage("selecttest")} />
+          onNext={() => op === "create" ? (setForm({ serial_no: "", name: "" }), setStage("fillform")) : setStage("selecttest")} />
       </div>
     </ModalShell>
   );
@@ -105,7 +105,7 @@ const ImportTestsModal: React.FC<Props> = ({ onClose, onBack }) => {
                 <FlaskConical size={18} />
                 <div className="flex-1">
                   <p className={`text-sm font-medium ${selected?.name === t.name ? "text-c-brand" : "text-t-primary"}`}>{t.name}</p>
-                  <p className="text-xs text-t-muted">SN {t.serialno}</p>
+                  <p className="text-xs text-t-muted">SN {t.serial_no}</p>
                 </div>
                 {selected?.name === t.name && <span className="w-4 h-4 rounded-full bg-c-brand flex items-center justify-center text-white shrink-0"><Check size={10} /></span>}
               </button>
@@ -115,7 +115,7 @@ const ImportTestsModal: React.FC<Props> = ({ onClose, onBack }) => {
         <NavButtons
           onBack={() => setStage("selectop")}
           onNext={() => op === "update"
-            ? (setForm({ serialno: selected?.serialno ?? "", name: selected?.name ?? "" }), setStage("fillform"))
+            ? (setForm({ serial_no: selected?.serial_no ?? "", name: selected?.name ?? "" }), setStage("fillform"))
             : setStage("confirm")}
           nextLabel={op === "delete" ? "Review Delete" : "Next"}
           nextDisabled={!selected}
@@ -130,13 +130,13 @@ const ImportTestsModal: React.FC<Props> = ({ onClose, onBack }) => {
         {selected && (
           <div className="flex items-center gap-3 px-3 py-2 rounded-xl border border-[var(--border-color)] bg-bg-card text-xs">
             <FlaskConical size={14} />
-            <div><p className="text-t-primary font-medium">{selected.name}</p><p className="text-t-muted">SN {selected.serialno}</p></div>
+            <div><p className="text-t-primary font-medium">{selected.name}</p><p className="text-t-muted">SN {selected.serial_no}</p></div>
           </div>
         )}
         {op === "create" && (
           <div className="flex flex-col gap-1.5">
             <label className="text-xs font-semibold text-t-muted uppercase tracking-wider">Serial No</label>
-            <input type="text" value={form.serialno} onChange={e => setForm(f => ({ ...f, serialno: e.target.value }))}
+            <input type="text" value={form.serial_no} onChange={e => setForm(f => ({ ...f, serial_no: e.target.value }))}
               placeholder="e.g. 1.1"
               className="w-full px-4 py-3 rounded-xl bg-bg-card border border-[var(--border-color)] text-t-primary text-sm placeholder:text-t-muted focus:outline-none focus:border-c-brand transition-colors" />
           </div>
@@ -168,10 +168,10 @@ const ImportTestsModal: React.FC<Props> = ({ onClose, onBack }) => {
             </p>
           </div>
           <div className="flex flex-col gap-2 text-xs">
-            {op === "create"  && <><Row label="Serial No" value={form.serialno} mono brand /><Row label="Name" value={form.name.trim()} /></>}
-            {op === "update"  && selected && <><Row label="Serial No" value={selected.serialno} mono brand /><DiffRow label="Name" before={selected.name} after={form.name.trim()} /></>}
+            {op === "create"  && <><Row label="Serial No" value={form.serial_no} mono brand /><Row label="Name" value={form.name.trim()} /></>}
+            {op === "update"  && selected && <><Row label="Serial No" value={selected.serial_no} mono brand /><DiffRow label="Name" before={selected.name} after={form.name.trim()} /></>}
             {op === "delete"  && selected && (
-              <><Row label="Serial No" value={selected.serialno} mono brand /><Row label="Name" value={selected.name} />
+              <><Row label="Serial No" value={selected.serial_no} mono brand /><Row label="Name" value={selected.name} />
                 <div className="mt-1 flex items-center gap-2 text-red-400 font-semibold"><AlertTriangle size={14} /><span>This action cannot be undone.</span></div>
               </>
             )}

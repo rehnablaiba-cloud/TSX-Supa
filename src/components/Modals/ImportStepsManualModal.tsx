@@ -45,12 +45,12 @@ const ImportStepsManualModal: React.FC<Props> = ({ onClose, onBack }) => {
   useEffect(() => {
     if (stage !== "selecttest" || !selectedModule) return;
     setLoadingTests(true);
-    supabase.from("module_tests").select("tests:tests_name(name, serialno)")
+    supabase.from("module_tests").select("tests:tests_name(name, serial_no)")
       .eq("module_name", selectedModule.name)
       .then(({ data }) => {
         if (data) {
           const ts = (data as any[]).map(r => r.tests).filter(Boolean) as TestOption[];
-          ts.sort((a, b) => String(a.serialno).localeCompare(String(b.serialno), undefined, { numeric: true }));
+          ts.sort((a, b) => String(a.serial_no).localeCompare(String(b.serial_no), undefined, { numeric: true }));
           setTests(ts);
         }
         setLoadingTests(false);
@@ -61,9 +61,9 @@ const ImportStepsManualModal: React.FC<Props> = ({ onClose, onBack }) => {
     if (stage !== "selectstep" || !selectedTest) return;
     setLoadingSteps(true);
     supabase.from("test_steps")
-      .select("id, serialno, tests_name, action, expected_result, is_divider")
+      .select("id, serial_no, tests_name, action, expected_result, is_divider")
       .eq("tests_name", selectedTest.name)
-      .order("serialno", { ascending: true })
+      .order("serial_no", { ascending: true })
       .then(({ data }) => { if (data) setSteps(data as StepOption[]); setLoadingSteps(false); });
   }, [stage, selectedTest]);
 
@@ -71,11 +71,11 @@ const ImportStepsManualModal: React.FC<Props> = ({ onClose, onBack }) => {
     setStage("submitting"); setErrMsg("");
     try {
       if (op === "create") {
-        const snVal = parseFloat(form.serialno);
+        const snVal = parseFloat(form.serial_no);
         if (isNaN(snVal)) throw new Error("Invalid serial number.");
         if (!selectedTest) throw new Error("No test selected.");
         const { error } = await supabase.from("test_steps").insert({
-          tests_name: selectedTest.name, serialno: snVal,
+          tests_name: selectedTest.name, serial_no: snVal,
           action: form.action.trim(), expected_result: form.expected_result.trim(),
           is_divider: form.is_divider,
         });
@@ -88,12 +88,12 @@ const ImportStepsManualModal: React.FC<Props> = ({ onClose, onBack }) => {
           is_divider: form.is_divider,
         }).eq("id", selectedStep.id);
         if (error) throw error;
-        setResultMsg(`Step SN ${selectedStep.serialno} updated successfully.`);
+        setResultMsg(`Step SN ${selectedStep.serial_no} updated successfully.`);
       } else {
         if (!selectedStep) throw new Error("No step selected.");
         const { error } = await supabase.from("test_steps").delete().eq("id", selectedStep.id);
         if (error) throw error;
-        setResultMsg(`Step SN ${selectedStep.serialno} "${selectedStep.action || "divider"}" deleted.`);
+        setResultMsg(`Step SN ${selectedStep.serial_no} "${selectedStep.action || "divider"}" deleted.`);
       }
       setStage("done");
     } catch (e: any) { setErrMsg(e?.message ?? "Unexpected error."); setStage("confirm"); }
@@ -167,7 +167,7 @@ const ImportStepsManualModal: React.FC<Props> = ({ onClose, onBack }) => {
                 <FlaskConical size={18} />
                 <div className="flex-1">
                   <p className={`text-sm font-medium ${selectedTest?.name === t.name ? "text-c-brand" : "text-t-primary"}`}>{t.name}</p>
-                  <p className="text-xs text-t-muted">SN {t.serialno}</p>
+                  <p className="text-xs text-t-muted">SN {t.serial_no}</p>
                 </div>
                 {selectedTest?.name === t.name && <span className="w-4 h-4 rounded-full bg-c-brand flex items-center justify-center text-white shrink-0"><Check size={10} /></span>}
               </button>
@@ -192,12 +192,12 @@ const ImportStepsManualModal: React.FC<Props> = ({ onClose, onBack }) => {
               <button key={s.id}
                 onClick={() => {
                   setSelectedStep(s);
-                  if (op === "update") setForm({ serialno: String(s.serialno), action: s.action, expected_result: s.expected_result, is_divider: s.is_divider });
+                  if (op === "update") setForm({ serial_no: String(s.serial_no), action: s.action, expected_result: s.expected_result, is_divider: s.is_divider });
                 }}
                 className={`flex items-center gap-3 px-3 py-3 rounded-xl border transition-all text-left
                   ${selectedStep?.id === s.id ? "border-c-brand bg-c-brand-bg" : "border-[var(--border-color)] bg-bg-card hover:bg-bg-base"}`}>
                 <span className={`text-xs font-bold font-mono px-2 py-1 rounded-lg shrink-0 min-w-[2.5rem] text-center ${selectedStep?.id === s.id ? "bg-c-brand text-white" : "bg-bg-base text-c-brand"}`}>
-                  {s.serialno}
+                  {s.serial_no}
                 </span>
                 <div className="flex-1 min-w-0">
                   {s.is_divider
@@ -226,8 +226,8 @@ const ImportStepsManualModal: React.FC<Props> = ({ onClose, onBack }) => {
         {op === "create" && (
           <div className="flex flex-col gap-1.5">
             <label className="text-xs font-semibold text-t-muted uppercase tracking-wider">Serial No</label>
-            <input type="number" step={1} min={1} value={form.serialno}
-              onChange={e => setForm(f => ({ ...f, serialno: e.target.value }))} placeholder="e.g. 5"
+            <input type="number" step={1} min={1} value={form.serial_no}
+              onChange={e => setForm(f => ({ ...f, serial_no: e.target.value }))} placeholder="e.g. 5"
               className="w-full px-4 py-3 rounded-xl bg-bg-card border border-[var(--border-color)] text-t-primary text-sm placeholder:text-t-muted focus:outline-none focus:border-c-brand transition-colors" />
           </div>
         )}
@@ -274,19 +274,19 @@ const ImportStepsManualModal: React.FC<Props> = ({ onClose, onBack }) => {
           </div>
           <div className="flex flex-col gap-2 text-xs">
             {op === "create" && (
-              <><Row label="Serial No" value={form.serialno} mono brand />
+              <><Row label="Serial No" value={form.serial_no} mono brand />
                 <Row label="Action"   value={form.action.trim()} />
                 <Row label="Expected" value={form.expected_result.trim()} />
                 <Row label="Divider"  value={form.is_divider ? "Yes" : "No"} /></>
             )}
             {op === "update" && selectedStep && (
-              <><Row label="Serial No" value={String(selectedStep.serialno)} mono brand />
+              <><Row label="Serial No" value={String(selectedStep.serial_no)} mono brand />
                 <DiffRow label="Action"   before={selectedStep.action}          after={form.action.trim()} />
                 <DiffRow label="Expected" before={selectedStep.expected_result} after={form.expected_result.trim()} />
                 <DiffRow label="Divider"  before={String(selectedStep.is_divider)} after={String(form.is_divider)} /></>
             )}
             {op === "delete" && selectedStep && (
-              <><Row label="Serial No" value={String(selectedStep.serialno)} mono brand />
+              <><Row label="Serial No" value={String(selectedStep.serial_no)} mono brand />
                 <Row label="Action" value={selectedStep.action || "— divider —"} />
                 <div className="mt-1 flex items-center gap-2 text-red-400 font-semibold">
                   <AlertTriangle size={14} /><span>This action cannot be undone.</span>

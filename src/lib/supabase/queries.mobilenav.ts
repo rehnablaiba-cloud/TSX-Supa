@@ -9,41 +9,41 @@ import {supabase} from "../../supabase";
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 export type TableName =
-  | "profiles" | "modules"  | "tests"       | "teststeps"
-  | "moduletests" | "stepresults" | "testlocks" | "auditlog";
+  | "profiles" | "modules"  | "tests"       | "test_steps"
+  | "module_tests" | "step_results" | "test_locks" | "audit_log";
 
 export type AllData = Record<TableName, Record<string, unknown>[]>;
 
 export interface ModuleOption { name: string }
-export interface TestOption   { serialno: string; name: string }
+export interface TestOption   { serial_no: string; name: string }
 export interface StepOption   {
   id: string;
-  serialno: number;
+  serial_no: number;
   testsname: string;
   action: string;
-  expectedresult: string;
-  isdivider: boolean;
+  expected_result: string;
+  is_divider: boolean;
 }
 export interface CsvStepRow {
   testsname:      string;
-  serialno:       number;
+  serial_no:       number;
   action:         string;
-  expectedresult: string;
-  isdivider:      boolean;
+  expected_result: string;
+  is_divider:      boolean;
 }
 export interface ManualStepPayload {
   testsname:      string;
-  serialno:       number;
+  serial_no:       number;
   action:         string;
-  expectedresult: string;
-  isdivider:      boolean;
+  expected_result: string;
+  is_divider:      boolean;
 }
 
 // ─── Export-dump ──────────────────────────────────────────────────────────────
 
 export const ALL_TABLES: TableName[] = [
-  "profiles", "modules", "tests", "teststeps",
-  "moduletests", "stepresults", "testlocks", "auditlog",
+  "profiles", "modules", "tests", "test_steps",
+  "module_tests", "step_results", "test_locks", "audit_log",
 ];
 
 /**
@@ -104,14 +104,14 @@ export async function deleteModule(name: string): Promise<void> {
 export async function fetchTestOptions(): Promise<TestOption[]> {
   const { data, error } = await supabase
     .from("tests")
-    .select("serialno, name")
-    .order("serialno", { ascending: true });
+    .select("serial_no, name")
+    .order("serial_no", { ascending: true });
   if (error) throw new Error(error.message);
   return (data ?? []) as TestOption[];
 }
 
-export async function createTest(serialno: string, name: string): Promise<void> {
-  const { error } = await supabase.from("tests").insert({ serialno, name });
+export async function createTest(serial_no: string, name: string): Promise<void> {
+  const { error } = await supabase.from("tests").insert({ serial_no, name });
   if (error) throw error;
 }
 
@@ -134,11 +134,11 @@ export async function deleteTest(name: string): Promise<void> {
  * Fetch tests that belong to a given module.
  * Used in the CSV step-import flow to populate the test picker.
  */
-export async function fetchTestsForModule(moduleName: string): Promise<TestOption[]> {
+export async function fetchTestsForModule(module_name: string): Promise<TestOption[]> {
   const { data, error } = await supabase
-    .from("moduletests")
-    .select("testsname, tests(serialno, name)")
-    .eq("modulename", moduleName);
+    .from("module_tests")
+    .select("testsname, tests(serial_no, name)")
+    .eq("module_name", module_name);
   if (error) throw new Error(error.message);
 
   const tests = ((data ?? []) as any[])
@@ -147,7 +147,7 @@ export async function fetchTestsForModule(moduleName: string): Promise<TestOptio
     .filter(Boolean) as TestOption[];
 
   tests.sort((a, b) =>
-    String(a.serialno).localeCompare(String(b.serialno), undefined, { numeric: true })
+    String(a.serial_no).localeCompare(String(b.serial_no), undefined, { numeric: true })
   );
   return tests;
 }
@@ -158,10 +158,10 @@ export async function fetchTestsForModule(moduleName: string): Promise<TestOptio
  */
 export async function fetchStepsForTest(testsname: string): Promise<StepOption[]> {
   const { data, error } = await supabase
-    .from("teststeps")
-    .select("id, serialno, testsname, action, expectedresult, isdivider")
+    .from("test_steps")
+    .select("id, serial_no, testsname, action, expected_result, is_divider")
     .eq("testsname", testsname)
-    .order("serialno", { ascending: true });
+    .order("serial_no", { ascending: true });
   if (error) throw new Error(error.message);
   return (data ?? []) as StepOption[];
 }
@@ -176,14 +176,14 @@ export async function replaceCsvSteps(
   rows: CsvStepRow[]
 ): Promise<void> {
   const { error: delErr } = await supabase
-    .from("teststeps")
+    .from("test_steps")
     .delete()
     .eq("testsname", testsname);
   if (delErr) throw delErr;
 
   if (rows.length === 0) return;
 
-  const { error: insErr } = await supabase.from("teststeps").insert(rows);
+  const { error: insErr } = await supabase.from("test_steps").insert(rows);
   if (insErr) throw insErr;
 }
 
@@ -192,32 +192,32 @@ export async function replaceCsvSteps(
 /** Load steps for a given test — ImportStepsManualModal select-step stage. */
 export async function fetchStepOptions(testsname: string): Promise<StepOption[]> {
   const { data, error } = await supabase
-    .from("teststeps")
-    .select("id, serialno, testsname, action, expectedresult, isdivider")
+    .from("test_steps")
+    .select("id, serial_no, testsname, action, expected_result, is_divider")
     .eq("testsname", testsname)
-    .order("serialno", { ascending: true });
+    .order("serial_no", { ascending: true });
   if (error) throw new Error(error.message);
   return (data ?? []) as StepOption[];
 }
 
 export async function createStep(payload: ManualStepPayload): Promise<void> {
-  const { error } = await supabase.from("teststeps").insert(payload);
+  const { error } = await supabase.from("test_steps").insert(payload);
   if (error) throw error;
 }
 
 export async function updateStep(
   id: string,
-  patch: { action: string; expectedresult: string; isdivider: boolean }
+  patch: { action: string; expected_result: string; is_divider: boolean }
 ): Promise<void> {
   const { error } = await supabase
-    .from("teststeps")
+    .from("test_steps")
     .update(patch)
     .eq("id", id);
   if (error) throw error;
 }
 
 export async function deleteStep(id: string): Promise<void> {
-  const { error } = await supabase.from("teststeps").delete().eq("id", id);
+  const { error } = await supabase.from("test_steps").delete().eq("id", id);
   if (error) throw error;
 }
 
@@ -225,12 +225,12 @@ export async function deleteStep(id: string): Promise<void> {
 
 /**
  * Release all test locks held by this user then call signOut().
- * Replaces the inline supabase.from("testlocks").delete() in handleSignOut.
+ * Replaces the inline supabase.from("test_locks").delete() in handleSignOut.
  */
 export async function releaseLocksAndSignOut(
-  userId: string,
+  user_id: string,
   signOut: () => Promise<void>
 ): Promise<void> {
-  await supabase.from("testlocks").delete().eq("userid", userId);
+  await supabase.from("test_locks").delete().eq("user_id", user_id);
   await signOut();
 }

@@ -7,7 +7,7 @@ import {
 import ModalShell from "../UI/ModalShell";
 import {
   fetchTests,
-  findStepBySerialNo,
+  findStepByserial_no,
   bulkCreateSteps,
   updateStep,
   deleteStep,
@@ -57,13 +57,13 @@ function parseStepsCsv(text: string): { rows: StepCsvRow[]; errors: string[] } {
   if (records.length < 2) { errors.push("File is empty."); return { rows, errors }; }
 
   const header = records[0].map(h => h.trim().toLowerCase().replace(/\s+/g, "_"));
-  const iSn  = header.indexOf("serialno");
+  const iSn  = header.indexOf("serial_no");
   const iAct = header.indexOf("action");
   const iRes = header.indexOf("expected_result");
   const iDiv = header.indexOf("is_divider");
 
   const missing = [
-    iSn  < 0 && "serialno",
+    iSn  < 0 && "serial_no",
     iAct < 0 && "action",
     iRes < 0 && "expected_result",
     iDiv < 0 && "is_divider",
@@ -74,9 +74,9 @@ function parseStepsCsv(text: string): { rows: StepCsvRow[]; errors: string[] } {
   for (let i = 1; i < records.length; i++) {
     const cells = records[i];
     const snVal = parseInt(cells[iSn]?.trim() ?? "", 10);
-    if (isNaN(snVal) || snVal < 1) { errors.push(`Row ${i + 1}: invalid serialno — skipped.`); continue; }
+    if (isNaN(snVal) || snVal < 1) { errors.push(`Row ${i + 1}: invalid serial_no — skipped.`); continue; }
     rows.push({
-      serialno:        snVal,
+      serial_no:        snVal,
       action:          cells[iAct] ?? "",
       expected_result: cells[iRes] ?? "",
       is_divider:      /^(true|1|yes)$/i.test(cells[iDiv]?.trim() ?? ""),
@@ -143,7 +143,7 @@ const ImportStepsModal: React.FC<Props> = ({ onClose, onBack }) => {
         const { written, errors } = await bulkCreateSteps(
           selectedTest.name,
           rows.map(r => ({
-            serialno:        r.serialno,
+            serial_no:        r.serial_no,
             action:          r.action,
             expected_result: r.expected_result,
             is_divider:      r.is_divider,
@@ -154,9 +154,9 @@ const ImportStepsModal: React.FC<Props> = ({ onClose, onBack }) => {
         result.errors  = errors;
       } else {
         for (const row of rows) {
-          const existing = await findStepBySerialNo(selectedTest.name, row.serialno);
+          const existing = await findStepByserial_no(selectedTest.name, row.serial_no);
           if (!existing) {
-            result.errors.push(`SN ${row.serialno}: not found — skipped.`);
+            result.errors.push(`SN ${row.serial_no}: not found — skipped.`);
             result.skipped++;
             continue;
           }
@@ -172,7 +172,7 @@ const ImportStepsModal: React.FC<Props> = ({ onClose, onBack }) => {
             }
             result.written++;
           } catch (e: any) {
-            result.errors.push(`SN ${row.serialno}: ${e?.message}`);
+            result.errors.push(`SN ${row.serial_no}: ${e?.message}`);
             result.skipped++;
           }
         }
@@ -217,7 +217,7 @@ const ImportStepsModal: React.FC<Props> = ({ onClose, onBack }) => {
                 onChange={e => setSelectedTest(tests.find(t => t.name === e.target.value) ?? null)}
                 className="w-full px-4 py-3 rounded-xl bg-bg-card border border-[var(--border-color)] text-t-primary text-sm focus:outline-none focus:border-c-brand transition-colors appearance-none cursor-pointer">
                 <option value="" disabled>Choose a test</option>
-                {tests.map(t => <option key={t.name} value={t.name}>SN {t.serialno} · {t.name}</option>)}
+                {tests.map(t => <option key={t.name} value={t.name}>SN {t.serial_no} · {t.name}</option>)}
               </select>
             )}
           </div>
@@ -227,7 +227,7 @@ const ImportStepsModal: React.FC<Props> = ({ onClose, onBack }) => {
               <FlaskConical size={20} className="text-c-brand" />
               <div>
                 <p className="text-sm font-semibold text-c-brand">{selectedTest.name}</p>
-                <p className="text-xs text-t-muted">SN {selectedTest.serialno}</p>
+                <p className="text-xs text-t-muted">SN {selectedTest.serial_no}</p>
               </div>
             </div>
           )}
@@ -252,7 +252,7 @@ const ImportStepsModal: React.FC<Props> = ({ onClose, onBack }) => {
             <FlaskConical size={18} />
             <div className="flex-1 min-w-0">
               <p className="text-sm font-semibold text-t-primary truncate">{selectedTest?.name}</p>
-              <p className="text-xs text-t-muted">SN {selectedTest?.serialno}</p>
+              <p className="text-xs text-t-muted">SN {selectedTest?.serial_no}</p>
             </div>
             <button onClick={() => setStage("selecttest")} className="text-xs text-c-brand hover:underline shrink-0">Change</button>
           </div>
@@ -278,7 +278,7 @@ const ImportStepsModal: React.FC<Props> = ({ onClose, onBack }) => {
           {op === "delete" && (
             <div className="rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-xs text-red-400 flex items-start gap-2">
               <AlertTriangle size={14} className="mt-px shrink-0" />
-              <p>CSV only needs <code className="font-mono">serialno</code> column for delete.</p>
+              <p>CSV only needs <code className="font-mono">serial_no</code> column for delete.</p>
             </div>
           )}
 
@@ -306,9 +306,9 @@ const ImportStepsModal: React.FC<Props> = ({ onClose, onBack }) => {
             <p className="text-t-secondary font-semibold mb-2 uppercase tracking-wider">Required columns</p>
             <div className="flex flex-col gap-1.5">
               {(op === "delete"
-                ? [["serialno", "Step serial no. (int)"]]
+                ? [["serial_no", "Step serial no. (int)"]]
                 : [
-                    ["serialno",        "Step serial no. (int)"],
+                    ["serial_no",        "Step serial no. (int)"],
                     ["action",          "Step action text"],
                     ["expected_result", "Expected outcome"],
                     ["is_divider",      "true / false"],
@@ -374,7 +374,7 @@ const ImportStepsModal: React.FC<Props> = ({ onClose, onBack }) => {
                   <tbody className="divide-y divide-[var(--border-color)]">
                     {rows.map((r, i) => (
                       <tr key={i} className="hover:bg-bg-card">
-                        <td className="px-2 py-2 font-mono text-c-brand">{r.serialno}</td>
+                        <td className="px-2 py-2 font-mono text-c-brand">{r.serial_no}</td>
                         {op !== "delete" && <td className="px-2 py-2 text-t-primary truncate max-w-[160px]">{r.action}</td>}
                         {op !== "delete" && <td className="px-2 py-2 text-center text-t-muted">{r.is_divider ? "✓" : ""}</td>}
                       </tr>

@@ -4,7 +4,7 @@ import { supabase } from "../../supabase";
 import ConfirmDialog from "../UI/ConfirmDialog";
 import Topbar from "../Layout/Topbar";
 import { useToast } from "../../context/ToastContext";
-import  useAuditLog  from "../../hooks/useAuditLog";
+import  useaudit_log  from "../../hooks/useaudit_log";
 import { AppUser, Role } from "../../types";
 
 // ─── Profile row shape returned by Supabase ───────────────────────────────────
@@ -18,7 +18,7 @@ interface ProfileRow {
 const UsersPanel: React.FC = () => {
   const { user: currentUser } = useAuth();
   const { addToast } = useToast();
-  const log = useAuditLog();
+  const log = useaudit_log();
   const [users, setUsers]               = useState<AppUser[]>([]);
   const [search, setSearch]             = useState("");
   const [showForm, setShowForm]         = useState(false);

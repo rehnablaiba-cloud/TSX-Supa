@@ -38,8 +38,8 @@ import {
 
 // ── All tables (FK-safe order for SQL inserts) ────────────────────────────────
 const ALL_TABLES = [
-  'profiles', 'modules', 'tests', 'teststeps',
-  'moduletests', 'stepresults', 'testlocks', 'auditlog',
+  'profiles', 'modules', 'tests', 'test_steps',
+  'module_tests', 'step_results', 'test_locks', 'audit_log',
 ] as const;
 
 type TableName = typeof ALL_TABLES[number];
@@ -342,7 +342,7 @@ const ImportTestsModal: React.FC<{ onClose: () => void; onDone: () => void }> = 
   const [error, setError]           = useState<string | null>(null);
 
   useEffect(() => {
-    supabase.from('tests').select('serialno, name').order('serialno')
+    supabase.from('tests').select('serial_no, name').order('serial_no')
       .then(({ data }: { data: any }) => setTests((data ?? []) as TestOption[]));
   }, []);
 
@@ -352,7 +352,7 @@ const ImportTestsModal: React.FC<{ onClose: () => void; onDone: () => void }> = 
 
   const handleTestSelect = (t: TestOption) => {
     setSelected(t);
-    if (op === 'update') { setSn(String(t.serialno)); setName(t.name); }
+    if (op === 'update') { setSn(String(t.serial_no)); setName(t.name); }
     setStage(op === 'delete' ? 'confirm' : 'fillform');
   };
 
@@ -361,10 +361,10 @@ const ImportTestsModal: React.FC<{ onClose: () => void; onDone: () => void }> = 
     try {
       const snNum = parseFloat(sn);
       if (op === 'create') {
-        const { error: e } = await supabase.from('tests').insert({ serialno: snNum, name: name.trim() });
+        const { error: e } = await supabase.from('tests').insert({ serial_no: snNum, name: name.trim() });
         if (e) throw new Error(e.message);
       } else if (op === 'update' && selectedTest) {
-        const { error: e } = await supabase.from('tests').update({ serialno: snNum, name: name.trim() }).eq('name', selectedTest.name);
+        const { error: e } = await supabase.from('tests').update({ serial_no: snNum, name: name.trim() }).eq('name', selectedTest.name);
         if (e) throw new Error(e.message);
       } else if (op === 'delete' && selectedTest) {
         const { error: e } = await supabase.from('tests').delete().eq('name', selectedTest.name);
@@ -394,7 +394,7 @@ const ImportTestsModal: React.FC<{ onClose: () => void; onDone: () => void }> = 
           {tests.map(t => (
             <button key={t.name} onClick={() => handleTestSelect(t)}
               className="text-left px-3 py-2 rounded-xl border border-[var(--border-color)] bg-bg-card hover:bg-bg-base text-sm text-t-primary">
-              <span className="font-mono text-c-brand mr-2">{t.serialno}</span>{t.name}
+              <span className="font-mono text-c-brand mr-2">{t.serial_no}</span>{t.name}
             </button>
           ))}
         </div>
@@ -420,7 +420,7 @@ const ImportTestsModal: React.FC<{ onClose: () => void; onDone: () => void }> = 
             {op !== 'create' && selectedTest && (
               <>
                 {op === 'update' && (
-                  <><DiffRow label="Serial No" before={String(selectedTest.serialno)} after={sn} />
+                  <><DiffRow label="Serial No" before={String(selectedTest.serial_no)} after={sn} />
                   <DiffRow label="Name" before={selectedTest.name} after={name} /></>
                 )}
                 {op === 'delete' && <Row label="Delete" value={selectedTest.name} mono />}
@@ -491,11 +491,11 @@ const ImportStepsModal: React.FC<{ onClose: () => void; onDone: () => void }> = 
     setStage('submitting'); setSubmitError(null);
     try {
       const payload = parsed.map(r => ({
-        serialno: r.serialno, action: r.action,
-        expectedresult: r.expectedresult, isdivider: r.isdivider,
+        serial_no: r.serial_no, action: r.action,
+        expected_result: r.expected_result, is_divider: r.is_divider,
         testsname: selTest,
       }));
-      const { error: e } = await supabase.from('teststeps').upsert(payload, { onConflict: 'testsname,serialno' });
+      const { error: e } = await supabase.from('test_steps').upsert(payload, { onConflict: 'testsname,serial_no' });
       if (e) throw new Error(e.message);
       setStage('done'); onDone();
     } catch (e: any) { setSubmitError(e.message); setStage('confirm'); }
@@ -525,7 +525,7 @@ const ImportStepsModal: React.FC<{ onClose: () => void; onDone: () => void }> = 
       )}
       {stage === 'upload' && (
         <div className="flex flex-col gap-3">
-          <p className="text-xs text-t-muted">CSV must have columns: <span className="font-mono text-t-primary">serialno, action, expectedresult, isdivider</span></p>
+          <p className="text-xs text-t-muted">CSV must have columns: <span className="font-mono text-t-primary">serial_no, action, expected_result, is_divider</span></p>
           <input ref={fileRef} type="file" accept=".csv" onChange={handleFile} className="hidden" />
           <button onClick={() => fileRef.current?.click()} className="btn-primary text-sm flex items-center justify-center gap-2">
             <Upload size={14} />Choose CSV file
@@ -544,9 +544,9 @@ const ImportStepsModal: React.FC<{ onClose: () => void; onDone: () => void }> = 
               <p className="text-xs font-semibold text-t-muted uppercase tracking-wider">{parsed.length} Steps — {selMod} › {selTest}</p>
             </div>
             {parsed.slice(0, 20).map(r => (
-              <div key={r.serialno} className="flex items-start gap-2 px-3 py-2 border-b border-[var(--border-color)] last:border-b-0 text-xs">
-                <span className="font-mono text-c-brand w-6 shrink-0">{r.serialno}</span>
-                <span className="text-t-primary flex-1 break-all">{r.isdivider ? <em className="text-t-muted">divider</em> : r.action}</span>
+              <div key={r.serial_no} className="flex items-start gap-2 px-3 py-2 border-b border-[var(--border-color)] last:border-b-0 text-xs">
+                <span className="font-mono text-c-brand w-6 shrink-0">{r.serial_no}</span>
+                <span className="text-t-primary flex-1 break-all">{r.is_divider ? <em className="text-t-muted">divider</em> : r.action}</span>
               </div>
             ))}
             {parsed.length > 20 && <div className="px-3 py-2 text-xs text-t-muted">…and {parsed.length - 20} more</div>}
@@ -584,7 +584,7 @@ const ImportStepsModal: React.FC<{ onClose: () => void; onDone: () => void }> = 
 type StepManualStage = 'selectop' | 'selectmodule' | 'selecttest' | 'selectstep' | 'fillform' | 'confirm' | 'submitting' | 'done';
 type StepOp = 'create' | 'update' | 'delete';
 
-interface ExistingStep { id: string; serialno: number; action: string; expectedresult: string; isdivider: boolean; }
+interface ExistingStep { id: string; serial_no: number; action: string; expected_result: string; is_divider: boolean; }
 
 const ImportStepsManualModal: React.FC<{ onClose: () => void; onDone: () => void }> = ({ onClose, onDone }) => {
   const [stage, setStage]           = useState<StepManualStage>('selectop');
@@ -598,7 +598,7 @@ const ImportStepsManualModal: React.FC<{ onClose: () => void; onDone: () => void
   const [sn, setSn]                 = useState('');
   const [action, setAction]         = useState('');
   const [expected, setExpected]     = useState('');
-  const [isDivider, setIsDivider]   = useState(false);
+  const [is_divider, setis_divider]   = useState(false);
   const [error, setError]           = useState<string | null>(null);
 
   useEffect(() => { fetchModuleOptions().then(setModules).catch(() => {}); }, []);
@@ -612,7 +612,7 @@ const ImportStepsManualModal: React.FC<{ onClose: () => void; onDone: () => void
   const handleTestSelect = async (testsname: string) => {
     setSelTest(testsname);
     if (op !== 'create') {
-      const { data } = await supabase.from('teststeps').select('id, serialno, action, expectedresult, isdivider').eq('testsname', testsname).order('serialno');
+      const { data } = await supabase.from('test_steps').select('id, serial_no, action, expected_result, is_divider').eq('testsname', testsname).order('serial_no');
       setSteps((data ?? []) as ExistingStep[]);
       setStage('selectstep');
     } else {
@@ -622,7 +622,7 @@ const ImportStepsManualModal: React.FC<{ onClose: () => void; onDone: () => void
 
   const handleStepSelect = (step: ExistingStep) => {
     setSelStep(step);
-    if (op === 'update') { setSn(String(step.serialno)); setAction(step.action); setExpected(step.expectedresult); setIsDivider(step.isdivider); }
+    if (op === 'update') { setSn(String(step.serial_no)); setAction(step.action); setExpected(step.expected_result); setis_divider(step.is_divider); }
     setStage(op === 'delete' ? 'confirm' : 'fillform');
   };
 
@@ -630,13 +630,13 @@ const ImportStepsManualModal: React.FC<{ onClose: () => void; onDone: () => void
     setStage('submitting'); setError(null);
     try {
       if (op === 'create') {
-        const { error: e } = await supabase.from('teststeps').insert({ serialno: parseFloat(sn), action, expectedresult: expected, isdivider: isDivider, testsname: selTest });
+        const { error: e } = await supabase.from('test_steps').insert({ serial_no: parseFloat(sn), action, expected_result: expected, is_divider: is_divider, testsname: selTest });
         if (e) throw new Error(e.message);
       } else if (op === 'update' && selStep) {
-        const { error: e } = await supabase.from('teststeps').update({ serialno: parseFloat(sn), action, expectedresult: expected, isdivider: isDivider }).eq('id', selStep.id);
+        const { error: e } = await supabase.from('test_steps').update({ serial_no: parseFloat(sn), action, expected_result: expected, is_divider: is_divider }).eq('id', selStep.id);
         if (e) throw new Error(e.message);
       } else if (op === 'delete' && selStep) {
-        const { error: e } = await supabase.from('teststeps').delete().eq('id', selStep.id);
+        const { error: e } = await supabase.from('test_steps').delete().eq('id', selStep.id);
         if (e) throw new Error(e.message);
       }
       setStage('done'); onDone();
@@ -681,8 +681,8 @@ const ImportStepsManualModal: React.FC<{ onClose: () => void; onDone: () => void
           {steps.map(s => (
             <button key={s.id} onClick={() => handleStepSelect(s)}
               className="text-left px-3 py-2 rounded-xl border border-[var(--border-color)] bg-bg-card hover:bg-bg-base text-xs text-t-primary">
-              <span className="font-mono text-c-brand mr-2">{s.serialno}</span>
-              {s.isdivider ? <em className="text-t-muted">divider</em> : s.action}
+              <span className="font-mono text-c-brand mr-2">{s.serial_no}</span>
+              {s.is_divider ? <em className="text-t-muted">divider</em> : s.action}
             </button>
           ))}
         </div>
@@ -696,7 +696,7 @@ const ImportStepsManualModal: React.FC<{ onClose: () => void; onDone: () => void
           <div><label className="block text-xs text-t-muted mb-1">Expected Result</label>
             <textarea value={expected} onChange={e => setExpected(e.target.value)} className="input text-sm resize-none" rows={3} /></div>
           <label className="flex items-center gap-2 text-xs text-t-secondary cursor-pointer">
-            <input type="checkbox" checked={isDivider} onChange={e => setIsDivider(e.target.checked)} className="rounded" />
+            <input type="checkbox" checked={is_divider} onChange={e => setis_divider(e.target.checked)} className="rounded" />
             Is Divider
           </label>
           <button onClick={() => setStage('confirm')} disabled={!sn.trim()}
@@ -709,13 +709,13 @@ const ImportStepsManualModal: React.FC<{ onClose: () => void; onDone: () => void
             <Row label="Op" value={op.toUpperCase()} brand />
             <Row label="Trainset" value={selMod} />
             <Row label="Test" value={selTest} />
-            {op === 'delete' && selStep && <Row label="Step S/N" value={String(selStep.serialno)} mono />}
+            {op === 'delete' && selStep && <Row label="Step S/N" value={String(selStep.serial_no)} mono />}
             {op === 'create' && <><Row label="S/N" value={sn} mono /><Row label="Action" value={action} /><Row label="Expected" value={expected} /></>}
             {op === 'update' && selStep && (
-              <><DiffRow label="S/N"      before={String(selStep.serialno)}    after={sn} />
+              <><DiffRow label="S/N"      before={String(selStep.serial_no)}    after={sn} />
                 <DiffRow label="Action"   before={selStep.action}              after={action} />
-                <DiffRow label="Expected" before={selStep.expectedresult}      after={expected} />
-                <DiffRow label="Divider"  before={String(selStep.isdivider)}   after={String(isDivider)} /></>
+                <DiffRow label="Expected" before={selStep.expected_result}      after={expected} />
+                <DiffRow label="Divider"  before={String(selStep.is_divider)}   after={String(is_divider)} /></>
             )}
           </div>
           {error && <p className="text-xs text-red-400">{error}</p>}
@@ -745,7 +745,7 @@ const ImportStepsManualModal: React.FC<{ onClose: () => void; onDone: () => void
 // ══════════════════════════════════════════════════════════════════════════════
 interface Props {
   activePage: string;
-  onNavigate: (page: string, moduleName?: string) => void;
+  onNavigate: (page: string, module_name?: string) => void;
 }
 
 type ActiveModal = 'export' | 'modules' | 'tests' | 'steps-csv' | 'steps-manual' | 'theme' | null;

@@ -15,18 +15,18 @@ supabase.auth.getSession().then(({ data: { session } }) => {
   _cachedToken = session?.access_token ?? null;
 });
 
-const useReleaseLockOnUnload = (moduleTestId: string, userId: string) => {
+const useReleaseLockOnUnload = (module_test_id: string, user_id: string) => {
   const heartbeatRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
-    if (!moduleTestId || !userId) return;
+    if (!module_test_id || !user_id) return;
 
     // ── Heartbeat ────────────────────────────────────────────────────────
     // Keeps last_heartbeat fresh so Supabase can auto-expire abandoned locks.
     const sendHeartbeat = () => {
       supabase.rpc("update_lock_heartbeat", {
-        p_module_test_id: moduleTestId,
-        p_user_id:        userId,
+        p_module_test_id: module_test_id,
+        p_user_id:        user_id,
       });
     };
 
@@ -42,7 +42,7 @@ const useReleaseLockOnUnload = (moduleTestId: string, userId: string) => {
       // Primary: keepalive fetch (DELETE)
       fetch(
         `${import.meta.env.VITE_SUPABASE_URL}/rest/v1/testlock` +
-        `?module_test_id=eq.${moduleTestId}&user_id=eq.${userId}`,
+        `?module_test_id=eq.${module_test_id}&user_id=eq.${user_id}`,
         {
           method:    "DELETE",
           keepalive: true,
@@ -58,7 +58,7 @@ const useReleaseLockOnUnload = (moduleTestId: string, userId: string) => {
         navigator.sendBeacon?.(
           `${import.meta.env.VITE_SUPABASE_URL}/rest/v1/rpc/release_lock_beacon`,
           new Blob(
-            [JSON.stringify({ p_module_test_id: moduleTestId, p_user_id: userId })],
+            [JSON.stringify({ p_module_test_id: module_test_id, p_user_id: user_id })],
             { type: "application/json" }
           )
         );
@@ -78,10 +78,10 @@ const useReleaseLockOnUnload = (moduleTestId: string, userId: string) => {
       supabase
         .from("testlock")
         .delete()
-        .eq("module_test_id", moduleTestId)
-        .eq("user_id", userId);
+        .eq("module_test_id", module_test_id)
+        .eq("user_id", user_id);
     };
-  }, [moduleTestId, userId]);
+  }, [module_test_id, user_id]);
 };
 
 export default useReleaseLockOnUnload;

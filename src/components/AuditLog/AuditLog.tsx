@@ -6,7 +6,7 @@ import Topbar       from "../Layout/Topbar";
 import Spinner      from "../UI/Spinner";
 import type { AuditEvent } from "../../types";
 
-import { fetchAuditLog } from "../../lib/supabase/queries";
+import { fetchaudit_log } from "../../lib/supabase/queries";
 
 const DOT: Record<string, string> = {
   pass: "bg-green-500",
@@ -15,7 +15,7 @@ const DOT: Record<string, string> = {
   info: "bg-blue-500",
 };
 
-const AuditLog: React.FC = () => {
+const audit_log: React.FC = () => {
   const { user }                    = useAuth();
   const isAdmin                     = user?.role === "admin";
   const [events,  setEvents]        = useState<AuditEvent[]>([]);
@@ -24,7 +24,7 @@ const AuditLog: React.FC = () => {
   useEffect(() => {
     if (!isAdmin) { setLoading(false); return; }
 
-    fetchAuditLog(300)
+    fetchaudit_log(300)
       .then(data  => setEvents(data as unknown as AuditEvent[]))
       .catch(()   => {})
       .finally(() => setLoading(false));
@@ -75,4 +75,4 @@ const AuditLog: React.FC = () => {
   );
 };
 
-export default AuditLog;
+export default audit_log;

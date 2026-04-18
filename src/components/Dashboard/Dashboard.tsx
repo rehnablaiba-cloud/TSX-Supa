@@ -16,7 +16,7 @@ import { getModuleStats, buildSummaries } from '../../utils/stats';
 import type { ActiveLock } from '../../types';
 
 interface Props {
-  onNavigate: (page: string, moduleName?: string) => void;
+  onNavigate: (page: string, module_name?: string) => void;
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -42,26 +42,26 @@ const Dashboard: React.FC<Props> = ({ onNavigate }) => {
     if (!userEmail) return;
 
     const { data: locks, error: lockErr } = await supabase
-      .from('testlocks')
-      .select('id, moduletestid, lockedbyname, lockedat')
-      .eq('lockedbyname', userEmail);
+      .from('test_locks')
+      .select('id, module_test_id, locked_by_name, locked_at')
+      .eq('locked_by_name', userEmail);
     if (!mountedRef.current || lockErr || !locks || locks.length === 0) return;
 
-    const moduleTestIds = locks.map((l: any) => l.moduletestid);
-    const { data: moduleTests, error: mtErr } = await supabase
-      .from('moduletests')
-      .select('id, modulename, testsname')
-      .in('id', moduleTestIds);
-    if (!mountedRef.current || mtErr || !moduleTests) return;
+    const module_test_ids = locks.map((l: any) => l.module_test_id);
+    const { data: module_tests, error: mtErr } = await supabase
+      .from('module_tests')
+      .select('id, module_name, testsname')
+      .in('id', module_test_ids);
+    if (!mountedRef.current || mtErr || !module_tests) return;
 
-    const mtMap = Object.fromEntries(moduleTests.map((mt: any) => [mt.id, mt]));
+    const mtMap = Object.fromEntries(module_tests.map((mt: any) => [mt.id, mt]));
     const mapped: ActiveLock[] = locks.map((l: any) => {
-      const mt = mtMap[l.moduletestid];
+      const mt = mtMap[l.module_test_id];
       return {
-        moduletestid: l.moduletestid,
-        modulename:   mt?.modulename ?? 'Unknown Module',
-        testname:     mt?.testsname  ?? 'Unknown Test',
-        lockedat:     l.lockedat ?? '',
+        module_test_id: l.module_test_id,
+        module_name:   mt?.module_name ?? 'Unknown Module',
+        test_name:     mt?.testsname  ?? 'Unknown Test',
+        locked_at:     l.locked_at ?? '',
       };
     });
     setActiveLocks(mapped);
@@ -72,10 +72,10 @@ const Dashboard: React.FC<Props> = ({ onNavigate }) => {
       .from('modules')
       .select(`
         name, description,
-        moduletests:moduletests!modulename(id),
-        stepresults:stepresults!modulename(
+        module_tests:module_tests!module_name(id),
+        step_results:step_results!module_name(
           status,
-          step:teststeps!teststepsid(isdivider)
+          step:test_steps!test_stepsid(is_divider)
         )
       `)
       .order('name');
@@ -90,9 +90,9 @@ const Dashboard: React.FC<Props> = ({ onNavigate }) => {
   useEffect(() => {
     const channel = supabase
       .channel('dashboard-live')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'stepresults' }, () => fetchModules(false))
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'step_results' }, () => fetchModules(false))
       .on('postgres_changes', { event: '*', schema: 'public', table: 'modules'     }, () => fetchModules(false))
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'testlocks'   }, fetchActiveLocks)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'test_locks'   }, fetchActiveLocks)
       .subscribe();
     return () => { supabase.removeChannel(channel); };
   }, [fetchModules, fetchActiveLocks]);
@@ -111,8 +111,8 @@ const Dashboard: React.FC<Props> = ({ onNavigate }) => {
     { label: 'Fail',        value: summaries.reduce((a, x) => a + x.fail,  0) },
   ], [summaries]);
 
-  const lockedModuleNames = useMemo(
-    () => new Set(activeLocks.map(l => l.modulename)),
+  const lockedmodule_names = useMemo(
+    () => new Set(activeLocks.map(l => l.module_name)),
     [activeLocks]
   );
 
@@ -168,8 +168,8 @@ const Dashboard: React.FC<Props> = ({ onNavigate }) => {
         <div ref={gridRef} className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
           {modules.map((m: any) => {
             const { total, pass, fail, pending, passRate, failPct, pendingPct, testCount } =
-              getModuleStats(m.moduletests ?? [], m.stepresults ?? []);
-            const isLocked = lockedModuleNames.has(m.name);
+              getModuleStats(m.module_tests ?? [], m.step_results ?? []);
+            const isLocked = lockedmodule_names.has(m.name);
             const passLabelColor =
               total === 0      ? 'var(--text-muted)'
               : passRate === 100 ? '#22c55e'

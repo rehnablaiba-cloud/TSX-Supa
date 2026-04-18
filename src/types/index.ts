@@ -94,23 +94,23 @@ export interface ImportRow {
   is_divider: boolean;
 }
 export interface ActiveLock {
-  moduletestid: string;
-  modulename:   string;
-  testname:     string;
-  lockedat:     string;
+  module_test_id: string;
+  module_name:   string;
+  test_name:     string;
+  locked_at:     string;
 }
 export interface ModuleOption {
   name: string;
 }
 
 export interface TestOption {
-  serialno: string;
+  serial_no: string;
   name:     string;
 }
 
 export interface StepInput {
-  serialno:       number;
+  serial_no:       number;
   action:         string;
-  expectedresult: string;
-  isdivider:      boolean;
+  expected_result: string;
+  is_divider:      boolean;
 }

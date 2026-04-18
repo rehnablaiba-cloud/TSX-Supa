@@ -18,7 +18,7 @@ import ThemeToggle from "../UI/ThemeToggle";
 
 interface Props {
   activePage: string;
-  onNavigate: (page: string, moduleName?: string) => void;
+  onNavigate: (page: string, module_name?: string) => void;
   modules: Module[];
 }
 
@@ -30,7 +30,7 @@ const BASE_NAV = [
 
 
 const ADMIN_NAV = [
-  { id: "auditlog", label: "Audit Log", Icon: ScrollText },
+  { id: "audit_log", label: "Audit Log", Icon: ScrollText },
   { id: "users",    label: "Users",     Icon: Users      },
 ];
 
@@ -166,11 +166,11 @@ const Sidebar: React.FC<Props> = ({ activePage, onNavigate, modules }) => {
             <div className="flex items-center gap-3">
               <div className="w-8 h-8 rounded-full bg-c-brand flex items-center justify-center
                 text-sm font-bold text-white shrink-0">
-                {(user?.displayName || user?.email || "U")[0].toUpperCase()}
+                {(user?.display_name || user?.email || "U")[0].toUpperCase()}
               </div>
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-medium text-t-primary truncate">
-                  {user?.displayName || user?.email}
+                  {user?.display_name || user?.email}
                 </p>
                 <span className={isAdmin ? "badge-admin" : "badge-tester"}>
                   {user?.role}

@@ -6,7 +6,7 @@ import Topbar from '../Layout/Topbar';
 import {useAuth} from '../../context/AuthContext';
 import {useTheme} from '../../context/ThemeContext';
 import {useToast} from '../../context/ToastContext';
-import useAuditLog from '../../hooks/useAuditLog';
+import useaudit_log from '../../hooks/useaudit_log';
 import { Lock, Pencil, Play, Download, FileSpreadsheet, FileText, X } from 'lucide-react';
 import { exportModuleDetailCSV, exportModuleDetailPDF, FlatData } from '../../utils/export';
 
@@ -57,36 +57,36 @@ const CHART_TYPES: { type: ChartType; label: string }[] = [
 
 // ── Props & DB types ──────────────────────────────────────────────────────────
 interface Props {
-  moduleName: string;
+  module_name: string;
   onBack: () => void;
-  onExecute: (moduleTestId: string) => void;
+  onExecute: (module_test_id: string) => void;
 }
 
 interface TrimmedStepResult {
   id: string;
   status: 'pass' | 'fail' | 'pending';
-  step: { id: string; isdivider: boolean; testsname: string } | null;
+  step: { id: string; is_divider: boolean; testsname: string } | null;
 }
 
 interface ModuleTestRow {
   id: string;
   testsname: string;
-  test: { serialno: number; name: string; description?: string };
-  stepresults: TrimmedStepResult[];
+  test: { serial_no: number; name: string; description?: string };
+  step_results: TrimmedStepResult[];
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
 // MAIN COMPONENT
 // ══════════════════════════════════════════════════════════════════════════════
-const ModuleDashboard: React.FC<Props> = ({ moduleName, onBack, onExecute }) => {
+const ModuleDashboard: React.FC<Props> = ({ module_name, onBack, onExecute }) => {
   useInjectStyle();
 
   const { user }        = useAuth();
   const { theme }       = useTheme();
   const { addToast }    = useToast();
-  const log             = useAuditLog();
+  const log             = useaudit_log();
 
-  const [moduleTests, setModuleTests] = useState<ModuleTestRow[]>([]);
+  const [module_tests, setmodule_tests] = useState<ModuleTestRow[]>([]);
   const [loading, setLoading]         = useState(true);
   const [error, setError]             = useState<string | null>(null);
   const [chartType, setChartType]     = useState<ChartType>('bar');
@@ -121,47 +121,47 @@ const ModuleDashboard: React.FC<Props> = ({ moduleName, onBack, onExecute }) => 
   const fetchData = useCallback(async () => {
     setLoading(true);
     const { data, error: err } = await supabase
-      .from('moduletests')
+      .from('module_tests')
       .select(`
         id, testsname,
-        test:tests!testsname ( serialno, name, description ),
-        stepresults:stepresults!moduletestid (
+        test:tests!testsname ( serial_no, name, description ),
+        step_results:step_results!module_test_id (
           id, status,
-          step:teststeps!teststepsid ( id, isdivider, testsname )
+          step:test_steps!test_stepsid ( id, is_divider, testsname )
         )
       `)
-      .eq('modulename', moduleName)
+      .eq('module_name', module_name)
       .order('testsname');
 
     if (!mountedRef.current) return;
     if (err) { setError(err.message); setLoading(false); return; }
-    setModuleTests((data ?? []) as unknown as ModuleTestRow[]);
+    setmodule_tests((data ?? []) as unknown as ModuleTestRow[]);
     setError(null);
     setLoading(false);
-  }, [moduleName]);
+  }, [module_name]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
   // ── Realtime ──────────────────────────────────────────────────────────────
   useEffect(() => {
     const channel = supabase
-      .channel(`module-dashboard-${moduleName}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'stepresults' }, fetchData)
+      .channel(`module-dashboard-${module_name}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'step_results' }, fetchData)
       .subscribe();
     return () => { supabase.removeChannel(channel); };
-  }, [moduleName, fetchData]);
+  }, [module_name, fetchData]);
 
   // ── Derived stats ─────────────────────────────────────────────────────────
   const chartData = useMemo<ChartRow[]>(() =>
-    moduleTests.map(mt => {
-      const real = mt.stepresults.filter(sr => !sr.step?.isdivider);
+    module_tests.map(mt => {
+      const real = mt.step_results.filter(sr => !sr.step?.is_divider);
       return {
         name:    mt.test?.name ?? mt.testsname,
         pass:    real.filter(sr => sr.status === 'pass').length,
         fail:    real.filter(sr => sr.status === 'fail').length,
         pending: real.filter(sr => sr.status === 'pending').length,
       };
-    }), [moduleTests]);
+    }), [module_tests]);
 
   const globalStats = useMemo(() => {
     const pass    = chartData.reduce((a, x) => a + x.pass, 0);
@@ -172,26 +172,26 @@ const ModuleDashboard: React.FC<Props> = ({ moduleName, onBack, onExecute }) => 
   }, [chartData]);
 
   // ── Save description ──────────────────────────────────────────────────────
-  const saveDesc = async (moduleTestId: string) => {
+  const saveDesc = async (module_test_id: string) => {
     setSavingDesc(true);
     const { error: e } = await supabase
-      .from('moduletests')
+      .from('module_tests')
       .update({ description: descDraft.trim() || null })
-      .eq('id', moduleTestId);
+      .eq('id', module_test_id);
     setSavingDesc(false);
     if (e) { addToast('Failed to save description', 'error'); return; }
     setEditingDesc(null);
-    log(`Updated description for test in ${moduleName}`);
+    log(`Updated description for test in ${module_name}`);
     fetchData();
   };
 
   // ── Build export data ─────────────────────────────────────────────────────
   const buildFlatData = (): FlatData[] =>
-    moduleTests.flatMap(mt =>
-      mt.stepresults
-        .filter(sr => !sr.step?.isdivider)
+    module_tests.flatMap(mt =>
+      mt.step_results
+        .filter(sr => !sr.step?.is_divider)
         .map(sr => ({
-          module:   moduleName,
+          module:   module_name,
           test:     mt.test?.name ?? mt.testsname,
           serial:   0,
           action:   '',
@@ -204,14 +204,14 @@ const ModuleDashboard: React.FC<Props> = ({ moduleName, onBack, onExecute }) => 
   // ── Loading / error states ────────────────────────────────────────────────
   if (loading) return (
     <div className="flex-1 flex flex-col">
-      <Topbar title={moduleName} onBack={onBack} />
+      <Topbar title={module_name} onBack={onBack} />
       <div className="flex items-center justify-center flex-1"><Spinner /></div>
     </div>
   );
 
   if (error) return (
     <div className="flex-1 flex flex-col">
-      <Topbar title={moduleName} onBack={onBack} />
+      <Topbar title={module_name} onBack={onBack} />
       <div className="p-6">
         <div className="bg-red-500/10 border border-red-500/30 rounded-xl p-4 text-red-500 text-sm">
           Failed to load module: {error}
@@ -224,8 +224,8 @@ const ModuleDashboard: React.FC<Props> = ({ moduleName, onBack, onExecute }) => 
   return (
     <div className="flex-1 flex flex-col">
       <Topbar
-        title={moduleName}
-        subtitle={`${moduleTests.length} test${moduleTests.length !== 1 ? 's' : ''} · ${globalStats.total} steps`}
+        title={module_name}
+        subtitle={`${module_tests.length} test${module_tests.length !== 1 ? 's' : ''} · ${globalStats.total} steps`}
         onBack={onBack}
         actions={
           <div className="flex items-center gap-2">
@@ -259,7 +259,7 @@ const ModuleDashboard: React.FC<Props> = ({ moduleName, onBack, onExecute }) => 
         </div>
 
         {/* ── Chart type selector + chart ── */}
-        {moduleTests.length > 0 && (
+        {module_tests.length > 0 && (
           <div className="card flex flex-col gap-3">
             <div className="flex items-center justify-between flex-wrap gap-2">
               <p className="text-sm font-semibold text-t-primary">Step Results by Test</p>
@@ -284,11 +284,11 @@ const ModuleDashboard: React.FC<Props> = ({ moduleName, onBack, onExecute }) => 
 
         {/* ── Test list ── */}
         <div className="flex flex-col gap-3">
-          {moduleTests.length === 0 && (
+          {module_tests.length === 0 && (
             <div className="text-center text-t-muted py-12">No tests assigned to this module yet.</div>
           )}
-          {moduleTests.map((mt, idx) => {
-            const real    = mt.stepresults.filter(sr => !sr.step?.isdivider);
+          {module_tests.map((mt, idx) => {
+            const real    = mt.step_results.filter(sr => !sr.step?.is_divider);
             const pass    = real.filter(sr => sr.status === 'pass').length;
             const fail    = real.filter(sr => sr.status === 'fail').length;
             const pending = real.filter(sr => sr.status === 'pending').length;
@@ -303,7 +303,7 @@ const ModuleDashboard: React.FC<Props> = ({ moduleName, onBack, onExecute }) => 
                   <div className="flex items-start justify-between gap-2">
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 flex-wrap">
-                        <span className="font-mono text-xs text-c-brand font-bold">{mt.test?.serialno}</span>
+                        <span className="font-mono text-xs text-c-brand font-bold">{mt.test?.serial_no}</span>
                         <h3 className="font-semibold text-t-primary text-sm truncate">{mt.test?.name ?? mt.testsname}</h3>
                       </div>
 

@@ -10,7 +10,7 @@ import type { ModuleSummary } from './export';
 // of the full StepResult interface.
 interface StepResultLike {
   status: string;
-  step?: { isdivider: boolean } | null;
+  step?: { is_divider: boolean } | null;
 }
 
 interface ModuleTestLike {
@@ -21,17 +21,17 @@ interface ModuleTestLike {
 // Counts pass / fail / pending across a module's step results,
 // skipping divider rows. Returns rounded percentages for the progress bar.
 export function getModuleStats(
-  moduleTests: ModuleTestLike[],
-  stepResults: StepResultLike[]
+  module_tests: ModuleTestLike[],
+  step_results: StepResultLike[]
 ): {
   total: number; pass: number; fail: number; pending: number;
   passRate: number; failPct: number; pendingPct: number; testCount: number;
 } {
-  const testCount = moduleTests?.length ?? 0;
+  const testCount = module_tests?.length ?? 0;
   let total = 0, pass = 0, fail = 0, pending = 0;
 
-  for (const sr of stepResults ?? []) {
-    if (sr.step?.isdivider) continue;
+  for (const sr of step_results ?? []) {
+    if (sr.step?.is_divider) continue;
     total++;
     if      (sr.status === 'pass') pass++;
     else if (sr.status === 'fail') fail++;
@@ -51,8 +51,8 @@ export function getModuleStats(
 export function buildSummaries(modules: any[]): ModuleSummary[] {
   return modules.map(m => {
     const { total, pass, fail, pending, passRate } = getModuleStats(
-      m.moduletests ?? [],
-      m.stepresults ?? []
+      m.module_tests ?? [],
+      m.step_results ?? []
     );
     return {
       name:        m.name,

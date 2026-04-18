@@ -33,13 +33,13 @@ export function parseCsvToRecords(
 
 /**
  * Parse a steps-specific CSV.
- * Expected headers: serialno, action, expectedresult, isdivider
+ * Expected headers: serial_no, action, expected_result, is_divider
  */
 export function parseStepsCsv(
   text: string
 ): { rows: StepInput[]; errors: string[] } {
   const { rows: raw, errors } = parseCsvToRecords(text);
-  const required = ['serialno', 'action', 'expectedresult', 'isdivider'];
+  const required = ['serial_no', 'action', 'expected_result', 'is_divider'];
 
   if (raw.length > 0) {
     const missing = required.filter(h => !(h in raw[0]));
@@ -53,16 +53,16 @@ export function parseStepsCsv(
 
   const rows: StepInput[] = [];
   for (const r of raw) {
-    const sn = parseFloat(r['serialno']);
+    const sn = parseFloat(r['serial_no']);
     if (isNaN(sn)) {
-      errors.push(`Invalid serialno: "${r['serialno']}"`);
+      errors.push(`Invalid serial_no: "${r['serial_no']}"`);
       continue;
     }
     rows.push({
-      serialno:       sn,
+      serial_no:       sn,
       action:         r['action']         ?? '',
-      expectedresult: r['expectedresult'] ?? '',
-      isdivider:      r['isdivider']?.toLowerCase() === 'true',
+      expected_result: r['expected_result'] ?? '',
+      is_divider:      r['is_divider']?.toLowerCase() === 'true',
     });
   }
   return { rows, errors };

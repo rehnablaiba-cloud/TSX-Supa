@@ -12,13 +12,13 @@ import ModuleDashboard from "./components/ModuleDashboard/ModuleDashboard";
 import TestExecution from "./components/TestExecution/TestExecution";
 import TestReport from "./components/TestReport/TestReport";
 import UsersPanel from "./components/Users/UsersPanel";
-import AuditLog from "./components/AuditLog/AuditLog";
+import audit_log from "./components/audit_log/audit_log";
 import Spinner from "./components/UI/Spinner";
 import { supabase } from "./supabase";
 import { Module } from "./types";
 import { tokens, palette, TokenKey } from "./theme";
 
-type Page = "dashboard" | "module" | "execution" | "report" | "users" | "auditlog";
+type Page = "dashboard" | "module" | "execution" | "report" | "users" | "audit_log";
 type MuiProviderComponent = React.ComponentType<{ theme: unknown; children: React.ReactNode }>;
 
 // MuiActivator — unchanged from your original
@@ -95,7 +95,7 @@ const AppInner: React.FC = () => {
   const { log } = useSessionLog(); // ← NEW
   const [modules, setModules]                       = useState<Module[]>([]);
   const [page, setPage]                             = useState<Page>("dashboard");
-  const [selectedModuleName, setSelectedModuleName] = useState<string | null>(null);
+  const [selectedmodule_name, setSelectedmodule_name] = useState<string | null>(null);
   const [selectedTestId, setSelectedTestId]         = useState<string | null>(null);
 
   const [installPrompt, setInstallPrompt] = useState<any>(null);
@@ -167,14 +167,14 @@ const AppInner: React.FC = () => {
 
   if (!isAuthenticated) return <LoginPage />;
 
-  const selectedModule = modules.find(m => m.name === selectedModuleName);
+  const selectedModule = modules.find(m => m.name === selectedmodule_name);
 
   // ── Logged navigation ────────────────────────────────────────────
-  const navigate = (p: string, moduleName?: string) => {
-    if (p === "module" && moduleName) {
-      setSelectedModuleName(moduleName);
+  const navigate = (p: string, module_name?: string) => {
+    if (p === "module" && module_name) {
+      setSelectedmodule_name(module_name);
       setPage("module");
-      log("info", "nav", `Navigate → module: ${moduleName}`);
+      log("info", "nav", `Navigate → module: ${module_name}`);
     } else {
       setPage(p as Page);
       log("info", "nav", `Navigate → ${p}`);
@@ -187,7 +187,7 @@ const AppInner: React.FC = () => {
       case "module":
         return selectedModule
           ? <ModuleDashboard
-              moduleName={selectedModule.name}
+              module_name={selectedModule.name}
               onBack={() => { setPage("dashboard"); log("info", "nav", "Back → dashboard"); }}
               onExecute={mtId => {
                 setSelectedTestId(mtId);
@@ -199,18 +199,18 @@ const AppInner: React.FC = () => {
       case "execution":
         return selectedModule && selectedTestId
           ? <TestExecution
-              moduleName={selectedModule.name}
-              initialModuleTestId={selectedTestId}
+              module_name={selectedModule.name}
+              initialmodule_test_id={selectedTestId}
               isAdmin={isAdmin}
               onBack={() => { setPage("module"); log("info", "nav", "Back → module"); }}
             />
           : <Dashboard onNavigate={navigate} />;
      case "report":
   return selectedTestId
-    ? <TestReport moduleTestId={selectedTestId} onBack={() => setPage("module")} />
+    ? <TestReport module_test_id={selectedTestId} onBack={() => setPage("module")} />
     : <Dashboard onNavigate={navigate} />;
       case "users":    return <UsersPanel />;
-      case "auditlog": return <AuditLog />;
+      case "audit_log": return <audit_log />;
       default:         return <Dashboard onNavigate={navigate} />;
     }
   };

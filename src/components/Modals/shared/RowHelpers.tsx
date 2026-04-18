@@ -58,13 +58,13 @@ export const ContextStrip: React.FC<{
         <span className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-bg-card border border-[var(--border-color)]">
           <FlaskConical size={12} className="text-t-muted" />
           <span className="text-t-primary font-medium">{test.name}</span>
-          <span className="text-t-muted">SN {test.serialno}</span>
+          <span className="text-t-muted">SN {test.serial_no}</span>
         </span>
       )}
       {step && (
         <span className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-bg-card border border-[var(--border-color)]">
           <Hash size={12} className="text-t-muted" />
-          <span className="font-mono font-bold text-c-brand">SN {step.serialno}</span>
+          <span className="font-mono font-bold text-c-brand">SN {step.serial_no}</span>
         </span>
       )}
     </div>

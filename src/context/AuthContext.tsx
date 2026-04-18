@@ -5,7 +5,7 @@ import { supabase } from "../supabase";
 export interface AuthUser {
   id:          string;
   email:       string;
-  displayName: string;
+  display_name: string;
   role?: "admin" | "user" | string;
 }
 
@@ -22,22 +22,22 @@ const Ctx = createContext<AuthCtx>({} as AuthCtx);
 // ── Profile loader ─────────────────────────────────────────────────────────────
 // Returns null if the account is disabled — caller must sign the user out.
 const loadProfile = async (
-  userId: string,
+  user_id: string,
   email:  string
 ): Promise<AuthUser | null> => {
   const { data } = await supabase
     .from("profiles")
     .select("display_name, role, disabled")
-    .eq("id", userId)
+    .eq("id", user_id)
     .single();
 
   // Block disabled accounts at the app level (RLS also blocks DB writes)
   if (data?.disabled) return null;
 
   return {
-    id:          userId,
+    id:          user_id,
     email,
-    displayName: data?.display_name ?? email,
+    display_name: data?.display_name ?? email,
     role: data?.role         ?? "tester",
   };
 };

@@ -12,7 +12,7 @@ import Topbar             from "../Layout/Topbar";
 import Spinner            from "../UI/Spinner";
 import ExportModal        from "../UI/ExportModal";
 import MassImageUploadModal from "../UI/MassImageUploadModal";
-import useAuditLog        from "../../hooks/useAuditLog";
+import useaudit_log        from "../../hooks/useaudit_log";
 import { exportExecutionCSV, exportExecutionPDF } from "../../utils/export";
 import type { FlatData }  from "../../utils/export";
 
@@ -22,7 +22,7 @@ import {
   releaseLock,
   forceReleaseLock,
   upsertStepResult,
-  resetAllStepResults,
+  resetAllstep_results,
   fetchSignedUrls,
 } from "../../lib/supabase/queries.testexecution";
 
@@ -31,8 +31,8 @@ import {
 // ─────────────────────────────────────────────────────────────────────────────
 
 interface Props {
-  moduleName:          string;
-  initialModuleTestId: string;
+  module_name:          string;
+  initialmodule_test_id: string;
   isAdmin?:            boolean;
   onBack:              () => void;
 }
@@ -42,12 +42,12 @@ type Filter = "all" | "pass" | "fail" | "pending";
 interface ExecutionStep {
   stepId:            string;
   stepResultId:      string;
-  moduleTestId:      string;
-  serialno:          number;
+  module_test_id:      string;
+  serial_no:          number;
   action:            string;
   expected_result:   string;
-  actionImageUrls:   string[];
-  expectedImageUrls: string[];
+  action_image_urls:   string[];
+  expected_image_urls: string[];
   is_divider:        boolean;
   status:            "pass" | "fail" | "pending";
   remarks:           string;
@@ -57,7 +57,7 @@ interface ExecutionStep {
 interface ModuleTestItem {
   id:        string;
   testsname: string;
-  test:      { serialno: string; name: string } | null;
+  test:      { serial_no: string; name: string } | null;
 }
 
 type SignedImageMap = Record<string, string>;
@@ -188,7 +188,7 @@ const ImagePreviewModal: React.FC<{
   );
 };
 
-const LockedScreen: React.FC<{ lockedByName: string; testName: string; onBack: () => void }> = ({ lockedByName, testName, onBack }) => (
+const LockedScreen: React.FC<{ locked_by_name: string; test_name: string; onBack: () => void }> = ({ locked_by_name, test_name, onBack }) => (
   <div className="flex flex-col flex-1 items-center justify-center gap-6 p-8 text-center">
     <div className="w-16 h-16 rounded-full bg-amber-500/10 border-2 border-amber-500/30 flex items-center justify-center">
       <Lock size={28} className="text-amber-500" />
@@ -196,8 +196,8 @@ const LockedScreen: React.FC<{ lockedByName: string; testName: string; onBack: (
     <div>
       <h2 className="text-lg font-bold text-t-primary mb-1">Test In Progress</h2>
       <p className="text-t-secondary text-sm max-w-sm">
-        <span className="text-amber-600 dark:text-amber-400 font-semibold">{lockedByName}</span> is currently
-        executing <span className="text-t-primary font-semibold">{testName}</span>. You cannot enter until they finish.
+        <span className="text-amber-600 dark:text-amber-400 font-semibold">{locked_by_name}</span> is currently
+        executing <span className="text-t-primary font-semibold">{test_name}</span>. You cannot enter until they finish.
       </p>
     </div>
     <div className="flex items-center gap-2 px-4 py-2 bg-amber-500/10 border border-amber-500/20 rounded-full">
@@ -216,19 +216,19 @@ const LockedScreen: React.FC<{ lockedByName: string; testName: string; onBack: (
 // ─────────────────────────────────────────────────────────────────────────────
 
 const TestExecution: React.FC<Props> = ({
-  moduleName, initialModuleTestId, isAdmin = false, onBack,
+  module_name, initialmodule_test_id, isAdmin = false, onBack,
 }) => {
   const { user }     = useAuth();
   const { addToast } = useToast();
-  const log          = useAuditLog();
+  const log          = useaudit_log();
 
-  const currentMtId = initialModuleTestId;
-  const testsName   = currentMtId.slice(moduleName.length + 1);
+  const currentMtId = initialmodule_test_id;
+  const testsName   = currentMtId.slice(module_name.length + 1);
 
   const [filter,          setFilter]          = useState<Filter>("all");
   const [search,          setSearch]          = useState("");
   const [steps,           setSteps]           = useState<ExecutionStep[]>([]);
-  const [moduleTests,     setModuleTests]     = useState<ModuleTestItem[]>([]);
+  const [module_tests,     setmodule_tests]     = useState<ModuleTestItem[]>([]);
   const [loading,         setLoading]         = useState(true);
   const [saving,          setSaving]          = useState<string | null>(null);
   const [lockedByOther,   setLockedByOther]   = useState<string | null>(null);
@@ -248,28 +248,28 @@ const TestExecution: React.FC<Props> = ({
   // ── Load data ─────────────────────────────────────────────────────────────
   const load = useCallback(async () => {
     try {
-      const { stepResults, moduleTests: mts } = await fetchTestExecution(currentMtId);
+      const { step_results, module_tests: mts } = await fetchTestExecution(currentMtId);
       if (!mountedRef.current) return;
 
-      setModuleTests(mts as ModuleTestItem[]);
+      setmodule_tests(mts as ModuleTestItem[]);
 
-      const mapped: ExecutionStep[] = stepResults.map(sr => ({
+      const mapped: ExecutionStep[] = step_results.map(sr => ({
         stepId:            sr.step?.id ?? "",
         stepResultId:      sr.id,
-        moduleTestId:      currentMtId,
-        serialno:          sr.step?.serialno ?? 0,
+        module_test_id:      currentMtId,
+        serial_no:          sr.step?.serial_no ?? 0,
         action:            sr.step?.action ?? "",
-        expected_result:   sr.step?.expectedresult ?? "",
-        actionImageUrls:   sr.step?.actionimageurls ?? [],
-        expectedImageUrls: sr.step?.expectedimageurls ?? [],
-        is_divider:        sr.step?.isdivider ?? false,
+        expected_result:   sr.step?.expected_result ?? "",
+        action_image_urls:   sr.step?.action_image_urls ?? [],
+        expected_image_urls: sr.step?.expected_image_urls ?? [],
+        is_divider:        sr.step?.is_divider ?? false,
         status:            sr.status,
         remarks:           sr.remarks,
         display_name:      sr.display_name,
       }));
       setSteps(mapped);
 
-      const allPaths = mapped.flatMap(s => [...s.actionImageUrls, ...s.expectedImageUrls]);
+      const allPaths = mapped.flatMap(s => [...s.action_image_urls, ...s.expected_image_urls]);
       if (allPaths.length > 0) {
         const map = await fetchSignedUrls(allPaths);
         if (mountedRef.current) setSignedImages(prev => ({ ...prev, ...map }));
@@ -289,7 +289,7 @@ const TestExecution: React.FC<Props> = ({
         const result = await acquireLock(
           currentMtId,
           user?.id ?? "",
-          user?.displayName ?? user?.email ?? ""
+          user?.display_name ?? user?.email ?? ""
         );
         if (!cancelled) {
           if (!result.success) {
@@ -320,10 +320,10 @@ const TestExecution: React.FC<Props> = ({
   useEffect(() => {
     const channel = supabase
       .channel(`execution-${currentMtId}`)
-      .on("postgres_changes", { event: "*", schema: "public", table: "stepresults",
-        filter: `moduletestid=eq.${currentMtId}` }, () => load())
-      .on("postgres_changes", { event: "*", schema: "public", table: "testlocks",
-        filter: `moduletestid=eq.${currentMtId}` }, () => load())
+      .on("postgres_changes", { event: "*", schema: "public", table: "step_results",
+        filter: `module_test_id=eq.${currentMtId}` }, () => load())
+      .on("postgres_changes", { event: "*", schema: "public", table: "test_locks",
+        filter: `module_test_id=eq.${currentMtId}` }, () => load())
       .subscribe();
     return () => { supabase.removeChannel(channel); };
   }, [currentMtId, load]);
@@ -337,17 +337,17 @@ const TestExecution: React.FC<Props> = ({
     setSaving(step.stepId);
     try {
       await upsertStepResult({
-        teststepsid:  step.stepId,
-        moduletestid: currentMtId,
+        test_stepsid:  step.stepId,
+        module_test_id: currentMtId,
         status,
         remarks:      remarks ?? step.remarks,
-        display_name: user?.displayName ?? user?.email ?? "",
+        display_name: user?.display_name ?? user?.email ?? "",
         user_id:      user?.id ?? "",
       });
       setSteps(prev => prev.map(s =>
         s.stepId === step.stepId ? { ...s, status, remarks: remarks ?? s.remarks } : s
       ));
-      log(`Step ${step.serialno} → ${status}`);
+      log(`Step ${step.serial_no} → ${status}`);
     } catch (e: any) {
       addToast(e?.message ?? "Failed to save result", "error");
     } finally {
@@ -360,7 +360,7 @@ const TestExecution: React.FC<Props> = ({
     setShowUndoModal(false);
     setSaving("all");
     try {
-      await resetAllStepResults(currentMtId);
+      await resetAllstep_results(currentMtId);
       setSteps(prev => prev.map(s => ({ ...s, status: "pending", remarks: "" })));
       log("Reset all step results");
       addToast("All steps reset to pending", "info");
@@ -398,32 +398,32 @@ const TestExecution: React.FC<Props> = ({
     return true;
   }), [steps, filter, search]);
 
-  const testName = moduleTests.find(mt => mt.id === currentMtId)?.test?.name ?? testsName;
+  const test_name = module_tests.find(mt => mt.id === currentMtId)?.test?.name ?? testsName;
 
   const exportData: FlatData[] = useMemo(() => steps
     .filter(s => !s.is_divider)
     .map(s => ({
-      module:   moduleName,
-      test:     testName,
-      serial:   s.serialno,
+      module:   module_name,
+      test:     test_name,
+      serial:   s.serial_no,
       action:   s.action,
       expected: s.expected_result,
       remarks:  s.remarks,
       status:   s.status,
-    })), [steps, moduleName, testName]);
+    })), [steps, module_name, test_name]);
 
   // ── Render ────────────────────────────────────────────────────────────────
   if (loading) return (
     <div className="flex-1 flex flex-col">
-      <Topbar title={testName} subtitle={moduleName} onBack={onBack} />
+      <Topbar title={test_name} subtitle={module_name} onBack={onBack} />
       <div className="flex-1 flex items-center justify-center"><Spinner /></div>
     </div>
   );
 
   if (lockedByOther) return (
     <div className="flex-1 flex flex-col">
-      <Topbar title={testName} subtitle={moduleName} onBack={onBack} />
-      <LockedScreen lockedByName={lockedByOther} testName={testName} onBack={onBack} />
+      <Topbar title={test_name} subtitle={module_name} onBack={onBack} />
+      <LockedScreen locked_by_name={lockedByOther} test_name={test_name} onBack={onBack} />
       {isAdmin && (
         <div className="p-4 flex justify-center">
           <button onClick={handleForceRelease}
@@ -439,8 +439,8 @@ const TestExecution: React.FC<Props> = ({
     <div className="flex-1 flex flex-col">
       {/* Topbar */}
       <Topbar
-        title={testName}
-        subtitle={moduleName}
+        title={test_name}
+        subtitle={module_name}
         onBack={() => { releaseLock(currentMtId, user?.id ?? "").catch(() => {}); onBack(); }}
         actions={
           <div className="flex items-center gap-2">
@@ -518,8 +518,8 @@ const TestExecution: React.FC<Props> = ({
 
           const isSaving   = saving === step.stepId || saving === "all";
           const isExpanded = expandedRemarks.has(step.stepId);
-          const actionSigned   = step.actionImageUrls.map(p => signedImages[p]).filter(Boolean);
-          const expectedSigned = step.expectedImageUrls.map(p => signedImages[p]).filter(Boolean);
+          const actionSigned   = step.action_image_urls.map(p => signedImages[p]).filter(Boolean);
+          const expectedSigned = step.expected_image_urls.map(p => signedImages[p]).filter(Boolean);
 
           return (
             <div key={step.stepId}
@@ -531,7 +531,7 @@ const TestExecution: React.FC<Props> = ({
               {/* Step header */}
               <div className="flex items-start gap-3">
                 <span className="text-xs font-mono font-bold text-c-brand bg-c-brand-bg px-2 py-1 rounded-lg shrink-0 min-w-[2.5rem] text-center">
-                  {step.serialno}
+                  {step.serial_no}
                 </span>
                 <div className="flex-1 min-w-0">
                   <p className="text-sm text-t-primary">{step.action || <span className="italic text-t-muted">No action text</span>}</p>
@@ -640,8 +640,8 @@ const TestExecution: React.FC<Props> = ({
         <ExportModal
           isOpen={showExport}
           onClose={() => setShowExport(false)}
-          title={testName}
-          subtitle={moduleName}
+          title={test_name}
+          subtitle={module_name}
           stats={[
             { label: "Pass",    value: passCount    },
             { label: "Fail",    value: failCount    },
@@ -653,14 +653,14 @@ const TestExecution: React.FC<Props> = ({
               icon:       <FileSpreadsheet size={16} />,
               color:      "bg-[var(--color-primary)]",
               hoverColor: "hover:bg-[var(--color-primary-hover)]",
-              onConfirm:  () => exportExecutionCSV(moduleName, testName, exportData),
+              onConfirm:  () => exportExecutionCSV(module_name, test_name, exportData),
             },
             {
               label:      "PDF",
               icon:       <FileText size={16} />,
               color:      "bg-[var(--color-blue)]",
               hoverColor: "hover:bg-[var(--color-blue-hover)]",
-              onConfirm:  () => exportExecutionPDF(moduleName, testName, exportData),
+              onConfirm:  () => exportExecutionPDF(module_name, test_name, exportData),
             },
           ]}
         />

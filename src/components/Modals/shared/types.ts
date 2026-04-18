@@ -5,13 +5,13 @@ export interface ModuleOption {
 }
 
 export interface TestOption {
-  serialno: string;
+  serial_no: string;
   name:     string;
 }
 
 export interface StepOption {
   id:              string;
-  serialno:        number;
+  serial_no:        number;
   tests_name:      string;
   action:          string;
   expected_result: string;
@@ -19,7 +19,7 @@ export interface StepOption {
 }
 
 export interface StepCsvRow {
-  serialno:        number;
+  serial_no:        number;
   action:          string;
   expected_result: string;
   is_divider:      boolean;
@@ -56,12 +56,12 @@ export type StepImportStage =
 
 // ── Form types ────────────────────────────────────────────────────────────────
 export interface StepForm {
-  serialno:        string;
+  serial_no:        string;
   action:          string;
   expected_result: string;
   is_divider:      boolean;
 }
 
 export const EMPTY_STEP_FORM: StepForm = {
-  serialno: "", action: "", expected_result: "", is_divider: false,
+  serial_no: "", action: "", expected_result: "", is_divider: false,
 };

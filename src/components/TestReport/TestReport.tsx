@@ -26,7 +26,7 @@ import { CHART_TYPES }              from '../ModuleDashboard/charts';
 
 // ── Props / DB types ──────────────────────────────────────────────────────────
 interface Props {
-  moduleTestId: string;
+  module_test_id: string;
   onBack: () => void;
 }
 
@@ -35,10 +35,10 @@ interface StepResultRow {
   status: 'pass' | 'fail' | 'pending';
   step: {
     id:             string;
-    serialno:       number;
+    serial_no:       number;
     action:         string;
-    expectedresult: string;
-    isdivider:      boolean;
+    expected_result: string;
+    is_divider:      boolean;
     testsname:      string;
   } | null;
   imageurl: string | null;
@@ -46,9 +46,9 @@ interface StepResultRow {
 }
 
 interface ModuleTestMeta {
-  modulename: string;
+  module_name: string;
   testsname:  string;
-  test: { serialno: number; name: string; description?: string } | null;
+  test: { serial_no: number; name: string; description?: string } | null;
 }
 
 type ViewMode = 'table' | 'chart';
@@ -69,7 +69,7 @@ const STATUS_ROW: Record<string, string> = {
 // ══════════════════════════════════════════════════════════════════════════════
 // MAIN COMPONENT
 // ══════════════════════════════════════════════════════════════════════════════
-const TestReport: React.FC<Props> = ({ moduleTestId, onBack }) => {
+const TestReport: React.FC<Props> = ({ module_test_id, onBack }) => {
   useInjectStyle();
 
   const { theme } = useTheme();
@@ -95,17 +95,17 @@ const TestReport: React.FC<Props> = ({ moduleTestId, onBack }) => {
 
     const [{ data: metaData, error: metaErr }, { data: srData, error: srErr }] = await Promise.all([
       supabase
-        .from('moduletests')
-        .select('modulename, testsname, test:tests!testsname(serialno, name, description)')
-        .eq('id', moduleTestId)
+        .from('module_tests')
+        .select('module_name, testsname, test:tests!testsname(serial_no, name, description)')
+        .eq('id', module_test_id)
         .single(),
       supabase
-        .from('stepresults')
+        .from('step_results')
         .select(`
           id, status, imageurl, note,
-          step:teststeps!teststepsid(id, serialno, action, expectedresult, isdivider, testsname)
+          step:test_steps!test_stepsid(id, serial_no, action, expected_result, is_divider, testsname)
         `)
-        .eq('moduletestid', moduleTestId)
+        .eq('module_test_id', module_test_id)
         .order('id'),
     ]);
 
@@ -116,12 +116,12 @@ const TestReport: React.FC<Props> = ({ moduleTestId, onBack }) => {
     setResults((srData ?? []) as unknown as StepResultRow[]);
     setError(null);
     setLoading(false);
-  }, [moduleTestId]);
+  }, [module_test_id]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
   // ── Derived stats ─────────────────────────────────────────────────────────
-  const real = useMemo(() => results.filter(r => !r.step?.isdivider), [results]);
+  const real = useMemo(() => results.filter(r => !r.step?.is_divider), [results]);
 
   const stats = useMemo(() => {
     const pass    = real.filter(r => r.status === 'pass').length;
@@ -147,16 +147,16 @@ const TestReport: React.FC<Props> = ({ moduleTestId, onBack }) => {
   // ── Build FlatData for export ─────────────────────────────────────────────
   const toFlatData = (): FlatData[] =>
     results
-      .filter(r => !r.step?.isdivider)
+      .filter(r => !r.step?.is_divider)
       .map(r => ({
-        module:   meta?.modulename ?? '',
+        module:   meta?.module_name ?? '',
         test:     meta?.test?.name ?? meta?.testsname ?? '',
-        serial:   r.step?.serialno ?? 0,
+        serial:   r.step?.serial_no ?? 0,
         action:   r.step?.action ?? '',
-        expected: r.step?.expectedresult ?? '',
+        expected: r.step?.expected_result ?? '',
         remarks:  r.note ?? '',
         status:   r.status,
-        isDivider: false,
+        is_divider: false,
       }));
 
   // ── Loading / error ───────────────────────────────────────────────────────
@@ -183,7 +183,7 @@ const TestReport: React.FC<Props> = ({ moduleTestId, onBack }) => {
     <div className="flex-1 flex flex-col">
       <Topbar
         title={meta.test?.name ?? meta.testsname}
-        subtitle={`${meta.modulename} · ${stats.total} steps`}
+        subtitle={`${meta.module_name} · ${stats.total} steps`}
         onBack={onBack}
         actions={
           <div className="flex items-center gap-2">
@@ -252,7 +252,7 @@ const TestReport: React.FC<Props> = ({ moduleTestId, onBack }) => {
               <div className="text-center text-t-muted py-12">No steps recorded for this test.</div>
             )}
             {results.map((r, idx) => {
-              if (r.step?.isdivider) return (
+              if (r.step?.is_divider) return (
                 <div key={r.id}
                   className="flex items-center gap-3 px-4 py-2 rounded-lg bg-bg-surface border border-[var(--border-color)]"
                   style={{ animation: `fadeSlideInRow 0.25s cubic-bezier(0.22,1,0.36,1) both`, animationDelay: `${idx * 30}ms` }}>
@@ -275,11 +275,11 @@ const TestReport: React.FC<Props> = ({ moduleTestId, onBack }) => {
                     <span className="shrink-0 mt-0.5">{STATUS_ICON[r.status]}</span>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 flex-wrap">
-                        <span className="font-mono text-[11px] text-c-brand font-bold">{r.step?.serialno}</span>
+                        <span className="font-mono text-[11px] text-c-brand font-bold">{r.step?.serial_no}</span>
                         <span className="text-sm text-t-primary truncate">{r.step?.action}</span>
                       </div>
-                      {!isExpanded && r.step?.expectedresult && (
-                        <p className="text-xs text-t-muted mt-0.5 truncate">{r.step.expectedresult}</p>
+                      {!isExpanded && r.step?.expected_result && (
+                        <p className="text-xs text-t-muted mt-0.5 truncate">{r.step.expected_result}</p>
                       )}
                     </div>
                     <span className="shrink-0 text-t-muted mt-1">
@@ -289,7 +289,7 @@ const TestReport: React.FC<Props> = ({ moduleTestId, onBack }) => {
 
                   {isExpanded && (
                     <div className="mt-3 pl-7 flex flex-col gap-2 text-xs text-t-muted border-t border-[var(--border-color)] pt-3">
-                      <div><span className="font-semibold text-t-primary">Expected: </span>{r.step?.expectedresult}</div>
+                      <div><span className="font-semibold text-t-primary">Expected: </span>{r.step?.expected_result}</div>
                       {r.note     && <div><span className="font-semibold text-t-primary">Note: </span>{r.note}</div>}
                       {r.imageurl && (
                         <img src={r.imageurl} alt="Step evidence"
