@@ -9,7 +9,7 @@ import {supabase} from "../../supabase";
 
 export interface RawModuleTest {
   id: string;
-  testsname: string;
+  tests_name: string;
   test: { serial_no: number; name: string; description?: string } | null;
 }
 
@@ -41,7 +41,7 @@ export interface RawStep {
   action_image_urls: string[];
   expected_image_urls: string[];
   is_divider: boolean;
-  testsname: string;
+  tests_name: string;
 }
 
 export interface ModuleDashboardData {
@@ -60,7 +60,7 @@ export async function fetchModuleDashboard(
   const [mtRes, srRes, locksRes] = await Promise.all([
     supabase
       .from("module_tests")
-      .select('id, testsname, test:tests!module_tests_tests_name_fkey(serial_no, name, description)')
+      .select('id, tests_name, test:tests!module_tests_tests_name_fkey(serial_no, name, description)')
       .eq("module_name", module_name)
       .order("id"),
     supabase
@@ -76,7 +76,7 @@ export async function fetchModuleDashboard(
   const rawMts   = (mtRes.data ?? []) as unknown as RawModuleTest[];
   const rawSrs   = (srRes.data ?? []) as RawStepResultMD[];
 
-  const test_names = Array.from(new Set(rawMts.map(m => m.testsname)));
+  const test_names = Array.from(new Set(rawMts.map(m => m.tests_name)));
   const testsMap: Record<string, RawTest> = {};
   if (test_names.length > 0) {
     const testsRes = await supabase.rpc("gettestsbynames", { p_names: test_names });
@@ -215,13 +215,13 @@ export async function resetAllModulestep_results(params: {
 
 // ─── fetchExportStepData ──────────────────────────────────────────────────────
 export async function fetchExportStepData(module_name: string): Promise<{
-  steps:   { id: string; serial_no: number; action: string; expected_result: string; is_divider: boolean; testsname: string }[];
+  steps:   { id: string; serial_no: number; action: string; expected_result: string; is_divider: boolean; tests_name: string }[];
   results: { test_stepsid: string; status: string; remarks: string }[];
 }> {
   const [stepsRes, resultsRes] = await Promise.all([
     supabase
       .from("test_steps")
-      .select("id, serial_no, action, expected_result, is_divider, testsname")
+      .select("id, serial_no, action, expected_result, is_divider, tests_name")
       .eq("module_name", module_name)
       .order("serial_no"),
     supabase
