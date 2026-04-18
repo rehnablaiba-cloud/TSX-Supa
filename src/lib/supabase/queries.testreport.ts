@@ -1,84 +1,97 @@
-/**
- * queries.testreport.ts
- * All supabase data calls extracted from TestReport.tsx
- */
-import {supabase} from "../../supabase";
+// src/lib/supabase/queries.testreport.ts
+import { supabase } from "../../supabase";
 
-export interface ReportModule {
-  name:        string;
-  description: string | null;
-}
+// ─────────────────────────────────────────────────────────────────────────────
+// Types
+// ─────────────────────────────────────────────────────────────────────────────
 
-export interface ReportStep {
-  id:             string;
-  serial_no:       number;
-  testsname:      string;
-  module_name:     string;
-  action:         string;
-  expected_result: string;
-  is_divider:      boolean;
+export interface ReportMeta {
+  module_name: string;
+  tests_name: string;
+  test: { serial_no: number; name: string; description?: string } | null;
 }
 
 export interface ReportStepResult {
-  test_stepsid: string;
-  module_name:  string;
-  status:      string;
-  remarks:     string;
-  display_name: string | null;
+  id: string;
+  status: "pass" | "fail" | "pending";
+  remarks: string;
+  display_name: string;
+  step: {
+    id: string;
+    serial_no: number;
+    action: string;
+    expected_result: string;
+    is_divider: boolean;
+    tests_name: string;
+  } | null;
 }
 
 export interface TestReportData {
-  modules:     ReportModule[];
-  steps:       ReportStep[];
-  step_results: ReportStepResult[];
+  meta: ReportMeta;
+  results: ReportStepResult[];
 }
 
-/**
- * Fetches all data needed to build the full test report in one parallel call.
- * Replaces the three inline supabase calls inside TestReport's load effect.
- */
-export async function fetchTestReportData(): Promise<TestReportData> {
-  const [modulesRes, stepsRes, resultsRes] = await Promise.all([
-    supabase
-      .from("modules")
-      .select("name, description")
-      .order("name"),
+// ─────────────────────────────────────────────────────────────────────────────
+// fetchTestReportData
+// ─────────────────────────────────────────────────────────────────────────────
 
-    supabase
-      .from("test_steps")
-      .select("id, serial_no, testsname, module_name, action, expected_result, is_divider")
-      .order("serial_no", { ascending: true }),
+export async function fetchTestReportData(
+  module_test_id: string
+): Promise<TestReportData> {
+  // 1. Fetch meta for this specific module_test
+  const { data: metaData, error: metaErr } = await supabase
+    .from("module_tests")
+    .select(
+      "module_name, tests_name, test:tests!module_tests_tests_name_fkey(serial_no, name, description)"
+    )
+    .eq("id", module_test_id)
+    .single();
 
-    supabase
-      .from("step_results")
-      .select("test_stepsid, module_name, status, remarks, display_name"),
-  ]);
+  if (metaErr) throw new Error(metaErr.message);
+  const meta = metaData as unknown as ReportMeta;
 
-  if (modulesRes.error) throw new Error(modulesRes.error.message);
-  if (stepsRes.error)   throw new Error(stepsRes.error.message);
-  if (resultsRes.error) throw new Error(resultsRes.error.message);
+  // 2. Fetch step results scoped to this module
+  const { data: srData, error: srErr } = await supabase
+    .from("step_results")
+    .select(
+      `
+      id, status, remarks, display_name,
+      step:test_steps!step_results_test_steps_id_fkey(
+        id, serial_no, action, expected_result, is_divider, tests_name
+      )
+    `
+    )
+    .eq("module_name", meta.module_name)
+    .order("id");
+
+  if (srErr) throw new Error(srErr.message);
 
   return {
-    modules:     (modulesRes.data  ?? []) as ReportModule[],
-    steps:       (stepsRes.data    ?? []) as ReportStep[],
-    step_results: (resultsRes.data  ?? []) as ReportStepResult[],
+    meta,
+    results: (srData ?? []) as unknown as ReportStepResult[],
   };
 }
 
-/**
- * Lightweight re-fetch of step results only — used when a realtime
- * update fires on the step_results table (avoids re-fetching modules/steps).
- */
-export async function fetchReportstep_results(
-  module_name?: string
+// ─────────────────────────────────────────────────────────────────────────────
+// fetchReportStepResults  (realtime re-fetch, results only)
+// ─────────────────────────────────────────────────────────────────────────────
+
+export async function fetchReportStepResults(
+  module_name: string
 ): Promise<ReportStepResult[]> {
-  let query = supabase
+  const { data, error } = await supabase
     .from("step_results")
-    .select("test_stepsid, module_name, status, remarks, display_name");
+    .select(
+      `
+      id, status, remarks, display_name,
+      step:test_steps!step_results_test_steps_id_fkey(
+        id, serial_no, action, expected_result, is_divider, tests_name
+      )
+    `
+    )
+    .eq("module_name", module_name)
+    .order("id");
 
-  if (module_name) query = query.eq("module_name", module_name);
-
-  const { data, error } = await query;
   if (error) throw new Error(error.message);
-  return (data ?? []) as ReportStepResult[];
+  return (data ?? []) as unknown as ReportStepResult[];
 }
