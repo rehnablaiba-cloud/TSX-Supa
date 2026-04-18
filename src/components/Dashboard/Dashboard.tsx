@@ -6,7 +6,6 @@ import React, {
   useState,
   useCallback,
   useMemo,
-  useContext,
 } from "react";
 import gsap from "gsap";
 import ExportModal from "../UI/ExportModal";
@@ -29,6 +28,7 @@ import {
 import type { ModuleSummary } from "../../utils/export";
 import { getModuleStats, buildSummaries } from "../../utils/stats";
 import { getChartTheme } from "../../utils/chartTheme";
+import { useTheme } from "../../context/ThemeContext";
 import type { ActiveLock } from "../../types";
 import {
   fetchDashboardModules,
@@ -37,7 +37,6 @@ import {
 import type { DashboardModule } from "../../lib/supabase/queries.dashboard";
 import RBarChart from "../ModuleDashboard/charts/RBarChart";
 import RPieChart from "../ModuleDashboard/charts/RPieChart";
-import { ThemeContext } from "../../context/ThemeContext";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Props
@@ -52,7 +51,7 @@ interface Props {
 // ══════════════════════════════════════════════════════════════════════════════
 
 const Dashboard: React.FC<Props> = ({ onNavigate }) => {
-  const { theme } = useContext(ThemeContext);
+  const { theme } = useTheme();
 
   const [showExportModal, setShowExportModal] = useState(false);
   const [modules, setModules] = useState<DashboardModule[]>([]);
@@ -169,20 +168,36 @@ const Dashboard: React.FC<Props> = ({ onNavigate }) => {
     () =>
       summaries.map((s) => ({
         name: s.name,
-        Pass: s.pass,
-        Fail: s.fail,
-        Pending: s.pending,
+        pass: s.pass,
+        fail: s.fail,
+        pending: s.pending,
       })),
     [summaries]
   );
 
   const pieData = useMemo(
     () => [
-      { name: "Pass", value: globalStats[1].value },
-      { name: "Fail", value: globalStats[2].value },
+      {
+        name: "Pass",
+        value: globalStats[1].value,
+        pass: globalStats[1].value,
+        fail: 0,
+        pending: 0,
+      },
+      {
+        name: "Fail",
+        value: globalStats[2].value,
+        pass: 0,
+        fail: globalStats[2].value,
+        pending: 0,
+      },
       {
         name: "Pending",
         value:
+          globalStats[0].value - globalStats[1].value - globalStats[2].value,
+        pass: 0,
+        fail: 0,
+        pending:
           globalStats[0].value - globalStats[1].value - globalStats[2].value,
       },
     ],
@@ -272,7 +287,7 @@ const Dashboard: React.FC<Props> = ({ onNavigate }) => {
             </p>
             <RBarChart
               data={barData}
-              keys={["Pass", "Fail", "Pending"]}
+              keys={["pass", "fail", "pending"]}
               colors={["#22c55e", "#ef4444", "#94a3b8"]}
               theme={chartTheme}
               height={220}
