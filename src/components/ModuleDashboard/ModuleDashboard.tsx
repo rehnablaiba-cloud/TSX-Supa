@@ -65,12 +65,12 @@ interface Props {
 interface TrimmedStepResult {
   id: string;
   status: 'pass' | 'fail' | 'pending';
-  step: { id: string; is_divider: boolean; testsname: string } | null;
+  step: { id: string; is_divider: boolean; tests_name: string } | null;
 }
 
 interface ModuleTestRow {
   id: string;
-  testsname: string;
+  tests_name: string;
   test: { serial_no: number; name: string; description?: string };
   step_results: TrimmedStepResult[];
 }
@@ -123,15 +123,15 @@ const ModuleDashboard: React.FC<Props> = ({ module_name, onBack, onExecute }) =>
     const { data, error: err } = await supabase
       .from('module_tests')
       .select(`
-        id, testsname,
-        test:tests!testsname ( serial_no, name, description ),
-        step_results:step_results!module_test_id (
+        id, tests_name,
+        test:tests!module_tests_tests_name_fkey ( serial_no, name, description ),
+        step_results:step_results!step_results_module_name_fkey (
           id, status,
-          step:test_steps!test_stepsid ( id, is_divider, testsname )
+          step:test_steps!step_results_test_steps_id_fkey ( id, is_divider, tests_name )
         )
       `)
       .eq('module_name', module_name)
-      .order('testsname');
+      .order('tests_name');
 
     if (!mountedRef.current) return;
     if (err) { setError(err.message); setLoading(false); return; }
@@ -156,7 +156,7 @@ const ModuleDashboard: React.FC<Props> = ({ module_name, onBack, onExecute }) =>
     module_tests.map(mt => {
       const real = mt.step_results.filter(sr => !sr.step?.is_divider);
       return {
-        name:    mt.test?.name ?? mt.testsname,
+        name:    mt.test?.name ?? mt.tests_name,
         pass:    real.filter(sr => sr.status === 'pass').length,
         fail:    real.filter(sr => sr.status === 'fail').length,
         pending: real.filter(sr => sr.status === 'pending').length,
@@ -192,7 +192,7 @@ const ModuleDashboard: React.FC<Props> = ({ module_name, onBack, onExecute }) =>
         .filter(sr => !sr.step?.is_divider)
         .map(sr => ({
           module:   module_name,
-          test:     mt.test?.name ?? mt.testsname,
+          test:     mt.test?.name ?? mt.tests_name,
           serial:   0,
           action:   '',
           expected: '',
@@ -304,7 +304,7 @@ const ModuleDashboard: React.FC<Props> = ({ module_name, onBack, onExecute }) =>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 flex-wrap">
                         <span className="font-mono text-xs text-c-brand font-bold">{mt.test?.serial_no}</span>
-                        <h3 className="font-semibold text-t-primary text-sm truncate">{mt.test?.name ?? mt.testsname}</h3>
+                        <h3 className="font-semibold text-t-primary text-sm truncate">{mt.test?.name ?? mt.tests_name}</h3>
                       </div>
 
                       {/* Description */}
