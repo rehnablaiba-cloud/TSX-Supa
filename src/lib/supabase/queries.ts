@@ -106,5 +106,4 @@ export * from './queries.testexecution';
 // ── Re-exports from sub-query files ──────────────────────────────────────────
 export * from './queries.mobilenav';
 export * from './queries.moduledashboard';
-export * from './queries.dashboard';
 export * from './queries.testreport';

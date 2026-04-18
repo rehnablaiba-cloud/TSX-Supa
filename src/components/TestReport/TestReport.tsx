@@ -11,20 +11,20 @@
 //   2.1-C1  getChartTheme                        → utils/chartTheme
 
 import React, { useEffect, useRef, useState, useMemo, useCallback } from 'react';
-import supabase from '../../../supabase';
+import supabase from '../../supabase';
 import Spinner from '../UI/Spinner';
 import Topbar from '../Layout/Topbar';
-import useTheme from '../../../context/ThemeContext';
+import useTheme from '../context/ThemeContext';
 import {
   FileSpreadsheet, FileText, ChevronDown, ChevronUp,
   CheckCircle2, XCircle, Clock, BarChart2, TableIcon,
 } from 'lucide-react';
-import { exportTestReportCSV, exportTestReportPDF } from '../../../utils/export';
+import { exportTestReportCSV, exportTestReportPDF } from '../../utils/export';
 
 // ── Phase 2.1 shared imports ──────────────────────────────────────────────────
-import { useInjectStyle }  from '../../../utils/animation';
+import { useInjectStyle }  from '../../utils/animation';
 import FadeWrapper         from '../UI/FadeWrapper';
-import { getChartTheme }   from '../../../utils/chartTheme';
+import { getChartTheme }   from '../../utils/chartTheme';
 import SegmentedBar        from '../UI/SegmentedBar';
 import {
   RBarChart,

@@ -6,15 +6,15 @@
 //   → imported from ./charts/types or ./charts
 
 import React, { useEffect, useRef, useState, useMemo, useCallback } from 'react';
-import supabase from '../../../supabase';
+import supabase from '../../supabase';
 import Spinner from '../UI/Spinner';
 import Topbar from '../Layout/Topbar';
-import useAuth from '../../../context/AuthContext';
-import useTheme from '../../../context/ThemeContext';
-import useToast from '../../../context/ToastContext';
-import useAuditLog from '../../../hooks/useAuditLog';
+import useAuth from '../context/AuthContext';
+import useTheme from '../context/ThemeContext';
+import useToast from '../context/ToastContext';
+import useAuditLog from '../hooks/useAuditLog';
 import { Lock, Pencil, Play, Download, FileSpreadsheet, FileText, X } from 'lucide-react';
-import { exportModuleDetailCSV, exportModuleDetailPDF, FlatData } from '../../../utils/export';
+import { exportModuleDetailCSV, exportModuleDetailPDF, FlatData } from '../../utils/export';
 
 import {
   RBarChart,

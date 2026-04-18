@@ -10,9 +10,9 @@
 //   fetchTestsForModule         → imported from lib/supabase/queries
 
 import React, { useRef, useEffect, useState, useCallback } from 'react';
-import useAuth from '../../../context/AuthContext';
-import useTheme from '../../../context/ThemeContext';
-import supabase from '../../../supabase';
+import useAuth from '../context/AuthContext';
+import useTheme from '../context/ThemeContext';
+import supabase from '../../supabase';
 import ThemeEditor from '../ThemeEditor/ThemeEditorPanel';
 import {
   BarChart2, FileJson, Table2, Database,

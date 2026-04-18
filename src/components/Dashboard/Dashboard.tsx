@@ -1,23 +1,19 @@
-// src/components/Dashboard/Dashboard.tsx
-// Phase 2.1 applied:
-//   2.1-B1  SegmentedBar       → imported from UI/SegmentedBar
-//   2.1-B2  LockWarningBanner  → imported from UI/LockWarningBanner
-//   2.1-B3  SkeletonCard       → imported from UI/SkeletonCard
+
 
 import React, {
   useEffect, useLayoutEffect, useRef,
   useState, useCallback, useMemo,
 } from 'react';
-import supabase from '../../../supabase';
+import supabase from '../../supabase';
 import gsap from 'gsap';
 import ExportModal from '../UI/ExportModal';
 import SegmentedBar       from '../UI/SegmentedBar';
 import LockWarningBanner  from '../UI/LockWarningBanner';
 import SkeletonCard        from '../UI/SkeletonCard';
 import { Upload, FileText, FileDown, FileSpreadsheet, Lock } from 'lucide-react';
-import { exportDashboardCSV, exportDashboardPDF, exportDashboardDocx, ModuleSummary } from '../../../utils/export';
-import { getModuleStats, buildSummaries } from '../../../utils/stats';
-import type { ActiveLock } from '../../../types';
+import { exportDashboardCSV, exportDashboardPDF, exportDashboardDocx, ModuleSummary } from '../../utils/export';
+import { getModuleStats, buildSummaries } from '../../utils/stats';
+import type { ActiveLock } from '../../types';
 
 interface Props {
   onNavigate: (page: string, moduleName?: string) => void;
