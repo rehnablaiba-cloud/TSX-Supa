@@ -34,12 +34,12 @@ interface StepResultRow {
   id:     string;
   status: 'pass' | 'fail' | 'pending';
   step: {
-    id:             string;
+    id:              string;
     serial_no:       number;
-    action:         string;
+    action:          string;
     expected_result: string;
     is_divider:      boolean;
-    testsname:      string;
+    tests_name:      string;
   } | null;
   imageurl: string | null;
   note:     string | null;
@@ -47,7 +47,7 @@ interface StepResultRow {
 
 interface ModuleTestMeta {
   module_name: string;
-  testsname:  string;
+  tests_name:  string;
   test: { serial_no: number; name: string; description?: string } | null;
 }
 
@@ -93,26 +93,30 @@ const TestReport: React.FC<Props> = ({ module_test_id, onBack }) => {
   const fetchData = useCallback(async () => {
     setLoading(true);
 
-    const [{ data: metaData, error: metaErr }, { data: srData, error: srErr }] = await Promise.all([
-      supabase
-        .from('module_tests')
-        .select('module_name, testsname, test:tests!testsname(serial_no, name, description)')
-        .eq('id', module_test_id)
-        .single(),
-      supabase
-        .from('step_results')
-        .select(`
-          id, status, imageurl, note,
-          step:test_steps!test_stepsid(id, serial_no, action, expected_result, is_divider, testsname)
-        `)
-        .eq('module_test_id', module_test_id)
-        .order('id'),
-    ]);
+    const { data: metaData, error: metaErr } = await supabase
+      .from('module_tests')
+      .select('module_name, tests_name, test:tests!module_tests_tests_name_fkey(serial_no, name, description)')
+      .eq('id', module_test_id)
+      .single();
 
     if (!mountedRef.current) return;
-    if (metaErr || srErr) { setError((metaErr || srErr)!.message); setLoading(false); return; }
+    if (metaErr) { setError(metaErr.message); setLoading(false); return; }
 
-    setMeta(metaData as unknown as ModuleTestMeta);
+    const metaResult = metaData as unknown as ModuleTestMeta;
+
+    const { data: srData, error: srErr } = await supabase
+      .from('step_results')
+      .select(`
+        id, status, imageurl, note,
+        step:test_steps!step_results_test_steps_id_fkey(id, serial_no, action, expected_result, is_divider, tests_name)
+      `)
+      .eq('module_name', metaResult.module_name)
+      .order('id');
+
+    if (!mountedRef.current) return;
+    if (srErr) { setError(srErr.message); setLoading(false); return; }
+
+    setMeta(metaResult);
     setResults((srData ?? []) as unknown as StepResultRow[]);
     setError(null);
     setLoading(false);
@@ -130,15 +134,15 @@ const TestReport: React.FC<Props> = ({ module_test_id, onBack }) => {
     const total   = real.length;
     return {
       pass, fail, pending, total,
-      passRate: total > 0 ? Math.round((pass / total) * 100) : 0,
-      failPct:  total > 0 ? Math.round((fail / total) * 100) : 0,
+      passRate:   total > 0 ? Math.round((pass / total) * 100) : 0,
+      failPct:    total > 0 ? Math.round((fail / total) * 100) : 0,
       pendingPct: total > 0 ? 100 - Math.round((pass / total) * 100) - Math.round((fail / total) * 100) : 0,
     };
   }, [real]);
 
   // ── Chart data ────────────────────────────────────────────────────────────
   const chartData = useMemo<ChartRow[]>(() => [{
-    name:    meta?.test?.name ?? meta?.testsname ?? 'Test',
+    name:    meta?.test?.name ?? meta?.tests_name ?? 'Test',
     pass:    stats.pass,
     fail:    stats.fail,
     pending: stats.pending,
@@ -149,13 +153,13 @@ const TestReport: React.FC<Props> = ({ module_test_id, onBack }) => {
     results
       .filter(r => !r.step?.is_divider)
       .map(r => ({
-        module:   meta?.module_name ?? '',
-        test:     meta?.test?.name ?? meta?.testsname ?? '',
-        serial:   r.step?.serial_no ?? 0,
-        action:   r.step?.action ?? '',
-        expected: r.step?.expected_result ?? '',
-        remarks:  r.note ?? '',
-        status:   r.status,
+        module:    meta?.module_name ?? '',
+        test:      meta?.test?.name ?? meta?.tests_name ?? '',
+        serial:    r.step?.serial_no ?? 0,
+        action:    r.step?.action ?? '',
+        expected:  r.step?.expected_result ?? '',
+        remarks:   r.note ?? '',
+        status:    r.status,
         is_divider: false,
       }));
 
@@ -182,7 +186,7 @@ const TestReport: React.FC<Props> = ({ module_test_id, onBack }) => {
   return (
     <div className="flex-1 flex flex-col">
       <Topbar
-        title={meta.test?.name ?? meta.testsname}
+        title={meta.test?.name ?? meta.tests_name}
         subtitle={`${meta.module_name} · ${stats.total} steps`}
         onBack={onBack}
         actions={
