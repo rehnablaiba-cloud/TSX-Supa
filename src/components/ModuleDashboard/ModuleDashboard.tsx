@@ -118,27 +118,43 @@ const ModuleDashboard: React.FC<Props> = ({ module_name, onBack, onExecute }) =>
   }, [theme]);
 
   // ── Fetch ─────────────────────────────────────────────────────────────────
-  const fetchData = useCallback(async () => {
-    setLoading(true);
-    const { data, error: err } = await supabase
-      .from('module_tests')
-      .select(`
-        id, tests_name,
-        test:tests!module_tests_tests_name_fkey ( serial_no, name, description ),
-        step_results:step_results!step_results_module_name_fkey (
-          id, status,
-          step:test_steps!step_results_test_steps_id_fkey ( id, is_divider, tests_name )
-        )
-      `)
-      .eq('module_name', module_name)
-      .order('tests_name');
+  // ── Fetch ─────────────────────────────────────────────────────────────────
+const fetchData = useCallback(async () => {
+  setLoading(true);
 
-    if (!mountedRef.current) return;
-    if (err) { setError(err.message); setLoading(false); return; }
-    setmodule_tests((data ?? []) as unknown as ModuleTestRow[]);
-    setError(null);
-    setLoading(false);
-  }, [module_name]);
+  const [mtRes, srRes] = await Promise.all([
+    supabase
+      .from('module_tests')
+      .select('id, tests_name, test:tests!module_tests_tests_name_fkey(serial_no, name, description)')
+      .eq('module_name', module_name)
+      .order('tests_name'),
+    supabase
+      .from('step_results')
+      .select('id, status, test_steps_id, step:test_steps!step_results_test_steps_id_fkey(id, is_divider, tests_name)')
+      .eq('module_name', module_name),
+  ]);
+
+  if (!mountedRef.current) return;
+  if (mtRes.error) { setError(mtRes.error.message); setLoading(false); return; }
+  if (srRes.error) { setError(srRes.error.message); setLoading(false); return; }
+
+  const srByTestsName = (srRes.data ?? []).reduce((acc: any, sr: any) => {
+    const key = sr.step?.tests_name;
+    if (!key) return acc;
+    if (!acc[key]) acc[key] = [];
+    acc[key].push(sr);
+    return acc;
+  }, {});
+
+  const joined = (mtRes.data ?? []).map((mt: any) => ({
+    ...mt,
+    step_results: srByTestsName[mt.tests_name] ?? [],
+  }));
+
+  setmodule_tests(joined as ModuleTestRow[]);
+  setError(null);
+  setLoading(false);
+}, [module_name]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
