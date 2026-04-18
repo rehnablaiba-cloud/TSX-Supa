@@ -1,101 +1,69 @@
 // src/utils/csvParser.ts
-// Phase 2 — B4: RFC-4180 CSV parser + step CSV validator.
-// Extracted from MobileNav.tsx (~65 lines of pure text-processing logic).
-// Zero UI dependency — fully unit-testable independently.
-
+// Phase 2 B4: CSV parsing utilities extracted from MobileNav.tsx
 import type { StepInput } from '../types';
 
-// ── RFC-4180 compliant CSV parser ─────────────────────────────────────────────
-// Handles: quoted fields, embedded commas, embedded newlines (Alt+Enter),
-//          escaped double-quotes ("").
-export function parseCsvToRecords(text: string): string[][] {
-  const records: string[][] = [];
-  let row: string[] = [];
-  let cell = '';
-  let inQuote = false;
-  const src = text.replace(/
-/g, '
-').replace(//g, '
-');
-
-  for (let i = 0; i < src.length; i++) {
-    const ch = src[i];
-    if (inQuote) {
-      if (ch === '"') {
-        // Escaped quote ("")  →  literal "
-        if (src[i + 1] === '"') { cell += '"'; i++; }
-        else { inQuote = false; }
-      } else {
-        cell += ch; // embedded newline preserved as-is
-      }
-    } else {
-      if      (ch === '"')  { inQuote = true; }
-      else if (ch === ',')  { row.push(cell); cell = ''; }
-      else if (ch === '
-') {
-        row.push(cell); cell = '';
-        // skip completely blank lines
-        if (row.some(c => c !== '')) records.push(row);
-        row = [];
-      } else {
-        cell += ch;
-      }
-    }
+/**
+ * Parse a generic CSV string into an array of objects.
+ * First row is treated as headers.
+ */
+export function parseCsvToRecords(
+  text: string,
+  sep = ','
+): { rows: Record<string, string>[]; errors: string[] } {
+  const lines  = text.trim().split(/\r?\n/);
+  const errors: string[] = [];
+  if (lines.length < 2) {
+    return { rows: [], errors: ['CSV must have a header row and at least one data row.'] };
   }
-  // flush last cell / row
-  row.push(cell);
-  if (row.some(c => c !== '')) records.push(row);
-  return records;
+  const headers = lines[0].split(sep).map(h => h.trim().replace(/^"|"$/g, ''));
+  const rows: Record<string, string>[] = [];
+
+  for (let i = 1; i < lines.length; i++) {
+    const cols = lines[i].split(sep).map(c => c.trim().replace(/^"|"$/g, ''));
+    if (cols.length !== headers.length) {
+      errors.push(`Row ${i + 1}: expected ${headers.length} columns, got ${cols.length}`);
+      continue;
+    }
+    const obj: Record<string, string> = {};
+    headers.forEach((h, idx) => { obj[h] = cols[idx]; });
+    rows.push(obj);
+  }
+  return { rows, errors };
 }
 
-// ── Step CSV validator ────────────────────────────────────────────────────────
-// Parses a CSV file expected to have columns:
-//   serialno, action, expectedresult, isdivider
-// Returns typed StepInput rows + any validation errors.
+/**
+ * Parse a steps-specific CSV.
+ * Expected headers: serialno, action, expectedresult, isdivider
+ */
 export function parseStepsCsv(
   text: string
 ): { rows: StepInput[]; errors: string[] } {
-  const errors: string[] = [];
+  const { rows: raw, errors } = parseCsvToRecords(text);
+  const required = ['serialno', 'action', 'expectedresult', 'isdivider'];
+
+  if (raw.length > 0) {
+    const missing = required.filter(h => !(h in raw[0]));
+    if (missing.length) {
+      return {
+        rows: [],
+        errors: [`Missing required columns: ${missing.join(', ')}`],
+      };
+    }
+  }
+
   const rows: StepInput[] = [];
-
-  const records = parseCsvToRecords(text);
-  if (records.length < 2) {
-    errors.push('File is empty.');
-    return { rows, errors };
-  }
-
-  const header = records[0].map(h => h.trim().toLowerCase().replace(/\s+/g, ''));
-  const iSn  = header.indexOf('serialno');
-  const iAct = header.indexOf('action');
-  const iRes = header.indexOf('expectedresult');
-  const iDiv = header.indexOf('isdivider');
-
-  const missing = (
-    [iSn  < 0 && 'serialno',
-     iAct < 0 && 'action',
-     iRes < 0 && 'expectedresult',
-     iDiv < 0 && 'isdivider'] as (string | false)[]
-  ).filter(Boolean) as string[];
-
-  if (missing.length) {
-    errors.push(`Missing columns: ${missing.join(', ')}`);
-    return { rows, errors };
-  }
-
-  for (let i = 1; i < records.length; i++) {
-    const cells = records[i];
-    const snVal = parseInt(cells[iSn]?.trim() ?? '', 10);
-    if (isNaN(snVal) || snVal < 1) {
-      errors.push(`Row ${i + 1}: invalid serialno — skipped.`);
+  for (const r of raw) {
+    const sn = parseFloat(r['serialno']);
+    if (isNaN(sn)) {
+      errors.push(`Invalid serialno: "${r['serialno']}"`);
       continue;
     }
     rows.push({
-      serialno:       snVal,
-      action:         cells[iAct] ?? '',
-      expectedresult: cells[iRes] ?? '',
-      isdivider:      /^(true|1|yes)$/i.test(cells[iDiv]?.trim() ?? ''),
+      serialno:       sn,
+      action:         r['action']         ?? '',
+      expectedresult: r['expectedresult'] ?? '',
+      isdivider:      r['isdivider']?.toLowerCase() === 'true',
     });
   }
-
   return { rows, errors };
 }
