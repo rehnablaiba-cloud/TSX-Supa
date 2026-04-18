@@ -1383,7 +1383,7 @@ const TestExecution: React.FC<Props> = ({
               expected: s.expected_result,
               remarks: "",
               status: "",
-              isDivider: true,
+              is_divider: true,
               dividerLevel: getDividerLevel(s.expected_result),
             }
           : {
@@ -1400,7 +1400,7 @@ const TestExecution: React.FC<Props> = ({
   );
 
   const exportStats = useMemo(() => {
-    const nd = flatData.filter((s) => !s.isDivider);
+    const nd = flatData.filter((s) => !s.is_divider);
     return [
       { label: "Total Steps", value: nd.length },
       { label: "Pass", value: nd.filter((s) => s.status === "pass").length },
