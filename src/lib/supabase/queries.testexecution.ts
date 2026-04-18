@@ -141,7 +141,13 @@ export async function upsertStepResult(payload: {
 }): Promise<void> {
   const { error } = await supabase
     .from("step_results")
-    .upsert(payload, { onConflict: "test_steps_id,module_name" });
+    .update({
+      status: payload.status,
+      remarks: payload.remarks,
+      display_name: payload.display_name,
+    })
+    .eq("test_steps_id", payload.test_steps_id)
+    .eq("module_name", payload.module_name);
   if (error) throw error;
 }
 

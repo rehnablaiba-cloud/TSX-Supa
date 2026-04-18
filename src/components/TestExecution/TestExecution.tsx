@@ -501,7 +501,7 @@ const TestExecution: React.FC<Props> = ({
       try {
         await upsertStepResult({
           test_steps_id: step.stepId,
-          module_name: currentMtId,
+          module_name: module_name,
           status,
           remarks: remarks ?? step.remarks,
           display_name: user?.display_name ?? user?.email ?? "",
