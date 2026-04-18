@@ -41,7 +41,7 @@ export interface ManualStepPayload {
 
 // ─── Export-dump ──────────────────────────────────────────────────────────────
 
-const ALL_TABLES: TableName[] = [
+export const ALL_TABLES: TableName[] = [
   "profiles", "modules", "tests", "teststeps",
   "moduletests", "stepresults", "testlocks", "auditlog",
 ];
