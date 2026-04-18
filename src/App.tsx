@@ -210,7 +210,7 @@ const AppInner: React.FC = () => {
     ? <TestReport module_test_id={selectedTestId} onBack={() => setPage("module")} />
     : <Dashboard onNavigate={navigate} />;
       case "users":    return <UsersPanel />;
-      case "audit_log": return <Audit_log />;
+      case "audit_log": return <AuditLog />;
       default:         return <Dashboard onNavigate={navigate} />;
     }
   };
