@@ -133,7 +133,7 @@ export async function forceReleaseLock(module_test_id: string): Promise<void> {
 // ─────────────────────────────────────────────────────────────────────────────
 
 export async function upsertStepResult(payload: {
-  test_stepsid: string;
+  test_steps_id: string;
   module_name: string;
   status: "pass" | "fail" | "pending";
   remarks: string;
@@ -142,7 +142,7 @@ export async function upsertStepResult(payload: {
 }): Promise<void> {
   const { error } = await supabase
     .from("step_results")
-    .upsert(payload, { onConflict: "test_stepsid,module_name" });
+    .upsert(payload, { onConflict: "test_steps_id,module_name" });
   if (error) throw error;
 }
 
