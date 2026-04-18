@@ -75,7 +75,7 @@ const Dashboard: React.FC<Props> = ({ onNavigate }) => {
         module_tests:module_tests!module_name(id),
         step_results:step_results!module_name(
           status,
-          step:test_steps!test_stepsid(is_divider)  // ← change THIS line only
+          step:test_steps!test_stepsid(is_divider)
         )
       `)
       .order('name');
