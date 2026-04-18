@@ -12,7 +12,7 @@ import ModuleDashboard from "./components/ModuleDashboard/ModuleDashboard";
 import TestExecution from "./components/TestExecution/TestExecution";
 import TestReport from "./components/TestReport/TestReport";
 import UsersPanel from "./components/Users/UsersPanel";
-import audit_log from "./components/auditlog/auditlog";
+import audit_log from "./components/Auditlog/Auditlog";
 import Spinner from "./components/UI/Spinner";
 import { supabase } from "./supabase";
 import { Module } from "./types";
@@ -210,7 +210,7 @@ const AppInner: React.FC = () => {
     ? <TestReport module_test_id={selectedTestId} onBack={() => setPage("module")} />
     : <Dashboard onNavigate={navigate} />;
       case "users":    return <UsersPanel />;
-      case "audit_log": return <audit_log />;
+      case "audit_log": return <Audit_log />;
       default:         return <Dashboard onNavigate={navigate} />;
     }
   };
