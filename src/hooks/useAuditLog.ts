@@ -2,7 +2,7 @@ import { useAuth } from "../context/AuthContext";
 import { insertAuditEvent } from "../lib/supabase/queries.auditlog";
 
 const useAuditLog = () => {
-  const user = useAuth();
+  const { user } = useAuth();
 
   const log = (
     action: string,

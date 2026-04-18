@@ -1,10 +1,4 @@
 // src/components/ModuleDashboard/ModuleDashboard.tsx
-// Phase 2 B6 applied:
-//   RBarChart / RAreaChart / RLineChart / RPieChart / RRadarChart
-//   → imported from ./charts  (each is its own file now)
-//   CustomTooltip / PieTooltip / COLORS / ChartRow / ChartTheme
-//   → imported from ./charts/types or ./charts
-
 import React, { useEffect, useRef, useState, useMemo, useCallback } from 'react';
 import {supabase} from '../../supabase';
 import Spinner from '../UI/Spinner';
@@ -90,7 +84,7 @@ const ModuleDashboard: React.FC<Props> = ({ moduleName, onBack, onExecute }) => 
   const { user }        = useAuth();
   const { theme }       = useTheme();
   const { addToast }    = useToast();
-  const { logEvent }    = useAuditLog();
+  const log             = useAuditLog();
 
   const [moduleTests, setModuleTests] = useState<ModuleTestRow[]>([]);
   const [loading, setLoading]         = useState(true);
@@ -141,7 +135,7 @@ const ModuleDashboard: React.FC<Props> = ({ moduleName, onBack, onExecute }) => 
 
     if (!mountedRef.current) return;
     if (err) { setError(err.message); setLoading(false); return; }
-    setModuleTests((data ?? []) as ModuleTestRow[]);
+    setModuleTests((data ?? []) as unknown as ModuleTestRow[]);
     setError(null);
     setLoading(false);
   }, [moduleName]);
@@ -187,9 +181,25 @@ const ModuleDashboard: React.FC<Props> = ({ moduleName, onBack, onExecute }) => 
     setSavingDesc(false);
     if (e) { addToast('Failed to save description', 'error'); return; }
     setEditingDesc(null);
-    logEvent('update', `Updated description for test in ${moduleName}`, user?.id);
+    log(`Updated description for test in ${moduleName}`);
     fetchData();
   };
+
+  // ── Build export data ─────────────────────────────────────────────────────
+  const buildFlatData = (): FlatData[] =>
+    moduleTests.flatMap(mt =>
+      mt.stepresults
+        .filter(sr => !sr.step?.isdivider)
+        .map(sr => ({
+          module:   moduleName,
+          test:     mt.test?.name ?? mt.testsname,
+          serial:   0,
+          action:   '',
+          expected: '',
+          remarks:  '',
+          status:   sr.status,
+        }))
+    );
 
   // ── Loading / error states ────────────────────────────────────────────────
   if (loading) return (
@@ -210,20 +220,6 @@ const ModuleDashboard: React.FC<Props> = ({ moduleName, onBack, onExecute }) => 
     </div>
   );
 
-  // ── Export helpers ─────────────────────────────────────────────────────────
-  const buildFlatData = (): FlatData[] =>
-    moduleTests.flatMap(mt =>
-      mt.stepresults
-        .filter(sr => !sr.step?.isdivider)
-        .map(sr => ({
-          module:    moduleName,
-          test:      mt.test?.name ?? mt.testsname,
-          serialno:  mt.test?.serialno ?? 0,
-          stepId:    sr.step?.id ?? '',
-          status:    sr.status,
-        }))
-    );
-
   // ── Render ────────────────────────────────────────────────────────────────
   return (
     <div className="flex-1 flex flex-col">
@@ -233,11 +229,11 @@ const ModuleDashboard: React.FC<Props> = ({ moduleName, onBack, onExecute }) => 
         onBack={onBack}
         actions={
           <div className="flex items-center gap-2">
-            <button onClick={() => exportModuleDetailCSV(buildFlatData(), moduleName)}
+            <button onClick={() => exportModuleDetailCSV(buildFlatData())}
               className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg bg-bg-card hover:bg-bg-surface border border-[var(--border-color)] text-t-primary transition">
               <FileSpreadsheet size={13} />CSV
             </button>
-            <button onClick={() => exportModuleDetailPDF(buildFlatData(), moduleName)}
+            <button onClick={() => exportModuleDetailPDF(buildFlatData())}
               className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg bg-bg-card hover:bg-bg-surface border border-[var(--border-color)] text-t-primary transition">
               <FileText size={13} />PDF
             </button>

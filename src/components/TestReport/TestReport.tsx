@@ -1,15 +1,4 @@
 // src/components/TestReport/TestReport.tsx
-// Phase 2.1 applied:
-//   2.1-A1  COLORS / ChartRow / ChartTheme / CHART_TYPES / ChartType → MD/charts/types
-//   2.1-A2  CustomTooltip  → MD/charts/CustomTooltip
-//   2.1-A3  PieTooltip     → MD/charts/PieTooltip
-//   2.1-A4  RBarChart / RLineChart / RRadarChart → MD/charts/
-//   2.1-A5  RAreaChart (unified gradient IDs)   → MD/charts/
-//   2.1-A6  RPieChart  (showLabel=true)          → MD/charts/
-//   2.1-A7  useInjectStyle / FadeWrapper         → utils/animation + UI/FadeWrapper
-//   2.1-B1  SegmentedBar                         → UI/SegmentedBar
-//   2.1-C1  getChartTheme                        → utils/chartTheme
-
 import React, { useEffect, useRef, useState, useMemo, useCallback } from 'react';
 import {supabase} from '../../supabase';
 import Spinner from '../UI/Spinner';
@@ -19,9 +8,8 @@ import {
   FileSpreadsheet, FileText, ChevronDown, ChevronUp,
   CheckCircle2, XCircle, Clock, BarChart2, TableIcon,
 } from 'lucide-react';
-import { exportReportCSV, exportReportPDF } from '../../utils/export';
+import { exportReportCSV, exportReportPDF, FlatData } from '../../utils/export';
 
-// ── Phase 2.1 shared imports ──────────────────────────────────────────────────
 import { useInjectStyle }  from '../../utils/animation';
 import FadeWrapper         from '../UI/FadeWrapper';
 import { getChartTheme }   from '../../utils/chartTheme';
@@ -124,8 +112,8 @@ const TestReport: React.FC<Props> = ({ moduleTestId, onBack }) => {
     if (!mountedRef.current) return;
     if (metaErr || srErr) { setError((metaErr || srErr)!.message); setLoading(false); return; }
 
-    setMeta(metaData as ModuleTestMeta);
-    setResults((srData ?? []) as StepResultRow[]);
+    setMeta(metaData as unknown as ModuleTestMeta);
+    setResults((srData ?? []) as unknown as StepResultRow[]);
     setError(null);
     setLoading(false);
   }, [moduleTestId]);
@@ -148,13 +136,28 @@ const TestReport: React.FC<Props> = ({ moduleTestId, onBack }) => {
     };
   }, [real]);
 
-  // ── Chart data (single row — this is a single test) ───────────────────────
+  // ── Chart data ────────────────────────────────────────────────────────────
   const chartData = useMemo<ChartRow[]>(() => [{
     name:    meta?.test?.name ?? meta?.testsname ?? 'Test',
     pass:    stats.pass,
     fail:    stats.fail,
     pending: stats.pending,
   }], [meta, stats]);
+
+  // ── Build FlatData for export ─────────────────────────────────────────────
+  const toFlatData = (): FlatData[] =>
+    results
+      .filter(r => !r.step?.isdivider)
+      .map(r => ({
+        module:   meta?.modulename ?? '',
+        test:     meta?.test?.name ?? meta?.testsname ?? '',
+        serial:   r.step?.serialno ?? 0,
+        action:   r.step?.action ?? '',
+        expected: r.step?.expectedresult ?? '',
+        remarks:  r.note ?? '',
+        status:   r.status,
+        isDivider: false,
+      }));
 
   // ── Loading / error ───────────────────────────────────────────────────────
   if (loading) return (
@@ -184,11 +187,11 @@ const TestReport: React.FC<Props> = ({ moduleTestId, onBack }) => {
         onBack={onBack}
         actions={
           <div className="flex items-center gap-2">
-            <button onClick={() => exportReportCSV(results, meta)}
+            <button onClick={() => exportReportCSV([], toFlatData())}
               className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg bg-bg-card hover:bg-bg-surface border border-[var(--border-color)] text-t-primary transition">
               <FileSpreadsheet size={13} />CSV
             </button>
-            <button onClick={() => exportReportPDF(results, meta)}
+            <button onClick={() => exportReportPDF([], toFlatData())}
               className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg bg-bg-card hover:bg-bg-surface border border-[var(--border-color)] text-t-primary transition">
               <FileText size={13} />PDF
             </button>
@@ -223,7 +226,6 @@ const TestReport: React.FC<Props> = ({ moduleTestId, onBack }) => {
               {stats.total > 0 ? `${stats.passRate}%` : '—'}
             </span>
           </div>
-          {/* 2.1-B1 — SegmentedBar imported from UI/ */}
           <SegmentedBar
             passRate={stats.passRate}
             failPct={stats.failPct}

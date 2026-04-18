@@ -1,7 +1,6 @@
 /**
  * queries.moduledashboard.ts
  * All supabase data calls extracted from ModuleDashboard.tsx
- * Add / merge these exports into your existing queries.ts
  */
 
 import {supabase} from "../../supabase";
@@ -14,7 +13,7 @@ export interface RawModuleTest {
   test: { serialno: number; name: string; description?: string } | null;
 }
 
-export interface RawStepResult {
+export interface RawStepResultMD {
   id: string;
   modulename: string;
   teststepsid: string;
@@ -47,20 +46,13 @@ export interface RawStep {
 
 export interface ModuleDashboardData {
   moduleTests: RawModuleTest[];
-  stepResults: RawStepResult[];
+  stepResults: RawStepResultMD[];
   locks: RawLock[];
   tests: Record<string, RawTest>;
   steps: Record<string, RawStep>;
 }
 
 // ─── fetchModuleDashboard ─────────────────────────────────────────────────────
-/**
- * Single entry-point that fetches all data needed to render ModuleDashboard
- * for a given module + specific moduleTestId (currentMtId).
- *
- * Replaces the three parallel supabase calls inside load() and two
- * subsequent RPC calls (gettestsbynames, getteststepsbyids).
- */
 export async function fetchModuleDashboard(
   moduleName: string,
   currentMtId: string
@@ -81,10 +73,9 @@ export async function fetchModuleDashboard(
   if (mtRes.error)    throw new Error(mtRes.error.message);
   if (srRes.error)    throw new Error(srRes.error.message);
 
-  const rawMts   = (mtRes.data ?? [])  as RawModuleTest[];
-  const rawSrs   = (srRes.data ?? [])  as RawStepResult[];
+  const rawMts   = (mtRes.data ?? []) as unknown as RawModuleTest[];
+  const rawSrs   = (srRes.data ?? []) as RawStepResultMD[];
 
-  // Resolve test names via RPC
   const testNames = Array.from(new Set(rawMts.map(m => m.testsname)));
   const testsMap: Record<string, RawTest> = {};
   if (testNames.length > 0) {
@@ -94,7 +85,6 @@ export async function fetchModuleDashboard(
     });
   }
 
-  // Resolve step details via RPC
   const stepIds = rawSrs.map(sr => sr.teststepsid);
   const stepsMap: Record<string, RawStep> = {};
   if (stepIds.length > 0) {
@@ -114,10 +104,6 @@ export async function fetchModuleDashboard(
 }
 
 // ─── fetchModuleLocks ─────────────────────────────────────────────────────────
-/**
- * Lightweight re-fetch of just the locks table.
- * Used by the debounced refetchLocks callback (realtime channel trigger).
- */
 export async function fetchModuleLocks(): Promise<RawLock[]> {
   const { data, error } = await supabase
     .from("testlocks")
@@ -127,10 +113,6 @@ export async function fetchModuleLocks(): Promise<RawLock[]> {
 }
 
 // ─── acquireModuleLock ────────────────────────────────────────────────────────
-/**
- * Upsert a lock row for the given moduleTestId + userId.
- * Returns true if this user now owns the lock, false if it's held by someone else.
- */
 export async function acquireModuleLock(
   moduleTestId: string,
   userId: string,
@@ -155,7 +137,7 @@ export async function acquireModuleLock(
     .eq("moduletestid", moduleTestId)
     .single();
 
-  return owned?.userid === userId;
+  return (owned as any)?.userid === userId;
 }
 
 // ─── releaseModuleLock ────────────────────────────────────────────────────────
@@ -232,10 +214,6 @@ export async function resetAllModuleStepResults(params: {
 }
 
 // ─── fetchExportStepData ──────────────────────────────────────────────────────
-/**
- * Used by the ExportModal inside ModuleDashboard to build FlatData for CSV/PDF.
- * Replaces the two inline supabase calls in fetchAndExport().
- */
 export async function fetchExportStepData(moduleName: string): Promise<{
   steps:   { id: string; serialno: number; action: string; expectedresult: string; isdivider: boolean; testsname: string }[];
   results: { teststepsid: string; status: string; remarks: string }[];
@@ -262,11 +240,6 @@ export async function fetchExportStepData(moduleName: string): Promise<{
 }
 
 // ─── fetchModuleSignedUrls ────────────────────────────────────────────────────
-/**
- * Batch-sign storage paths from the "teststeps" bucket.
- * Identical to fetchSignedUrls in queries.ts but namespaced clearly.
- * You may de-duplicate by pointing this to the same shared helper.
- */
 export async function fetchModuleSignedUrls(
   paths: string[]
 ): Promise<Record<string, string>> {

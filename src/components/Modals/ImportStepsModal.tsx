@@ -15,8 +15,7 @@ import {
 import type { TestOption, StepCsvRow, StepImportSummary, StepImportStage, StepOp } from "./shared/types";
 
 // ─────────────────────────────────────────────────────────────────────────────
-// RFC-4180 CSV parser — handles quoted fields with embedded newlines (Alt+Enter)
-// Unchanged from original
+// RFC-4180 CSV parser
 // ─────────────────────────────────────────────────────────────────────────────
 
 function parseCsvToRecords(text: string): string[][] {
@@ -113,7 +112,6 @@ const ImportStepsModal: React.FC<Props> = ({ onClose, onBack }) => {
   const [summary,      setSummary]     = useState<StepImportSummary | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
-  // ── CHANGED: fetchTests() from queries.ts ─────────────────────────────────
   useEffect(() => {
     fetchTests()
       .then(data => { setTests(data); setTestsLoading(false); })
@@ -135,7 +133,6 @@ const ImportStepsModal: React.FC<Props> = ({ onClose, onBack }) => {
     e.target.value = "";
   };
 
-  // ── CHANGED: all supabase.from() calls replaced with queries.ts fns ───────
   const handleImport = useCallback(async () => {
     if (!selectedTest) return;
     setStage("importing");
@@ -143,7 +140,6 @@ const ImportStepsModal: React.FC<Props> = ({ onClose, onBack }) => {
 
     try {
       if (op === "create") {
-        // bulkCreateSteps handles the full insert in one call
         const { written, errors } = await bulkCreateSteps(
           selectedTest.name,
           rows.map(r => ({
@@ -157,7 +153,6 @@ const ImportStepsModal: React.FC<Props> = ({ onClose, onBack }) => {
         result.skipped = rows.length - written;
         result.errors  = errors;
       } else {
-        // update / delete — row-by-row lookup then act
         for (const row of rows) {
           const existing = await findStepBySerialNo(selectedTest.name, row.serialno);
           if (!existing) {
@@ -199,11 +194,10 @@ const ImportStepsModal: React.FC<Props> = ({ onClose, onBack }) => {
     done:       "Import complete",
   };
 
-  // ── Render ─────────────────────────────────────────────────────────────────
   return (
     <ModalShell icon={<Hash size={16} />} title="Import Steps — CSV" subtitle={stageLabel[stage]} onClose={onClose}>
 
-      {/* ── STEP 1: Select test ─────────────────────────────────────────── */}
+      {/* ── STEP 1: Select test ── */}
       {stage === "selecttest" && (
         <div className="flex flex-col gap-4">
           <div className="flex flex-col gap-1.5">
@@ -251,10 +245,9 @@ const ImportStepsModal: React.FC<Props> = ({ onClose, onBack }) => {
         </div>
       )}
 
-      {/* ── STEP 2: Choose operation ─────────────────────────────────────── */}
+      {/* ── STEP 2: Choose operation ── */}
       {stage === "selectop" && (
         <div className="flex flex-col gap-4">
-          {/* Test context strip */}
           <div className="flex items-center gap-3 px-4 py-3 rounded-xl border border-[var(--border-color)] bg-bg-card">
             <FlaskConical size={18} />
             <div className="flex-1 min-w-0">
@@ -285,7 +278,7 @@ const ImportStepsModal: React.FC<Props> = ({ onClose, onBack }) => {
           {op === "delete" && (
             <div className="rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-xs text-red-400 flex items-start gap-2">
               <AlertTriangle size={14} className="mt-px shrink-0" />
-              <p>CSV only needs <code className="font-mono">serialno</code> column for delete. Other columns are ignored.</p>
+              <p>CSV only needs <code className="font-mono">serialno</code> column for delete.</p>
             </div>
           )}
 
@@ -299,10 +292,9 @@ const ImportStepsModal: React.FC<Props> = ({ onClose, onBack }) => {
         </div>
       )}
 
-      {/* ── STEP 3: Upload CSV ───────────────────────────────────────────── */}
+      {/* ── STEP 3: Upload CSV ── */}
       {stage === "upload" && (
         <div className="flex flex-col gap-4">
-          {/* Context strip */}
           <div className="flex items-center gap-2 px-3 py-2 rounded-xl border border-[var(--border-color)] bg-bg-card text-xs">
             <FlaskConical size={14} />
             <span className="text-t-primary font-medium truncate">{selectedTest?.name}</span>
@@ -310,7 +302,6 @@ const ImportStepsModal: React.FC<Props> = ({ onClose, onBack }) => {
             <span className="text-c-brand font-semibold">{STEP_CSV_OP_META.find(m => m.id === op)?.label}</span>
           </div>
 
-          {/* Column reference */}
           <div className="rounded-xl border border-[var(--border-color)] bg-bg-card p-4 text-xs">
             <p className="text-t-secondary font-semibold mb-2 uppercase tracking-wider">Required columns</p>
             <div className="flex flex-col gap-1.5">
@@ -331,22 +322,6 @@ const ImportStepsModal: React.FC<Props> = ({ onClose, onBack }) => {
             </div>
           </div>
 
-          {/* Example */}
-          <div className="rounded-xl border border-[var(--border-color)] bg-bg-card p-4 text-xs font-mono text-t-muted">
-            <p className="text-t-secondary font-semibold mb-1.5 not-italic font-sans uppercase tracking-wider">Example</p>
-            {op === "delete" ? (
-              <p className="text-c-brand">serialno<br/>1<br/>2<br/>3</p>
-            ) : (
-              <>
-                <p className="text-c-brand">serialno,action,expected_result,is_divider</p>
-                <p>1,Open login page,Login page loads,false</p>
-                <p>2,Enter credentials,Fields accept input,false</p>
-                <p>3,Click submit,Dashboard shown,false</p>
-              </>
-            )}
-          </div>
-
-          {/* File picker */}
           <button onClick={() => fileRef.current?.click()}
             className="flex flex-col items-center gap-2 p-6 rounded-xl border-2 border-dashed border-[var(--border-color)] hover:border-c-brand/60 hover:bg-bg-card transition-colors cursor-pointer">
             <FolderOpen size={32} className="text-t-muted" />
@@ -361,10 +336,9 @@ const ImportStepsModal: React.FC<Props> = ({ onClose, onBack }) => {
         </div>
       )}
 
-      {/* ── PREVIEW ──────────────────────────────────────────────────────── */}
+      {/* ── PREVIEW ── */}
       {stage === "preview" && (
         <div className="flex flex-col gap-3">
-          {/* Context strip */}
           <div className="flex items-center gap-2 px-3 py-2 rounded-xl border border-[var(--border-color)] bg-bg-card text-xs">
             <FlaskConical size={14} />
             <span className="text-t-primary font-medium truncate">{selectedTest?.name}</span>
@@ -426,7 +400,7 @@ const ImportStepsModal: React.FC<Props> = ({ onClose, onBack }) => {
         </div>
       )}
 
-      {/* ── IMPORTING ────────────────────────────────────────────────────── */}
+      {/* ── IMPORTING ── */}
       {stage === "importing" && (
         <div className="flex flex-col items-center gap-4 py-6">
           <div className="w-12 h-12 rounded-full border-4 border-c-brand border-t-transparent animate-spin" />
@@ -434,7 +408,7 @@ const ImportStepsModal: React.FC<Props> = ({ onClose, onBack }) => {
         </div>
       )}
 
-      {/* ── DONE ─────────────────────────────────────────────────────────── */}
+      {/* ── DONE ── */}
       {stage === "done" && summary && (
         <div className="flex flex-col gap-3">
           <div className="grid grid-cols-2 gap-2">

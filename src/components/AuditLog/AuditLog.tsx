@@ -6,12 +6,7 @@ import Topbar       from "../Layout/Topbar";
 import Spinner      from "../UI/Spinner";
 import type { AuditEvent } from "../../types";
 
-// ── CHANGED: fetchAuditLog() from queries.ts instead of inline supabase call ─
 import { fetchAuditLog } from "../../lib/supabase/queries";
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Severity dot colours — unchanged
-// ─────────────────────────────────────────────────────────────────────────────
 
 const DOT: Record<string, string> = {
   pass: "bg-green-500",
@@ -20,27 +15,21 @@ const DOT: Record<string, string> = {
   info: "bg-blue-500",
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Component
-// ─────────────────────────────────────────────────────────────────────────────
-
 const AuditLog: React.FC = () => {
   const { user }                    = useAuth();
   const isAdmin                     = user?.role === "admin";
   const [events,  setEvents]        = useState<AuditEvent[]>([]);
   const [loading, setLoading]       = useState(true);
 
-  // ── CHANGED: one line instead of chained supabase builder ─────────────────
   useEffect(() => {
     if (!isAdmin) { setLoading(false); return; }
 
     fetchAuditLog(300)
-      .then(data  => setEvents(data as AuditEvent[]))
-      .catch(()   => {/* errors surfaced by queries.ts — silent here */})
+      .then(data  => setEvents(data as unknown as AuditEvent[]))
+      .catch(()   => {})
       .finally(() => setLoading(false));
   }, [isAdmin]);
 
-  // ── Admin guard — identical to original ───────────────────────────────────
   if (!isAdmin) {
     return (
       <div className="flex-1 flex flex-col">
