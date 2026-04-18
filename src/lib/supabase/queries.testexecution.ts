@@ -6,25 +6,25 @@ import { supabase } from '../../supabase';
 // ─────────────────────────────────────────────────────────────────────────────
 
 export interface RawStepResult {
-  id:           string;
-  status:       'pass' | 'fail' | 'pending';
-  remarks:      string;
+  id: string;
+  status: 'pass' | 'fail' | 'pending';
+  remarks: string;
   display_name: string;
   step: {
-    id:                string;
-    serial_no:          number;
-    action:            string;
-    expected_result:    string;
-    is_divider:         boolean;
-    action_image_urls:   string[];
+    id: string;
+    serial_no: number;
+    action: string;
+    expected_result: string;
+    is_divider: boolean;
+    action_image_urls: string[];
     expected_image_urls: string[];
   } | null;
 }
 
 export interface RawModuleTestItem {
-  id:       string;
+  id: string;
   testsname: string;
-  test:     { serial_no: string; name: string } | null;
+  test: { serial_no: string; name: string } | null;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -33,10 +33,9 @@ export interface RawModuleTestItem {
 // ─────────────────────────────────────────────────────────────────────────────
 
 export async function fetchTestExecution(module_test_id: string): Promise<{
-  step_results:  RawStepResult[];
-  module_tests:  RawModuleTestItem[];
+  step_results: RawStepResult[];
+  module_tests: RawModuleTestItem[];
 }> {
-  // Fetch the module name first so we can scope the module_tests query
   const { data: mtData, error: mtErr } = await supabase
     .from('module_tests')
     .select('module_name')
@@ -52,25 +51,25 @@ export async function fetchTestExecution(module_test_id: string): Promise<{
       .from('step_results')
       .select(`
         id, status, remarks, display_name,
-        step:test_steps!test_stepsid(
+        step:test_steps!step_results_test_steps_id_fkey(
           id, serial_no, action, expected_result, is_divider,
           action_image_urls, expected_image_urls
         )
       `)
-      .eq('module_test_id', module_test_id)
+      .eq('module_name', module_name)
       .order('id'),
     supabase
       .from('module_tests')
-      .select('id, testsname, test:tests!testsname(serial_no, name)')
+      .select('id, tests_name, test:tests!module_tests_tests_name_fkey(serial_no, name)')
       .eq('module_name', module_name)
-      .order('testsname'),
+      .order('tests_name'),
   ]);
 
-  if (srRes.error)    throw srRes.error;
+  if (srRes.error) throw srRes.error;
   if (allMtRes.error) throw allMtRes.error;
 
   return {
-    step_results: (srRes.data    ?? []) as unknown as RawStepResult[],
+    step_results: (srRes.data ?? []) as unknown as RawStepResult[],
     module_tests: (allMtRes.data ?? []) as unknown as RawModuleTestItem[],
   };
 }
@@ -81,10 +80,9 @@ export async function fetchTestExecution(module_test_id: string): Promise<{
 
 export async function acquireLock(
   module_test_id: string,
-  user_id:       string,
-  display_name:  string
+  user_id: string,
+  display_name: string
 ): Promise<{ success: boolean; holder?: string }> {
-  // Check if already locked by someone else
   const { data: existing } = await supabase
     .from('test_locks')
     .select('user_id, locked_by_name')
@@ -100,9 +98,9 @@ export async function acquireLock(
     .upsert(
       {
         module_test_id: module_test_id,
-        user_id:       user_id,
+        user_id: user_id,
         locked_by_name: display_name,
-        locked_at:     new Date().toISOString(),
+        locked_at: new Date().toISOString(),
       },
       { onConflict: 'module_test_id' }
     );
@@ -131,12 +129,12 @@ export async function forceReleaseLock(module_test_id: string): Promise<void> {
 // ─────────────────────────────────────────────────────────────────────────────
 
 export async function upsertStepResult(payload: {
-  test_stepsid:  string;
+  test_stepsid: string;
   module_test_id: string;
-  status:       'pass' | 'fail' | 'pending';
-  remarks:      string;
+  status: 'pass' | 'fail' | 'pending';
+  remarks: string;
   display_name: string;
-  user_id:      string;
+  user_id: string;
 }): Promise<void> {
   const { error } = await supabase
     .from('step_results')
