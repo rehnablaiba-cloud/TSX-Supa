@@ -1,549 +1,332 @@
-import React, { useState, useEffect, useMemo, useRef } from "react";
-import { supabase } from "../../supabase";
-import Topbar from "../Layout/Topbar";
-import Spinner from "../UI/Spinner";
-import ExportModal from "../UI/ExportModal";
-import { exportReportCSV, exportReportPDF, FlatData } from "../../utils/export";
-import { useTheme } from "../../context/ThemeContext";
-import { Upload, FileSpreadsheet, FileText, AlertTriangle } from "lucide-react";
+// src/components/TestReport/TestReport.tsx
+// Phase 2.1 applied:
+//   2.1-A1  COLORS / ChartRow / ChartTheme / CHART_TYPES / ChartType → MD/charts/types
+//   2.1-A2  CustomTooltip  → MD/charts/CustomTooltip
+//   2.1-A3  PieTooltip     → MD/charts/PieTooltip
+//   2.1-A4  RBarChart / RLineChart / RRadarChart → MD/charts/
+//   2.1-A5  RAreaChart (unified gradient IDs)   → MD/charts/
+//   2.1-A6  RPieChart  (showLabel=true)          → MD/charts/
+//   2.1-A7  useInjectStyle / FadeWrapper         → utils/animation + UI/FadeWrapper
+//   2.1-B1  SegmentedBar                         → UI/SegmentedBar
+//   2.1-C1  getChartTheme                        → utils/chartTheme
+
+import React, { useEffect, useRef, useState, useMemo, useCallback } from 'react';
+import supabase from '../../../supabase';
+import Spinner from '../UI/Spinner';
+import Topbar from '../Layout/Topbar';
+import useTheme from '../../../context/ThemeContext';
 import {
-  ResponsiveContainer,
-  BarChart, Bar,
-  AreaChart, Area,
-  LineChart, Line,
-  PieChart, Pie, Cell,
-  RadarChart, Radar, PolarGrid, PolarAngleAxis, PolarRadiusAxis,
-  XAxis, YAxis, CartesianGrid, Tooltip, Legend,
-} from "recharts";
-import { PieLabelRenderProps } from "recharts";
+  FileSpreadsheet, FileText, ChevronDown, ChevronUp,
+  CheckCircle2, XCircle, Clock, BarChart2, TableIcon,
+} from 'lucide-react';
+import { exportTestReportCSV, exportTestReportPDF } from '../../../utils/export';
 
-// ── Animation keyframes ───────────────────────────────────────────────────────
-const ANIM_STYLE = `
-@keyframes fadeSlideIn {
-  from { opacity: 0; transform: translateY(10px); }
-  to   { opacity: 1; transform: translateY(0);    }
-}
-`;
+// ── Phase 2.1 shared imports ──────────────────────────────────────────────────
+import { useInjectStyle }  from '../../../utils/animation';
+import FadeWrapper         from '../UI/FadeWrapper';
+import { getChartTheme }   from '../../../utils/chartTheme';
+import SegmentedBar        from '../UI/SegmentedBar';
+import {
+  RBarChart,
+  RAreaChart,
+  RLineChart,
+  RPieChart,
+  RRadarChart,
+} from '../ModuleDashboard/charts';
+import type { ChartRow, ChartType } from '../ModuleDashboard/charts';
+import { CHART_TYPES }              from '../ModuleDashboard/charts';
 
-function useInjectStyle() {
-  const injected = useRef(false);
-  useEffect(() => {
-    if (injected.current) return;
-    injected.current = true;
-    const el = document.createElement("style");
-    el.textContent = ANIM_STYLE;
-    document.head.appendChild(el);
-  }, []);
+// ── Props / DB types ──────────────────────────────────────────────────────────
+interface Props {
+  moduleTestId: string;
+  onBack: () => void;
 }
 
-const FadeWrapper: React.FC<{ animKey: string | number; children: React.ReactNode }> = ({ animKey, children }) => (
-  <div key={animKey} style={{ animation: "fadeSlideIn 0.28s cubic-bezier(0.22,1,0.36,1) both" }}>
-    {children}
-  </div>
-);
-
-// ── Constants ─────────────────────────────────────────────────────────────────
-const COLORS = { pass: "#22c55e", fail: "#ef4444", pending: "#f59e0b" };
-
-type ChartType = "bar" | "area" | "line" | "pie" | "radar";
-const CHART_TYPES: { type: ChartType; label: string }[] = [
-  { type: "bar",   label: "Bar"   },
-  { type: "area",  label: "Area"  },
-  { type: "line",  label: "Line"  },
-  { type: "pie",   label: "Pie"   },
-  { type: "radar", label: "Radar" },
-];
-
-interface ChartRow { name: string; pass: number; fail: number; pending: number; }
-interface ChartTheme {
-  panel: string; text: string; muted: string; grid: string;
-  border: string; tooltipBg: string; tooltipText: string; tooltipName: string;
-}
-
-// ── Local joined types ────────────────────────────────────────────────────────
 interface StepResultRow {
-  id: string;
-  status: "pass" | "fail" | "pending";
-  remarks: string;
+  id:     string;
+  status: 'pass' | 'fail' | 'pending';
   step: {
-    id: string;
-    serial_no: number;
-    action: string;
-    expected_result: string;
-    is_divider: boolean;
-    tests_name: string;
+    id:             string;
+    serialno:       number;
+    action:         string;
+    expectedresult: string;
+    isdivider:      boolean;
+    testsname:      string;
   } | null;
+  imageurl: string | null;
+  note:     string | null;
 }
 
-interface ModuleTestRow {
-  id: string;
-  tests_name: string;
-  test: { serial_no: number; name: string } | null;
+interface ModuleTestMeta {
+  modulename: string;
+  testsname:  string;
+  test: { serialno: number; name: string; description?: string } | null;
 }
 
-interface ModuleRow {
-  name: string;
-  description: string;
-  module_tests: ModuleTestRow[];
-  step_results: StepResultRow[];
-}
-
-interface ModuleOption {
-  name: string;
-}
+type ViewMode = 'table' | 'chart';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
-function getNonDividerResults(stepResults: StepResultRow[]): StepResultRow[] {
-  return stepResults.filter(sr => !sr.step?.is_divider);
-}
-
-// ── Tooltips ──────────────────────────────────────────────────────────────────
-const CustomTooltip: React.FC<{
-  active?: boolean; payload?: any[]; label?: string; ct: ChartTheme;
-}> = ({ active, payload, label, ct }) => {
-  if (!active || !payload?.length) return null;
-  return (
-    <div className="px-3 py-2 rounded-xl border shadow-xl text-xs"
-      style={{ backgroundColor: ct.tooltipBg, borderColor: ct.border, color: ct.tooltipText }}>
-      <div className="font-semibold mb-1">{label}</div>
-      {payload.map((p: any) => (
-        <div key={p.dataKey} className="flex items-center justify-between gap-4">
-          <span style={{ color: ct.tooltipName }} className="capitalize">{p.dataKey}</span>
-          <span style={{ color: p.fill || p.stroke, fontWeight: 700 }}>{p.value}</span>
-        </div>
-      ))}
-    </div>
-  );
+const STATUS_ICON: Record<string, React.ReactNode> = {
+  pass:    <CheckCircle2 size={14} className="text-green-400 shrink-0" />,
+  fail:    <XCircle      size={14} className="text-red-400   shrink-0" />,
+  pending: <Clock        size={14} className="text-amber-400 shrink-0" />,
 };
 
-const PieTooltip: React.FC<{
-  active?: boolean; payload?: any[]; ct: ChartTheme;
-}> = ({ active, payload, ct }) => {
-  if (!active || !payload?.length) return null;
-  const { name, value, payload: inner } = payload[0];
-  const total = (inner?.pass ?? 0) + (inner?.fail ?? 0) + (inner?.pending ?? 0);
-  return (
-    <div className="px-3 py-2 rounded-xl border shadow-xl text-xs"
-      style={{ backgroundColor: ct.tooltipBg, borderColor: ct.border, color: ct.tooltipText }}>
-      <div className="font-semibold capitalize mb-1">{name}</div>
-      <div style={{ color: COLORS[name as keyof typeof COLORS], fontWeight: 700 }}>
-        {value} ({total > 0 ? Math.round((value / total) * 100) : 0}%)
+const STATUS_ROW: Record<string, string> = {
+  pass:    'border-l-2 border-green-500/40',
+  fail:    'border-l-2 border-red-500/40',
+  pending: '',
+};
+
+// ══════════════════════════════════════════════════════════════════════════════
+// MAIN COMPONENT
+// ══════════════════════════════════════════════════════════════════════════════
+const TestReport: React.FC<Props> = ({ moduleTestId, onBack }) => {
+  useInjectStyle();
+
+  const { theme } = useTheme();
+  const ct        = useMemo(() => getChartTheme(theme), [theme]);
+
+  const [meta,       setMeta]       = useState<ModuleTestMeta | null>(null);
+  const [results,    setResults]    = useState<StepResultRow[]>([]);
+  const [loading,    setLoading]    = useState(true);
+  const [error,      setError]      = useState<string | null>(null);
+  const [viewMode,   setViewMode]   = useState<ViewMode>('table');
+  const [chartType,  setChartType]  = useState<ChartType>('bar');
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+
+  const mountedRef = useRef(true);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => { mountedRef.current = false; };
+  }, []);
+
+  // ── Fetch ─────────────────────────────────────────────────────────────────
+  const fetchData = useCallback(async () => {
+    setLoading(true);
+
+    const [{ data: metaData, error: metaErr }, { data: srData, error: srErr }] = await Promise.all([
+      supabase
+        .from('moduletests')
+        .select('modulename, testsname, test:tests!testsname(serialno, name, description)')
+        .eq('id', moduleTestId)
+        .single(),
+      supabase
+        .from('stepresults')
+        .select(`
+          id, status, imageurl, note,
+          step:teststeps!teststepsid(id, serialno, action, expectedresult, isdivider, testsname)
+        `)
+        .eq('moduletestid', moduleTestId)
+        .order('id'),
+    ]);
+
+    if (!mountedRef.current) return;
+    if (metaErr || srErr) { setError((metaErr || srErr)!.message); setLoading(false); return; }
+
+    setMeta(metaData as ModuleTestMeta);
+    setResults((srData ?? []) as StepResultRow[]);
+    setError(null);
+    setLoading(false);
+  }, [moduleTestId]);
+
+  useEffect(() => { fetchData(); }, [fetchData]);
+
+  // ── Derived stats ─────────────────────────────────────────────────────────
+  const real = useMemo(() => results.filter(r => !r.step?.isdivider), [results]);
+
+  const stats = useMemo(() => {
+    const pass    = real.filter(r => r.status === 'pass').length;
+    const fail    = real.filter(r => r.status === 'fail').length;
+    const pending = real.filter(r => r.status === 'pending').length;
+    const total   = real.length;
+    return {
+      pass, fail, pending, total,
+      passRate: total > 0 ? Math.round((pass / total) * 100) : 0,
+      failPct:  total > 0 ? Math.round((fail / total) * 100) : 0,
+      pendingPct: total > 0 ? 100 - Math.round((pass / total) * 100) - Math.round((fail / total) * 100) : 0,
+    };
+  }, [real]);
+
+  // ── Chart data (single row — this is a single test) ───────────────────────
+  const chartData = useMemo<ChartRow[]>(() => [{
+    name:    meta?.test?.name ?? meta?.testsname ?? 'Test',
+    pass:    stats.pass,
+    fail:    stats.fail,
+    pending: stats.pending,
+  }], [meta, stats]);
+
+  // ── Loading / error ───────────────────────────────────────────────────────
+  if (loading) return (
+    <div className="flex-1 flex flex-col">
+      <Topbar title="Test Report" onBack={onBack} />
+      <div className="flex items-center justify-center flex-1"><Spinner /></div>
+    </div>
+  );
+
+  if (error || !meta) return (
+    <div className="flex-1 flex flex-col">
+      <Topbar title="Test Report" onBack={onBack} />
+      <div className="p-6">
+        <div className="bg-red-500/10 border border-red-500/30 rounded-xl p-4 text-red-500 text-sm">
+          {error ?? 'Test not found.'}
+        </div>
       </div>
     </div>
   );
-};
 
-// ── Chart sub-components ──────────────────────────────────────────────────────
-const RBarChart: React.FC<{ data: ChartRow[]; ct: ChartTheme }> = ({ data, ct }) => (
-  <ResponsiveContainer width="100%" height={240}>
-    <BarChart data={data} margin={{ top: 8, right: 16, left: -16, bottom: 8 }} barCategoryGap="28%" barGap={3}>
-      <CartesianGrid strokeDasharray="4 3" stroke={ct.grid} vertical={false} />
-      <XAxis dataKey="name" tick={{ fill: ct.muted, fontSize: 11 }} axisLine={false} tickLine={false}
-        tickFormatter={(v) => v.length > 10 ? v.slice(0, 9) + "…" : v} />
-      <YAxis tick={{ fill: ct.muted, fontSize: 11 }} axisLine={false} tickLine={false} />
-      <Tooltip content={<CustomTooltip ct={ct} />} cursor={{ fill: "rgba(255,255,255,0.04)" }} />
-      <Legend iconType="square" iconSize={10}
-        formatter={(v) => <span style={{ color: ct.muted, fontSize: 11, textTransform: "capitalize" }}>{v}</span>} />
-      <Bar dataKey="pass"    fill={COLORS.pass}    radius={[3,3,0,0]} maxBarSize={18} isAnimationActive />
-      <Bar dataKey="fail"    fill={COLORS.fail}    radius={[3,3,0,0]} maxBarSize={18} isAnimationActive />
-      <Bar dataKey="pending" fill={COLORS.pending} radius={[3,3,0,0]} maxBarSize={18} isAnimationActive />
-    </BarChart>
-  </ResponsiveContainer>
-);
-
-const RAreaChart: React.FC<{ data: ChartRow[]; ct: ChartTheme }> = ({ data, ct }) => (
-  <ResponsiveContainer width="100%" height={240}>
-    <AreaChart data={data} margin={{ top: 8, right: 16, left: -16, bottom: 8 }}>
-      <defs>
-        {(["pass", "fail", "pending"] as const).map(k => (
-          <linearGradient key={k} id={`rg-${k}`} x1="0" y1="0" x2="0" y2="1">
-            <stop offset="5%"  stopColor={COLORS[k]} stopOpacity={0.35} />
-            <stop offset="95%" stopColor={COLORS[k]} stopOpacity={0.02} />
-          </linearGradient>
-        ))}
-      </defs>
-      <CartesianGrid strokeDasharray="4 3" stroke={ct.grid} vertical={false} />
-      <XAxis dataKey="name" tick={{ fill: ct.muted, fontSize: 11 }} axisLine={false} tickLine={false}
-        tickFormatter={(v) => v.length > 10 ? v.slice(0, 9) + "…" : v} />
-      <YAxis tick={{ fill: ct.muted, fontSize: 11 }} axisLine={false} tickLine={false} />
-      <Tooltip content={<CustomTooltip ct={ct} />} />
-      <Legend iconType="square" iconSize={10}
-        formatter={(v) => <span style={{ color: ct.muted, fontSize: 11, textTransform: "capitalize" }}>{v}</span>} />
-      <Area type="monotone" dataKey="pending" stroke={COLORS.pending} fill="url(#rg-pending)" strokeWidth={2.5} dot={false} isAnimationActive />
-      <Area type="monotone" dataKey="fail"    stroke={COLORS.fail}    fill="url(#rg-fail)"    strokeWidth={2.5} dot={false} isAnimationActive />
-      <Area type="monotone" dataKey="pass"    stroke={COLORS.pass}    fill="url(#rg-pass)"    strokeWidth={2.5}
-        dot={{ r: 3.5, strokeWidth: 1.5, fill: COLORS.pass }} isAnimationActive />
-    </AreaChart>
-  </ResponsiveContainer>
-);
-
-const RLineChart: React.FC<{ data: ChartRow[]; ct: ChartTheme }> = ({ data, ct }) => (
-  <ResponsiveContainer width="100%" height={240}>
-    <LineChart data={data} margin={{ top: 8, right: 16, left: -16, bottom: 8 }}>
-      <CartesianGrid strokeDasharray="4 3" stroke={ct.grid} vertical={false} />
-      <XAxis dataKey="name" tick={{ fill: ct.muted, fontSize: 11 }} axisLine={false} tickLine={false}
-        tickFormatter={(v) => v.length > 10 ? v.slice(0, 9) + "…" : v} />
-      <YAxis tick={{ fill: ct.muted, fontSize: 11 }} axisLine={false} tickLine={false} />
-      <Tooltip content={<CustomTooltip ct={ct} />} />
-      <Legend iconType="square" iconSize={10}
-        formatter={(v) => <span style={{ color: ct.muted, fontSize: 11, textTransform: "capitalize" }}>{v}</span>} />
-      <Line type="monotone" dataKey="pass"    stroke={COLORS.pass}    strokeWidth={2.5}
-        dot={{ r: 3.5, strokeWidth: 1.5, fill: ct.panel }} activeDot={{ r: 5 }} isAnimationActive />
-      <Line type="monotone" dataKey="fail"    stroke={COLORS.fail}    strokeWidth={2.5}
-        dot={{ r: 3.5, strokeWidth: 1.5, fill: ct.panel }} activeDot={{ r: 5 }} isAnimationActive />
-      <Line type="monotone" dataKey="pending" stroke={COLORS.pending} strokeWidth={2.5}
-        dot={{ r: 3.5, strokeWidth: 1.5, fill: ct.panel }} activeDot={{ r: 5 }} isAnimationActive />
-    </LineChart>
-  </ResponsiveContainer>
-);
-
-const RPieChart: React.FC<{ data: ChartRow[]; ct: ChartTheme }> = ({ data, ct }) => {
-  const totals = data.reduce(
-    (acc, d) => ({ pass: acc.pass + d.pass, fail: acc.fail + d.fail, pending: acc.pending + d.pending }),
-    { pass: 0, fail: 0, pending: 0 }
-  );
-  const total = totals.pass + totals.fail + totals.pending;
-  const pieData = (["pass", "fail", "pending"] as const)
-    .map(k => ({ name: k, value: totals[k], ...totals }))
-    .filter(d => d.value > 0);
-
-  if (total === 0) return (
-    <div className="flex items-center justify-center h-40">
-      <span className="text-sm" style={{ color: ct.muted }}>No data to display</span>
-    </div>
-  );
-
+  // ── Render ────────────────────────────────────────────────────────────────
   return (
-    <ResponsiveContainer width="100%" height={240}>
-      <PieChart>
-        <Pie data={pieData} cx="50%" cy="50%" innerRadius="46%" outerRadius="72%"
-          paddingAngle={3} dataKey="value" nameKey="name"
-          label={(props: PieLabelRenderProps): string => {
-            const name = props.name ?? "";
-            const percent = ((props.percent as number) ?? 0) * 100;
-            return `${name}: ${percent.toFixed(0)}%`;
-          }}
-          labelLine={false} style={{ fontSize: 11 }} isAnimationActive>
-          {pieData.map((entry) => (
-            <Cell key={entry.name} fill={COLORS[entry.name as keyof typeof COLORS]} opacity={0.88} />
-          ))}
-        </Pie>
-        <Tooltip content={<PieTooltip ct={ct} />} />
-        <Legend iconType="circle" iconSize={10}
-          formatter={(v) => (
-            <span style={{ color: ct.muted, fontSize: 11, textTransform: "capitalize" }}>
-              {v} · {totals[v as keyof typeof totals]}
-            </span>
-          )} />
-      </PieChart>
-    </ResponsiveContainer>
-  );
-};
-
-const RRadarChart: React.FC<{ data: ChartRow[]; ct: ChartTheme }> = ({ data, ct }) => {
-  if (data.length === 0) return (
-    <div className="flex items-center justify-center h-40">
-      <span className="text-sm" style={{ color: ct.muted }}>No data to display</span>
-    </div>
-  );
-  return (
-    <ResponsiveContainer width="100%" height={240}>
-      <RadarChart cx="50%" cy="50%" outerRadius="72%" data={data}>
-        <PolarGrid stroke={ct.grid} />
-        <PolarAngleAxis dataKey="name" tick={{ fill: ct.muted, fontSize: 11 }}
-          tickFormatter={(v) => v.length > 10 ? v.slice(0, 9) + "…" : v} />
-        <PolarRadiusAxis tick={{ fill: ct.muted, fontSize: 10 }} axisLine={false} />
-        <Tooltip content={<CustomTooltip ct={ct} />} />
-        <Legend iconType="square" iconSize={10}
-          formatter={(v) => <span style={{ color: ct.muted, fontSize: 11, textTransform: "capitalize" }}>{v}</span>} />
-        <Radar name="pass"    dataKey="pass"    stroke={COLORS.pass}    fill={COLORS.pass}    fillOpacity={0.18} strokeWidth={2} isAnimationActive />
-        <Radar name="fail"    dataKey="fail"    stroke={COLORS.fail}    fill={COLORS.fail}    fillOpacity={0.18} strokeWidth={2} isAnimationActive />
-        <Radar name="pending" dataKey="pending" stroke={COLORS.pending} fill={COLORS.pending} fillOpacity={0.18} strokeWidth={2} isAnimationActive />
-      </RadarChart>
-    </ResponsiveContainer>
-  );
-};
-
-// ── Main Component ────────────────────────────────────────────────────────────
-const TestReport: React.FC = () => {
-  useInjectStyle();
-  const { theme } = useTheme();
-
-  const [moduleOptions, setModuleOptions]           = useState<ModuleOption[]>([]);
-  const [modules, setModules]                       = useState<ModuleRow[]>([]);
-  const [loading, setLoading]                       = useState(true);
-  const [error, setError]                           = useState<string | null>(null);
-  const [selectedModuleName, setSelectedModuleName] = useState<string | null>(null);
-  const [showExportModal, setShowExportModal]       = useState(false);
-  const [view, setView]                             = useState<"graph" | "table">("graph");
-  const [chartType, setChartType]                   = useState<ChartType>("bar");
-
-  useEffect(() => {
-    supabase
-      .from("modules")
-      .select("name")
-      .order("name")
-      .then(({ data }) => setModuleOptions((data ?? []) as ModuleOption[]));
-  }, []);
-
-  useEffect(() => {
-    const fetchData = async () => {
-      setLoading(true);
-      setError(null);
-      try {
-        let query = supabase
-          .from("modules")
-          .select(`
-            name, description,
-            module_tests:module_tests!module_name(
-              id, tests_name,
-              test:tests!tests_name(serial_no, name)
-            ),
-            step_results:step_results!module_name(
-              id, status, remarks,
-              step:test_steps!test_steps_id(
-                id, serial_no, action, expected_result, is_divider, tests_name
-              )
-            )
-          `)
-          .order("name", { ascending: true });
-
-        if (selectedModuleName) query = (query as any).eq("name", selectedModuleName);
-
-        const { data, error: err } = await query;
-        if (err) throw new Error(err.message);
-        setModules((data ?? []) as unknown as ModuleRow[]);
-      } catch (err: any) {
-        setError(err.message ?? "Failed to load report data.");
-      } finally {
-        setLoading(false);
-      }
-    };
-    fetchData();
-  }, [selectedModuleName]);
-
-  const chartTheme: ChartTheme = theme === "dark"
-    ? { panel: "#111827", text: "#e5e7eb", muted: "#94a3b8", grid: "#334155",
-        border: "#334155", tooltipBg: "#0f172a", tooltipText: "#f8fafc", tooltipName: "#cbd5e1" }
-    : { panel: "#ffffff", text: "#0f172a", muted: "#475569", grid: "#cbd5e1",
-        border: "#cbd5e1", tooltipBg: "#ffffff", tooltipText: "#0f172a", tooltipName: "#475569" };
-
-  const chartData = useMemo<ChartRow[]>(() =>
-    modules.map(m => {
-      const results = getNonDividerResults(m.step_results ?? []);
-      return {
-        name:    m.name,
-        pass:    results.filter(sr => sr.status === "pass").length,
-        fail:    results.filter(sr => sr.status === "fail").length,
-        pending: results.filter(sr => sr.status === "pending").length,
-      };
-    }), [modules]);
-
-  const buildFlatData = (mods: ModuleRow[]): FlatData[] => {
-    const flat: FlatData[] = [];
-    mods.forEach(m => {
-      const sortedTests = [...(m.module_tests ?? [])].sort(
-        (a, b) => (a.test?.serial_no ?? 0) - (b.test?.serial_no ?? 0)
-      );
-      sortedTests.forEach(mt => {
-        (m.step_results ?? [])
-          .filter(sr => sr.step?.tests_name === mt.tests_name && !sr.step?.is_divider)
-          .sort((a, b) => (a.step?.serial_no ?? 0) - (b.step?.serial_no ?? 0))
-          .forEach(sr => {
-            flat.push({
-              module:   m.name,
-              test:     mt.test?.name ?? "",
-              serial:   sr.step?.serial_no ?? 0,
-              action:   sr.step?.action ?? "",
-              expected: sr.step?.expected_result ?? "",
-              remarks:  sr.remarks || "",
-              status:   sr.status,
-            });
-          });
-      });
-    });
-    return flat;
-  };
-
-  const exportStats = () => {
-    const flat = buildFlatData(modules);
-    return [
-      { label: "Total Steps", value: flat.length },
-      { label: "Pass",        value: flat.filter(s => s.status === "pass").length },
-      { label: "Fail",        value: flat.filter(s => s.status === "fail").length },
-    ];
-  };
-
-  const chartAnimKey = `${selectedModuleName ?? "all"}-${chartType}`;
-  const viewAnimKey  = view;
-
-  return (
-    <>
+    <div className="flex-1 flex flex-col">
       <Topbar
-        title="Test Report"
-        subtitle="Trainset-wise execution summary"
+        title={meta.test?.name ?? meta.testsname}
+        subtitle={`${meta.modulename} · ${stats.total} steps`}
+        onBack={onBack}
         actions={
-          <button
-            onClick={() => setShowExportModal(true)}
-            disabled={modules.length === 0}
-            className="flex items-center gap-1.5 px-4 py-2 bg-bg-card hover:bg-bg-surface
-              disabled:opacity-40 disabled:cursor-not-allowed text-t-primary
-              text-sm font-semibold rounded-lg transition border border-[var(--border-color)]">
-            <Upload size={14} />
-            Export
-          </button>
+          <div className="flex items-center gap-2">
+            <button onClick={() => exportTestReportCSV(results, meta)}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg bg-bg-card hover:bg-bg-surface border border-[var(--border-color)] text-t-primary transition">
+              <FileSpreadsheet size={13} />CSV
+            </button>
+            <button onClick={() => exportTestReportPDF(results, meta)}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg bg-bg-card hover:bg-bg-surface border border-[var(--border-color)] text-t-primary transition">
+              <FileText size={13} />PDF
+            </button>
+          </div>
         }
       />
 
-      <ExportModal
-        isOpen={showExportModal} onClose={() => setShowExportModal(false)}
-        title="Export Report"
-        subtitle={selectedModuleName ?? "All Modules"}
-        stats={exportStats()}
-        options={[
-          {
-            label: "CSV",
-            icon: <FileSpreadsheet size={16} />,
-            color: "bg-[var(--color-primary)]",
-            hoverColor: "hover:bg-[var(--color-primary-hover)]",
-            onConfirm: () => exportReportCSV([], buildFlatData(modules)),
-          },
-          {
-            label: "PDF",
-            icon: <FileText size={16} />,
-            color: "bg-[var(--color-blue)]",
-            hoverColor: "hover:bg-[var(--color-blue-hover)]",
-            onConfirm: () => exportReportPDF([], buildFlatData(modules)),
-          },
-        ]}
-      />
+      <div className="p-6 flex flex-col gap-5 pb-24 md:pb-6">
 
-      {loading ? (
-        <div className="flex items-center justify-center py-20"><Spinner /></div>
-      ) : error ? (
-        <div className="flex flex-col items-center justify-center py-20 gap-3">
-          <AlertTriangle size={32} className="text-red-400" />
-          <p className="text-sm text-red-400 font-medium">{error}</p>
-          <button onClick={() => setSelectedModuleName(prev => prev)}
-            className="px-4 py-2 rounded-xl bg-bg-card hover:bg-bg-surface text-sm
-              text-t-secondary border border-[var(--border-color)] transition">
-            Retry
-          </button>
+        {/* ── Stat pills ── */}
+        <div className="flex flex-wrap gap-2">
+          {[
+            { label: 'Total',   value: stats.total,   cls: 'bg-bg-card text-t-primary'     },
+            { label: 'Pass',    value: stats.pass,    cls: 'bg-green-500/10 text-green-400' },
+            { label: 'Fail',    value: stats.fail,    cls: 'bg-red-500/10 text-red-400'     },
+            { label: 'Pending', value: stats.pending, cls: 'bg-amber-500/10 text-amber-400' },
+            { label: 'Pass %',  value: `${stats.passRate}%`, cls: 'bg-c-brand-bg text-c-brand' },
+          ].map(s => (
+            <span key={s.label}
+              className={`flex items-center gap-1 text-xs font-bold px-3 py-1 rounded-full border border-[var(--border-color)] ${s.cls}`}>
+              {s.label}: {s.value}
+            </span>
+          ))}
         </div>
-      ) : (
-        <div className="p-6 flex flex-col gap-6 pb-24 md:pb-6">
 
-          {/* ── Filter + View toggle ── */}
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="flex items-center gap-3">
-              <label className="text-sm text-t-muted">Filter by Trainset</label>
-              <select
-                value={selectedModuleName ?? ""}
-                onChange={e => setSelectedModuleName(e.target.value || null)}
-                className="input text-sm">
-                <option value="">All Modules</option>
-                {moduleOptions.map(m => <option key={m.name} value={m.name}>{m.name}</option>)}
-              </select>
-            </div>
-            <div className="flex items-center gap-2 rounded-xl p-1 bg-bg-card border border-[var(--border-color)] w-fit">
-              {(["graph", "table"] as const).map(v => (
-                <button key={v} onClick={() => setView(v)}
-                  className={`px-4 py-2 rounded-lg text-sm font-semibold transition capitalize ${
-                    view === v ? "bg-c-brand text-white" : "text-t-muted hover:text-t-primary"
-                  }`}>
-                  {v}
-                </button>
-              ))}
-            </div>
+        {/* ── Progress bar ── */}
+        <div>
+          <div className="flex justify-between text-xs text-t-muted mb-1">
+            <span>Overall Progress</span>
+            <span className="font-semibold"
+              style={{ color: stats.passRate === 100 ? '#22c55e' : stats.failPct === 100 ? '#ef4444' : undefined }}>
+              {stats.total > 0 ? `${stats.passRate}%` : '—'}
+            </span>
           </div>
-
-          {/* ── View panel ── */}
-          <FadeWrapper animKey={viewAnimKey}>
-            {view === "graph" ? (
-              <div className="p-4 rounded-xl border"
-                style={{ backgroundColor: chartTheme.panel, borderColor: chartTheme.border }}>
-                <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
-                  <h3 className="text-sm font-semibold" style={{ color: chartTheme.text }}>Execution Graph</h3>
-                  <div className="flex items-center gap-0.5 rounded-lg p-0.5 border"
-                    style={{
-                      backgroundColor: theme === "dark" ? "rgba(255,255,255,0.04)" : "rgba(0,0,0,0.04)",
-                      borderColor: chartTheme.border,
-                    }}>
-                    {CHART_TYPES.map(({ type, label }) => (
-                      <button key={type} onClick={() => setChartType(type)}
-                        style={chartType === type
-                          ? { backgroundColor: "#1d4ed8", color: "#ffffff" }
-                          : { color: chartTheme.muted }}
-                        className="px-2.5 py-1 rounded-md text-xs font-medium transition-all">
-                        {label}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                <FadeWrapper animKey={chartAnimKey}>
-                  {(() => {
-                    switch (chartType) {
-                      case "bar":   return <RBarChart   data={chartData} ct={chartTheme} />;
-                      case "area":  return <RAreaChart  data={chartData} ct={chartTheme} />;
-                      case "line":  return <RLineChart  data={chartData} ct={chartTheme} />;
-                      case "pie":   return <RPieChart   data={chartData} ct={chartTheme} />;
-                      case "radar": return <RRadarChart data={chartData} ct={chartTheme} />;
-                    }
-                  })()}
-                </FadeWrapper>
-              </div>
-
-            ) : (
-              <div className="overflow-x-auto rounded-xl border border-[var(--border-color)]">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="bg-bg-card text-t-muted uppercase text-xs">
-                      <th className="px-4 py-3 text-left">Trainset</th>
-                      <th className="px-4 py-3 text-center">Tests</th>
-                      <th className="px-4 py-3 text-center">Total Steps</th>
-                      <th className="px-4 py-3 text-center text-green-600 dark:text-green-400">Pass</th>
-                      <th className="px-4 py-3 text-center text-red-600 dark:text-red-400">Fail</th>
-                      <th className="px-4 py-3 text-center text-amber-600 dark:text-amber-400">Pending</th>
-                      <th className="px-4 py-3 text-center">Pass Rate</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-[var(--border-color)]">
-                    {modules.map(m => {
-                      const results = getNonDividerResults(m.step_results ?? []);
-                      const total   = results.length;
-                      const pass    = results.filter(sr => sr.status === "pass").length;
-                      const fail    = results.filter(sr => sr.status === "fail").length;
-                      const pending = results.filter(sr => sr.status === "pending").length;
-                      const rate    = total > 0 ? Math.round((pass / total) * 100) : 0;
-                      return (
-                        <tr key={m.name} className="hover:bg-bg-card transition-colors">
-                          <td className="px-4 py-3 font-semibold text-t-primary">{m.name}</td>
-                          <td className="px-4 py-3 text-center text-t-secondary">{m.module_tests?.length ?? 0}</td>
-                          <td className="px-4 py-3 text-center font-bold text-t-primary">{total}</td>
-                          <td className="px-4 py-3 text-center font-semibold text-green-600 dark:text-green-400">{pass}</td>
-                          <td className="px-4 py-3 text-center font-semibold text-red-600 dark:text-red-400">{fail}</td>
-                          <td className="px-4 py-3 text-center font-semibold text-amber-600 dark:text-amber-400">{pending}</td>
-                          <td className="px-4 py-3 text-center">
-                            <div className="flex items-center gap-2 justify-center">
-                              <div className="w-20 h-1.5 bg-[var(--border-color)] rounded-full overflow-hidden">
-                                <div className="h-full rounded-full"
-                                  style={{ width: `${rate}%`, backgroundColor: COLORS.pass }} />
-                              </div>
-                              <span className="font-bold text-t-primary">{rate}%</span>
-                            </div>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </FadeWrapper>
+          {/* 2.1-B1 — SegmentedBar imported from UI/ */}
+          <SegmentedBar
+            passRate={stats.passRate}
+            failPct={stats.failPct}
+            pendingPct={stats.pendingPct}
+            total={stats.total}
+          />
         </div>
-      )}
-    </>
+
+        {/* ── View toggle ── */}
+        <div className="flex items-center gap-2 bg-bg-base rounded-xl p-1 self-start">
+          {([{ mode: 'table', icon: <TableIcon size={13} />, label: 'Table' },
+             { mode: 'chart', icon: <BarChart2  size={13} />, label: 'Chart' }] as const).map(({ mode, icon, label }) => (
+            <button key={mode} onClick={() => setViewMode(mode)}
+              className={`flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg transition-colors ${viewMode === mode ? 'bg-c-brand text-white' : 'text-t-muted hover:text-t-primary'}`}>
+              {icon}{label}
+            </button>
+          ))}
+        </div>
+
+        {/* ── TABLE VIEW ── */}
+        {viewMode === 'table' && (
+          <div className="flex flex-col gap-2">
+            {results.length === 0 && (
+              <div className="text-center text-t-muted py-12">No steps recorded for this test.</div>
+            )}
+            {results.map((r, idx) => {
+              if (r.step?.isdivider) return (
+                <div key={r.id}
+                  className="flex items-center gap-3 px-4 py-2 rounded-lg bg-bg-surface border border-[var(--border-color)]"
+                  style={{ animation: `fadeSlideInRow 0.25s cubic-bezier(0.22,1,0.36,1) both`, animationDelay: `${idx * 30}ms` }}>
+                  <span className="flex-1 h-px bg-[var(--border-color)]" />
+                  <span className="text-[11px] font-bold text-t-muted uppercase tracking-widest shrink-0 px-2">
+                    {r.step.action || 'Section'}
+                  </span>
+                  <span className="flex-1 h-px bg-[var(--border-color)]" />
+                </div>
+              );
+
+              const isExpanded = expandedId === r.id;
+              return (
+                <div key={r.id}
+                  className={`card ${STATUS_ROW[r.status] ?? ''}`}
+                  style={{ animation: `fadeSlideInRow 0.25s cubic-bezier(0.22,1,0.36,1) both`, animationDelay: `${idx * 30}ms` }}>
+                  <button
+                    className="w-full flex items-start gap-3 text-left"
+                    onClick={() => setExpandedId(isExpanded ? null : r.id)}>
+                    <span className="shrink-0 mt-0.5">{STATUS_ICON[r.status]}</span>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="font-mono text-[11px] text-c-brand font-bold">{r.step?.serialno}</span>
+                        <span className="text-sm text-t-primary truncate">{r.step?.action}</span>
+                      </div>
+                      {!isExpanded && r.step?.expectedresult && (
+                        <p className="text-xs text-t-muted mt-0.5 truncate">{r.step.expectedresult}</p>
+                      )}
+                    </div>
+                    <span className="shrink-0 text-t-muted mt-1">
+                      {isExpanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+                    </span>
+                  </button>
+
+                  {isExpanded && (
+                    <div className="mt-3 pl-7 flex flex-col gap-2 text-xs text-t-muted border-t border-[var(--border-color)] pt-3">
+                      <div><span className="font-semibold text-t-primary">Expected: </span>{r.step?.expectedresult}</div>
+                      {r.note     && <div><span className="font-semibold text-t-primary">Note: </span>{r.note}</div>}
+                      {r.imageurl && (
+                        <img src={r.imageurl} alt="Step evidence"
+                          className="mt-1 rounded-xl max-h-48 object-contain border border-[var(--border-color)]" />
+                      )}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {/* ── CHART VIEW ── */}
+        {viewMode === 'chart' && (
+          <div className="card flex flex-col gap-3">
+            <div className="flex items-center justify-between flex-wrap gap-2">
+              <p className="text-sm font-semibold text-t-primary">Step Results</p>
+              <div className="flex items-center gap-1 bg-bg-base rounded-xl p-1">
+                {CHART_TYPES.map(({ type, label }) => (
+                  <button key={type} onClick={() => setChartType(type)}
+                    className={`text-xs font-semibold px-3 py-1 rounded-lg transition-colors ${chartType === type ? 'bg-c-brand text-white' : 'text-t-muted hover:text-t-primary'}`}>
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <FadeWrapper animKey={chartType}>
+              {chartType === 'bar'   && <RBarChart   data={chartData} ct={ct} />}
+              {chartType === 'area'  && <RAreaChart  data={chartData} ct={ct} />}
+              {chartType === 'line'  && <RLineChart  data={chartData} ct={ct} />}
+              {chartType === 'pie'   && <RPieChart   data={chartData} ct={ct} showLabel />}
+              {chartType === 'radar' && <RRadarChart data={chartData} ct={ct} />}
+            </FadeWrapper>
+          </div>
+        )}
+
+      </div>
+    </div>
   );
 };
 

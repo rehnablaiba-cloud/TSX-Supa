@@ -1,10 +1,17 @@
 import React, { useEffect, useState } from "react";
-import { supabase } from "../../supabase";
-import { useAuth } from "../../context/AuthContext";
-import Topbar from "../Layout/Topbar";
-import Spinner from "../UI/Spinner";
-import { Lock } from "lucide-react"; // ✅ only change
-import { AuditEvent } from "../../types";
+import { Lock } from "lucide-react";
+
+import { useAuth }  from "../../context/AuthContext";
+import Topbar       from "../Layout/Topbar";
+import Spinner      from "../UI/Spinner";
+import type { AuditEvent } from "../../types";
+
+// ── CHANGED: fetchAuditLog() from queries.ts instead of inline supabase call ─
+import { fetchAuditLog } from "../../lib/supabase/queries";
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Severity dot colours — unchanged
+// ─────────────────────────────────────────────────────────────────────────────
 
 const DOT: Record<string, string> = {
   pass: "bg-green-500",
@@ -13,34 +20,34 @@ const DOT: Record<string, string> = {
   info: "bg-blue-500",
 };
 
-const AuditLog: React.FC = () => {
-  const { user }              = useAuth();
-  const isAdmin               = user?.role === "admin"; // ✅ kept as-is
-  const [events, setEvents]   = useState<AuditEvent[]>([]);
-  const [loading, setLoading] = useState(true);
+// ─────────────────────────────────────────────────────────────────────────────
+// Component
+// ─────────────────────────────────────────────────────────────────────────────
 
+const AuditLog: React.FC = () => {
+  const { user }                    = useAuth();
+  const isAdmin                     = user?.role === "admin";
+  const [events,  setEvents]        = useState<AuditEvent[]>([]);
+  const [loading, setLoading]       = useState(true);
+
+  // ── CHANGED: one line instead of chained supabase builder ─────────────────
   useEffect(() => {
     if (!isAdmin) { setLoading(false); return; }
 
-    supabase
-      .from("audit_log")
-      .select("*")
-      .order("created_at", { ascending: false })
-      .limit(300)
-      .then(({ data, error }) => {
-        if (!error) setEvents(data ?? []);
-        setLoading(false);
-      });
+    fetchAuditLog(300)
+      .then(data  => setEvents(data as AuditEvent[]))
+      .catch(()   => {/* errors surfaced by queries.ts — silent here */})
+      .finally(() => setLoading(false));
   }, [isAdmin]);
 
+  // ── Admin guard — identical to original ───────────────────────────────────
   if (!isAdmin) {
     return (
       <div className="flex-1 flex flex-col">
         <Topbar title="Audit Log" subtitle="Admin only" />
         <div className="flex flex-col items-center justify-center flex-1 gap-4 p-8 text-center">
-          <div className="w-14 h-14 rounded-full bg-red-500/10 border border-red-500/20
-            flex items-center justify-center">
-            <Lock size={24} className="text-red-400" /> {/* ✅ Lucide */}
+          <div className="w-14 h-14 rounded-full bg-red-500/10 border border-red-500/20 flex items-center justify-center">
+            <Lock size={24} className="text-red-400" />
           </div>
           <div>
             <p className="font-semibold text-t-primary">Access Restricted</p>
@@ -62,7 +69,7 @@ const AuditLog: React.FC = () => {
         ) : (
           events.map(ev => (
             <div key={ev.id} className="glass rounded-xl px-4 py-3 flex items-start gap-3">
-              <span className={`mt-1.5 w-2 h-2 rounded-full shrink-0 ${DOT[ev.severity] ?? "bg-gray-500"}`} />
+              <span className={`mt-1.5 w-2 h-2 rounded-full shrink-0 ${DOT[ev.severity ?? ""] ?? "bg-gray-500"}`} />
               <div className="flex-1 min-w-0">
                 <p className="text-sm text-t-primary">{ev.action}</p>
                 <p className="text-xs text-t-muted mt-0.5">

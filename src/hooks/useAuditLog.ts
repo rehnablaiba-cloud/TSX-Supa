@@ -1,18 +1,27 @@
-import { supabase } from "../supabase";
 import { useAuth } from "../context/AuthContext";
+import { insertAuditEvent } from "../lib/supabase/queries.auditlog";
 
-export const useAuditLog = () => {
-  const { user } = useAuth();
+/**
+ * Returns a fire-and-forget `log(action, severity?)` helper.
+ * The actual supabase call lives in queries.auditlog.ts.
+ */
+const useAuditLog = () => {
+  const user = useAuth();
 
-  const log = (action: string, severity: "pass" | "fail" | "warn" | "info" = "info") => {
+  const log = (
+    action: string,
+    severity: "pass" | "fail" | "warn" | "info" = "info"
+  ) => {
     if (!user) return;
-    supabase.from("audit_log").insert({
-      user_id:  user.id,
-      username: user.displayName || user.email || "unknown",
+    insertAuditEvent({
+      userid:   user.id,
+      username: user.displayName ?? user.email ?? "unknown",
       action,
       severity,
-    }).then(({ error }) => { if (error) console.error(error); });
+    });
   };
 
-  return { log };
+  return log;
 };
+
+export default useAuditLog;

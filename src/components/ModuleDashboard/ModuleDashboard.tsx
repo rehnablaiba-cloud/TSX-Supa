@@ -1,47 +1,40 @@
-import React, { useEffect, useRef, useState, useMemo, useCallback } from "react";
-import { supabase } from "../../supabase";
-import Spinner from "../UI/Spinner";
-import Topbar from "../Layout/Topbar";
-import { useAuth } from "../../context/AuthContext";
-import { useTheme } from "../../context/ThemeContext";
-import { useToast } from "../../context/ToastContext";
-import { useAuditLog } from "../../hooks/useAuditLog";
-import { Lock, Pencil, Play, Download, FileSpreadsheet, FileText, X } from "lucide-react";
-import {
-  ResponsiveContainer,
-  BarChart, Bar,
-  AreaChart, Area,
-  LineChart, Line,
-  PieChart, Pie, Cell,
-  RadarChart, Radar, PolarGrid, PolarAngleAxis, PolarRadiusAxis,
-  XAxis, YAxis, CartesianGrid, Tooltip, Legend,
-} from "recharts";
-import {
-  exportModuleDetailCSV,
-  exportModuleDetailPDF,
-  FlatData,
-} from "../../utils/export";
+// src/components/ModuleDashboard/ModuleDashboard.tsx
+// Phase 2 B6 applied:
+//   RBarChart / RAreaChart / RLineChart / RPieChart / RRadarChart
+//   → imported from ./charts  (each is its own file now)
+//   CustomTooltip / PieTooltip / COLORS / ChartRow / ChartTheme
+//   → imported from ./charts/types or ./charts
 
+import React, { useEffect, useRef, useState, useMemo, useCallback } from 'react';
+import supabase from '../../../supabase';
+import Spinner from '../UI/Spinner';
+import Topbar from '../Layout/Topbar';
+import useAuth from '../../../context/AuthContext';
+import useTheme from '../../../context/ThemeContext';
+import useToast from '../../../context/ToastContext';
+import useAuditLog from '../../../hooks/useAuditLog';
+import { Lock, Pencil, Play, Download, FileSpreadsheet, FileText, X } from 'lucide-react';
+import { exportModuleDetailCSV, exportModuleDetailPDF, FlatData } from '../../../utils/export';
+
+import {
+  RBarChart,
+  RAreaChart,
+  RLineChart,
+  RPieChart,
+  RRadarChart,
+} from './charts';
+import type { ChartRow, ChartTheme } from './charts';
 
 // ── Animation keyframes ───────────────────────────────────────────────────────
 const ANIM_STYLE = `
-@keyframes fadeSlideIn {
-  from { opacity: 0; transform: translateY(10px); }
-  to   { opacity: 1; transform: translateY(0);    }
-}
-@keyframes fadeSlideInRow {
-  from { opacity: 0; transform: translateX(-6px); }
-  to   { opacity: 1; transform: translateX(0);    }
-}
-@keyframes fadeScaleIn {
-  from { opacity: 0; transform: scale(0.95) translateY(-4px); }
-  to   { opacity: 1; transform: scale(1)    translateY(0);    }
-}
+@keyframes fadeSlideIn    { from{opacity:0;transform:translateY(10px)}  to{opacity:1;transform:translateY(0)} }
+@keyframes fadeSlideInRow { from{opacity:0;transform:translateX(-6px)}  to{opacity:1;transform:translateX(0)} }
+@keyframes fadeScaleIn    { from{opacity:0;transform:scale(.95) translateY(-4px)} to{opacity:1;transform:scale(1) translateY(0)} }
 `;
 
 function useInjectStyle() {
   useEffect(() => {
-    const el = document.createElement("style");
+    const el = document.createElement('style');
     el.textContent = ANIM_STYLE;
     document.head.appendChild(el);
     return () => { document.head.removeChild(el); };
@@ -49,41 +42,26 @@ function useInjectStyle() {
 }
 
 const FadeWrapper: React.FC<{ animKey: string | number; children: React.ReactNode }> = ({ animKey, children }) => (
-  <div key={animKey} style={{ animation: "fadeSlideIn 0.28s cubic-bezier(0.22,1,0.36,1) both" }}>
-    {children}
-  </div>
+  <div key={animKey} style={{ animation: 'fadeSlideIn 0.28s cubic-bezier(0.22,1,0.36,1) both' }}>{children}</div>
 );
 
 const StaggerRow: React.FC<{ index: number; children: React.ReactNode }> = ({ index, children }) => (
-  <div style={{
-    animation: "fadeSlideInRow 0.25s cubic-bezier(0.22,1,0.36,1) both",
-    animationDelay: `${index * 45}ms`,
-  }}>
+  <div style={{ animation: 'fadeSlideInRow 0.25s cubic-bezier(0.22,1,0.36,1) both', animationDelay: `${index * 45}ms` }}>
     {children}
   </div>
 );
 
-
 // ── Constants ─────────────────────────────────────────────────────────────────
-const COLORS = { pass: "#22c55e", fail: "#ef4444", pending: "#f59e0b" };
-
-type ChartType = "bar" | "area" | "line" | "pie" | "radar";
+type ChartType = 'bar' | 'area' | 'line' | 'pie' | 'radar';
 const CHART_TYPES: { type: ChartType; label: string }[] = [
-  { type: "bar",   label: "Bar"   },
-  { type: "area",  label: "Area"  },
-  { type: "line",  label: "Line"  },
-  { type: "pie",   label: "Pie"   },
-  { type: "radar", label: "Radar" },
+  { type: 'bar',   label: 'Bar'   },
+  { type: 'area',  label: 'Area'  },
+  { type: 'line',  label: 'Line'  },
+  { type: 'pie',   label: 'Pie'   },
+  { type: 'radar', label: 'Radar' },
 ];
 
-interface ChartRow { name: string; pass: number; fail: number; pending: number; }
-interface ChartTheme {
-  panel: string; text: string; muted: string; grid: string;
-  border: string; tooltipBg: string; tooltipText: string; tooltipName: string;
-}
-
-
-// ── Props ─────────────────────────────────────────────────────────────────────
+// ── Props & DB types ──────────────────────────────────────────────────────────
 interface Props {
   moduleName: string;
   onBack: () => void;
@@ -92,744 +70,305 @@ interface Props {
 
 interface TrimmedStepResult {
   id: string;
-  status: "pass" | "fail" | "pending";
-  step: { id: string; is_divider: boolean; tests_name: string } | null;
+  status: 'pass' | 'fail' | 'pending';
+  step: { id: string; isdivider: boolean; testsname: string } | null;
 }
 
 interface ModuleTestRow {
   id: string;
-  tests_name: string;
-  test: { serial_no: number; name: string; description?: string };
-  step_results: TrimmedStepResult[];
+  testsname: string;
+  test: { serialno: number; name: string; description?: string };
+  stepresults: TrimmedStepResult[];
 }
 
-
-// ── Tooltips ──────────────────────────────────────────────────────────────────
-const CustomTooltip: React.FC<{
-  active?: boolean; payload?: any[]; label?: string; ct: ChartTheme;
-}> = ({ active, payload, label, ct }) => {
-  if (!active || !payload?.length) return null;
-  return (
-    <div className="px-3 py-2 rounded-xl border shadow-xl text-xs"
-      style={{ backgroundColor: ct.tooltipBg, borderColor: ct.border, color: ct.tooltipText }}>
-      <div className="font-semibold mb-1">{label}</div>
-      {payload.map((p: any) => (
-        <div key={p.dataKey} className="flex items-center justify-between gap-4">
-          <span style={{ color: ct.tooltipName }} className="capitalize">{p.dataKey}</span>
-          <span style={{ color: p.fill || p.stroke, fontWeight: 700 }}>{p.value}</span>
-        </div>
-      ))}
-    </div>
-  );
-};
-
-const PieTooltip: React.FC<{
-  active?: boolean; payload?: any[]; ct: ChartTheme;
-}> = ({ active, payload, ct }) => {
-  if (!active || !payload?.length) return null;
-  const { name, value, payload: inner } = payload[0];
-  const total = (inner?.pass ?? 0) + (inner?.fail ?? 0) + (inner?.pending ?? 0);
-  return (
-    <div className="px-3 py-2 rounded-xl border shadow-xl text-xs"
-      style={{ backgroundColor: ct.tooltipBg, borderColor: ct.border, color: ct.tooltipText }}>
-      <div className="font-semibold capitalize mb-1">{name}</div>
-      <div style={{ color: COLORS[name as keyof typeof COLORS], fontWeight: 700 }}>
-        {value} ({total > 0 ? Math.round((value / total) * 100) : 0}%)
-      </div>
-    </div>
-  );
-};
-
-
-// ── Chart sub-components ──────────────────────────────────────────────────────
-const RBarChart: React.FC<{ data: ChartRow[]; ct: ChartTheme }> = ({ data, ct }) => (
-  <ResponsiveContainer width="100%" height={220}>
-    <BarChart data={data} margin={{ top: 8, right: 16, left: -16, bottom: 8 }} barCategoryGap="28%" barGap={3}>
-      <CartesianGrid strokeDasharray="4 3" stroke={ct.grid} vertical={false} />
-      <XAxis dataKey="name" tick={{ fill: ct.muted, fontSize: 11 }} axisLine={false} tickLine={false}
-        tickFormatter={(v) => v.length > 10 ? v.slice(0, 9) + "\u2026" : v} />
-      <YAxis tick={{ fill: ct.muted, fontSize: 11 }} axisLine={false} tickLine={false} />
-      <Tooltip content={<CustomTooltip ct={ct} />} cursor={{ fill: "rgba(255,255,255,0.04)" }} />
-      <Legend iconType="square" iconSize={10}
-        formatter={(v) => <span style={{ color: ct.muted, fontSize: 11, textTransform: "capitalize" }}>{v}</span>} />
-      <Bar dataKey="pass"    fill={COLORS.pass}    radius={[3,3,0,0]} maxBarSize={18} isAnimationActive />
-      <Bar dataKey="fail"    fill={COLORS.fail}    radius={[3,3,0,0]} maxBarSize={18} isAnimationActive />
-      <Bar dataKey="pending" fill={COLORS.pending} radius={[3,3,0,0]} maxBarSize={18} isAnimationActive />
-    </BarChart>
-  </ResponsiveContainer>
-);
-
-const RAreaChart: React.FC<{ data: ChartRow[]; ct: ChartTheme }> = ({ data, ct }) => (
-  <ResponsiveContainer width="100%" height={220}>
-    <AreaChart data={data} margin={{ top: 8, right: 16, left: -16, bottom: 8 }}>
-      <defs>
-        {(["pass", "fail", "pending"] as const).map(k => (
-          <linearGradient key={k} id={`md-rg-${k}`} x1="0" y1="0" x2="0" y2="1">
-            <stop offset="5%"  stopColor={COLORS[k]} stopOpacity={0.35} />
-            <stop offset="95%" stopColor={COLORS[k]} stopOpacity={0.02} />
-          </linearGradient>
-        ))}
-      </defs>
-      <CartesianGrid strokeDasharray="4 3" stroke={ct.grid} vertical={false} />
-      <XAxis dataKey="name" tick={{ fill: ct.muted, fontSize: 11 }} axisLine={false} tickLine={false}
-        tickFormatter={(v) => v.length > 10 ? v.slice(0, 9) + "\u2026" : v} />
-      <YAxis tick={{ fill: ct.muted, fontSize: 11 }} axisLine={false} tickLine={false} />
-      <Tooltip content={<CustomTooltip ct={ct} />} />
-      <Legend iconType="square" iconSize={10}
-        formatter={(v) => <span style={{ color: ct.muted, fontSize: 11, textTransform: "capitalize" }}>{v}</span>} />
-      <Area type="monotone" dataKey="pending" stroke={COLORS.pending} fill="url(#md-rg-pending)" strokeWidth={2.5} dot={false} isAnimationActive />
-      <Area type="monotone" dataKey="fail"    stroke={COLORS.fail}    fill="url(#md-rg-fail)"    strokeWidth={2.5} dot={false} isAnimationActive />
-      <Area type="monotone" dataKey="pass"    stroke={COLORS.pass}    fill="url(#md-rg-pass)"    strokeWidth={2.5}
-        dot={{ r: 3.5, strokeWidth: 1.5, fill: COLORS.pass }} isAnimationActive />
-    </AreaChart>
-  </ResponsiveContainer>
-);
-
-const RLineChart: React.FC<{ data: ChartRow[]; ct: ChartTheme }> = ({ data, ct }) => (
-  <ResponsiveContainer width="100%" height={220}>
-    <LineChart data={data} margin={{ top: 8, right: 16, left: -16, bottom: 8 }}>
-      <CartesianGrid strokeDasharray="4 3" stroke={ct.grid} vertical={false} />
-      <XAxis dataKey="name" tick={{ fill: ct.muted, fontSize: 11 }} axisLine={false} tickLine={false}
-        tickFormatter={(v) => v.length > 10 ? v.slice(0, 9) + "\u2026" : v} />
-      <YAxis tick={{ fill: ct.muted, fontSize: 11 }} axisLine={false} tickLine={false} />
-      <Tooltip content={<CustomTooltip ct={ct} />} />
-      <Legend iconType="square" iconSize={10}
-        formatter={(v) => <span style={{ color: ct.muted, fontSize: 11, textTransform: "capitalize" }}>{v}</span>} />
-      <Line type="monotone" dataKey="pass"    stroke={COLORS.pass}    strokeWidth={2.5}
-        dot={{ r: 3.5, strokeWidth: 1.5, fill: ct.panel }} activeDot={{ r: 5 }} isAnimationActive />
-      <Line type="monotone" dataKey="fail"    stroke={COLORS.fail}    strokeWidth={2.5}
-        dot={{ r: 3.5, strokeWidth: 1.5, fill: ct.panel }} activeDot={{ r: 5 }} isAnimationActive />
-      <Line type="monotone" dataKey="pending" stroke={COLORS.pending} strokeWidth={2.5}
-        dot={{ r: 3.5, strokeWidth: 1.5, fill: ct.panel }} activeDot={{ r: 5 }} isAnimationActive />
-    </LineChart>
-  </ResponsiveContainer>
-);
-
-const RPieChart: React.FC<{ data: ChartRow[]; ct: ChartTheme }> = ({ data, ct }) => {
-  const totals = data.reduce(
-    (acc, d) => ({ pass: acc.pass + d.pass, fail: acc.fail + d.fail, pending: acc.pending + d.pending }),
-    { pass: 0, fail: 0, pending: 0 }
-  );
-  const total = totals.pass + totals.fail + totals.pending;
-  const pieData = (["pass", "fail", "pending"] as const)
-    .map(k => ({ name: k, value: totals[k], ...totals }))
-    .filter(d => d.value > 0);
-
-  if (total === 0) return (
-    <div className="flex items-center justify-center h-40">
-      <span className="text-sm" style={{ color: ct.muted }}>No data to display</span>
-    </div>
-  );
-
-  return (
-    <ResponsiveContainer width="100%" height={220}>
-      <PieChart>
-        <Pie data={pieData} cx="50%" cy="50%" innerRadius="46%" outerRadius="72%"
-          paddingAngle={3} dataKey="value" nameKey="name" isAnimationActive>
-          {pieData.map((entry) => (
-            <Cell key={entry.name} fill={COLORS[entry.name as keyof typeof COLORS]} opacity={0.88} />
-          ))}
-        </Pie>
-        <Tooltip content={<PieTooltip ct={ct} />} />
-        <Legend iconType="circle" iconSize={10}
-          formatter={(v) => (
-            <span style={{ color: ct.muted, fontSize: 11, textTransform: "capitalize" }}>
-              {v} · {totals[v as keyof typeof totals]}
-            </span>
-          )} />
-      </PieChart>
-    </ResponsiveContainer>
-  );
-};
-
-const RRadarChart: React.FC<{ data: ChartRow[]; ct: ChartTheme }> = ({ data, ct }) => {
-  if (data.length === 0) return (
-    <div className="flex items-center justify-center h-40">
-      <span className="text-sm" style={{ color: ct.muted }}>No data to display</span>
-    </div>
-  );
-  return (
-    <ResponsiveContainer width="100%" height={220}>
-      <RadarChart cx="50%" cy="50%" outerRadius="72%" data={data}>
-        <PolarGrid stroke={ct.grid} />
-        <PolarAngleAxis dataKey="name" tick={{ fill: ct.muted, fontSize: 11 }}
-          tickFormatter={(v) => v.length > 10 ? v.slice(0, 9) + "\u2026" : v} />
-        <PolarRadiusAxis tick={{ fill: ct.muted, fontSize: 10 }} axisLine={false} />
-        <Tooltip content={<CustomTooltip ct={ct} />} />
-        <Legend iconType="square" iconSize={10}
-          formatter={(v) => <span style={{ color: ct.muted, fontSize: 11, textTransform: "capitalize" }}>{v}</span>} />
-        <Radar name="pass"    dataKey="pass"    stroke={COLORS.pass}    fill={COLORS.pass}    fillOpacity={0.18} strokeWidth={2} isAnimationActive />
-        <Radar name="fail"    dataKey="fail"    stroke={COLORS.fail}    fill={COLORS.fail}    fillOpacity={0.18} strokeWidth={2} isAnimationActive />
-        <Radar name="pending" dataKey="pending" stroke={COLORS.pending} fill={COLORS.pending} fillOpacity={0.18} strokeWidth={2} isAnimationActive />
-      </RadarChart>
-    </ResponsiveContainer>
-  );
-};
-
-
-// ── Export modal ──────────────────────────────────────────────────────────────
-interface ExportOption {
-  label: string;
-  icon: React.ReactNode;
-  color: string;
-  hoverColor: string;
-  onConfirm: (data: FlatData[]) => void;
-}
-
-const ExportModal: React.FC<{
-  moduleName: string;
-  options: ExportOption[];
-  onClose: () => void;
-}> = ({ moduleName, options, onClose }) => {
-  const [loading, setLoading] = useState(false);
-  const [error, setError]     = useState<string | null>(null);
-  const overlayRef            = useRef<HTMLDivElement>(null);
-
-  // Close on backdrop click
-  const handleOverlayClick = (e: React.MouseEvent) => {
-    if (e.target === overlayRef.current) onClose();
-  };
-
-  // Close on Escape
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
-
-  const fetchAndExport = async (option: ExportOption) => {
-    setLoading(true);
-    setError(null);
-    try {
-      // Fetch full step data for this module on demand
-      const [stepsRes, resultsRes] = await Promise.all([
-        supabase
-          .from("test_steps")
-          .select("id, serial_no, action, expected_result, is_divider, tests_name")
-          .eq("module_name", moduleName)
-          .order("serial_no"),
-        supabase
-          .from("step_results")
-          .select("test_steps_id, status, remarks")
-          .eq("module_name", moduleName),
-      ]);
-
-      if (stepsRes.error)   throw new Error(stepsRes.error.message);
-      if (resultsRes.error) throw new Error(resultsRes.error.message);
-
-      // Build result lookup: step_id → { status, remarks }
-      const resultMap = new Map<string, { status: string; remarks: string }>();
-      for (const r of resultsRes.data ?? []) {
-        resultMap.set(r.test_steps_id, { status: r.status ?? "pending", remarks: r.remarks ?? "" });
-      }
-
-      // Group steps by tests_name, preserving module order
-      const testsOrder = new Map<string, number>();
-      for (const step of stepsRes.data ?? []) {
-        if (!testsOrder.has(step.tests_name)) testsOrder.set(step.tests_name, testsOrder.size);
-      }
-
-      const flatData: FlatData[] = (stepsRes.data ?? [])
-        .sort((a, b) => {
-          const tOrder = (testsOrder.get(a.tests_name) ?? 0) - (testsOrder.get(b.tests_name) ?? 0);
-          return tOrder !== 0 ? tOrder : a.serial_no - b.serial_no;
-        })
-        .map(step => {
-          const res = resultMap.get(step.id);
-          return {
-            module:    moduleName,
-            test:      step.tests_name,
-            serial:    step.serial_no,
-            action:    step.action ?? "",
-            expected:  step.expected_result ?? "",
-            remarks:   res?.remarks ?? "",
-            status:    res?.status ?? "pending",
-            isDivider: step.is_divider ?? false,
-          };
-        });
-
-      option.onConfirm(flatData);
-      onClose();
-    } catch (err: any) {
-      setError(err.message ?? "Export failed. Please try again.");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  return (
-    <div
-      ref={overlayRef}
-      onClick={handleOverlayClick}
-      className="fixed inset-0 z-50 flex items-center justify-center p-4"
-      style={{ backgroundColor: "rgba(0,0,0,0.45)", backdropFilter: "blur(4px)" }}
-    >
-      <div
-        className="relative w-full max-w-sm rounded-2xl border shadow-2xl p-6"
-        style={{
-          animation: "fadeScaleIn 0.22s cubic-bezier(0.22,1,0.36,1) both",
-          backgroundColor: "var(--bg-card)",
-          borderColor: "var(--border-color)",
-        }}
-      >
-        {/* Header */}
-        <div className="flex items-start justify-between mb-1">
-          <div>
-            <h2 className="font-semibold text-t-primary text-base">Export Module</h2>
-            <p className="text-xs text-t-muted mt-0.5 truncate max-w-[220px]" title={moduleName}>
-              {moduleName}
-            </p>
-          </div>
-          <button
-            onClick={onClose}
-            className="p-1.5 rounded-lg transition-colors hover:bg-[var(--bg-hover)] text-t-muted hover:text-t-primary"
-          >
-            <X size={16} />
-          </button>
-        </div>
-
-        <p className="text-xs text-t-muted mb-5 mt-3 leading-relaxed">
-          Exports all tests and their step results for this module, grouped by test.
-        </p>
-
-        {/* Error */}
-        {error && (
-          <div className="mb-4 px-3 py-2.5 rounded-lg bg-red-500/10 border border-red-500/30 text-xs text-red-500">
-            {error}
-          </div>
-        )}
-
-        {/* Export buttons */}
-        <div className="flex flex-col gap-2.5">
-          {options.map((opt) => (
-            <button
-              key={opt.label}
-              onClick={() => fetchAndExport(opt)}
-              disabled={loading}
-              className={`
-                flex items-center gap-3 w-full px-4 py-3 rounded-xl
-                text-sm font-semibold text-white transition-all
-                ${opt.color} ${opt.hoverColor}
-                disabled:opacity-50 disabled:cursor-not-allowed
-                active:scale-[0.98]
-              `}
-            >
-              {loading ? (
-                <svg className="animate-spin w-4 h-4 shrink-0" viewBox="0 0 24 24" fill="none">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                  <path className="opacity-75" fill="currentColor"
-                    d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-                </svg>
-              ) : (
-                <span className="shrink-0">{opt.icon}</span>
-              )}
-              <div className="text-left">
-                <div>{loading ? "Exporting…" : `Export as ${opt.label}`}</div>
-                <div className="text-xs font-normal opacity-80">
-                  {opt.label === "CSV" ? "Spreadsheet-compatible format" : "Formatted report document"}
-                </div>
-              </div>
-            </button>
-          ))}
-        </div>
-      </div>
-    </div>
-  );
-};
-
-
-// ── Main Component ────────────────────────────────────────────────────────────
+// ══════════════════════════════════════════════════════════════════════════════
+// MAIN COMPONENT
+// ══════════════════════════════════════════════════════════════════════════════
 const ModuleDashboard: React.FC<Props> = ({ moduleName, onBack, onExecute }) => {
   useInjectStyle();
-  const { user }     = useAuth();
-  const isAdmin      = user?.role === "admin";
-  const { addToast } = useToast();
-  const { log }      = useAuditLog();
-  const { theme }    = useTheme();
 
-  const [moduleTests, setModuleTests]   = useState<ModuleTestRow[]>([]);
-  const [loading, setLoading]           = useState(true);
-  const [error, setError]               = useState<string | null>(null);
-  const [locks, setLocks]               = useState<any[]>([]);
-  const [selectedMtId, setSelectedMtId] = useState<string | null>(null);
-  const [chartType, setChartType]       = useState<ChartType>("bar");
-  const [showExport, setShowExport]     = useState(false);
+  const { user }        = useAuth();
+  const { theme }       = useTheme();
+  const { addToast }    = useToast();
+  const { logEvent }    = useAuditLog();
 
-  const lockRefetchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const fetchSeq = useRef(0);
+  const [moduleTests, setModuleTests] = useState<ModuleTestRow[]>([]);
+  const [loading, setLoading]         = useState(true);
+  const [error, setError]             = useState<string | null>(null);
+  const [chartType, setChartType]     = useState<ChartType>('bar');
+  const [editingDesc, setEditingDesc] = useState<string | null>(null);
+  const [descDraft, setDescDraft]     = useState('');
+  const [savingDesc, setSavingDesc]   = useState(false);
+  const mountedRef = useRef(true);
 
-  const refetchLocks = useCallback(() => {
-    if (lockRefetchTimer.current) clearTimeout(lockRefetchTimer.current);
-    lockRefetchTimer.current = setTimeout(() => {
-      const seq = ++fetchSeq.current;
-      supabase
-        .from("test_locks")
-        .select("module_test_id, user_id, locked_by_name")
-        .then(({ data }) => {
-          if (seq === fetchSeq.current) setLocks(data ?? []);
-        });
-    }, 300);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => { mountedRef.current = false; };
   }, []);
 
-  // ── Load ──────────────────────────────────────────────────────────────────
-  useEffect(() => {
-    let cancelled = false;
-    const load = async () => {
-      setLoading(true);
-      setError(null);
-
-      const [mtRes, srRes, locksRes] = await Promise.all([
-        supabase
-          .from("module_tests")
-          .select("id, tests_name, test:tests!tests_name(serial_no, name, description)")
-          .eq("module_name", moduleName),
-        supabase
-          .from("step_results")
-          .select("id, status, step:test_steps!test_steps_id(id, is_divider, tests_name)")
-          .eq("module_name", moduleName),
-        supabase
-          .from("test_locks")
-          .select("module_test_id, user_id, locked_by_name"),
-      ]);
-
-      if (cancelled) return;
-      if (mtRes.error) { setError(mtRes.error.message); setLoading(false); return; }
-      if (srRes.error) { setError(srRes.error.message); setLoading(false); return; }
-
-      const allStepResults: TrimmedStepResult[] = (srRes.data ?? []) as any[];
-      const merged: ModuleTestRow[] = ((mtRes.data ?? []) as any[])
-        .map(mt => ({
-          id: mt.id,
-          tests_name: mt.tests_name,
-          test: mt.test,
-          step_results: allStepResults.filter(sr => sr.step?.tests_name === mt.tests_name),
-        }))
-        .sort((a, b) => (a.test?.serial_no ?? 0) - (b.test?.serial_no ?? 0));
-
-      setModuleTests(merged);
-      setLocks(locksRes.data ?? []);
-      setLoading(false);
+  // ── ChartTheme derived from CSS vars ──────────────────────────────────────
+  const ct = useMemo<ChartTheme>(() => {
+    const s = getComputedStyle(document.documentElement);
+    const get = (v: string) => s.getPropertyValue(v).trim();
+    const isDark = theme === 'dark';
+    return {
+      panel:       isDark ? '#0f172a' : '#ffffff',
+      text:        get('--text-primary')   || (isDark ? '#f1f5f9' : '#1e293b'),
+      muted:       get('--text-muted')     || (isDark ? '#64748b' : '#94a3b8'),
+      grid:        isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)',
+      border:      isDark ? 'rgba(255,255,255,0.10)' : 'rgba(0,0,0,0.10)',
+      tooltipBg:   isDark ? '#1e293b' : '#ffffff',
+      tooltipText: isDark ? '#f1f5f9' : '#1e293b',
+      tooltipName: isDark ? '#94a3b8' : '#64748b',
     };
+  }, [theme]);
 
-    load();
-    return () => { cancelled = true; };
+  // ── Fetch ─────────────────────────────────────────────────────────────────
+  const fetchData = useCallback(async () => {
+    setLoading(true);
+    const { data, error: err } = await supabase
+      .from('moduletests')
+      .select(`
+        id, testsname,
+        test:tests!testsname ( serialno, name, description ),
+        stepresults:stepresults!moduletestid (
+          id, status,
+          step:teststeps!teststepsid ( id, isdivider, testsname )
+        )
+      `)
+      .eq('modulename', moduleName)
+      .order('testsname');
+
+    if (!mountedRef.current) return;
+    if (err) { setError(err.message); setLoading(false); return; }
+    setModuleTests((data ?? []) as ModuleTestRow[]);
+    setError(null);
+    setLoading(false);
   }, [moduleName]);
 
-  // ── Realtime locks ─────────────────────────────────────────────────────────
+  useEffect(() => { fetchData(); }, [fetchData]);
+
+  // ── Realtime ──────────────────────────────────────────────────────────────
   useEffect(() => {
-    let mounted = true;
-    const channel = supabase.channel("all-locks")
-      .on("postgres_changes", { event: "*", schema: "public", table: "test_locks" }, () => {
-        if (mounted) refetchLocks();
-      })
+    const channel = supabase
+      .channel(`module-dashboard-${moduleName}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'stepresults' }, fetchData)
       .subscribe();
-    return () => {
-      mounted = false;
-      if (lockRefetchTimer.current) clearTimeout(lockRefetchTimer.current);
-      supabase.removeChannel(channel);
-    };
-  }, [refetchLocks]);
+    return () => { supabase.removeChannel(channel); };
+  }, [moduleName, fetchData]);
 
-  // ── Chart theme ────────────────────────────────────────────────────────────
-  const chartTheme: ChartTheme = theme === "dark"
-    ? { panel: "#111827", text: "#e5e7eb", muted: "#94a3b8", grid: "#334155",
-        border: "#334155", tooltipBg: "#0f172a", tooltipText: "#f8fafc", tooltipName: "#cbd5e1" }
-    : { panel: "#ffffff", text: "#0f172a", muted: "#475569", grid: "#cbd5e1",
-        border: "#cbd5e1", tooltipBg: "#ffffff", tooltipText: "#0f172a", tooltipName: "#475569" };
-
-  const filteredMts = useMemo(() =>
-    selectedMtId ? moduleTests.filter(mt => mt.id === selectedMtId) : moduleTests,
-    [moduleTests, selectedMtId]
-  );
-
+  // ── Derived stats ─────────────────────────────────────────────────────────
   const chartData = useMemo<ChartRow[]>(() =>
-    filteredMts.map(mt => {
-      const results = (mt.step_results ?? []).filter(sr => !sr.step?.is_divider);
+    moduleTests.map(mt => {
+      const real = mt.stepresults.filter(sr => !sr.step?.isdivider);
       return {
-        name:    mt.test?.name ?? "",
-        pass:    results.filter(sr => sr.status === "pass").length,
-        fail:    results.filter(sr => sr.status === "fail").length,
-        pending: results.filter(sr => sr.status === "pending").length,
+        name:    mt.test?.name ?? mt.testsname,
+        pass:    real.filter(sr => sr.status === 'pass').length,
+        fail:    real.filter(sr => sr.status === 'fail').length,
+        pending: real.filter(sr => sr.status === 'pending').length,
       };
-    }), [filteredMts]);
+    }), [moduleTests]);
 
-  const moduleTestIdSet = useMemo(() => new Set(moduleTests.map(mt => mt.id)), [moduleTests]);
-  const scopedLocks     = useMemo(() => locks.filter(l => moduleTestIdSet.has(l.module_test_id)), [locks, moduleTestIdSet]);
+  const globalStats = useMemo(() => {
+    const pass    = chartData.reduce((a, x) => a + x.pass, 0);
+    const fail    = chartData.reduce((a, x) => a + x.fail, 0);
+    const pending = chartData.reduce((a, x) => a + x.pending, 0);
+    const total   = pass + fail + pending;
+    return { pass, fail, pending, total, passRate: total > 0 ? Math.round((pass / total) * 100) : 0 };
+  }, [chartData]);
 
-  const handleExecute = (mtId: string) => {
-    const lock = scopedLocks.find(l => l.module_test_id === mtId);
-    if (lock && user && lock.user_id !== user.id) return;
-    onExecute(mtId);
+  // ── Save description ──────────────────────────────────────────────────────
+  const saveDesc = async (moduleTestId: string) => {
+    setSavingDesc(true);
+    const { error: e } = await supabase
+      .from('moduletests')
+      .update({ description: descDraft.trim() || null })
+      .eq('id', moduleTestId);
+    setSavingDesc(false);
+    if (e) { addToast('Failed to save description', 'error'); return; }
+    setEditingDesc(null);
+    logEvent('update', `Updated description for test in ${moduleName}`, user?.id);
+    fetchData();
   };
 
-  const handleForceRelease = async (mtId: string, lockedByName: string) => {
-    const { error } = await supabase.from("test_locks").delete().eq("module_test_id", mtId);
-    if (error) {
-      addToast("Failed to release lock: " + error.message, "error");
-    } else {
-      log(`Force-released lock held by ${lockedByName}`, "warn");
-      addToast(`Lock held by ${lockedByName} released`, "success");
-    }
-  };
-
-  // ── Export options ─────────────────────────────────────────────────────────
-  const exportOptions: ExportOption[] = [
-    {
-      label: "CSV",
-      icon: <FileSpreadsheet size={16} />,
-      color: "bg-[var(--color-primary)]",
-      hoverColor: "hover:bg-[var(--color-primary-hover)]",
-      onConfirm: (data) => exportModuleDetailCSV(data),
-    },
-    {
-      label: "PDF",
-      icon: <FileText size={16} />,
-      color: "bg-[var(--color-blue)]",
-      hoverColor: "hover:bg-[var(--color-blue-hover)]",
-      onConfirm: (data) => exportModuleDetailPDF(data),
-    },
-  ];
-
-  const listAnimKey  = selectedMtId ?? "all";
-  const chartAnimKey = `${selectedMtId ?? "all"}-${chartType}`;
-
-  if (loading) return <div className="flex-1 flex items-center justify-center"><Spinner /></div>;
+  // ── Loading / error states ────────────────────────────────────────────────
+  if (loading) return (
+    <div className="flex-1 flex flex-col">
+      <Topbar title={moduleName} onBack={onBack} />
+      <div className="flex items-center justify-center flex-1"><Spinner /></div>
+    </div>
+  );
 
   if (error) return (
     <div className="flex-1 flex flex-col">
-      <Topbar title={moduleName} subtitle="Error" onBack={onBack} />
-      <div className="flex-1 flex items-center justify-center p-6">
-        <div className="text-center">
-          <p className="text-sm font-semibold text-red-500 mb-1">Failed to load module data</p>
-          <p className="text-xs text-t-muted">{error}</p>
+      <Topbar title={moduleName} onBack={onBack} />
+      <div className="p-6">
+        <div className="bg-red-500/10 border border-red-500/30 rounded-xl p-4 text-red-500 text-sm">
+          Failed to load module: {error}
         </div>
       </div>
     </div>
   );
 
+  // ── Export helpers ─────────────────────────────────────────────────────────
+  const buildFlatData = (): FlatData[] =>
+    moduleTests.flatMap(mt =>
+      mt.stepresults
+        .filter(sr => !sr.step?.isdivider)
+        .map(sr => ({
+          module:    moduleName,
+          test:      mt.test?.name ?? mt.testsname,
+          serialno:  mt.test?.serialno ?? 0,
+          stepId:    sr.step?.id ?? '',
+          status:    sr.status,
+        }))
+    );
+
+  // ── Render ────────────────────────────────────────────────────────────────
   return (
     <div className="flex-1 flex flex-col">
-      <Topbar title={moduleName} subtitle={`${moduleTests.length} tests`} onBack={onBack} />
+      <Topbar
+        title={moduleName}
+        subtitle={`${moduleTests.length} test${moduleTests.length !== 1 ? 's' : ''} · ${globalStats.total} steps`}
+        onBack={onBack}
+        actions={
+          <div className="flex items-center gap-2">
+            <button onClick={() => exportModuleDetailCSV(buildFlatData(), moduleName)}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg bg-bg-card hover:bg-bg-surface border border-[var(--border-color)] text-t-primary transition">
+              <FileSpreadsheet size={13} />CSV
+            </button>
+            <button onClick={() => exportModuleDetailPDF(buildFlatData(), moduleName)}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg bg-bg-card hover:bg-bg-surface border border-[var(--border-color)] text-t-primary transition">
+              <FileText size={13} />PDF
+            </button>
+          </div>
+        }
+      />
 
       <div className="p-6 flex flex-col gap-6 pb-24 md:pb-6">
 
-        {/* ── Chart panel ── */}
-        <div className="p-4 rounded-xl border"
-          style={{ backgroundColor: chartTheme.panel, borderColor: chartTheme.border }}>
-          <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
-            <h3 className="text-sm font-semibold" style={{ color: chartTheme.text }}>Execution Graph</h3>
-            <div className="flex items-center gap-0.5 rounded-lg p-0.5 border"
-              style={{
-                backgroundColor: theme === "dark" ? "rgba(255,255,255,0.04)" : "rgba(0,0,0,0.04)",
-                borderColor: chartTheme.border,
-              }}>
-              {CHART_TYPES.map(({ type, label }) => (
-                <button key={type} onClick={() => setChartType(type)}
-                  style={chartType === type
-                    ? { backgroundColor: "#1d4ed8", color: "#ffffff" }
-                    : { color: chartTheme.muted }
-                  }
-                  className="px-2.5 py-1 rounded-md text-xs font-medium transition-all">
-                  {label}
-                </button>
-              ))}
+        {/* ── Global stat pills ── */}
+        <div className="flex flex-wrap gap-2">
+          {[
+            { label: 'Total',   value: globalStats.total,   cls: 'bg-bg-card text-t-primary'  },
+            { label: 'Pass',    value: globalStats.pass,    cls: 'bg-green-500/10 text-green-400' },
+            { label: 'Fail',    value: globalStats.fail,    cls: 'bg-red-500/10 text-red-400'     },
+            { label: 'Pending', value: globalStats.pending, cls: 'bg-amber-500/10 text-amber-400' },
+            { label: 'Pass %',  value: `${globalStats.passRate}%`, cls: 'bg-c-brand-bg text-c-brand' },
+          ].map(s => (
+            <span key={s.label} className={`flex items-center gap-1 text-xs font-bold px-3 py-1 rounded-full border border-[var(--border-color)] ${s.cls}`}>
+              {s.label}: {s.value}
+            </span>
+          ))}
+        </div>
+
+        {/* ── Chart type selector + chart ── */}
+        {moduleTests.length > 0 && (
+          <div className="card flex flex-col gap-3">
+            <div className="flex items-center justify-between flex-wrap gap-2">
+              <p className="text-sm font-semibold text-t-primary">Step Results by Test</p>
+              <div className="flex items-center gap-1 bg-bg-base rounded-xl p-1">
+                {CHART_TYPES.map(({ type, label }) => (
+                  <button key={type} onClick={() => setChartType(type)}
+                    className={`text-xs font-semibold px-3 py-1 rounded-lg transition-colors ${chartType === type ? 'bg-c-brand text-white' : 'text-t-muted hover:text-t-primary'}`}>
+                    {label}
+                  </button>
+                ))}
+              </div>
             </div>
+            <FadeWrapper animKey={chartType}>
+              {chartType === 'bar'   && <RBarChart   data={chartData} ct={ct} />}
+              {chartType === 'area'  && <RAreaChart  data={chartData} ct={ct} />}
+              {chartType === 'line'  && <RLineChart  data={chartData} ct={ct} />}
+              {chartType === 'pie'   && <RPieChart   data={chartData} ct={ct} />}
+              {chartType === 'radar' && <RRadarChart data={chartData} ct={ct} />}
+            </FadeWrapper>
           </div>
-
-          <FadeWrapper animKey={chartAnimKey}>
-            {(() => {
-              switch (chartType) {
-                case "bar":   return <RBarChart   data={chartData} ct={chartTheme} />;
-                case "area":  return <RAreaChart  data={chartData} ct={chartTheme} />;
-                case "line":  return <RLineChart  data={chartData} ct={chartTheme} />;
-                case "pie":   return <RPieChart   data={chartData} ct={chartTheme} />;
-                case "radar": return <RRadarChart data={chartData} ct={chartTheme} />;
-              }
-            })()}
-          </FadeWrapper>
-        </div>
-
-        {/* ── Filter + Export row ── */}
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="flex flex-wrap items-center gap-3">
-            <label className="text-sm text-t-muted">Filter by Test</label>
-            <select
-              value={selectedMtId ?? ""}
-              onChange={(e) => setSelectedMtId(e.target.value || null)}
-              className="input text-sm"
-            >
-              <option value="">All Tests</option>
-              {moduleTests.map((mt) => (
-                <option key={mt.id} value={mt.id}>
-                  {mt.test?.serial_no} — {mt.test?.name}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          {/* Export button */}
-          <button
-            onClick={() => setShowExport(true)}
-            className="flex items-center gap-2 px-3.5 py-2 rounded-xl border text-sm font-medium
-              text-t-secondary hover:text-t-primary transition-all
-              hover:bg-[var(--bg-hover)] hover:border-[var(--color-primary)]
-              active:scale-[0.97]"
-            style={{ borderColor: "var(--border-color)" }}
-            title="Export module report"
-          >
-            <Download size={15} />
-            Export
-          </button>
-        </div>
+        )}
 
         {/* ── Test list ── */}
-        <div className="flex flex-col gap-1">
-          <h3 className="font-semibold text-t-secondary mb-2">Test Cases</h3>
+        <div className="flex flex-col gap-3">
+          {moduleTests.length === 0 && (
+            <div className="text-center text-t-muted py-12">No tests assigned to this module yet.</div>
+          )}
+          {moduleTests.map((mt, idx) => {
+            const real    = mt.stepresults.filter(sr => !sr.step?.isdivider);
+            const pass    = real.filter(sr => sr.status === 'pass').length;
+            const fail    = real.filter(sr => sr.status === 'fail').length;
+            const pending = real.filter(sr => sr.status === 'pending').length;
+            const total   = real.length;
+            const passRate = total > 0 ? Math.round((pass / total) * 100) : 0;
+            const failPct  = total > 0 ? Math.round((fail / total) * 100) : 0;
 
-          <FadeWrapper animKey={listAnimKey}>
-            <div className="flex flex-col gap-3">
-              {filteredMts.length === 0 ? (
-                <p className="text-sm text-t-muted">No tests found.</p>
-              ) : (
-                filteredMts.map((mt, index) => {
-                  const lock            = scopedLocks.find(l => l.module_test_id === mt.id);
-                  const isLockedByOther = !!(lock && user && lock.user_id !== user.id);
-                  const isLockedByMe    = !!(lock && user && lock.user_id === user.id);
-                  const results = (mt.step_results ?? []).filter(sr => !sr.step?.is_divider);
-                  return (
-                    <StaggerRow key={mt.id} index={index}>
-                      <TestRow
-                        testName={mt.test?.name ?? ""}
-                        testSerialNo={mt.test?.serial_no ?? 0}
-                        results={results}
-                        onExecute={() => handleExecute(mt.id)}
-                        isLockedByOther={isLockedByOther}
-                        isLockedByMe={isLockedByMe}
-                        lockedByName={lock?.locked_by_name ?? ""}
-                        isAdmin={isAdmin}
-                        onForceRelease={() => handleForceRelease(mt.id, lock?.locked_by_name ?? "unknown")}
-                      />
-                    </StaggerRow>
-                  );
-                })
-              )}
-            </div>
-          </FadeWrapper>
+            return (
+              <StaggerRow key={mt.id} index={idx}>
+                <div className="card flex flex-col gap-3">
+                  {/* Header */}
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="font-mono text-xs text-c-brand font-bold">{mt.test?.serialno}</span>
+                        <h3 className="font-semibold text-t-primary text-sm truncate">{mt.test?.name ?? mt.testsname}</h3>
+                      </div>
+
+                      {/* Description */}
+                      {editingDesc === mt.id ? (
+                        <div className="mt-1.5 flex items-center gap-2">
+                          <input value={descDraft} onChange={e => setDescDraft(e.target.value)}
+                            className="input text-xs py-1 flex-1" placeholder="Short description…" autoFocus />
+                          <button onClick={() => saveDesc(mt.id)} disabled={savingDesc}
+                            className="text-green-400 hover:text-green-300 p-1"><Download size={13} /></button>
+                          <button onClick={() => setEditingDesc(null)} className="text-t-muted hover:text-red-400 p-1"><X size={13} /></button>
+                        </div>
+                      ) : (
+                        <button onClick={() => { setEditingDesc(mt.id); setDescDraft(mt.test?.description ?? ''); }}
+                          className="mt-0.5 flex items-center gap-1 text-xs text-t-muted hover:text-t-primary transition-colors group">
+                          <span className="truncate max-w-xs">{mt.test?.description || <em>Add description…</em>}</span>
+                          <Pencil size={10} className="opacity-0 group-hover:opacity-100 shrink-0" />
+                        </button>
+                      )}
+                    </div>
+
+                    {/* Execute button */}
+                    <button onClick={() => onExecute(mt.id)}
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-c-brand hover:bg-c-brand-hover text-white text-xs font-semibold transition-colors shrink-0">
+                      <Play size={12} />Execute
+                    </button>
+                  </div>
+
+                  {/* Stats row */}
+                  <div className="flex items-center gap-3 flex-wrap text-xs">
+                    <span className="badge-pass"><span className="w-1.5 h-1.5 rounded-full bg-green-500 inline-block mr-1" />{pass} Pass</span>
+                    <span className="badge-fail"><span className="w-1.5 h-1.5 rounded-full bg-red-500 inline-block mr-1" />{fail} Fail</span>
+                    <span className="flex items-center gap-1 font-semibold text-t-muted bg-bg-card border border-[var(--border-color)] rounded-full px-2.5 py-0.5">
+                      <span className="w-1.5 h-1.5 rounded-full bg-[var(--text-muted)] inline-block" />{pending} Pending
+                    </span>
+                  </div>
+
+                  {/* Progress bar */}
+                  <div>
+                    <div className="flex justify-between text-xs text-t-muted mb-1">
+                      <span>Progress</span>
+                      <span className="font-semibold" style={{ color: passRate === 100 ? '#22c55e' : failPct === 100 ? '#ef4444' : undefined }}>
+                        {total > 0 ? `${passRate}%` : '—'}
+                      </span>
+                    </div>
+                    <div className="h-1.5 w-full rounded-full overflow-hidden flex">
+                      {passRate > 0  && <div className="h-full bg-green-500 transition-all duration-700" style={{ width: `${passRate}%` }} />}
+                      {failPct > 0   && <div className="h-full bg-red-500 transition-all duration-700"   style={{ width: `${failPct}%` }} />}
+                      {(100 - passRate - failPct) > 0 && (
+                        <div className="h-full transition-all duration-700" style={{ width: `${100 - passRate - failPct}%`, backgroundColor: 'var(--text-muted)', opacity: 0.3 }} />
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </StaggerRow>
+            );
+          })}
         </div>
       </div>
-
-      {/* ── Export modal ── */}
-      {showExport && (
-        <ExportModal
-          moduleName={moduleName}
-          options={exportOptions}
-          onClose={() => setShowExport(false)}
-        />
-      )}
     </div>
   );
 };
-
-
-// ── Test Row ──────────────────────────────────────────────────────────────────
-const TestRow: React.FC<{
-  testName: string;
-  testSerialNo: number;
-  results: TrimmedStepResult[];
-  onExecute: () => void;
-  isLockedByOther: boolean;
-  isLockedByMe: boolean;
-  lockedByName: string;
-  isAdmin: boolean;
-  onForceRelease: () => void;
-}> = ({ testName, testSerialNo, results, onExecute, isLockedByOther, isLockedByMe, lockedByName, isAdmin, onForceRelease }) => {
-  const passed  = results.filter(r => r.status === "pass").length;
-  const failed  = results.filter(r => r.status === "fail").length;
-  const pending = results.filter(r => r.status === "pending").length;
-  const total   = results.length || 1;
-  const rate    = Math.round((passed / total) * 100);
-
-  const borderColor = isLockedByOther
-    ? "#6b7280"
-    : rate > 70 ? "#22c55e" : rate > 30 ? "#f59e0b" : "#ef4444";
-
-  return (
-    <div
-      className={`card flex flex-col sm:flex-row sm:items-center gap-4 transition-all ${
-        isLockedByOther ? "select-none" : ""
-      }`}
-      style={{ borderLeft: `3px solid ${borderColor}` }}
-    >
-      <div className="flex-1">
-        <div className="flex items-center gap-2 flex-wrap">
-          <span className="text-xs font-mono text-t-muted">#{testSerialNo}</span>
-          <p className={`font-medium text-t-primary ${isLockedByOther ? "opacity-40" : ""}`}>
-            {testName}
-          </p>
-          {isLockedByOther && (
-            <span className="flex items-center gap-1.5 text-xs font-semibold text-amber-600 dark:text-amber-500 bg-amber-500/15 border border-amber-500/40 rounded-full px-2.5 py-0.5">
-              <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse inline-block" />
-              <Lock size={11} className="shrink-0" />
-              {lockedByName} is executing.
-              {isAdmin ? (
-                <button
-                  onClick={e => { e.stopPropagation(); onForceRelease(); }}
-                  className="ml-1 underline underline-offset-2 hover:text-red-500 transition-colors"
-                  title="Force-release this lock (admin only)"
-                >
-                  Force release
-                </button>
-              ) : (
-                <span className="font-normal opacity-80">Contact user to finish.</span>
-              )}
-            </span>
-          )}
-          {isLockedByMe && (
-            <span className="flex items-center gap-1 text-xs font-semibold text-c-brand bg-c-brand-bg border border-[var(--color-brand)] rounded-full px-2.5 py-0.5 opacity-70">
-              <span className="w-1.5 h-1.5 rounded-full bg-c-brand animate-pulse inline-block" />
-              <Pencil size={11} className="shrink-0" />
-              You are executing
-            </span>
-          )}
-        </div>
-
-        <div className="flex gap-2 mt-1.5 flex-wrap">
-          <span className="badge-pass">{passed} Pass</span>
-          <span className="badge-fail">{failed} Fail</span>
-          <span className="badge-pend">{pending} Pend</span>
-        </div>
-
-        <div className={`mt-2 h-1.5 bg-[var(--border-color)] rounded-full overflow-hidden ${isLockedByOther ? "opacity-40" : ""}`}>
-          <div
-            className="h-full rounded-full transition-all duration-500"
-            style={{ width: `${rate}%`, backgroundColor: isLockedByOther ? "#6b7280" : "#22c55e" }}
-          />
-        </div>
-      </div>
-
-      <button
-        onClick={(e) => {
-          if (isLockedByOther) { e.preventDefault(); e.stopPropagation(); return; }
-          onExecute();
-        }}
-        disabled={isLockedByOther}
-        className={`whitespace-nowrap shrink-0 px-4 py-2 rounded-xl font-semibold transition-all text-sm flex items-center gap-1.5 ${
-          isLockedByOther
-            ? "bg-bg-card text-t-muted cursor-not-allowed pointer-events-none border border-[var(--border-color)]"
-            : "btn-primary cursor-pointer"
-        }`}
-      >
-        {isLockedByOther ? (
-          <><Lock size={13} />Locked</>
-        ) : isLockedByMe ? (
-          <><Play size={13} />Resume Test</>
-        ) : (
-          "Execute Tests"
-        )}
-      </button>
-    </div>
-  );
-};
-
 
 export default ModuleDashboard;
