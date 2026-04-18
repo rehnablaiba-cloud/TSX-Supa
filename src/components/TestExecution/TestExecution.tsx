@@ -500,7 +500,7 @@ const TestExecution: React.FC<Props> = ({
       setSaving(step.stepId);
       try {
         await upsertStepResult({
-          test_step_id: step.stepId,
+          test_steps_id: step.stepId,
           module_name: currentMtId,
           status,
           remarks: remarks ?? step.remarks,
