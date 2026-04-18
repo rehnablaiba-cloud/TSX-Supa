@@ -73,7 +73,7 @@ const Dashboard: React.FC<Props> = ({ onNavigate }) => {
       .select(`
         name, description,
         module_tests:module_tests!module_name(id),
-        step_results:step_results!module_name(status),
+        step_results:step_results!module_name(status)
         )
       `)
       .order('name');
