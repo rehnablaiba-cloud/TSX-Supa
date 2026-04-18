@@ -71,12 +71,10 @@ const Dashboard: React.FC<Props> = ({ onNavigate }) => {
     const { data, error: err } = await supabase
       .from('modules')
       .select(`
-        name, description,
-        module_tests:module_tests!module_name(id),
-        step_results:step_results!module_name(
-          status,
-          step:test_steps!test_stepsid(is_divider)
-        )
+  name, description,
+  module_tests:module_tests!module_name(id),
+  step_results:step_results!module_name(status)
+`)
       `)
       .order('name');
     if (!mountedRef.current) return;
