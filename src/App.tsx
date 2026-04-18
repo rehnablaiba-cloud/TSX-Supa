@@ -1,8 +1,9 @@
+// src/App.tsx
 import React, { useState, useEffect, useCallback } from "react";
 import { useAuth } from "./context/AuthContext";
 import { ThemeProvider, useTheme } from "./context/ThemeContext";
-import { SessionLogProvider, useSessionLog } from "./context/SessionLogContext"; // ← NEW
-import SessionLog from "./components/DevTools/SessionLog";                       // ← NEW
+import { SessionLogProvider, useSessionLog } from "./context/SessionLogContext";
+import SessionLog from "./components/DevTools/SessionLog";
 import SessionManager from "./components/UI/SessionManager";
 import LoginPage from "./components/Auth/LoginPage";
 import Sidebar from "./components/Layout/Sidebar";
@@ -14,96 +15,167 @@ import TestReport from "./components/TestReport/TestReport";
 import UsersPanel from "./components/Users/UsersPanel";
 import AuditLog from "./components/AuditLog/AuditLog";
 import Spinner from "./components/UI/Spinner";
+import Topbar from "./components/Layout/Topbar";
 import { supabase } from "./supabase";
 import { Module } from "./types";
 import { tokens, palette, TokenKey } from "./theme";
 
-type Page = "dashboard" | "module" | "execution" | "report" | "users" | "audit_log";
-type MuiProviderComponent = React.ComponentType<{ theme: unknown; children: React.ReactNode }>;
+type Page =
+  | "dashboard"
+  | "module"
+  | "execution"
+  | "report"
+  | "users"
+  | "audit_log";
+type MuiProviderComponent = React.ComponentType<{
+  theme: unknown;
+  children: React.ReactNode;
+}>;
 
-// MuiActivator — unchanged from your original
-const MuiActivator: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+// ─── MuiActivator ─────────────────────────────────────────────────────────────
+
+const MuiActivator: React.FC<{ children: React.ReactNode }> = ({
+  children,
+}) => {
   const { theme, muiConfig, customTokens } = useTheme();
   const [Provider, setProvider] = useState<MuiProviderComponent | null>(null);
   const [muiTheme, setMuiTheme] = useState<unknown>(null);
   const [muiError, setMuiError] = useState<string | null>(null);
-  const [loading,  setLoading]  = useState(false);
+  const [loading, setLoading] = useState(false);
 
   const buildMuiTheme = useCallback(async () => {
-    if (!muiConfig.active) { setProvider(null); setMuiTheme(null); setMuiError(null); return; }
+    if (!muiConfig.active) {
+      setProvider(null);
+      setMuiTheme(null);
+      setMuiError(null);
+      return;
+    }
     setLoading(true);
     try {
-      const { ThemeProvider: TP, createTheme } = await import("@mui/material/styles");
+      const { ThemeProvider: TP, createTheme } = await import(
+        "@mui/material/styles"
+      );
       const base = tokens[theme];
       const over = customTokens[theme];
       const tv = (key: TokenKey): string => (over[key] ?? base[key]) || "";
       const muiT = createTheme({
         palette: {
           mode: theme,
-          primary:    { main: tv("colorBrand") || palette.brand[500] },
-          error:      { main: palette.fail },
-          warning:    { main: palette.pend },
-          success:    { main: palette.pass },
+          primary: { main: tv("colorBrand") || palette.brand[500] },
+          error: { main: palette.fail },
+          warning: { main: palette.pend },
+          success: { main: palette.pass },
           background: { default: tv("bgBase"), paper: tv("bgSurface") },
-          text:       { primary: tv("textPrimary"), secondary: tv("textSecondary") },
-          divider:    tv("borderColor"),
+          text: { primary: tv("textPrimary"), secondary: tv("textSecondary") },
+          divider: tv("borderColor"),
         },
         shape: { borderRadius: muiConfig.borderRadius },
         typography: {
-          fontFamily: muiConfig.fontFamily, fontSize: muiConfig.fontSize,
+          fontFamily: muiConfig.fontFamily,
+          fontSize: muiConfig.fontSize,
           fontWeightRegular: muiConfig.fontWeightRegular,
-          fontWeightMedium:  muiConfig.fontWeightMedium,
-          fontWeightBold:    muiConfig.fontWeightBold,
-          button: { textTransform: muiConfig.buttonTextTransform as any, fontWeight: muiConfig.fontWeightMedium },
+          fontWeightMedium: muiConfig.fontWeightMedium,
+          fontWeightBold: muiConfig.fontWeightBold,
+          button: {
+            textTransform: muiConfig.buttonTextTransform as any,
+            fontWeight: muiConfig.fontWeightMedium,
+          },
         },
         components: {
-          MuiButton:    { styleOverrides: { root: { borderRadius: muiConfig.buttonBorderRadius } } },
-          MuiTextField: { styleOverrides: { root: { "& .MuiOutlinedInput-root": { borderRadius: muiConfig.textFieldBorderRadius } } } },
-          MuiPaper:     { styleOverrides: { root: { backgroundImage: muiConfig.disablePaperBgImage ? "none" : undefined } } },
+          MuiButton: {
+            styleOverrides: {
+              root: { borderRadius: muiConfig.buttonBorderRadius },
+            },
+          },
+          MuiTextField: {
+            styleOverrides: {
+              root: {
+                "& .MuiOutlinedInput-root": {
+                  borderRadius: muiConfig.textFieldBorderRadius,
+                },
+              },
+            },
+          },
+          MuiPaper: {
+            styleOverrides: {
+              root: {
+                backgroundImage: muiConfig.disablePaperBgImage
+                  ? "none"
+                  : undefined,
+              },
+            },
+          },
         },
       });
-      setMuiTheme(muiT); setProvider(() => TP as unknown as MuiProviderComponent); setMuiError(null);
+      setMuiTheme(muiT);
+      setProvider(() => TP as unknown as MuiProviderComponent);
+      setMuiError(null);
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       console.warn("MUI ThemeProvider error:", msg);
-      setMuiError(msg); setProvider(null); setMuiTheme(null);
-    } finally { setLoading(false); }
+      setMuiError(msg);
+      setProvider(null);
+      setMuiTheme(null);
+    } finally {
+      setLoading(false);
+    }
   }, [theme, muiConfig, customTokens]);
 
-  useEffect(() => { buildMuiTheme(); }, [buildMuiTheme]);
+  useEffect(() => {
+    buildMuiTheme();
+  }, [buildMuiTheme]);
 
   if (muiConfig.active && muiError) {
-    const isMissing = muiError.includes("Cannot find module") || muiError.includes("Failed to fetch") || muiError.includes("not found");
+    const isMissing =
+      muiError.includes("Cannot find module") ||
+      muiError.includes("Failed to fetch") ||
+      muiError.includes("not found");
     return (
       <>
         <div className="fixed top-0 left-0 right-0 z-[9999] bg-pend/90 text-white text-xs py-1.5 px-4 text-center">
-          {isMissing ? <><code>@mui/material</code> not installed.</> : <>MUI theme error — check console.</>}
+          {isMissing ? (
+            <>
+              <code>@mui/material</code> not installed.
+            </>
+          ) : (
+            <>MUI theme error — check console.</>
+          )}
         </div>
         {children}
       </>
     );
   }
   if (muiConfig.active && loading) return <>{children}</>;
-  if (Provider && muiTheme) return <Provider theme={muiTheme}>{children}</Provider>;
+  if (Provider && muiTheme)
+    return <Provider theme={muiTheme}>{children}</Provider>;
   return <>{children}</>;
 };
 
-// ─── App Inner ─────────────────────────────────────────────────────────────────
+// ─── AppInner ─────────────────────────────────────────────────────────────────
 
 const AppInner: React.FC = () => {
   const { isLoading: authLoading, isAuthenticated, user } = useAuth();
-  const { log } = useSessionLog(); // ← NEW
-  const [modules, setModules]                       = useState<Module[]>([]);
-  const [page, setPage]                             = useState<Page>("dashboard");
-  const [selectedmodule_name, setSelectedmodule_name] = useState<string | null>(null);
-  const [selectedTestId, setSelectedTestId]         = useState<string | null>(null);
+  const { log } = useSessionLog();
 
+  const [modules, setModules] = useState<Module[]>([]);
+  const [page, setPage] = useState<Page>("dashboard");
+  const [selectedmodule_name, setSelectedmodule_name] = useState<string | null>(
+    null
+  );
+  const [selectedTestId, setSelectedTestId] = useState<string | null>(null);
   const [installPrompt, setInstallPrompt] = useState<any>(null);
-  const [showInstall,   setShowInstall]   = useState(false);
+  const [showInstall, setShowInstall] = useState(false);
 
   useEffect(() => {
-    if ((window as any).__installPrompt) { setInstallPrompt((window as any).__installPrompt); setShowInstall(true); }
-    const handler = (e: any) => { e.preventDefault(); setInstallPrompt(e); setShowInstall(true); };
+    if ((window as any).__installPrompt) {
+      setInstallPrompt((window as any).__installPrompt);
+      setShowInstall(true);
+    }
+    const handler = (e: any) => {
+      e.preventDefault();
+      setInstallPrompt(e);
+      setShowInstall(true);
+    };
     window.addEventListener("beforeinstallprompt", handler);
     return () => window.removeEventListener("beforeinstallprompt", handler);
   }, []);
@@ -117,35 +189,51 @@ const AppInner: React.FC = () => {
 
   const isAdmin = user?.role === "admin";
 
-  // ── Log auth state ───────────────────────────────────────────────
+  // ── Log auth state ──────────────────────────────────────────────────────
   useEffect(() => {
     if (!isAuthenticated) return;
-    log("success", "auth", `Signed in as ${user?.email ?? "unknown"} (${user?.role ?? "?"})`);
+    log(
+      "success",
+      "auth",
+      `Signed in as ${user?.email ?? "unknown"} (${user?.role ?? "?"})`
+    );
   }, [isAuthenticated]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ── Fetch modules + log realtime ─────────────────────────────────
+  // ── Fetch modules ───────────────────────────────────────────────────────
   useEffect(() => {
     if (!isAuthenticated) return;
 
     const fetchModules = () =>
-      supabase.from("modules").select("*").then(({ data, error }) => {
-        if (!error && data) {
-          setModules(data as Module[]);
-          log("success", "query", `SELECT modules → ${data.length} rows`);
-        } else if (error) {
-          log("error", "query", `SELECT modules failed: ${error.message}`, JSON.stringify(error));
-          console.error("Error fetching modules:", error.message);
-        }
-      });
+      supabase
+        .from("modules")
+        .select("*")
+        .then(({ data, error }) => {
+          if (!error && data) {
+            setModules(data as Module[]);
+            log("success", "query", `SELECT modules → ${data.length} rows`);
+          } else if (error) {
+            log(
+              "error",
+              "query",
+              `SELECT modules failed: ${error.message}`,
+              JSON.stringify(error)
+            );
+            console.error("Error fetching modules:", error.message);
+          }
+        });
 
     fetchModules();
 
     const channel = supabase
       .channel("modules_realtime")
-      .on("postgres_changes", { event: "*", schema: "public", table: "modules" }, (payload) => {
-        log("info", "realtime", `modules → ${payload.eventType}`);
-        fetchModules();
-      })
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "modules" },
+        (payload) => {
+          log("info", "realtime", `modules → ${payload.eventType}`);
+          fetchModules();
+        }
+      )
       .subscribe((status) => {
         log(
           status === "SUBSCRIBED" ? "success" : "warn",
@@ -154,7 +242,9 @@ const AppInner: React.FC = () => {
         );
       });
 
-    return () => { supabase.removeChannel(channel); };
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, [isAuthenticated]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (authLoading) {
@@ -167,9 +257,9 @@ const AppInner: React.FC = () => {
 
   if (!isAuthenticated) return <LoginPage />;
 
-  const selectedModule = modules.find(m => m.name === selectedmodule_name);
+  const selectedModule = modules.find((m) => m.name === selectedmodule_name);
 
-  // ── Logged navigation ────────────────────────────────────────────
+  // ── Navigation ──────────────────────────────────────────────────────────
   const navigate = (p: string, module_name?: string) => {
     if (p === "module" && module_name) {
       setSelectedmodule_name(module_name);
@@ -181,37 +271,81 @@ const AppInner: React.FC = () => {
     }
   };
 
+  // ── Page renderer ───────────────────────────────────────────────────────
   const renderPage = () => {
     switch (page) {
-      case "dashboard": return <Dashboard onNavigate={navigate} />;
+      case "dashboard":
+        return <Dashboard onNavigate={navigate} />;
+
       case "module":
-        return selectedModule
-          ? <ModuleDashboard
-              module_name={selectedModule.name}
-              onBack={() => { setPage("dashboard"); log("info", "nav", "Back → dashboard"); }}
-              onExecute={mtId => {
-                setSelectedTestId(mtId);
-                setPage("execution");
-                log("info", "nav", `Execute test: ${mtId}`);
-              }}
-            />
-          : <Dashboard onNavigate={navigate} />;
+        return selectedModule ? (
+          <ModuleDashboard
+            module_name={selectedModule.name}
+            onBack={() => {
+              setPage("dashboard");
+              log("info", "nav", "Back → dashboard");
+            }}
+            onExecute={(mtId) => {
+              setSelectedTestId(mtId);
+              setPage("execution");
+              log("info", "nav", `Execute test: ${mtId}`);
+            }}
+          />
+        ) : (
+          <Dashboard onNavigate={navigate} />
+        );
+
       case "execution":
-        return selectedModule && selectedTestId
-          ? <TestExecution
-              module_name={selectedModule.name}
-              initialmodule_test_id={selectedTestId}
-              isAdmin={isAdmin}
-              onBack={() => { setPage("module"); log("info", "nav", "Back → module"); }}
-            />
-          : <Dashboard onNavigate={navigate} />;
-     case "report":
-  return selectedTestId
-    ? <TestReport module_test_id={selectedTestId} onBack={() => setPage("module")} />
-    : <Dashboard onNavigate={navigate} />;
-      case "users":    return <UsersPanel />;
-      case "audit_log": return <AuditLog />;
-      default:         return <Dashboard onNavigate={navigate} />;
+        return selectedModule && selectedTestId ? (
+          <TestExecution
+            module_name={selectedModule.name}
+            initialmodule_test_id={selectedTestId}
+            isAdmin={isAdmin}
+            onBack={() => {
+              setPage("module");
+              log("info", "nav", "Back → module");
+            }}
+          />
+        ) : (
+          <Dashboard onNavigate={navigate} />
+        );
+
+      case "report":
+        return selectedTestId ? (
+          <TestReport
+            module_test_id={selectedTestId}
+            onBack={() => setPage("module")}
+          />
+        ) : (
+          <div className="flex-1 flex flex-col">
+            <Topbar title="Test Report" onBack={() => setPage("dashboard")} />
+            <div className="flex-1 flex flex-col items-center justify-center gap-3 p-6 text-center">
+              <p className="text-sm font-semibold text-t-primary">
+                No test selected
+              </p>
+              <p className="text-xs text-t-muted max-w-xs">
+                Open a module from the Dashboard, then click{" "}
+                <strong className="text-t-primary">View Report</strong> on a
+                test to see its report here.
+              </p>
+              <button
+                onClick={() => setPage("dashboard")}
+                className="mt-2 px-4 py-2 text-sm font-semibold rounded-lg bg-bg-card border border-[var(--border-color)] text-t-primary hover:bg-bg-surface transition"
+              >
+                Go to Dashboard
+              </button>
+            </div>
+          </div>
+        );
+
+      case "users":
+        return <UsersPanel />;
+
+      case "audit_log":
+        return <AuditLog />;
+
+      default:
+        return <Dashboard onNavigate={navigate} />;
     }
   };
 
@@ -219,21 +353,25 @@ const AppInner: React.FC = () => {
     <MuiActivator>
       <SessionManager>
         <div className="flex min-h-screen bg-gray-950">
-          <Sidebar   activePage={page} onNavigate={navigate} modules={modules} />
-          <main className="flex-1 flex flex-col overflow-hidden min-w-0">{renderPage()}</main>
-          <MobileNav activePage={page} onNavigate={p => navigate(p)} />
+          <Sidebar activePage={page} onNavigate={navigate} modules={modules} />
+          <main className="flex-1 flex flex-col overflow-hidden min-w-0">
+            {renderPage()}
+          </main>
+          <MobileNav activePage={page} onNavigate={(p) => navigate(p)} />
           {showInstall && (
-            <button onClick={handleInstall} title="Install TestPro as an app"
+            <button
+              onClick={handleInstall}
+              title="Install TestPro as an app"
               className="fixed bottom-20 right-4 z-50 flex items-center gap-1.5
                 px-2.5 py-1.5 rounded-lg text-[11px] font-semibold
                 bg-bg-surface border border-[var(--border-color)]
                 text-t-secondary hover:text-t-primary hover:border-[var(--color-brand)]
-                shadow-lg transition-colors">
+                shadow-lg transition-colors"
+            >
               📲 Install
             </button>
           )}
         </div>
-        {/* Floating session log — admin only, renders above everything */}
         <SessionLog />
       </SessionManager>
     </MuiActivator>
@@ -244,7 +382,7 @@ const AppInner: React.FC = () => {
 
 const App: React.FC = () => (
   <ThemeProvider>
-    <SessionLogProvider>   {/* ← wraps AppInner so useSessionLog() works everywhere */}
+    <SessionLogProvider>
       <AppInner />
     </SessionLogProvider>
   </ThemeProvider>
