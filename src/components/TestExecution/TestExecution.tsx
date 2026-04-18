@@ -505,7 +505,6 @@ const TestExecution: React.FC<Props> = ({
           status,
           remarks: remarks ?? step.remarks,
           display_name: user?.display_name ?? user?.email ?? "",
-          user_id: user?.id ?? "",
         });
         setSteps((prev) =>
           prev.map((s) =>

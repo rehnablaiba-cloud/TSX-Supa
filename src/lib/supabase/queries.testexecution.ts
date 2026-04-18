@@ -138,7 +138,6 @@ export async function upsertStepResult(payload: {
   status: "pass" | "fail" | "pending";
   remarks: string;
   display_name: string;
-  user_id: string;
 }): Promise<void> {
   const { error } = await supabase
     .from("step_results")
