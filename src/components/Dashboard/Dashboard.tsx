@@ -37,6 +37,9 @@ import {
 import type { DashboardModule } from "../../lib/supabase/queries.dashboard";
 import RBarChart from "../ModuleDashboard/charts/RBarChart";
 import RPieChart from "../ModuleDashboard/charts/RPieChart";
+import RAreaChart from "../ModuleDashboard/charts/RAreaChart";
+import RLineChart from "../ModuleDashboard/charts/RLineChart";
+import RRadarChart from "../ModuleDashboard/charts/RRadarChart";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Props
@@ -45,6 +48,9 @@ import RPieChart from "../ModuleDashboard/charts/RPieChart";
 interface Props {
   onNavigate: (page: string, module_name?: string) => void;
 }
+
+// ── Chart tab type ────────────────────────────────────────────────────────────
+type ChartTab = "bar" | "area" | "line" | "radar" | "pie";
 
 // ══════════════════════════════════════════════════════════════════════════════
 // MAIN COMPONENT
@@ -58,6 +64,7 @@ const Dashboard: React.FC<Props> = ({ onNavigate }) => {
   const [initialLoad, setInitialLoad] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [activeLocks, setActiveLocks] = useState<ActiveLock[]>([]);
+  const [activeChart, setActiveChart] = useState<ChartTab>("bar");
 
   const gridRef = useRef<HTMLDivElement>(null);
   const mountedRef = useRef(true);
@@ -164,7 +171,8 @@ const Dashboard: React.FC<Props> = ({ onNavigate }) => {
 
   const chartTheme = useMemo(() => getChartTheme(theme), [theme]);
 
-  const barData = useMemo(
+  // Shared data shape used by all charts — one row per trainset
+  const chartData = useMemo(
     () =>
       summaries.map((s) => ({
         name: s.name,
@@ -184,6 +192,15 @@ const Dashboard: React.FC<Props> = ({ onNavigate }) => {
         </div>
       </div>
     );
+
+  // ── Chart tab config ──────────────────────────────────────────────────────
+  const chartTabs: { key: ChartTab; label: string }[] = [
+    { key: "bar", label: "Bar" },
+    { key: "area", label: "Area" },
+    { key: "line", label: "Line" },
+    { key: "radar", label: "Radar" },
+    { key: "pie", label: "Pie" },
+  ];
 
   // ── Render ────────────────────────────────────────────────────────────────
   return (
@@ -247,28 +264,117 @@ const Dashboard: React.FC<Props> = ({ onNavigate }) => {
 
       {/* ── Fleet Overview Charts ─────────────────────────────────────────── */}
       {!initialLoad && modules.length > 0 && (
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-          {/* Per-trainset grouped bar chart */}
-          <div className="lg:col-span-2 card p-4">
-            <p className="text-sm font-semibold text-t-primary mb-1">
-              Steps per Trainset
-            </p>
-            <p className="text-xs text-t-muted mb-3">
-              Pass / Fail / Pending breakdown per module
-            </p>
-            <RBarChart data={barData} ct={chartTheme} />
+        <div className="card p-4 flex flex-col gap-4">
+          {/* Chart header + tab switcher */}
+          <div className="flex items-center justify-between flex-wrap gap-2">
+            <div>
+              <p className="text-sm font-semibold text-t-primary">
+                Fleet Overview
+              </p>
+              <p className="text-xs text-t-muted mt-0.5">
+                Pass / Fail / Pending across all trainsets
+              </p>
+            </div>
+            <div className="flex items-center gap-1 bg-bg-surface rounded-lg p-1 border border-[var(--border-color)]">
+              {chartTabs.map((tab) => (
+                <button
+                  key={tab.key}
+                  onClick={() => setActiveChart(tab.key)}
+                  className="px-3 py-1 text-xs font-semibold rounded-md transition-all"
+                  style={
+                    activeChart === tab.key
+                      ? {
+                          background: "var(--color-brand)",
+                          color: "#fff",
+                        }
+                      : {
+                          color: "var(--text-muted)",
+                        }
+                  }
+                >
+                  {tab.label}
+                </button>
+              ))}
+            </div>
           </div>
 
-          {/* Fleet-wide donut */}
-          <div className="card p-4 flex flex-col items-center justify-center">
-            <p className="text-sm font-semibold text-t-primary mb-1">
-              Fleet Total
-            </p>
-            <p className="text-xs text-t-muted mb-3">
-              Overall step result distribution
-            </p>
-            <RPieChart data={barData} ct={chartTheme} height={220} showLabel />
-          </div>
+          {/* Chart area — two column layout for pie, full width for rest */}
+          {activeChart === "pie" ? (
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-center">
+              {/* Pie — fleet-wide donut with centre pass% label */}
+              <div className="flex flex-col items-center justify-center">
+                <p className="text-xs text-t-muted mb-2 self-start">
+                  Fleet Total Distribution
+                </p>
+                <RPieChart
+                  data={chartData}
+                  ct={chartTheme}
+                  height={260}
+                  showLabel
+                />
+              </div>
+              {/* Mini stat cards alongside pie */}
+              <div className="flex flex-col gap-3">
+                {[
+                  {
+                    label: "Total Steps",
+                    value: globalStats[0].value,
+                    color: "var(--color-brand)",
+                  },
+                  {
+                    label: "Pass",
+                    value: globalStats[1].value,
+                    color: "#22c55e",
+                  },
+                  {
+                    label: "Fail",
+                    value: globalStats[2].value,
+                    color: "#ef4444",
+                  },
+                  {
+                    label: "Pending",
+                    value:
+                      globalStats[0].value -
+                      globalStats[1].value -
+                      globalStats[2].value,
+                    color: "#94a3b8",
+                  },
+                ].map((stat) => (
+                  <div
+                    key={stat.label}
+                    className="flex items-center justify-between px-4 py-3 rounded-xl border border-[var(--border-color)] bg-bg-surface"
+                  >
+                    <div className="flex items-center gap-2">
+                      <span
+                        className="w-2.5 h-2.5 rounded-full shrink-0"
+                        style={{ background: stat.color }}
+                      />
+                      <span className="text-sm text-t-muted">{stat.label}</span>
+                    </div>
+                    <span className="text-sm font-bold text-t-primary">
+                      {stat.value}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : (
+            /* Full-width for bar / area / line / radar */
+            <div className="w-full">
+              {activeChart === "bar" && (
+                <RBarChart data={chartData} ct={chartTheme} />
+              )}
+              {activeChart === "area" && (
+                <RAreaChart data={chartData} ct={chartTheme} />
+              )}
+              {activeChart === "line" && (
+                <RLineChart data={chartData} ct={chartTheme} />
+              )}
+              {activeChart === "radar" && (
+                <RRadarChart data={chartData} ct={chartTheme} />
+              )}
+            </div>
+          )}
         </div>
       )}
 
