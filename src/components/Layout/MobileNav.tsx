@@ -906,11 +906,11 @@ const ImportStepsModal: React.FC<{
         action: r.action,
         expected_result: r.expected_result,
         is_divider: r.is_divider,
-        testsname: selTest,
+        test_sname: selTest,
       }));
       const { error: e } = await supabase
         .from("test_steps")
-        .upsert(payload, { onConflict: "testsname,serial_no" });
+        .upsert(payload, { onConflict: "tests_name,serial_no" });
       if (e) throw new Error(e.message);
       setStage("done");
       onDone();
@@ -1143,7 +1143,7 @@ const ImportStepsManualModal: React.FC<{
       const { data } = await supabase
         .from("test_steps")
         .select("id, serial_no, action, expected_result, is_divider")
-        .eq("testsname", testsname)
+        .eq("tests_name", testsname)
         .order("serial_no");
       setSteps((data ?? []) as ExistingStep[]);
       setStage("selectstep");

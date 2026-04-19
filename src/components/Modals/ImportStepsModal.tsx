@@ -11,8 +11,8 @@ import {
 } from "lucide-react";
 
 import ModalShell from "../UI/ModalShell";
+import { fetchTests } from "../../lib/supabase/queries";
 import {
-  fetchTests,
   findStepBySerialNo,
   bulkCreateSteps,
   updateStep,
