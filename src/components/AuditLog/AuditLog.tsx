@@ -27,7 +27,7 @@ const audit_log: React.FC = () => {
       return;
     }
 
-    fetchaudit_log(300)
+    fetchAuditLog(300)
       .then((data) => setEvents(data as unknown as AuditEvent[]))
       .catch(() => {})
       .finally(() => setLoading(false));

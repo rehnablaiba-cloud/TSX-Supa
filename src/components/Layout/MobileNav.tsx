@@ -862,7 +862,7 @@ const ImportStepsModal: React.FC<{
 }> = ({ onClose, onDone }) => {
   const [stage, setStage] = useState<StepCsvStage>("selectmodule");
   const [modules, setModules] = useState<ModuleOption[]>([]);
-  const [tests, setTests] = useState<{ id: string; testsname: string }[]>([]);
+  const [tests, setTests] = useState<{ id: string; tests_name: string }[]>([]);
   const [selMod, setSelMod] = useState<string>("");
   const [selTest, setSelTest] = useState<string>("");
   const [parsed, setParsed] = useState<StepInput[]>([]);
@@ -1113,7 +1113,7 @@ const ImportStepsManualModal: React.FC<{
   const [stage, setStage] = useState<StepManualStage>("selectop");
   const [op, setOp] = useState<StepOp>("create");
   const [modules, setModules] = useState<ModuleOption[]>([]);
-  const [tests, setTests] = useState<{ id: string; testsname: string }[]>([]);
+  const [tests, setTests] = useState<{ id: string; tests_name: string }[]>([]);
   const [steps, setSteps] = useState<ExistingStep[]>([]);
   const [selMod, setSelMod] = useState("");
   const [selTest, setSelTest] = useState("");
@@ -1269,7 +1269,7 @@ const ImportStepsManualModal: React.FC<{
               onClick={() => handleTestSelect(t.tests_name)}
               className="text-left px-3 py-2 rounded-xl border border-[var(--border-color)] bg-bg-card hover:bg-bg-base text-sm text-t-primary"
             >
-              {t.test_sname}
+              {t.tests_name}
             </button>
           ))}
         </div>
