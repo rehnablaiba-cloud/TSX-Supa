@@ -1,8 +1,12 @@
 // src/lib/supabase/queries.ts
+// Shared queries used across multiple sections of the app.
+// No re-exports from feature files — each feature imports its own file directly.
+
 import { supabase } from '../../supabase';
-import type { ModuleOption, TestOption } from '../../types';
+import type { ModuleOption } from '../../types';
 
 // ── Generic wrapper ───────────────────────────────────────────────────────────
+
 export async function q<T>(
   table: string,
   query: (b: ReturnType<typeof supabase.from>) => Promise<{ data: T[] | null; error: unknown }>
@@ -13,6 +17,8 @@ export async function q<T>(
 }
 
 // ── Auth ──────────────────────────────────────────────────────────────────────
+// Used by Sidebar / auth flow — not owned by any single feature.
+
 export async function releaseLocksAndSignOut(
   user_id: string,
   signOut: () => Promise<void>
@@ -22,91 +28,26 @@ export async function releaseLocksAndSignOut(
   await signOut();
 }
 
-// ── Module / Test options ─────────────────────────────────────────────────────
+// ── Module + Test options (Sidebar) ──────────────────────────────────────────
+// Always-visible sidebar needs these regardless of which feature zone is active.
+
 export async function fetchModuleOptions(): Promise<ModuleOption[]> {
-  const { data, error } = await supabase.from('modules').select('name').order('name');
+  const { data, error } = await supabase
+    .from('modules')
+    .select('name')
+    .order('name');
   if (error) throw error;
   return (data ?? []) as ModuleOption[];
 }
-export async function fetchModulesForSidebar(): Promise<ModuleOption[]> {
-  return fetchModuleOptions();
-}
+
 export async function fetchTestsForModule(
   module_name: string
-): Promise<{ id: string; testsname: string }[]> {
+): Promise<{ id: string; tests_name: string }[]> {
   const { data, error } = await supabase
-    .from('module_tests').select('id, testsname')
-    .eq('module_name', module_name).order('testsname');
+    .from('module_tests')
+    .select('id, tests_name')
+    .eq('module_name', module_name)
+    .order('tests_name');
   if (error) throw error;
-  return (data ?? []) as { id: string; testsname: string }[];
+  return (data ?? []) as { id: string; tests_name: string }[];
 }
-
-// ── audit_log ──────────────────────────────────────────────────────────────────
-export async function fetchaudit_log(
-  limit = 200
-): Promise<Record<string, unknown>[]> {
-  const { data, error } = await supabase
-    .from('audit_log').select('*').order('created_at', { ascending: false }).limit(limit);
-  if (error) throw error;
-  return (data ?? []) as Record<string, unknown>[];
-}
-
-// ── Tests (for ImportStepsModal) ──────────────────────────────────────────────
-/** Returns all tests — no module filter needed for the CSV import flow */
-export async function fetchTests(): Promise<TestOption[]> {
-  const { data, error } = await supabase
-    .from('tests').select('serial_no, name').order('serial_no');
-  if (error) throw error;
-  return (data ?? []) as TestOption[];
-}
-
-export async function findStepByserial_no(
-  testsname: string,
-  serial_no: number
-): Promise<{ id: string } | null> {
-  const { data, error } = await supabase
-    .from('test_steps').select('id')
-    .eq('testsname', testsname).eq('serial_no', serial_no).maybeSingle();
-  if (error) throw error;
-  return data as { id: string } | null;
-}
-
-export async function bulkCreateSteps(
-  testsname: string,
-  rows: Record<string, unknown>[]
-): Promise<{ written: number; errors: string[] }> {
-  const payload = rows.map(r => ({ ...r, testsname }));
-  const { error } = await supabase.from('test_steps').insert(payload);
-  if (error) return { written: 0, errors: [error.message] };
-  return { written: rows.length, errors: [] };
-}
-
-export async function updateStep(
-  id: string, payload: Record<string, unknown>
-): Promise<void> {
-  const { error } = await supabase.from('test_steps').update(payload).eq('id', id);
-  if (error) throw error;
-}
-
-export async function deleteStep(id: string): Promise<void> {
-  const { error } = await supabase.from('test_steps').delete().eq('id', id);
-  if (error) throw error;
-}
-
-// ── Re-exports from sub-query files ──────────────────────────────────────────
-// NOTE: queries.mobilenav exports fetchAllTables (with {data,errors} shape),
-// ALL_TABLES, and AllData — those take precedence here.
-export * from './queries.mobilenav';
-export * from './queries.moduledashboard';
-export * from './queries.testreport';
-
-// Selectively re-export from testexecution to avoid RawStepResult collision
-export {
-  fetchTestExecution,
-  acquireLock,
-  releaseLock,
-  forceReleaseLock,
-  upsertStepResult,
-  resetAllstep_results,
-  fetchSignedUrls,
-} from './queries.testexecution';
