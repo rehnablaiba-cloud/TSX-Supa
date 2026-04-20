@@ -1579,12 +1579,13 @@ const MobileNav: React.FC<Props> = ({ activePage, onNavigate }) => {
       <nav
         ref={navRef}
         className="lg-nav fixed bottom-5 left-1/2 -translate-x-1/2 z-50 md:hidden
-          rounded-[26px] flex items-center px-2 py-2 gap-1"
+    rounded-[26px] flex items-center px-2 py-2 gap-1"
         style={{
           width: "calc(100% - 32px)",
           maxWidth: 420,
-          // safe area padding for notch phones
           marginBottom: "env(safe-area-inset-bottom, 0px)",
+          // ── Hide nav completely when any modal is open ──
+          display: activeModal !== null || menuOpen ? "none" : undefined,
         }}
       >
         {allNavItems.map((item, i) => {
@@ -1651,26 +1652,28 @@ const MobileNav: React.FC<Props> = ({ activePage, onNavigate }) => {
       </nav>
 
       {/* ── Overlay ──────────────────────────────────────────────────────── */}
+
       <div
         ref={overlayRef}
-        className="fixed inset-0 z-[55] md:hidden"
+        className="fixed inset-0 md:hidden"
         style={{
           background: "rgba(0,0,0,0.45)",
           backdropFilter: "blur(2px)",
           opacity: 0,
           display: menuOpen ? "block" : "none",
           pointerEvents: menuOpen ? "auto" : "none",
+          zIndex: 55, // below modals at 9999
         }}
         onClick={closeMenu}
       />
 
       {/* ── More sheet — liquid glass bottom sheet ────────────────────────── */}
       <div
-  ref={sheetRef}
-  className="lg-sheet fixed bottom-0 inset-x-0 z-[60] md:hidden
+        ref={sheetRef}
+        className="lg-sheet fixed bottom-0 inset-x-0 z-[60] md:hidden
     rounded-t-[28px] flex-col"
-  style={{ display: "none", maxHeight: "80vh" }}
->
+        style={{ display: "none", maxHeight: "80vh" }}
+      >
         {/* Handle */}
         <div className="flex justify-center pt-3 pb-2 shrink-0">
           <div className="w-9 h-1 rounded-full bg-white/20" />
@@ -1695,8 +1698,12 @@ const MobileNav: React.FC<Props> = ({ activePage, onNavigate }) => {
           </button>
         </div>
 
-        <div className="overflow-y-auto flex-1 px-3 flex flex-col gap-1"
-  style={{ paddingBottom: "calc(88px + env(safe-area-inset-bottom, 0px))" }}>
+        <div
+          className="overflow-y-auto flex-1 px-3 flex flex-col gap-1"
+          style={{
+            paddingBottom: "calc(88px + env(safe-area-inset-bottom, 0px))",
+          }}
+        >
           {/* Theme row */}
           <div className="sheet-item flex gap-2 mb-1">
             <button
