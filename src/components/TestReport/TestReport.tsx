@@ -364,12 +364,12 @@ const TestReport: React.FC<Props> = ({ module_test_id, onBack }) => {
     }
   }, [module_test_id]);
 
-  // ── Standalone fetch ──────────────────────────────────────────────────────
+  // ── Standalone fetch — always loads ALL modules; filtering is client-side ──
   const fetchStandalone = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const data = await fetchModuleReports(selectedModuleName);
+      const data = await fetchModuleReports(null);
       if (!mountedRef.current) return;
       setModules(data);
     } catch (err: any) {
@@ -378,7 +378,7 @@ const TestReport: React.FC<Props> = ({ module_test_id, onBack }) => {
     } finally {
       if (mountedRef.current) setLoading(false);
     }
-  }, [selectedModuleName]);
+  }, []);
 
   useEffect(() => {
     if (module_test_id) {
@@ -428,7 +428,7 @@ const TestReport: React.FC<Props> = ({ module_test_id, onBack }) => {
   // ── Standalone chart data ─────────────────────────────────────────────────
   const moduleChartData = useMemo<ChartRow[]>(
     () =>
-      modules.map((m) => {
+      displayModules.map((m) => {
         const r = getNonDividerResults(m.step_results ?? []);
         return {
           name: m.name,
@@ -437,7 +437,16 @@ const TestReport: React.FC<Props> = ({ module_test_id, onBack }) => {
           pending: r.filter((s) => s.status === "pending").length,
         };
       }),
-    [modules]
+    [displayModules]
+  );
+
+  // ── Client-side filtered modules (dropdown never triggers re-fetch) ──────
+  const displayModules = useMemo(
+    () =>
+      selectedModuleName
+        ? modules.filter((m) => m.name === selectedModuleName)
+        : modules,
+    [modules, selectedModuleName]
   );
 
   // ── Export helpers ────────────────────────────────────────────────────────
@@ -484,7 +493,7 @@ const TestReport: React.FC<Props> = ({ module_test_id, onBack }) => {
   };
 
   const exportStats = () => {
-    const flat = buildFlatData(modules);
+    const flat = buildFlatData(displayModules);
     return [
       { label: "Total Steps", value: flat.length },
       { label: "Pass", value: flat.filter((s) => s.status === "pass").length },
@@ -901,7 +910,7 @@ const TestReport: React.FC<Props> = ({ module_test_id, onBack }) => {
         actions={
           <button
             onClick={() => setShowExportModal(true)}
-            disabled={modules.length === 0}
+            disabled={displayModules.length === 0}
             className="flex items-center gap-1.5 px-4 py-2 bg-bg-card hover:bg-bg-surface
               disabled:opacity-40 disabled:cursor-not-allowed text-t-primary
               text-sm font-semibold rounded-lg transition border border-[var(--border-color)]"
@@ -923,14 +932,14 @@ const TestReport: React.FC<Props> = ({ module_test_id, onBack }) => {
             icon: <FileSpreadsheet size={16} />,
             color: "bg-[var(--color-primary)]",
             hoverColor: "hover:bg-[var(--color-primary-hover)]",
-            onConfirm: () => exportReportCSV([], buildFlatData(modules)),
+            onConfirm: () => exportReportCSV([], buildFlatData(displayModules)),
           },
           {
             label: "PDF",
             icon: <FileText size={16} />,
             color: "bg-[var(--color-blue)]",
             hoverColor: "hover:bg-[var(--color-blue-hover)]",
-            onConfirm: () => exportReportPDF([], buildFlatData(modules)),
+            onConfirm: () => exportReportPDF([], buildFlatData(displayModules)),
           },
         ]}
       />
@@ -993,7 +1002,7 @@ const TestReport: React.FC<Props> = ({ module_test_id, onBack }) => {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-[var(--border-color)]">
-                  {modules.map((m) => {
+                  {displayModules.map((m) => {
                     const r = getNonDividerResults(m.step_results ?? []);
                     const total = r.length;
                     const pass = r.filter((s) => s.status === "pass").length;
