@@ -1,30 +1,60 @@
 import React, { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import {
-  FlaskConical, Plus, Pencil, Trash2,
-  CheckCircle, ArrowLeft,
+  FlaskConical,
+  Plus,
+  Pencil,
+  Trash2,
+  CheckCircle,
+  ArrowLeft,
 } from "lucide-react";
 
-import { supabase }          from "../../supabase";
-import { Row, DiffRow }      from "../UI/ReviewRow";
-import type { TestOption }   from "../../types";
+import { supabase } from "../../supabase";
+import { Row, DiffRow } from "../UI/ReviewRow";
+import type { TestOption } from "../../types";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Types
 // ─────────────────────────────────────────────────────────────────────────────
 
 type TestOp = "create" | "update" | "delete";
-type Stage  = "selectop" | "selecttest" | "fillform" | "confirm" | "submitting" | "done";
+type Stage =
+  | "selectop"
+  | "selecttest"
+  | "fillform"
+  | "confirm"
+  | "submitting"
+  | "done";
 
-const OP_META: { id: TestOp; label: string; icon: React.ReactNode; desc: string }[] = [
-  { id: "create", label: "Create", icon: <Plus   size={20} />, desc: "Add a new test"    },
-  { id: "update", label: "Update", icon: <Pencil size={20} />, desc: "Edit test details" },
-  { id: "delete", label: "Delete", icon: <Trash2 size={20} />, desc: "Remove a test"     },
+const OP_META: {
+  id: TestOp;
+  label: string;
+  icon: React.ReactNode;
+  desc: string;
+}[] = [
+  {
+    id: "create",
+    label: "Create",
+    icon: <Plus size={20} />,
+    desc: "Add a new test",
+  },
+  {
+    id: "update",
+    label: "Update",
+    icon: <Pencil size={20} />,
+    desc: "Edit test details",
+  },
+  {
+    id: "delete",
+    label: "Delete",
+    icon: <Trash2 size={20} />,
+    desc: "Remove a test",
+  },
 ];
 
 interface Props {
   onClose: () => void;
-  onBack:  () => void;
+  onBack: () => void;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -32,20 +62,22 @@ interface Props {
 // ─────────────────────────────────────────────────────────────────────────────
 
 const ImportTestsModal: React.FC<Props> = ({ onClose, onBack }) => {
-  const [stage,        setStage]   = useState<Stage>("selectop");
-  const [op,           setOp]      = useState<TestOp>("create");
-  const [tests,        setTests]   = useState<TestOption[]>([]);
-  const [selectedTest, setSelected]= useState<TestOption | null>(null);
-  const [sn,           setSn]      = useState("");
-  const [name,         setName]    = useState("");
-  const [error,        setError]   = useState<string | null>(null);
+  const [stage, setStage] = useState<Stage>("selectop");
+  const [op, setOp] = useState<TestOp>("create");
+  const [tests, setTests] = useState<TestOption[]>([]);
+  const [selectedTest, setSelected] = useState<TestOption | null>(null);
+  const [sn, setSn] = useState("");
+  const [name, setName] = useState("");
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     supabase
       .from("tests")
       .select("serial_no, name")
       .order("serial_no")
-      .then(({ data }: { data: any }) => setTests((data ?? []) as TestOption[]));
+      .then(({ data }: { data: any }) =>
+        setTests((data ?? []) as TestOption[])
+      );
   }, []);
 
   const handleOpSelect = (o: TestOp) => {
@@ -55,7 +87,10 @@ const ImportTestsModal: React.FC<Props> = ({ onClose, onBack }) => {
 
   const handleTestSelect = (t: TestOption) => {
     setSelected(t);
-    if (op === "update") { setSn(String(t.serial_no)); setName(t.name); }
+    if (op === "update") {
+      setSn(String(t.serial_no));
+      setName(t.name);
+    }
     setStage(op === "delete" ? "confirm" : "fillform");
   };
 
@@ -63,16 +98,16 @@ const ImportTestsModal: React.FC<Props> = ({ onClose, onBack }) => {
     setStage("submitting");
     setError(null);
     try {
-      const snNum = parseFloat(sn);
       if (op === "create") {
         const { error: e } = await supabase
           .from("tests")
-          .insert({ serial_no: snNum, name: name.trim() });
+          .insert({ serial_no: sn.trim(), name: name.trim() });
+
         if (e) throw new Error(e.message);
       } else if (op === "update" && selectedTest) {
         const { error: e } = await supabase
           .from("tests")
-          .update({ serial_no: snNum, name: name.trim() })
+          .update({ serial_no: sn.trim(), name: name.trim() })
           .eq("name", selectedTest.name);
         if (e) throw new Error(e.message);
       } else if (op === "delete" && selectedTest) {
@@ -90,11 +125,17 @@ const ImportTestsModal: React.FC<Props> = ({ onClose, onBack }) => {
   };
 
   const subtitle =
-    stage === "selectop"   ? "Choose operation" :
-    stage === "selecttest" ? "Pick a test"      :
-    stage === "fillform"   ? "Enter details"    :
-    stage === "confirm"    ? "Review & confirm" :
-    stage === "done"       ? "Done!"            : "…";
+    stage === "selectop"
+      ? "Choose operation"
+      : stage === "selecttest"
+      ? "Pick a test"
+      : stage === "fillform"
+      ? "Enter details"
+      : stage === "confirm"
+      ? "Review & confirm"
+      : stage === "done"
+      ? "Done!"
+      : "…";
 
   return createPortal(
     <div
@@ -148,7 +189,7 @@ const ImportTestsModal: React.FC<Props> = ({ onClose, onBack }) => {
         {/* ── selectop ── */}
         {stage === "selectop" && (
           <div className="flex flex-col gap-2">
-            {OP_META.map(m => (
+            {OP_META.map((m) => (
               <button
                 key={m.id}
                 onClick={() => handleOpSelect(m.id)}
@@ -157,7 +198,9 @@ const ImportTestsModal: React.FC<Props> = ({ onClose, onBack }) => {
               >
                 <span className="text-t-muted">{m.icon}</span>
                 <div>
-                  <p className="text-sm font-semibold text-t-primary">{m.label}</p>
+                  <p className="text-sm font-semibold text-t-primary">
+                    {m.label}
+                  </p>
                   <p className="text-xs text-t-muted">{m.desc}</p>
                 </div>
               </button>
@@ -169,16 +212,20 @@ const ImportTestsModal: React.FC<Props> = ({ onClose, onBack }) => {
         {stage === "selecttest" && (
           <div className="flex flex-col gap-1.5 max-h-60 overflow-y-auto">
             {tests.length === 0 && (
-              <p className="text-sm text-t-muted text-center py-4">No tests found.</p>
+              <p className="text-sm text-t-muted text-center py-4">
+                No tests found.
+              </p>
             )}
-            {tests.map(t => (
+            {tests.map((t) => (
               <button
                 key={t.name}
                 onClick={() => handleTestSelect(t)}
                 className="text-left px-3 py-2 rounded-xl border border-[var(--border-color)]
                   bg-bg-card hover:bg-bg-base text-sm text-t-primary"
               >
-                <span className="font-mono text-c-brand mr-2">{t.serial_no}</span>
+                <span className="font-mono text-c-brand mr-2">
+                  {t.serial_no}
+                </span>
                 {t.name}
               </button>
             ))}
@@ -189,10 +236,12 @@ const ImportTestsModal: React.FC<Props> = ({ onClose, onBack }) => {
         {stage === "fillform" && (
           <div className="flex flex-col gap-3">
             <div>
-              <label className="block text-xs text-t-muted mb-1">Serial No</label>
+              <label className="block text-xs text-t-muted mb-1">
+                Serial No
+              </label>
               <input
                 value={sn}
-                onChange={e => setSn(e.target.value)}
+                onChange={(e) => setSn(e.target.value)}
                 className="input text-sm"
                 placeholder="e.g. 1.1"
                 type="number"
@@ -200,10 +249,12 @@ const ImportTestsModal: React.FC<Props> = ({ onClose, onBack }) => {
               />
             </div>
             <div>
-              <label className="block text-xs text-t-muted mb-1">Test Name</label>
+              <label className="block text-xs text-t-muted mb-1">
+                Test Name
+              </label>
               <input
                 value={name}
-                onChange={e => setName(e.target.value)}
+                onChange={(e) => setName(e.target.value)}
                 className="input text-sm"
                 placeholder="e.g. Pantograph Test"
               />
@@ -225,14 +276,22 @@ const ImportTestsModal: React.FC<Props> = ({ onClose, onBack }) => {
               <Row label="Operation" value={op.toUpperCase()} brand />
               {op === "create" && (
                 <>
-                  <Row label="S/N"  value={sn}   mono />
-                  <Row label="Name" value={name}       />
+                  <Row label="S/N" value={sn} mono />
+                  <Row label="Name" value={name} />
                 </>
               )}
               {op === "update" && selectedTest && (
                 <>
-                  <DiffRow label="Serial No" before={String(selectedTest.serial_no)} after={sn}   />
-                  <DiffRow label="Name"      before={selectedTest.name}              after={name} />
+                  <DiffRow
+                    label="Serial No"
+                    before={String(selectedTest.serial_no)}
+                    after={sn}
+                  />
+                  <DiffRow
+                    label="Name"
+                    before={selectedTest.name}
+                    after={name}
+                  />
                 </>
               )}
               {op === "delete" && selectedTest && (
@@ -242,7 +301,9 @@ const ImportTestsModal: React.FC<Props> = ({ onClose, onBack }) => {
             {error && <p className="text-xs text-red-400">{error}</p>}
             <div className="flex gap-2">
               <button
-                onClick={() => setStage(op === "create" ? "fillform" : "selecttest")}
+                onClick={() =>
+                  setStage(op === "create" ? "fillform" : "selecttest")
+                }
                 className="flex-1 px-4 py-2.5 rounded-xl border border-[var(--border-color)] text-t-secondary text-sm"
               >
                 Back
@@ -250,7 +311,9 @@ const ImportTestsModal: React.FC<Props> = ({ onClose, onBack }) => {
               <button
                 onClick={handleSubmit}
                 className={`flex-1 px-4 py-2.5 rounded-xl text-sm font-semibold text-white ${
-                  op === "delete" ? "bg-red-500 hover:bg-red-600" : "btn-primary"
+                  op === "delete"
+                    ? "bg-red-500 hover:bg-red-600"
+                    : "btn-primary"
                 }`}
               >
                 Confirm {op}
@@ -271,7 +334,9 @@ const ImportTestsModal: React.FC<Props> = ({ onClose, onBack }) => {
           <div className="flex flex-col items-center gap-3 py-6">
             <CheckCircle size={32} className="text-green-400" />
             <p className="text-sm font-semibold text-t-primary">Done!</p>
-            <button onClick={onClose} className="btn-primary text-sm px-6">Close</button>
+            <button onClick={onClose} className="btn-primary text-sm px-6">
+              Close
+            </button>
           </div>
         )}
       </div>
