@@ -83,41 +83,39 @@ async function fetchAllTables(): Promise<{ data: AllData; errors: string[] }> {
 // ── Liquid Glass CSS injected once ────────────────────────────────────────────
 const GLASS_STYLE = `
   .lg-nav {
-    background: rgba(12, 18, 38, 0.55);
-    backdrop-filter: blur(28px) saturate(200%) brightness(1.1);
-    -webkit-backdrop-filter: blur(28px) saturate(200%) brightness(1.1);
-    border: 1px solid rgba(255,255,255,0.10);
+    background: color-mix(in srgb, var(--bg-surface, #0c1226) 62%, transparent);
+    backdrop-filter: blur(28px) saturate(180%) brightness(1.08);
+    -webkit-backdrop-filter: blur(28px) saturate(180%) brightness(1.08);
+    border: 1px solid var(--border-color, rgba(255,255,255,0.10));
     box-shadow:
-      0 8px 32px rgba(0,0,0,0.45),
-      0 1px 0 rgba(255,255,255,0.08) inset,
-      0 -1px 0 rgba(0,0,0,0.25) inset;
+      0 8px 32px rgba(0,0,0,0.40),
+      0 1px 0 rgba(255,255,255,0.06) inset,
+      0 -1px 0 rgba(0,0,0,0.20) inset;
   }
   .lg-sheet {
-    background: rgba(10, 16, 34, 0.72);
+    background: color-mix(in srgb, var(--bg-surface, #0a1022) 78%, transparent);
     backdrop-filter: blur(40px) saturate(180%);
     -webkit-backdrop-filter: blur(40px) saturate(180%);
-    border-top: 1px solid rgba(255,255,255,0.10);
-    border-left: 1px solid rgba(255,255,255,0.07);
-    border-right: 1px solid rgba(255,255,255,0.07);
-    box-shadow:
-      0 -12px 48px rgba(0,0,0,0.5),
-      0 1px 0 rgba(255,255,255,0.06) inset;
+    border-top: 1px solid var(--border-color, rgba(255,255,255,0.10));
+    border-left: 1px solid var(--border-color, rgba(255,255,255,0.07));
+    border-right: 1px solid var(--border-color, rgba(255,255,255,0.07));
+    box-shadow: 0 -12px 48px rgba(0,0,0,0.45);
   }
   .lg-pill-active {
-    background: rgba(var(--brand-rgb, 56,189,248), 0.18);
-    box-shadow: 0 0 12px rgba(var(--brand-rgb, 56,189,248), 0.22);
+    background: color-mix(in srgb, var(--c-brand, #38bdf8) 18%, transparent);
+    box-shadow: 0 0 12px color-mix(in srgb, var(--c-brand, #38bdf8) 22%, transparent);
   }
   .lg-item-btn {
-    background: rgba(255,255,255,0.04);
-    border: 1px solid rgba(255,255,255,0.07);
+    background: color-mix(in srgb, var(--bg-card, #fff) 5%, transparent);
+    border: 1px solid var(--border-color, rgba(255,255,255,0.07));
     transition: background 0.18s;
   }
   .lg-item-btn:hover {
-    background: rgba(255,255,255,0.09);
+    background: color-mix(in srgb, var(--bg-card, #fff) 10%, transparent);
   }
   .lg-indicator {
-    background: linear-gradient(135deg, rgba(56,189,248,0.9), rgba(99,102,241,0.7));
-    box-shadow: 0 0 10px rgba(56,189,248,0.5);
+    background: var(--c-brand, #38bdf8);
+    box-shadow: 0 0 10px color-mix(in srgb, var(--c-brand, #38bdf8) 50%, transparent);
   }
 `;
 
@@ -1655,7 +1653,7 @@ const MobileNav: React.FC<Props> = ({ activePage, onNavigate }) => {
       {/* ── Overlay ──────────────────────────────────────────────────────── */}
       <div
         ref={overlayRef}
-        className="fixed inset-0 z-40 md:hidden"
+        className="fixed inset-0 z-[55] md:hidden"
         style={{
           background: "rgba(0,0,0,0.45)",
           backdropFilter: "blur(2px)",
@@ -1668,11 +1666,11 @@ const MobileNav: React.FC<Props> = ({ activePage, onNavigate }) => {
 
       {/* ── More sheet — liquid glass bottom sheet ────────────────────────── */}
       <div
-        ref={sheetRef}
-        className="lg-sheet fixed bottom-0 inset-x-0 z-50 md:hidden
-          rounded-t-[28px] flex-col pb-8"
-        style={{ display: "none", maxHeight: "80vh" }}
-      >
+  ref={sheetRef}
+  className="lg-sheet fixed bottom-0 inset-x-0 z-[60] md:hidden
+    rounded-t-[28px] flex-col"
+  style={{ display: "none", maxHeight: "80vh" }}
+>
         {/* Handle */}
         <div className="flex justify-center pt-3 pb-2 shrink-0">
           <div className="w-9 h-1 rounded-full bg-white/20" />
@@ -1697,7 +1695,8 @@ const MobileNav: React.FC<Props> = ({ activePage, onNavigate }) => {
           </button>
         </div>
 
-        <div className="overflow-y-auto flex-1 px-3 flex flex-col gap-1 pb-2">
+        <div className="overflow-y-auto flex-1 px-3 flex flex-col gap-1"
+  style={{ paddingBottom: "calc(88px + env(safe-area-inset-bottom, 0px))" }}>
           {/* Theme row */}
           <div className="sheet-item flex gap-2 mb-1">
             <button
