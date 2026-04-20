@@ -1,13 +1,5 @@
 // src/components/Layout/MobileNav.tsx
-// Phase 2 — B1 B2 B3 B4 A3 A4 A5 applied:
-//   ModalShell      → imported from UI/ModalShell
-//   Row, DiffRow    → imported from UI/ReviewRow
-//   toCsv/toSql/downloadBlob    → imported from utils/export
-//   parseCsvToRecords/parseStepsCsv → imported from utils/csvParser
-//   TestOption/ModuleOption     → imported from types
-//   releaseLocksAndSignOut      → imported from lib/supabase/queries
-//   fetchModuleOptions          → imported from lib/supabase/queries
-//   fetchTestsForModule         → imported from lib/supabase/queries
+// iOS 26 Liquid Glass design + GSAP animations
 
 import React, { useRef, useEffect, useState, useCallback } from "react";
 import { useAuth } from "../../context/AuthContext";
@@ -45,8 +37,8 @@ import {
   LayoutDashboard,
   ClipboardList,
 } from "lucide-react";
+import gsap from "gsap";
 
-// ── Phase 2: extracted utilities ──────────────────────────────────────────────
 import { downloadBlob, toCsv, toSql } from "../../utils/fileUtils";
 import { parseCsvToRecords, parseStepsCsv } from "../../utils/csvParser";
 import ModalShell from "../UI/ModalShell";
@@ -58,7 +50,7 @@ import {
   fetchTestsForModule,
 } from "../../lib/supabase/queries";
 
-// ── All tables (FK-safe order for SQL inserts) ────────────────────────────────
+// ── All tables ────────────────────────────────────────────────────────────────
 const ALL_TABLES = [
   "profiles",
   "modules",
@@ -88,8 +80,58 @@ async function fetchAllTables(): Promise<{ data: AllData; errors: string[] }> {
   return { data, errors };
 }
 
+// ── Liquid Glass CSS injected once ────────────────────────────────────────────
+const GLASS_STYLE = `
+  .lg-nav {
+    background: rgba(12, 18, 38, 0.55);
+    backdrop-filter: blur(28px) saturate(200%) brightness(1.1);
+    -webkit-backdrop-filter: blur(28px) saturate(200%) brightness(1.1);
+    border: 1px solid rgba(255,255,255,0.10);
+    box-shadow:
+      0 8px 32px rgba(0,0,0,0.45),
+      0 1px 0 rgba(255,255,255,0.08) inset,
+      0 -1px 0 rgba(0,0,0,0.25) inset;
+  }
+  .lg-sheet {
+    background: rgba(10, 16, 34, 0.72);
+    backdrop-filter: blur(40px) saturate(180%);
+    -webkit-backdrop-filter: blur(40px) saturate(180%);
+    border-top: 1px solid rgba(255,255,255,0.10);
+    border-left: 1px solid rgba(255,255,255,0.07);
+    border-right: 1px solid rgba(255,255,255,0.07);
+    box-shadow:
+      0 -12px 48px rgba(0,0,0,0.5),
+      0 1px 0 rgba(255,255,255,0.06) inset;
+  }
+  .lg-pill-active {
+    background: rgba(var(--brand-rgb, 56,189,248), 0.18);
+    box-shadow: 0 0 12px rgba(var(--brand-rgb, 56,189,248), 0.22);
+  }
+  .lg-item-btn {
+    background: rgba(255,255,255,0.04);
+    border: 1px solid rgba(255,255,255,0.07);
+    transition: background 0.18s;
+  }
+  .lg-item-btn:hover {
+    background: rgba(255,255,255,0.09);
+  }
+  .lg-indicator {
+    background: linear-gradient(135deg, rgba(56,189,248,0.9), rgba(99,102,241,0.7));
+    box-shadow: 0 0 10px rgba(56,189,248,0.5);
+  }
+`;
+
+function useGlassStyle() {
+  useEffect(() => {
+    const el = document.createElement("style");
+    el.textContent = GLASS_STYLE;
+    document.head.appendChild(el);
+    return () => document.head.removeChild(el);
+  }, []);
+}
+
 // ══════════════════════════════════════════════════════════════════════════════
-// EXPORT MODAL
+// EXPORT MODAL (unchanged)
 // ══════════════════════════════════════════════════════════════════════════════
 type ExportFormat = "csvzip" | "json" | "tsvzip" | "sql";
 const FORMAT_META: {
@@ -123,7 +165,6 @@ const FORMAT_META: {
     desc: "INSERT statements — full backup",
   },
 ];
-
 type ExportStage =
   | "idle"
   | "fetching"
@@ -138,12 +179,10 @@ const ExportDataModal: React.FC<{ onClose: () => void }> = ({ onClose }) => {
   const [fetchErrors, setFetchErrors] = useState<string[]>([]);
   const [format, setFormat] = useState<ExportFormat>("csvzip");
   const [errMsg, setErrMsg] = useState<string | null>(null);
-
   const counts = allData
     ? ALL_TABLES.map((t) => ({ table: t, count: allData[t].length }))
     : null;
   const totalRows = counts?.reduce((s, c) => s + c.count, 0) ?? 0;
-
   useEffect(() => {
     let mounted = true;
     setStage("fetching");
@@ -157,7 +196,6 @@ const ExportDataModal: React.FC<{ onClose: () => void }> = ({ onClose }) => {
       mounted = false;
     };
   }, []);
-
   const handleExport = useCallback(async () => {
     if (!allData) return;
     setStage("exporting");
@@ -208,7 +246,6 @@ const ExportDataModal: React.FC<{ onClose: () => void }> = ({ onClose }) => {
       setStage("error");
     }
   }, [allData, format]);
-
   return (
     <ModalShell
       title="Export All Data"
@@ -348,7 +385,7 @@ const ExportDataModal: React.FC<{ onClose: () => void }> = ({ onClose }) => {
 };
 
 // ══════════════════════════════════════════════════════════════════════════════
-// IMPORT MODULES MODAL
+// IMPORT MODULES MODAL (unchanged)
 // ══════════════════════════════════════════════════════════════════════════════
 type ModuleOp = "create" | "update" | "delete";
 type ModuleManualStage =
@@ -358,7 +395,6 @@ type ModuleManualStage =
   | "confirm"
   | "submitting"
   | "done";
-
 const MODULE_OP_META = [
   {
     id: "create" as ModuleOp,
@@ -379,7 +415,6 @@ const MODULE_OP_META = [
     desc: "Remove a module",
   },
 ];
-
 const ImportModulesModal: React.FC<{
   onClose: () => void;
   onDone: () => void;
@@ -391,18 +426,15 @@ const ImportModulesModal: React.FC<{
   const [name, setName] = useState("");
   const [desc, setDesc] = useState("");
   const [error, setError] = useState<string | null>(null);
-
   useEffect(() => {
     fetchModuleOptions()
       .then(setModules)
       .catch(() => {});
   }, []);
-
   const handleOpSelect = (o: ModuleOp) => {
     setOp(o);
     setStage(o === "create" ? "fillform" : "selectmodule");
   };
-
   const handleModuleSelect = (m: ModuleOption) => {
     setSelected(m);
     if (op === "update") {
@@ -411,7 +443,6 @@ const ImportModulesModal: React.FC<{
     }
     setStage(op === "delete" ? "confirm" : "fillform");
   };
-
   const handleSubmit = async () => {
     setStage("submitting");
     setError(null);
@@ -441,25 +472,23 @@ const ImportModulesModal: React.FC<{
       setStage("confirm");
     }
   };
-
-  const subtitle =
-    stage === "selectop"
-      ? "Choose operation"
-      : stage === "selectmodule"
-      ? "Pick a module"
-      : stage === "fillform"
-      ? "Enter details"
-      : stage === "confirm"
-      ? "Review & confirm"
-      : stage === "done"
-      ? "Done!"
-      : "…";
-
   return (
     <ModalShell
       title="Modules"
       icon={<Package size={16} />}
-      subtitle={subtitle}
+      subtitle={
+        stage === "selectop"
+          ? "Choose operation"
+          : stage === "selectmodule"
+          ? "Pick a module"
+          : stage === "fillform"
+          ? "Enter details"
+          : stage === "confirm"
+          ? "Review & confirm"
+          : stage === "done"
+          ? "Done!"
+          : "…"
+      }
       onClose={onClose}
     >
       {stage === "selectop" && (
@@ -592,7 +621,7 @@ const ImportModulesModal: React.FC<{
 };
 
 // ══════════════════════════════════════════════════════════════════════════════
-// IMPORT TESTS MODAL
+// IMPORT TESTS MODAL (unchanged)
 // ══════════════════════════════════════════════════════════════════════════════
 type TestOp = "create" | "update" | "delete";
 type TestManualStage =
@@ -602,7 +631,6 @@ type TestManualStage =
   | "confirm"
   | "submitting"
   | "done";
-
 const TEST_OP_META = [
   {
     id: "create" as TestOp,
@@ -623,7 +651,6 @@ const TEST_OP_META = [
     desc: "Remove a test",
   },
 ];
-
 const ImportTestsModal: React.FC<{
   onClose: () => void;
   onDone: () => void;
@@ -635,7 +662,6 @@ const ImportTestsModal: React.FC<{
   const [sn, setSn] = useState("");
   const [name, setName] = useState("");
   const [error, setError] = useState<string | null>(null);
-
   useEffect(() => {
     supabase
       .from("tests")
@@ -645,12 +671,10 @@ const ImportTestsModal: React.FC<{
         setTests((data ?? []) as TestOption[])
       );
   }, []);
-
   const handleOpSelect = (o: TestOp) => {
     setOp(o);
     setStage(o === "create" ? "fillform" : "selecttest");
   };
-
   const handleTestSelect = (t: TestOption) => {
     setSelected(t);
     if (op === "update") {
@@ -659,7 +683,6 @@ const ImportTestsModal: React.FC<{
     }
     setStage(op === "delete" ? "confirm" : "fillform");
   };
-
   const handleSubmit = async () => {
     setStage("submitting");
     setError(null);
@@ -690,7 +713,6 @@ const ImportTestsModal: React.FC<{
       setStage("confirm");
     }
   };
-
   return (
     <ModalShell
       title="Tests"
@@ -844,7 +866,7 @@ const ImportTestsModal: React.FC<{
 };
 
 // ══════════════════════════════════════════════════════════════════════════════
-// IMPORT STEPS MODAL (CSV)
+// IMPORT STEPS MODAL CSV (unchanged)
 // ══════════════════════════════════════════════════════════════════════════════
 type StepCsvStage =
   | "selectmodule"
@@ -855,7 +877,6 @@ type StepCsvStage =
   | "submitting"
   | "done"
   | "error";
-
 const ImportStepsModal: React.FC<{
   onClose: () => void;
   onDone: () => void;
@@ -869,20 +890,17 @@ const ImportStepsModal: React.FC<{
   const [parseErrors, setParseErrors] = useState<string[]>([]);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
-
   useEffect(() => {
     fetchModuleOptions()
       .then(setModules)
       .catch(() => {});
   }, []);
-
   const handleModuleSelect = async (mod: string) => {
     setSelMod(mod);
     const rows = await fetchTestsForModule(mod).catch(() => []);
     setTests(rows);
     setStage("selecttest");
   };
-
   const handleFile = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -896,7 +914,6 @@ const ImportStepsModal: React.FC<{
     };
     reader.readAsText(file);
   };
-
   const handleSubmit = async () => {
     setStage("submitting");
     setSubmitError(null);
@@ -919,7 +936,6 @@ const ImportStepsModal: React.FC<{
       setStage("confirm");
     }
   };
-
   return (
     <ModalShell
       title="Import Steps (CSV)"
@@ -1085,7 +1101,7 @@ const ImportStepsModal: React.FC<{
 };
 
 // ══════════════════════════════════════════════════════════════════════════════
-// IMPORT STEPS MANUAL MODAL
+// IMPORT STEPS MANUAL MODAL (unchanged)
 // ══════════════════════════════════════════════════════════════════════════════
 type StepManualStage =
   | "selectop"
@@ -1097,7 +1113,6 @@ type StepManualStage =
   | "submitting"
   | "done";
 type StepOp = "create" | "update" | "delete";
-
 interface ExistingStep {
   id: string;
   serial_no: number;
@@ -1105,7 +1120,6 @@ interface ExistingStep {
   expected_result: string;
   is_divider: boolean;
 }
-
 const ImportStepsManualModal: React.FC<{
   onClose: () => void;
   onDone: () => void;
@@ -1123,20 +1137,17 @@ const ImportStepsManualModal: React.FC<{
   const [expected, setExpected] = useState("");
   const [is_divider, setis_divider] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
   useEffect(() => {
     fetchModuleOptions()
       .then(setModules)
       .catch(() => {});
   }, []);
-
   const handleModuleSelect = async (mod: string) => {
     setSelMod(mod);
     const rows = await fetchTestsForModule(mod).catch(() => []);
     setTests(rows);
     setStage("selecttest");
   };
-
   const handleTestSelect = async (testsname: string) => {
     setSelTest(testsname);
     if (op !== "create") {
@@ -1151,7 +1162,6 @@ const ImportStepsManualModal: React.FC<{
       setStage("fillform");
     }
   };
-
   const handleStepSelect = (step: ExistingStep) => {
     setSelStep(step);
     if (op === "update") {
@@ -1162,7 +1172,6 @@ const ImportStepsManualModal: React.FC<{
     }
     setStage(op === "delete" ? "confirm" : "fillform");
   };
-
   const handleSubmit = async () => {
     setStage("submitting");
     setError(null);
@@ -1174,7 +1183,7 @@ const ImportStepsManualModal: React.FC<{
             serial_no: parseFloat(sn),
             action,
             expected_result: expected,
-            is_divider: is_divider,
+            is_divider,
             testsname: selTest,
           });
         if (e) throw new Error(e.message);
@@ -1185,7 +1194,7 @@ const ImportStepsManualModal: React.FC<{
             serial_no: parseFloat(sn),
             action,
             expected_result: expected,
-            is_divider: is_divider,
+            is_divider,
           })
           .eq("id", selStep.id);
         if (e) throw new Error(e.message);
@@ -1203,7 +1212,6 @@ const ImportStepsManualModal: React.FC<{
       setStage("confirm");
     }
   };
-
   return (
     <ModalShell
       title="Steps (Manual)"
@@ -1423,13 +1431,12 @@ const ImportStepsManualModal: React.FC<{
 };
 
 // ══════════════════════════════════════════════════════════════════════════════
-// MAIN MobileNav COMPONENT
+// MAIN MobileNav COMPONENT — iOS 26 Liquid Glass
 // ══════════════════════════════════════════════════════════════════════════════
 interface Props {
   activePage: string;
   onNavigate: (page: string, module_name?: string) => void;
 }
-
 type ActiveModal =
   | "export"
   | "modules"
@@ -1440,11 +1447,18 @@ type ActiveModal =
   | null;
 
 const MobileNav: React.FC<Props> = ({ activePage, onNavigate }) => {
+  useGlassStyle();
+
   const { user, signOut } = useAuth();
   const { theme, setTheme } = useTheme();
   const [activeModal, setModal] = useState<ActiveModal>(null);
   const [modules, setModules] = useState<ModuleOption[]>([]);
   const [menuOpen, setMenuOpen] = useState(false);
+
+  const navRef = useRef<HTMLDivElement>(null);
+  const sheetRef = useRef<HTMLDivElement>(null);
+  const overlayRef = useRef<HTMLDivElement>(null);
+  const itemRefs = useRef<(HTMLButtonElement | null)[]>([]);
 
   const isAdmin = user?.role === "admin";
 
@@ -1454,184 +1468,338 @@ const MobileNav: React.FC<Props> = ({ activePage, onNavigate }) => {
       .catch(() => {});
   }, []);
 
+  // ── Navbar entrance ───────────────────────────────────────────────────────
+  useEffect(() => {
+    if (!navRef.current) return;
+    gsap.fromTo(
+      navRef.current,
+      { y: 80, opacity: 0, scale: 0.92 },
+      {
+        y: 0,
+        opacity: 1,
+        scale: 1,
+        duration: 0.65,
+        ease: "back.out(1.4)",
+        delay: 0.1,
+      }
+    );
+  }, []);
+
+  // ── More sheet open/close ─────────────────────────────────────────────────
+  useEffect(() => {
+    if (!sheetRef.current || !overlayRef.current) return;
+    if (menuOpen) {
+      gsap.set(sheetRef.current, { display: "flex" });
+      gsap.fromTo(
+        sheetRef.current,
+        { y: "100%", opacity: 0 },
+        { y: "0%", opacity: 1, duration: 0.42, ease: "expo.out" }
+      );
+      gsap.fromTo(
+        overlayRef.current,
+        { opacity: 0 },
+        { opacity: 1, duration: 0.28, ease: "power2.out" }
+      );
+      // Stagger items inside sheet
+      const items = sheetRef.current.querySelectorAll(".sheet-item");
+      gsap.fromTo(
+        items,
+        { x: -16, opacity: 0 },
+        {
+          x: 0,
+          opacity: 1,
+          duration: 0.3,
+          stagger: 0.04,
+          ease: "power3.out",
+          delay: 0.12,
+        }
+      );
+    } else {
+      gsap.to(sheetRef.current, {
+        y: "100%",
+        opacity: 0,
+        duration: 0.28,
+        ease: "power3.in",
+        onComplete: () => {
+          if (sheetRef.current) gsap.set(sheetRef.current, { display: "none" });
+        },
+      });
+      gsap.to(overlayRef.current, { opacity: 0, duration: 0.2 });
+    }
+  }, [menuOpen]);
+
+  const closeMenu = () => setMenuOpen(false);
+
   const handleSignOut = async () => {
     if (user?.id) await releaseLocksAndSignOut(user.id, signOut);
     else await signOut();
   };
 
+  // ── Tab press animation ───────────────────────────────────────────────────
+  const handleNavPress = (
+    el: HTMLButtonElement | null,
+    id: string,
+    moduleName?: string
+  ) => {
+    if (!el) return;
+    gsap
+      .timeline()
+      .to(el, { scale: 0.82, duration: 0.1, ease: "power2.in" })
+      .to(el, { scale: 1.08, duration: 0.18, ease: "back.out(2)" })
+      .to(el, { scale: 1, duration: 0.14, ease: "power2.out" });
+    onNavigate(id, moduleName);
+  };
+
   const close = () => setModal(null);
 
   const navItems = [
-    {
-      id: "dashboard",
-      label: "Dashboard",
-      icon: <LayoutDashboard size={20} />,
-    },
-    { id: "report", label: "Report", icon: <ClipboardList size={20} /> }, // ← was 'test-report'
+    { id: "dashboard", label: "Home", icon: <LayoutDashboard size={19} /> },
+    { id: "report", label: "Report", icon: <ClipboardList size={19} /> },
     ...(isAdmin
       ? [
-          { id: "users", label: "Users", icon: <Users size={20} /> },
-          {
-            id: "audit_log",
-            label: "Audit Log",
-            icon: <ScrollText size={20} />,
-          }, // ← was 'audit-log'
+          { id: "users", label: "Users", icon: <Users size={19} /> },
+          { id: "audit_log", label: "Audit", icon: <ScrollText size={19} /> },
         ]
       : []),
   ];
 
+  // ── Nav items + Module + More ─────────────────────────────────────────────
+  const allNavItems = [
+    ...navItems,
+    ...(modules.length > 0
+      ? [{ id: "__module__", label: "Module", icon: <FolderOpen size={19} /> }]
+      : []),
+    { id: "__more__", label: "More", icon: <MoreHorizontal size={19} /> },
+  ];
+
   return (
     <>
-      {/* Bottom nav bar */}
-      <nav className="fixed bottom-0 inset-x-0 z-50 md:hidden bg-bg-nav border-t border-[var(--border-color)] flex items-center justify-around px-2 h-16">
-        {navItems.map((item) => (
-          <button
-            key={item.id}
-            onClick={() => onNavigate(item.id)}
-            className={`flex flex-col items-center gap-0.5 px-3 py-1.5 rounded-xl transition-colors text-[10px] font-semibold
-              ${
-                activePage === item.id
-                  ? "text-c-brand"
-                  : "text-t-muted hover:text-t-primary"
-              }`}
-          >
-            {item.icon}
-            {item.label}
-          </button>
-        ))}
+      {/* ── Floating glass nav bar ────────────────────────────────────────── */}
+      <nav
+        ref={navRef}
+        className="lg-nav fixed bottom-5 left-1/2 -translate-x-1/2 z-50 md:hidden
+          rounded-[26px] flex items-center px-2 py-2 gap-1"
+        style={{
+          width: "calc(100% - 32px)",
+          maxWidth: 420,
+          // safe area padding for notch phones
+          marginBottom: "env(safe-area-inset-bottom, 0px)",
+        }}
+      >
+        {allNavItems.map((item, i) => {
+          const isActive =
+            item.id === activePage ||
+            (item.id === "__module__" && activePage === "module");
+          const isMore = item.id === "__more__";
+          const isModule = item.id === "__module__";
 
-        {/* Module shortcut */}
-        {modules.length > 0 && (
-          <button
-            onClick={() => onNavigate("module", modules[0].name)}
-            className={`flex flex-col items-center gap-0.5 px-3 py-1.5 rounded-xl transition-colors text-[10px] font-semibold
-              ${
-                activePage === "module"
-                  ? "text-c-brand"
-                  : "text-t-muted hover:text-t-primary"
-              }`}
-          >
-            <FolderOpen size={20} />
-            Module
-          </button>
-        )}
+          return (
+            <button
+              key={item.id}
+              ref={(el) => {
+                itemRefs.current[i] = el;
+              }}
+              onClick={() => {
+                if (isMore) {
+                  setMenuOpen((p) => !p);
+                  return;
+                }
+                if (isModule && modules[0]) {
+                  handleNavPress(
+                    itemRefs.current[i],
+                    "module",
+                    modules[0].name
+                  );
+                  return;
+                }
+                handleNavPress(itemRefs.current[i], item.id);
+              }}
+              className={`relative flex flex-col items-center justify-center gap-0.5
+                flex-1 py-2 px-1 rounded-[18px] transition-all duration-200
+                ${isActive ? "lg-pill-active" : ""}
+              `}
+            >
+              {/* Active glow indicator */}
+              {isActive && (
+                <span
+                  className="lg-indicator absolute top-1.5 left-1/2 -translate-x-1/2
+                    w-5 h-0.5 rounded-full"
+                />
+              )}
 
-        {/* More menu */}
-        <button
-          onClick={() => setMenuOpen((p) => !p)}
-          className="flex flex-col items-center gap-0.5 px-3 py-1.5 rounded-xl text-[10px] font-semibold text-t-muted hover:text-t-primary transition-colors"
-        >
-          <MoreHorizontal size={20} />
-          More
-        </button>
+              {/* Icon */}
+              <span
+                className={`transition-colors duration-200 ${
+                  isActive ? "text-sky-300" : "text-white/45"
+                } ${menuOpen && isMore ? "text-sky-300" : ""}`}
+              >
+                {item.icon}
+              </span>
+
+              {/* Label */}
+              <span
+                className={`text-[9.5px] font-semibold tracking-wide transition-colors duration-200 ${
+                  isActive ? "text-sky-300" : "text-white/35"
+                } ${menuOpen && isMore ? "text-sky-300" : ""}`}
+              >
+                {item.label}
+              </span>
+            </button>
+          );
+        })}
       </nav>
 
-      {/* More menu overlay */}
-      {menuOpen && (
-        <div
-          className="fixed inset-0 z-60 md:hidden"
-          onClick={() => setMenuOpen(false)}
-        >
-          <div
-            className="absolute bottom-16 right-0 w-56 bg-bg-surface border border-[var(--border-color)] rounded-2xl shadow-2xl p-2 m-2"
-            onClick={(e) => e.stopPropagation()}
+      {/* ── Overlay ──────────────────────────────────────────────────────── */}
+      <div
+        ref={overlayRef}
+        className="fixed inset-0 z-40 md:hidden"
+        style={{
+          background: "rgba(0,0,0,0.45)",
+          backdropFilter: "blur(2px)",
+          opacity: 0,
+          display: menuOpen ? "block" : "none",
+          pointerEvents: menuOpen ? "auto" : "none",
+        }}
+        onClick={closeMenu}
+      />
+
+      {/* ── More sheet — liquid glass bottom sheet ────────────────────────── */}
+      <div
+        ref={sheetRef}
+        className="lg-sheet fixed bottom-0 inset-x-0 z-50 md:hidden
+          rounded-t-[28px] flex-col pb-8"
+        style={{ display: "none", maxHeight: "80vh" }}
+      >
+        {/* Handle */}
+        <div className="flex justify-center pt-3 pb-2 shrink-0">
+          <div className="w-9 h-1 rounded-full bg-white/20" />
+        </div>
+
+        {/* Header */}
+        <div className="flex items-center justify-between px-5 pb-3 shrink-0">
+          <div>
+            <p className="text-sm font-bold text-white/90 tracking-tight">
+              Options
+            </p>
+            <p className="text-[11px] text-white/35 font-medium">
+              {user?.email}
+            </p>
+          </div>
+          <button
+            onClick={closeMenu}
+            className="w-8 h-8 rounded-full flex items-center justify-center
+              bg-white/8 border border-white/10 text-white/50 hover:text-white/80 transition"
           >
-            {/* Theme toggle */}
+            <X size={14} />
+          </button>
+        </div>
+
+        <div className="overflow-y-auto flex-1 px-3 flex flex-col gap-1 pb-2">
+          {/* Theme row */}
+          <div className="sheet-item flex gap-2 mb-1">
             <button
               onClick={() => {
                 setTheme(theme === "dark" ? "light" : "dark");
               }}
-              className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm text-t-secondary hover:bg-bg-card hover:text-t-primary transition-colors"
+              className="lg-item-btn flex-1 flex items-center gap-2.5 px-4 py-3 rounded-2xl"
             >
-              {theme === "dark" ? <Sun size={16} /> : <Moon size={16} />}
-              {theme === "dark" ? "Light mode" : "Dark mode"}
+              <span className="text-white/60">
+                {theme === "dark" ? <Sun size={16} /> : <Moon size={16} />}
+              </span>
+              <span className="text-sm text-white/75 font-medium">
+                {theme === "dark" ? "Light Mode" : "Dark Mode"}
+              </span>
             </button>
-
-            {/* Theme editor */}
             <button
               onClick={() => {
                 setModal("theme");
-                setMenuOpen(false);
+                closeMenu();
               }}
-              className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm text-t-secondary hover:bg-bg-card hover:text-t-primary transition-colors"
+              className="lg-item-btn flex items-center gap-2.5 px-4 py-3 rounded-2xl"
             >
-              <Palette size={16} />
-              Theme Editor
-            </button>
-
-            {isAdmin && (
-              <>
-                <div className="h-px bg-[var(--border-color)] my-1" />
-                <p className="text-[10px] font-bold text-t-muted uppercase tracking-wider px-3 py-1">
-                  Data
-                </p>
-
-                <button
-                  onClick={() => {
-                    setModal("export");
-                    setMenuOpen(false);
-                  }}
-                  className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm text-t-secondary hover:bg-bg-card hover:text-t-primary transition-colors"
-                >
-                  <Download size={16} />
-                  Export all data
-                </button>
-                <button
-                  onClick={() => {
-                    setModal("modules");
-                    setMenuOpen(false);
-                  }}
-                  className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm text-t-secondary hover:bg-bg-card hover:text-t-primary transition-colors"
-                >
-                  <Package size={16} />
-                  Manage modules
-                </button>
-                <button
-                  onClick={() => {
-                    setModal("tests");
-                    setMenuOpen(false);
-                  }}
-                  className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm text-t-secondary hover:bg-bg-card hover:text-t-primary transition-colors"
-                >
-                  <FlaskConical size={16} />
-                  Manage tests
-                </button>
-                <button
-                  onClick={() => {
-                    setModal("steps-csv");
-                    setMenuOpen(false);
-                  }}
-                  className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm text-t-secondary hover:bg-bg-card hover:text-t-primary transition-colors"
-                >
-                  <Upload size={16} />
-                  Import steps (CSV)
-                </button>
-                <button
-                  onClick={() => {
-                    setModal("steps-manual");
-                    setMenuOpen(false);
-                  }}
-                  className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm text-t-secondary hover:bg-bg-card hover:text-t-primary transition-colors"
-                >
-                  <Hash size={16} />
-                  Manage steps
-                </button>
-              </>
-            )}
-
-            <div className="h-px bg-[var(--border-color)] my-1" />
-            <button
-              onClick={handleSignOut}
-              className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm text-red-400 hover:bg-red-500/10 transition-colors"
-            >
-              <LogOut size={16} />
-              Sign out
+              <Palette size={16} className="text-white/60" />
+              <span className="text-sm text-white/75 font-medium">Theme</span>
             </button>
           </div>
-        </div>
-      )}
 
-      {/* Modals */}
+          {isAdmin && (
+            <>
+              <p className="sheet-item text-[10px] font-bold text-white/25 uppercase tracking-widest px-2 mt-1 mb-0.5">
+                Data Management
+              </p>
+
+              {[
+                {
+                  icon: <Download size={15} />,
+                  label: "Export All Data",
+                  onClick: () => {
+                    setModal("export");
+                    closeMenu();
+                  },
+                },
+                {
+                  icon: <Package size={15} />,
+                  label: "Manage Modules",
+                  onClick: () => {
+                    setModal("modules");
+                    closeMenu();
+                  },
+                },
+                {
+                  icon: <FlaskConical size={15} />,
+                  label: "Manage Tests",
+                  onClick: () => {
+                    setModal("tests");
+                    closeMenu();
+                  },
+                },
+                {
+                  icon: <Upload size={15} />,
+                  label: "Import Steps (CSV)",
+                  onClick: () => {
+                    setModal("steps-csv");
+                    closeMenu();
+                  },
+                },
+                {
+                  icon: <Hash size={15} />,
+                  label: "Manage Steps",
+                  onClick: () => {
+                    setModal("steps-manual");
+                    closeMenu();
+                  },
+                },
+              ].map((item) => (
+                <button
+                  key={item.label}
+                  onClick={item.onClick}
+                  className="sheet-item lg-item-btn w-full flex items-center gap-3 px-4 py-3 rounded-2xl text-left"
+                >
+                  <span className="text-sky-400/70">{item.icon}</span>
+                  <span className="text-sm text-white/70 font-medium">
+                    {item.label}
+                  </span>
+                </button>
+              ))}
+            </>
+          )}
+
+          {/* Sign out */}
+          <div className="h-px bg-white/6 my-2 sheet-item" />
+          <button
+            onClick={handleSignOut}
+            className="sheet-item lg-item-btn w-full flex items-center gap-3 px-4 py-3 rounded-2xl text-left
+              border-red-500/15 hover:bg-red-500/10"
+          >
+            <LogOut size={15} className="text-red-400/70" />
+            <span className="text-sm text-red-400/80 font-medium">
+              Sign Out
+            </span>
+          </button>
+        </div>
+      </div>
+
+      {/* ── Modals ────────────────────────────────────────────────────────── */}
       {activeModal === "export" && <ExportDataModal onClose={close} />}
       {activeModal === "modules" && (
         <ImportModulesModal onClose={close} onDone={close} />
@@ -1646,7 +1814,7 @@ const MobileNav: React.FC<Props> = ({ activePage, onNavigate }) => {
         <ImportStepsManualModal onClose={close} onDone={close} />
       )}
       {activeModal === "theme" && (
-        <div className="fixed inset-0 z-70 md:hidden">
+        <div className="fixed inset-0 z-[70] md:hidden">
           <div className="absolute inset-0 bg-black/50" onClick={close} />
           <div className="absolute inset-x-0 bottom-0 max-h-[90vh] overflow-y-auto bg-bg-surface rounded-t-2xl border-t border-[var(--border-color)]">
             <ThemeEditor onClose={close} />
