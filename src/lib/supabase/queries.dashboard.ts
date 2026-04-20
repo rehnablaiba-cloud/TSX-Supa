@@ -30,7 +30,7 @@ export async function fetchDashboardModules(): Promise<DashboardModule[]> {
     .order("name");
 
   if (error) throw new Error(error.message);
-  return (data ?? []) as DashboardModule[];
+  return (data ?? []) as unknown as DashboardModule[];
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
