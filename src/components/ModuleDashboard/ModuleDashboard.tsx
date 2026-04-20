@@ -9,6 +9,7 @@ import React, {
 import { supabase } from "../../supabase";
 import Spinner from "../UI/Spinner";
 import Topbar from "../Layout/Topbar";
+import { useAuth } from "../../context/AuthContext";
 import { useTheme } from "../../context/ThemeContext";
 import {
   Lock,
@@ -16,6 +17,7 @@ import {
   FileSpreadsheet,
   FileText,
   ChevronRight,
+  RotateCcw,
 } from "lucide-react";
 import {
   exportModuleDetailCSV,
@@ -37,6 +39,7 @@ const ANIM_STYLE = `
 @keyframes fadeSlideIn    { from{opacity:0;transform:translateY(10px)}  to{opacity:1;transform:translateY(0)} }
 @keyframes fadeSlideInRow { from{opacity:0;transform:translateX(-6px)}  to{opacity:1;transform:translateX(0)} }
 @keyframes fadeScaleIn    { from{opacity:0;transform:scale(.95) translateY(-4px)} to{opacity:1;transform:scale(1) translateY(0)} }
+@keyframes neonPulse      { 0%,100%{box-shadow:0 0 0 0 rgba(34,211,238,0.0),0 0 12px 2px rgba(34,211,238,0.18)} 50%{box-shadow:0 0 0 0 rgba(34,211,238,0.0),0 0 22px 6px rgba(34,211,238,0.32)} }
 `;
 
 function useInjectStyle() {
@@ -124,6 +127,7 @@ const ModuleDashboard: React.FC<Props> = ({
 }) => {
   useInjectStyle();
 
+  const { user } = useAuth();
   const { theme } = useTheme();
 
   const [module_tests, setmodule_tests] = useState<ModuleTestRow[]>([]);
@@ -382,7 +386,7 @@ const ModuleDashboard: React.FC<Props> = ({
           ))}
         </div>
 
-        {/* ── Chart type selector + chart ── */}
+        {/* ── Chart ── */}
         {module_tests.length > 0 && (
           <div className="card flex flex-col gap-3">
             <div className="flex items-center justify-between flex-wrap gap-2">
@@ -424,6 +428,7 @@ const ModuleDashboard: React.FC<Props> = ({
               No tests assigned to this module yet.
             </div>
           )}
+
           {module_tests.map((mt, idx) => {
             const real = mt.step_results.filter((sr) => !sr.step?.is_divider);
             const pass = real.filter((sr) => sr.status === "pass").length;
@@ -432,23 +437,39 @@ const ModuleDashboard: React.FC<Props> = ({
             const total = real.length;
             const passRate = total > 0 ? Math.round((pass / total) * 100) : 0;
             const failPct = total > 0 ? Math.round((fail / total) * 100) : 0;
+
             const lock = locks[mt.id];
-            const isLocked = !!lock;
+            const isMyLock = !!lock && lock.locked_by_email === user?.email;
+            const isOtherLock = !!lock && !isMyLock;
+
+            // ── Per-card style ────────────────────────────────────────────
+            const cardStyle: React.CSSProperties = isMyLock
+              ? {
+                  border: "1.5px solid rgba(34,211,238,0.55)",
+                  background:
+                    "linear-gradient(135deg, rgba(34,211,238,0.07) 0%, transparent 60%)",
+                  animation: "neonPulse 2.6s ease-in-out infinite",
+                }
+              : {};
+
+            const cardCls = [
+              "card flex flex-col gap-3 relative transition-all duration-200",
+              isOtherLock ? "opacity-40 grayscale-[0.35]" : "",
+            ].join(" ");
 
             return (
               <StaggerRow key={mt.id} index={idx}>
-                <div
-                  className={`card flex flex-col gap-3 relative transition-opacity duration-200 ${
-                    isLocked ? "opacity-50" : ""
-                  }`}
-                >
-                  {/* ── Lock banner ── */}
-                  {isLocked && (
-                    <div className="absolute top-3 right-3 z-10 flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-amber-500/15 border border-amber-500/30 text-amber-400 text-xs font-semibold pointer-events-none">
-                      <Lock size={11} />
-                      <span>{lock.locked_by_email}</span>
-                      <span className="text-amber-400/60">·</span>
-                      <span>
+                <div className={cardCls} style={cardStyle}>
+                  {/* ── MY lock badge ───────────────────────────────────── */}
+                  {isMyLock && (
+                    <div
+                      className="flex items-center gap-1.5 self-start px-2.5 py-1 rounded-lg w-fit
+                      bg-cyan-500/15 border border-cyan-400/40 text-cyan-300 text-xs font-semibold"
+                    >
+                      <Lock size={11} className="text-cyan-400" />
+                      <span>Locked by me</span>
+                      <span className="text-cyan-400/50">·</span>
+                      <span className="text-cyan-400/70">
                         {new Date(lock.locked_at).toLocaleTimeString([], {
                           hour: "2-digit",
                           minute: "2-digit",
@@ -457,42 +478,82 @@ const ModuleDashboard: React.FC<Props> = ({
                     </div>
                   )}
 
-                  {/* ── Header ── */}
+                  {/* ── OTHER lock badge ─────────────────────────────────── */}
+                  {isOtherLock && (
+                    <div
+                      className="flex items-center gap-1.5 self-start px-2.5 py-1 rounded-lg w-fit
+                      bg-amber-500/15 border border-amber-500/35 text-amber-400 text-xs font-semibold"
+                    >
+                      <Lock size={11} />
+                      <span>In use by {lock.locked_by_email}</span>
+                      <span className="text-amber-400/50">·</span>
+                      <span className="text-amber-400/70">
+                        {new Date(lock.locked_at).toLocaleTimeString([], {
+                          hour: "2-digit",
+                          minute: "2-digit",
+                        })}
+                      </span>
+                    </div>
+                  )}
+
+                  {/* ── Header ──────────────────────────────────────────── */}
                   <div className="flex items-start justify-between gap-2">
                     <div className="flex items-center gap-2 flex-wrap min-w-0">
-                      <span className="font-mono text-xs text-c-brand font-bold shrink-0">
+                      <span
+                        className={`font-mono text-xs font-bold shrink-0 ${
+                          isMyLock ? "text-cyan-400" : "text-c-brand"
+                        }`}
+                      >
                         {mt.test?.serial_no}
                       </span>
                       <h3 className="font-semibold text-t-primary text-sm truncate">
                         {mt.test?.name ?? mt.tests_name}
                       </h3>
-                      {isLocked && (
-                        <Lock size={12} className="text-amber-400 shrink-0" />
-                      )}
                     </div>
 
-                    {/* ── Action buttons ── */}
+                    {/* ── Buttons ─────────────────────────────────────────── */}
                     <div className="flex items-center gap-1.5 shrink-0">
                       <button
                         onClick={() => onViewReport(mt.id)}
-                        disabled={isLocked}
-                        className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-bg-card hover:bg-bg-surface border border-[var(--border-color)] text-t-secondary hover:text-t-primary text-xs font-semibold transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                        disabled={isOtherLock}
+                        className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-colors
+                          bg-bg-card hover:bg-bg-surface border border-[var(--border-color)]
+                          text-t-secondary hover:text-t-primary
+                          disabled:opacity-30 disabled:cursor-not-allowed"
                       >
                         <ChevronRight size={12} />
                         Report
                       </button>
-                      <button
-                        onClick={() => onExecute(mt.id)}
-                        disabled={isLocked}
-                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-c-brand hover:bg-c-brand-hover text-white text-xs font-semibold transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-                      >
-                        <Play size={12} />
-                        Execute
-                      </button>
+
+                      {isMyLock ? (
+                        /* Resume — cyan neon, same style as execution UI */
+                        <button
+                          onClick={() => onExecute(mt.id)}
+                          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all
+                            bg-cyan-500 hover:bg-cyan-400 text-gray-950
+                            shadow-[0_0_14px_3px_rgba(34,211,238,0.40)]
+                            hover:shadow-[0_0_20px_5px_rgba(34,211,238,0.55)]"
+                        >
+                          <RotateCcw size={12} />
+                          Resume
+                        </button>
+                      ) : (
+                        /* Execute — normal brand */
+                        <button
+                          onClick={() => onExecute(mt.id)}
+                          disabled={isOtherLock}
+                          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors
+                            bg-c-brand hover:bg-c-brand-hover text-white
+                            disabled:opacity-30 disabled:cursor-not-allowed"
+                        >
+                          <Play size={12} />
+                          Execute
+                        </button>
+                      )}
                     </div>
                   </div>
 
-                  {/* ── Stats row ── */}
+                  {/* ── Stats row ───────────────────────────────────────── */}
                   <div className="flex items-center gap-3 flex-wrap text-xs">
                     <span className="badge-pass">
                       <span className="w-1.5 h-1.5 rounded-full bg-green-500 inline-block mr-1" />
@@ -508,7 +569,7 @@ const ModuleDashboard: React.FC<Props> = ({
                     </span>
                   </div>
 
-                  {/* ── Progress bar ── */}
+                  {/* ── Progress bar ─────────────────────────────────────── */}
                   <div>
                     <div className="flex justify-between text-xs text-t-muted mb-1">
                       <span>Progress</span>
