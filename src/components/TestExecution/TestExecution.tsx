@@ -34,7 +34,7 @@ import {
   acquireLock,
   releaseLock,
   forceReleaseLock,
-  heartbeatLock, // ✅ Fix 1: import heartbeatLock
+  heartbeatLock,
 } from "../../lib/supabase/queries.testexecution";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -906,6 +906,22 @@ const TestExecution: React.FC<Props> = ({
     [signedImageUrls]
   );
 
+  // ── Heartbeat helpers ─────────────────────────────────────────────────────
+  const stopHeartbeat = useCallback(() => {
+    if (heartbeatRef.current) {
+      clearInterval(heartbeatRef.current);
+      heartbeatRef.current = null;
+    }
+  }, []);
+
+  const startHeartbeat = useCallback(() => {
+    stopHeartbeat();
+    if (!user?.id) return;
+    heartbeatRef.current = setInterval(() => {
+      heartbeatLock(currentMtId, user.id).catch(() => {});
+    }, 15_000);
+  }, [currentMtId, user?.id, stopHeartbeat]);
+
   // ── Load data ─────────────────────────────────────────────────────────────
   useEffect(() => {
     setLoading(true);
@@ -988,7 +1004,6 @@ const TestExecution: React.FC<Props> = ({
       setLockLoading(false);
     })();
 
-    // ✅ Fix 2: user-scoped channel names prevent Web Lock collision
     const uid = user?.id ?? "anon";
 
     const lockChannel = supabase
@@ -1040,6 +1055,28 @@ const TestExecution: React.FC<Props> = ({
       supabase.removeChannel(srChannel);
     };
   }, [module_name, currentMtId, testsName, user?.id]);
+
+  // ── Acquire lock — only stop heartbeat on unmount, never release ──────────
+  useEffect(() => {
+    if (!user) return;
+    let cancelled = false;
+    (async () => {
+      const result = await acquireLock(
+        currentMtId,
+        user.id,
+        user.display_name ?? user.email ?? "User"
+      );
+      if (cancelled) return;
+      // ✅ Only start heartbeat if we own the lock
+      if (result.success) startHeartbeat();
+    })();
+    return () => {
+      cancelled = true;
+      // ✅ ONLY stop heartbeat on unmount — do NOT release the lock
+      // Lock is released only by: handleFinish, logout, or DB cron timeout
+      stopHeartbeat();
+    };
+  }, [currentMtId, user?.id, startHeartbeat, stopHeartbeat]);
 
   // ── Signed image URLs ─────────────────────────────────────────────────────
   useEffect(() => {
@@ -1131,64 +1168,33 @@ const TestExecution: React.FC<Props> = ({
     };
   }, [scrollTarget, loading]);
 
-  // ── Lock heartbeat ────────────────────────────────────────────────────────
-  const startHeartbeat = useCallback(() => {
-    if (heartbeatRef.current) clearInterval(heartbeatRef.current);
-    // ✅ Fix 3: use heartbeatLock from queries instead of inline supabase call
-    heartbeatRef.current = setInterval(() => {
-      if (user) heartbeatLock(currentMtId, user.id).catch(() => {});
-    }, 15_000);
-  }, [currentMtId, user]);
-
-  const stopHeartbeat = useCallback(() => {
-    if (heartbeatRef.current) {
-      clearInterval(heartbeatRef.current);
-      heartbeatRef.current = null;
-    }
-  }, []);
-
-  // ── Acquire lock on mount ─────────────────────────────────────────────────
+  // ── Keyboard shortcuts ────────────────────────────────────────────────────
   useEffect(() => {
-    if (!user) return;
-    let cancelled = false;
-    (async () => {
-      // ✅ Fix 4: acquireLock now returns { success, holder } — check .success
-      const result = await acquireLock(
-        currentMtId,
-        user.id,
-        user.display_name ?? user.email ?? "User"
-      );
-      if (cancelled) return;
-      if (result.success) startHeartbeat();
-    })();
-    return () => {
-      cancelled = true;
-      stopHeartbeat();
-      releaseLock(currentMtId, user.id).catch(() => {});
+    const onKeyDown = (e: KeyboardEvent) => {
+      const tag = (document.activeElement as HTMLElement)?.tagName;
+      if (tag === "TEXTAREA" || tag === "INPUT" || tag === "BUTTON") return;
+      if (!focusedStepId || isLockedByOther) return;
+      const focused = steps.find((s) => s.stepId === focusedStepId);
+      if (!focused || focused.is_divider) return;
+      if (e.key === "p" || e.key === "P" || e.key === "Enter") {
+        e.preventDefault();
+        handleStepUpdate(
+          focusedStepId,
+          "pass",
+          remarksMap.current[focusedStepId] ?? focused.remarks ?? ""
+        );
+      } else if (e.key === "f" || e.key === "F") {
+        e.preventDefault();
+        handleStepUpdate(
+          focusedStepId,
+          "fail",
+          remarksMap.current[focusedStepId] ?? focused.remarks ?? ""
+        );
+      }
     };
-  }, [currentMtId, user?.id, startHeartbeat, stopHeartbeat]);
-
-  // ── beforeunload release ──────────────────────────────────────────────────
-  useEffect(() => {
-    if (!user) return;
-    const release = () => {
-      const supabaseUrl = (supabase as any).supabaseUrl as string;
-      const supabaseKey = (supabase as any).supabaseKey as string;
-      fetch(
-        `${supabaseUrl}/rest/v1/test_locks?module_test_id=eq.${currentMtId}&user_id=eq.${user.id}`,
-        {
-          method: "DELETE",
-          keepalive: true,
-          headers: {
-            apikey: supabaseKey,
-            Authorization: `Bearer ${supabaseKey}`,
-          },
-        }
-      );
-    };
-    window.addEventListener("beforeunload", release);
-    return () => window.removeEventListener("beforeunload", release);
-  }, [currentMtId, user?.id]);
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [focusedStepId, steps]);
 
   // ── Update step ───────────────────────────────────────────────────────────
   const handleStepUpdate = useCallback(
@@ -1238,9 +1244,8 @@ const TestExecution: React.FC<Props> = ({
   // ── Reset all ─────────────────────────────────────────────────────────────
   const handleUndoAll = useCallback(async () => {
     setShowUndoModal(false);
-    const actionable = steps.filter((s) => !s.is_divider);
-    const prevSteps = steps;
     const display_name = user?.display_name ?? user?.email ?? "User";
+    const prevSteps = steps;
 
     setSteps((prev) =>
       prev.map((s) =>
@@ -1250,7 +1255,7 @@ const TestExecution: React.FC<Props> = ({
       )
     );
     remarksMap.current = {};
-    const first = actionable[0];
+    const first = steps.filter((s) => !s.is_divider)[0];
     if (first) {
       setFocusedStepId(first.stepId);
       setScrollTarget(first.stepId);
@@ -1270,7 +1275,7 @@ const TestExecution: React.FC<Props> = ({
     }
   }, [steps, module_name, user, addToast, log]);
 
-  // ── Force release ─────────────────────────────────────────────────────────
+  // ── Force release (admin) ─────────────────────────────────────────────────
   const handleForceRelease = useCallback(async () => {
     if (!isAdmin) return;
     try {
@@ -1281,42 +1286,15 @@ const TestExecution: React.FC<Props> = ({
     }
   }, [isAdmin, currentMtId, addToast]);
 
-  // ── Finish test ───────────────────────────────────────────────────────────
+  // ── Finish — ONLY place lock is explicitly released ───────────────────────
   const handleFinish = async () => {
     stopHeartbeat();
+    // ✅ Release lock — user intentionally finished the test
     if (user) await releaseLock(currentMtId, user.id).catch(() => {});
     log(`Finished test: ${currentTest?.name}`);
     addToast(`Test "${currentTest?.name}" completed!`, "success");
     onBack();
   };
-
-  // ── Keyboard shortcuts ────────────────────────────────────────────────────
-  useEffect(() => {
-    const onKeyDown = (e: KeyboardEvent) => {
-      const tag = (document.activeElement as HTMLElement)?.tagName;
-      if (tag === "TEXTAREA" || tag === "INPUT" || tag === "BUTTON") return;
-      if (!focusedStepId || isLockedByOther) return;
-      const focused = steps.find((s) => s.stepId === focusedStepId);
-      if (!focused || focused.is_divider) return;
-      if (e.key === "p" || e.key === "P" || e.key === "Enter") {
-        e.preventDefault();
-        handleStepUpdate(
-          focusedStepId,
-          "pass",
-          remarksMap.current[focusedStepId] ?? focused.remarks ?? ""
-        );
-      } else if (e.key === "f" || e.key === "F") {
-        e.preventDefault();
-        handleStepUpdate(
-          focusedStepId,
-          "fail",
-          remarksMap.current[focusedStepId] ?? focused.remarks ?? ""
-        );
-      }
-    };
-    document.addEventListener("keydown", onKeyDown);
-    return () => document.removeEventListener("keydown", onKeyDown);
-  }, [focusedStepId, steps, handleStepUpdate]);
 
   // ── Derived state ─────────────────────────────────────────────────────────
   const isLockedByOther = !!(lock && lock.user_id !== user?.id);
@@ -1328,9 +1306,9 @@ const TestExecution: React.FC<Props> = ({
     failCount,
     totalCount,
     doneCount,
-    progressPct,
     passPct,
     failPct,
+    progressPct,
   } = useMemo(() => {
     const nd = steps.filter((s) => !s.is_divider);
     const pass = nd.filter((s) => s.status === "pass").length;
@@ -1489,7 +1467,6 @@ const TestExecution: React.FC<Props> = ({
         ]}
       />
 
-      {/* ✅ Fix 5: MassImageUploadModal uses isOpen prop — preserved from original */}
       <MassImageUploadModal
         isOpen={showMassImageUpload}
         onClose={() => setShowMassImageUpload(false)}
@@ -1504,11 +1481,8 @@ const TestExecution: React.FC<Props> = ({
               : "Test Execution"
           }
           subtitle={module_name}
-          onBack={() => {
-            stopHeartbeat();
-            releaseLock(currentMtId, user?.id ?? "").catch(() => {});
-            onBack();
-          }}
+          // ✅ Back does NOT release lock — user may return to same test
+          onBack={onBack}
           actions={
             <>
               {isAdmin && (
@@ -1519,6 +1493,7 @@ const TestExecution: React.FC<Props> = ({
                   Mass Upload Images
                 </button>
               )}
+              {/* ✅ Finish is the ONLY way to explicitly release the lock */}
               <button onClick={handleFinish} className="btn-primary text-sm">
                 Finish Test
               </button>
@@ -1626,11 +1601,7 @@ const TestExecution: React.FC<Props> = ({
       </div>
 
       {/* Scroll container */}
-      <div
-        ref={scrollContainerRef}
-        className="flex-1 min-h-0 overflow-y-auto"
-        style={{ scrollBehavior: "smooth" }}
-      >
+      <div ref={scrollContainerRef} className="flex-1 min-h-0 overflow-y-auto">
         {loading ? (
           <div className="flex items-center justify-center py-20">
             <Spinner />
@@ -1725,7 +1696,7 @@ const TestExecution: React.FC<Props> = ({
                     S.No
                   </span>
                 </div>
-                <div className="px-3 py-2 flex items-center">
+                <div className="px-3 py-2">
                   <span className="text-[10px] font-semibold text-t-muted uppercase tracking-wider">
                     Step Details
                   </span>
@@ -1775,7 +1746,7 @@ const TestExecution: React.FC<Props> = ({
               </div>
             </div>
 
-            {/* Undo All (admin only) */}
+            {/* Undo All — admin only */}
             {isAdmin && doneCount > 0 && (
               <div className="flex items-center justify-center py-6 px-4">
                 <div className="flex items-center gap-3 px-4 py-3 rounded-xl border border-dashed border-amber-500/30 bg-amber-500/5">
