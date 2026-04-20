@@ -97,9 +97,11 @@ interface Props {
   onViewReport: (module_test_id: string) => void;
 }
 
+// Matches actual test_locks table schema
 interface LockRow {
   module_test_id: string;
-  locked_by_email: string;
+  user_id: string;
+  locked_by_name: string;
   locked_at: string;
 }
 
@@ -132,7 +134,8 @@ const ModuleDashboard: React.FC<Props> = ({
 
   const [module_tests, setmodule_tests] = useState<ModuleTestRow[]>([]);
   const [locks, setLocks] = useState<Record<string, LockRow>>({});
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(true); // initial load only
+  const [refreshing, setRefreshing] = useState(false); // silent background refresh
   const [error, setError] = useState<string | null>(null);
   const [chartType, setChartType] = useState<ChartType>("bar");
   const mountedRef = useRef(true);
@@ -162,87 +165,111 @@ const ModuleDashboard: React.FC<Props> = ({
   }, [theme]);
 
   // ── Fetch ─────────────────────────────────────────────────────────────────
-  const fetchData = useCallback(async () => {
-    setLoading(true);
+  // isBackground=true → silent refresh (no spinner); false → full load spinner
+  const fetchData = useCallback(
+    async (isBackground = false) => {
+      if (!isBackground) setLoading(true);
+      else setRefreshing(true);
 
-    const [mtRes, srRes, lockRes] = await Promise.all([
-      supabase
-        .from("module_tests")
-        .select(
-          "id, tests_name, test:tests!module_tests_tests_name_fkey(serial_no, name)"
-        )
-        .eq("module_name", module_name)
-        .order("tests_name"),
-      supabase
-        .from("step_results")
-        .select(
-          "id, status, test_steps_id, step:test_steps!step_results_test_steps_id_fkey(id, is_divider, tests_name)"
-        )
-        .eq("module_name", module_name),
-      supabase
-        .from("test_locks")
-        .select("module_test_id, locked_by_email, locked_at")
-        .eq("module_name", module_name),
-    ]);
+      // Step 1 — fetch module_tests and step_results in parallel
+      const [mtRes, srRes] = await Promise.all([
+        supabase
+          .from("module_tests")
+          .select(
+            "id, tests_name, test:tests!module_tests_tests_name_fkey(serial_no, name)"
+          )
+          .eq("module_name", module_name)
+          .order("tests_name"),
+        supabase
+          .from("step_results")
+          .select(
+            "id, status, test_steps_id, step:test_steps!step_results_test_steps_id_fkey(id, is_divider, tests_name)"
+          )
+          .eq("module_name", module_name),
+      ]);
 
-    if (!mountedRef.current) return;
-    if (mtRes.error) {
-      setError(mtRes.error.message);
-      setLoading(false);
-      return;
-    }
-    if (srRes.error) {
-      setError(srRes.error.message);
-      setLoading(false);
-      return;
-    }
+      if (!mountedRef.current) return;
 
-    // locks are non-fatal
-    if (!lockRes.error && lockRes.data) {
-      const lockMap = (lockRes.data as LockRow[]).reduce<
-        Record<string, LockRow>
-      >((acc, l) => {
-        acc[l.module_test_id] = l;
+      if (mtRes.error) {
+        setError(mtRes.error.message);
+        setLoading(false);
+        setRefreshing(false);
+        return;
+      }
+      if (srRes.error) {
+        setError(srRes.error.message);
+        setLoading(false);
+        setRefreshing(false);
+        return;
+      }
+
+      // Step 2 — fetch locks filtered by the actual module_test ids we just got
+      // (test_locks has no module_name column — only module_test_id)
+      const moduleTestIds = (mtRes.data ?? []).map((mt: any) => mt.id);
+
+      const lockRes =
+        moduleTestIds.length > 0
+          ? await supabase
+              .from("test_locks")
+              .select("module_test_id, user_id, locked_by_name, locked_at")
+              .in("module_test_id", moduleTestIds)
+          : { data: [], error: null };
+
+      if (!mountedRef.current) return;
+
+      // Always update locks — reset to {} if no rows or query error
+      const lockMap =
+        !lockRes.error && lockRes.data
+          ? (lockRes.data as LockRow[]).reduce<Record<string, LockRow>>(
+              (acc, l) => {
+                acc[l.module_test_id] = l;
+                return acc;
+              },
+              {}
+            )
+          : {};
+      setLocks(lockMap);
+
+      // Step 3 — join step_results onto module_tests
+      const srByTestsName = (srRes.data ?? []).reduce((acc: any, sr: any) => {
+        const key = sr.step?.tests_name;
+        if (!key) return acc;
+        if (!acc[key]) acc[key] = [];
+        acc[key].push(sr);
         return acc;
       }, {});
-      setLocks(lockMap);
-    }
 
-    const srByTestsName = (srRes.data ?? []).reduce((acc: any, sr: any) => {
-      const key = sr.step?.tests_name;
-      if (!key) return acc;
-      if (!acc[key]) acc[key] = [];
-      acc[key].push(sr);
-      return acc;
-    }, {});
+      const joined = (mtRes.data ?? []).map((mt: any) => ({
+        ...mt,
+        step_results: srByTestsName[mt.tests_name] ?? [],
+      }));
 
-    const joined = (mtRes.data ?? []).map((mt: any) => ({
-      ...mt,
-      step_results: srByTestsName[mt.tests_name] ?? [],
-    }));
+      setmodule_tests(joined as ModuleTestRow[]);
+      setError(null);
+      setLoading(false);
+      setRefreshing(false);
+    },
+    [module_name]
+  );
 
-    setmodule_tests(joined as ModuleTestRow[]);
-    setError(null);
-    setLoading(false);
-  }, [module_name]);
-
+  // Initial load
   useEffect(() => {
-    fetchData();
+    fetchData(false);
   }, [fetchData]);
 
-  // ── Realtime ──────────────────────────────────────────────────────────────
+  // ── Realtime — background refresh only, no spinner ────────────────────────
   useEffect(() => {
     const channel = supabase
       .channel(`module-dashboard-${module_name}`)
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "step_results" },
-        fetchData
+        () => fetchData(true)
       )
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "test_locks" },
-        fetchData
+        () => fetchData(true)
       )
       .subscribe();
     return () => {
@@ -325,7 +352,7 @@ const ModuleDashboard: React.FC<Props> = ({
         title={module_name}
         subtitle={`${module_tests.length} test${
           module_tests.length !== 1 ? "s" : ""
-        } · ${globalStats.total} steps`}
+        } · ${globalStats.total} steps${refreshing ? " · syncing…" : ""}`}
         onBack={onBack}
         actions={
           <div className="flex items-center gap-2">
@@ -439,7 +466,9 @@ const ModuleDashboard: React.FC<Props> = ({
             const failPct = total > 0 ? Math.round((fail / total) * 100) : 0;
 
             const lock = locks[mt.id];
-            const isMyLock = !!lock && lock.locked_by_email === user?.email;
+
+            // Compare against user_id (UUID) — matches test_locks.user_id
+            const isMyLock = !!lock && lock.user_id === user?.id;
             const isOtherLock = !!lock && !isMyLock;
 
             // ── Per-card style ────────────────────────────────────────────
@@ -485,7 +514,8 @@ const ModuleDashboard: React.FC<Props> = ({
                       bg-amber-500/15 border border-amber-500/35 text-amber-400 text-xs font-semibold"
                     >
                       <Lock size={11} />
-                      <span>In use by {lock.locked_by_email}</span>
+                      {/* locked_by_name holds the display name from your table */}
+                      <span>In use by {lock.locked_by_name}</span>
                       <span className="text-amber-400/50">·</span>
                       <span className="text-amber-400/70">
                         {new Date(lock.locked_at).toLocaleTimeString([], {
