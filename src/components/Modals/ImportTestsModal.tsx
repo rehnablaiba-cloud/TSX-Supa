@@ -243,9 +243,7 @@ const ImportTestsModal: React.FC<Props> = ({ onClose, onBack }) => {
                 value={sn}
                 onChange={(e) => setSn(e.target.value)}
                 className="input text-sm"
-                placeholder="e.g. 1.1"
-                type="number"
-                step="0.01"
+                placeholder="e.g. TXXX"
               />
             </div>
             <div>
