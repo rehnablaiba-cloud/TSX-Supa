@@ -3,12 +3,9 @@
  * Drill-down mode  → pass module_test_id + onBack
  * Standalone mode  → render with no props
  *
- * Changes:
- * - Default view is graph
- * - Table shows counts only (no step detail)
- * - Module dropdown in both graph and table views
- * - "Your Session" section showing logged-in user's pass/fail/undo activity
- *   persists until logout
+ * Global view  : all modules, filterable by dropdown, NOT user-dependent
+ * Your Session : steps executed by current user this session, grouped by test,
+ *                click a row → popup with full step detail
  */
 import React, {
   useEffect,
@@ -39,8 +36,6 @@ import { CHART_TYPES } from "../ModuleDashboard/charts";
 import {
   FileSpreadsheet,
   FileText,
-  ChevronDown,
-  ChevronUp,
   CheckCircle2,
   XCircle,
   Clock,
@@ -49,18 +44,21 @@ import {
   Upload,
   AlertTriangle,
   User,
+  X,
+  ChevronRight,
 } from "lucide-react";
 import { supabase } from "../../supabase";
 import {
   fetchTestReportData,
   fetchModuleOptions,
   fetchModuleReports,
-  fetchSessionActivity,
+  fetchSessionSteps,
   type ReportMeta,
   type ReportStepResult,
   type ModuleRow,
   type ModuleOption,
-  type SessionActivity,
+  type SessionStepEntry,
+  type SessionTestGroup,
 } from "../../lib/supabase/queries.testreport";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -79,15 +77,15 @@ type ViewMode = "table" | "chart";
 // ─────────────────────────────────────────────────────────────────────────────
 
 const STATUS_ICON: Record<string, React.ReactNode> = {
-  pass: <CheckCircle2 size={14} className="text-green-400 shrink-0" />,
-  fail: <XCircle size={14} className="text-red-400   shrink-0" />,
-  pending: <Clock size={14} className="text-amber-400 shrink-0" />,
+  pass: <CheckCircle2 size={13} className="text-green-400 shrink-0" />,
+  fail: <XCircle size={13} className="text-red-400 shrink-0" />,
+  pending: <Clock size={13} className="text-amber-400 shrink-0" />,
 };
 
-const STATUS_ROW: Record<string, string> = {
-  pass: "border-l-2 border-green-500/40",
-  fail: "border-l-2 border-red-500/40",
-  pending: "",
+const STATUS_BADGE: Record<string, string> = {
+  pass: "bg-green-500/10 text-green-400",
+  fail: "bg-red-500/10 text-red-400",
+  pending: "bg-amber-500/10 text-amber-400",
 };
 
 const SESSION_STORAGE_KEY = "testreport_session_start";
@@ -96,9 +94,6 @@ function getNonDividerResults(rows: ReportStepResult[]) {
   return rows.filter((r) => !r.step?.is_divider);
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Session start — persists in sessionStorage, clears on tab close / logout
-// ─────────────────────────────────────────────────────────────────────────────
 function getOrCreateSessionStart(): string {
   const existing = sessionStorage.getItem(SESSION_STORAGE_KEY);
   if (existing) return existing;
@@ -111,8 +106,141 @@ function clearSessionStart() {
   sessionStorage.removeItem(SESSION_STORAGE_KEY);
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Session Step Detail Modal
+// ─────────────────────────────────────────────────────────────────────────────
+
+interface SessionModalProps {
+  group: SessionTestGroup;
+  onClose: () => void;
+}
+
+const SessionDetailModal: React.FC<SessionModalProps> = ({
+  group,
+  onClose,
+}) => {
+  const sorted = useMemo(
+    () => [...group.steps].sort((a, b) => a.serial_no - b.serial_no),
+    [group.steps]
+  );
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4"
+      style={{
+        backgroundColor: "rgba(0,0,0,0.6)",
+        backdropFilter: "blur(4px)",
+      }}
+      onClick={onClose}
+    >
+      <div
+        className="relative flex flex-col w-full max-w-3xl max-h-[80vh] rounded-2xl
+          bg-bg-card border border-[var(--border-color)] shadow-2xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div className="flex items-start justify-between gap-3 px-5 py-4 border-b border-[var(--border-color)]">
+          <div className="flex flex-col gap-0.5">
+            <p className="text-sm font-bold text-t-primary">
+              {group.tests_name}
+            </p>
+            <p className="text-xs text-t-muted">{group.module_name}</p>
+          </div>
+          <div className="flex items-center gap-2">
+            {[
+              {
+                label: "Pass",
+                cls: "text-green-400 bg-green-500/10",
+                count: group.pass,
+              },
+              {
+                label: "Fail",
+                cls: "text-red-400 bg-red-500/10",
+                count: group.fail,
+              },
+              {
+                label: "Undo",
+                cls: "text-amber-400 bg-amber-500/10",
+                count: group.undo,
+              },
+            ].map(({ label, cls, count }) => (
+              <span
+                key={label}
+                className={`text-[11px] font-bold px-2.5 py-0.5 rounded-full border border-[var(--border-color)] ${cls}`}
+              >
+                {label}: {count}
+              </span>
+            ))}
+            <button
+              onClick={onClose}
+              className="ml-2 p-1.5 rounded-lg hover:bg-bg-surface text-t-muted
+                hover:text-t-primary transition"
+            >
+              <X size={15} />
+            </button>
+          </div>
+        </div>
+
+        {/* Scrollable table */}
+        <div className="overflow-y-auto flex-1">
+          <table className="w-full text-xs">
+            <thead className="sticky top-0 bg-bg-card z-10">
+              <tr className="text-t-muted uppercase">
+                <th className="px-4 py-2.5 text-left w-10">#</th>
+                <th className="px-4 py-2.5 text-left">Action</th>
+                <th className="px-4 py-2.5 text-left">Expected Result</th>
+                <th className="px-4 py-2.5 text-left">Remarks</th>
+                <th className="px-4 py-2.5 text-center">Status</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-[var(--border-color)]">
+              {sorted.map((step) => (
+                <tr
+                  key={step.id}
+                  className="hover:bg-bg-surface transition-colors"
+                >
+                  <td className="px-4 py-2.5 text-t-muted font-mono">
+                    {step.serial_no}
+                  </td>
+                  <td className="px-4 py-2.5 text-t-primary max-w-[220px]">
+                    <span className="line-clamp-2">{step.action || "—"}</span>
+                  </td>
+                  <td className="px-4 py-2.5 text-t-secondary max-w-[220px]">
+                    <span className="line-clamp-2">
+                      {step.expected_result || "—"}
+                    </span>
+                  </td>
+                  <td className="px-4 py-2.5 text-t-muted max-w-[140px]">
+                    <span className="line-clamp-2">{step.remarks || "—"}</span>
+                  </td>
+                  <td className="px-4 py-2.5 text-center">
+                    <span
+                      className={`inline-flex items-center gap-1 font-bold px-2 py-0.5
+                        rounded-full ${
+                          STATUS_BADGE[step.status] ?? STATUS_BADGE.pending
+                        }`}
+                    >
+                      {STATUS_ICON[step.status]}
+                      {step.status === "pending" ? "undo" : step.status}
+                    </span>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+
+        {/* Footer */}
+        <div className="px-5 py-3 border-t border-[var(--border-color)] text-xs text-t-muted">
+          {group.total} step{group.total !== 1 ? "s" : ""} executed this session
+        </div>
+      </div>
+    </div>
+  );
+};
+
 // ══════════════════════════════════════════════════════════════════════════════
-// COMPONENT
+// MAIN COMPONENT
 // ══════════════════════════════════════════════════════════════════════════════
 
 const TestReport: React.FC<Props> = ({ module_test_id, onBack }) => {
@@ -133,7 +261,7 @@ const TestReport: React.FC<Props> = ({ module_test_id, onBack }) => {
         if (event === "SIGNED_OUT") {
           clearSessionStart();
           setCurrentUser(null);
-          setSessionActivity([]);
+          setSessionSteps([]);
         } else {
           setCurrentUser(session?.user?.email ?? null);
         }
@@ -146,8 +274,7 @@ const TestReport: React.FC<Props> = ({ module_test_id, onBack }) => {
   // ── Drill-down state ──────────────────────────────────────────────────────
   const [meta, setMeta] = useState<ReportMeta | null>(null);
   const [results, setResults] = useState<ReportStepResult[]>([]);
-  const [expandedId, setExpandedId] = useState<string | null>(null);
-  const [viewMode, setViewMode] = useState<ViewMode>("chart"); // default: graph
+  const [viewMode, setViewMode] = useState<ViewMode>("chart");
 
   // ── Standalone state ──────────────────────────────────────────────────────
   const [moduleOptions, setModuleOptions] = useState<ModuleOption[]>([]);
@@ -156,10 +283,12 @@ const TestReport: React.FC<Props> = ({ module_test_id, onBack }) => {
     null
   );
   const [showExportModal, setShowExportModal] = useState(false);
-  const [view, setView] = useState<"graph" | "table">("graph"); // default: graph
+  const [view, setView] = useState<"graph" | "table">("graph");
 
-  // ── Session activity ──────────────────────────────────────────────────────
-  const [sessionActivity, setSessionActivity] = useState<SessionActivity[]>([]);
+  // ── Session state ─────────────────────────────────────────────────────────
+  const [sessionSteps, setSessionSteps] = useState<SessionStepEntry[]>([]);
+  const [activeSessionGroup, setActiveSessionGroup] =
+    useState<SessionTestGroup | null>(null);
 
   // ── Shared ────────────────────────────────────────────────────────────────
   const [chartType, setChartType] = useState<ChartType>("bar");
@@ -174,20 +303,49 @@ const TestReport: React.FC<Props> = ({ module_test_id, onBack }) => {
     };
   }, []);
 
-  // ── Fetch session activity ────────────────────────────────────────────────
-  const loadSessionActivity = useCallback(async (username: string) => {
+  // ── Session groups (derived) ──────────────────────────────────────────────
+  const sessionGroups = useMemo<SessionTestGroup[]>(() => {
+    if (!sessionSteps.length) return [];
+    const map = new Map<string, SessionTestGroup>();
+    sessionSteps
+      .filter((s) => !s.is_divider)
+      .forEach((s) => {
+        const key = `${s.module_name}::${s.tests_name}`;
+        if (!map.has(key)) {
+          map.set(key, {
+            module_name: s.module_name,
+            tests_name: s.tests_name,
+            steps: [],
+            pass: 0,
+            fail: 0,
+            undo: 0,
+            total: 0,
+          });
+        }
+        const g = map.get(key)!;
+        g.steps.push(s);
+        g.total++;
+        if (s.status === "pass") g.pass++;
+        else if (s.status === "fail") g.fail++;
+        else if (s.status === "pending") g.undo++;
+      });
+    return Array.from(map.values());
+  }, [sessionSteps]);
+
+  // ── Fetch session steps ───────────────────────────────────────────────────
+  const loadSessionSteps = useCallback(async (username: string) => {
     try {
       const sessionStart = getOrCreateSessionStart();
-      const data = await fetchSessionActivity(username, sessionStart);
-      if (mountedRef.current) setSessionActivity(data);
+      const data = await fetchSessionSteps(username, sessionStart);
+      if (mountedRef.current) setSessionSteps(data);
     } catch {
-      // session activity is non-critical, fail silently
+      // non-critical
     }
   }, []);
 
   useEffect(() => {
-    if (currentUser) loadSessionActivity(currentUser);
-  }, [currentUser, loadSessionActivity]);
+    if (currentUser) loadSessionSteps(currentUser);
+  }, [currentUser, loadSessionSteps]);
 
   // ── Drill-down fetch ──────────────────────────────────────────────────────
   const fetchDrillDown = useCallback(async () => {
@@ -334,7 +492,7 @@ const TestReport: React.FC<Props> = ({ module_test_id, onBack }) => {
     ];
   };
 
-  // ── Shared chart renderer ─────────────────────────────────────────────────
+  // ── Chart renderer ────────────────────────────────────────────────────────
   const renderChart = (data: ChartRow[]) => (
     <FadeWrapper animKey={chartType}>
       {chartType === "bar" && <RBarChart data={data} ct={ct} />}
@@ -363,7 +521,6 @@ const TestReport: React.FC<Props> = ({ module_test_id, onBack }) => {
     </div>
   );
 
-  // ── Module dropdown (shared between both views in standalone) ─────────────
   const moduleDropdown = (
     <div className="flex items-center gap-3">
       <label className="text-sm text-t-muted shrink-0">
@@ -385,82 +542,100 @@ const TestReport: React.FC<Props> = ({ module_test_id, onBack }) => {
   );
 
   // ── Your Session panel ────────────────────────────────────────────────────
-  const sessionPanel = currentUser ? (
-    <div className="card flex flex-col gap-3">
-      <div className="flex items-center gap-2">
-        <User size={14} className="text-c-brand" />
-        <p className="text-sm font-semibold text-t-primary">Your Session</p>
-        <span className="ml-auto text-xs text-t-muted">{currentUser}</span>
-      </div>
+  // Only renders when the current user has executed at least one step this session
+  const sessionPanel =
+    currentUser && sessionGroups.length > 0 ? (
+      <div className="card flex flex-col gap-3">
+        {/* Header */}
+        <div className="flex items-center gap-2">
+          <User size={14} className="text-c-brand" />
+          <p className="text-sm font-semibold text-t-primary">Your Session</p>
+          <span className="ml-auto text-xs text-t-muted">{currentUser}</span>
+        </div>
 
-      {sessionActivity.length === 0 ? (
-        <p className="text-xs text-t-muted py-2">
-          No activity recorded this session.
-        </p>
-      ) : (
-        <div className="flex flex-col gap-1.5 max-h-52 overflow-y-auto pr-1">
-          {sessionActivity.map((entry) => (
-            <div
-              key={entry.id}
-              className="flex items-center gap-3 px-3 py-2 rounded-lg bg-bg-base border border-[var(--border-color)]"
+        {/* Summary pills */}
+        <div className="flex gap-2">
+          {[
+            {
+              label: "Pass",
+              cls: "text-green-400 bg-green-500/10",
+              count: sessionGroups.reduce((n, g) => n + g.pass, 0),
+            },
+            {
+              label: "Fail",
+              cls: "text-red-400 bg-red-500/10",
+              count: sessionGroups.reduce((n, g) => n + g.fail, 0),
+            },
+            {
+              label: "Undo",
+              cls: "text-amber-400 bg-amber-500/10",
+              count: sessionGroups.reduce((n, g) => n + g.undo, 0),
+            },
+          ].map(({ label, cls, count }) => (
+            <span
+              key={label}
+              className={`text-xs font-bold px-3 py-1 rounded-full
+                border border-[var(--border-color)] ${cls}`}
             >
-              <span className="shrink-0">
-                {STATUS_ICON[entry.status] ?? STATUS_ICON.pending}
-              </span>
-              <span className="flex-1 text-xs text-t-primary truncate">
-                {entry.action}
-              </span>
-              <span
-                className={`text-[11px] font-bold px-2 py-0.5 rounded-full ${
-                  entry.status === "pass"
-                    ? "bg-green-500/10 text-green-400"
-                    : entry.status === "fail"
-                    ? "bg-red-500/10 text-red-400"
-                    : "bg-amber-500/10 text-amber-400"
-                }`}
-              >
-                {entry.status}
-              </span>
-              <span className="text-[11px] text-t-muted shrink-0">
-                {new Date(entry.created_at).toLocaleTimeString([], {
-                  hour: "2-digit",
-                  minute: "2-digit",
-                })}
-              </span>
-            </div>
+              {label}: {count}
+            </span>
           ))}
         </div>
-      )}
 
-      {/* Session summary pills */}
-      <div className="flex gap-2 pt-1 border-t border-[var(--border-color)]">
-        {[
-          {
-            label: "Pass",
-            cls: "text-green-400 bg-green-500/10",
-            count: sessionActivity.filter((a) => a.status === "pass").length,
-          },
-          {
-            label: "Fail",
-            cls: "text-red-400 bg-red-500/10",
-            count: sessionActivity.filter((a) => a.status === "fail").length,
-          },
-          {
-            label: "Undo",
-            cls: "text-amber-400 bg-amber-500/10",
-            count: sessionActivity.filter((a) => a.status === "pending").length,
-          },
-        ].map(({ label, cls, count }) => (
-          <span
-            key={label}
-            className={`text-xs font-bold px-3 py-1 rounded-full border border-[var(--border-color)] ${cls}`}
-          >
-            {label}: {count}
-          </span>
-        ))}
+        {/* Test rows — click to open detail popup */}
+        <div className="flex flex-col gap-1 pt-1 border-t border-[var(--border-color)]">
+          {sessionGroups.map((g) => (
+            <button
+              key={`${g.module_name}::${g.tests_name}`}
+              onClick={() => setActiveSessionGroup(g)}
+              className="flex items-center gap-3 px-3 py-2.5 rounded-lg
+                bg-bg-base hover:bg-bg-surface border border-[var(--border-color)]
+                transition-colors text-left group"
+            >
+              {/* Module tag */}
+              <span
+                className="text-[11px] font-bold px-2 py-0.5 rounded-md
+                bg-c-brand-bg text-c-brand shrink-0"
+              >
+                {g.module_name}
+              </span>
+
+              {/* Test name */}
+              <span className="flex-1 text-xs font-semibold text-t-primary truncate">
+                {g.tests_name}
+              </span>
+
+              {/* Counts */}
+              <span className="flex items-center gap-1.5 shrink-0">
+                <span className="text-[11px] font-bold text-t-muted">
+                  {g.total}
+                </span>
+                {g.pass > 0 && (
+                  <span className="text-[11px] font-bold text-green-400">
+                    {g.pass}✓
+                  </span>
+                )}
+                {g.fail > 0 && (
+                  <span className="text-[11px] font-bold text-red-400">
+                    {g.fail}✗
+                  </span>
+                )}
+                {g.undo > 0 && (
+                  <span className="text-[11px] font-bold text-amber-400">
+                    {g.undo}↩
+                  </span>
+                )}
+              </span>
+
+              <ChevronRight
+                size={13}
+                className="text-t-muted group-hover:text-t-primary transition-colors shrink-0"
+              />
+            </button>
+          ))}
+        </div>
       </div>
-    </div>
-  ) : null;
+    ) : null;
 
   // ── Loading ───────────────────────────────────────────────────────────────
   if (loading)
@@ -501,6 +676,13 @@ const TestReport: React.FC<Props> = ({ module_test_id, onBack }) => {
     if (!meta) return null;
     return (
       <div className="flex-1 flex flex-col">
+        {activeSessionGroup && (
+          <SessionDetailModal
+            group={activeSessionGroup}
+            onClose={() => setActiveSessionGroup(null)}
+          />
+        )}
+
         <Topbar
           title={meta.test?.name ?? meta.tests_name}
           subtitle={`${meta.module_name} · ${stats.total} steps`}
@@ -510,14 +692,16 @@ const TestReport: React.FC<Props> = ({ module_test_id, onBack }) => {
               <button
                 onClick={() => exportReportCSV([], toFlatData())}
                 className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg
-                  bg-bg-card hover:bg-bg-surface border border-[var(--border-color)] text-t-primary transition"
+                  bg-bg-card hover:bg-bg-surface border border-[var(--border-color)]
+                  text-t-primary transition"
               >
                 <FileSpreadsheet size={13} /> CSV
               </button>
               <button
                 onClick={() => exportReportPDF([], toFlatData())}
                 className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg
-                  bg-bg-card hover:bg-bg-surface border border-[var(--border-color)] text-t-primary transition"
+                  bg-bg-card hover:bg-bg-surface border border-[var(--border-color)]
+                  text-t-primary transition"
               >
                 <FileText size={13} /> PDF
               </button>
@@ -610,11 +794,12 @@ const TestReport: React.FC<Props> = ({ module_test_id, onBack }) => {
               <button
                 key={mode}
                 onClick={() => setViewMode(mode)}
-                className={`flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg transition-colors ${
-                  viewMode === mode
-                    ? "bg-c-brand text-white"
-                    : "text-t-muted hover:text-t-primary"
-                }`}
+                className={`flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5
+                  rounded-lg transition-colors ${
+                    viewMode === mode
+                      ? "bg-c-brand text-white"
+                      : "text-t-muted hover:text-t-primary"
+                  }`}
               >
                 {icon}
                 {label}
@@ -622,7 +807,6 @@ const TestReport: React.FC<Props> = ({ module_test_id, onBack }) => {
             ))}
           </div>
 
-          {/* Chart view */}
           {viewMode === "chart" && (
             <div className="card flex flex-col gap-3">
               <div className="flex items-center justify-between flex-wrap gap-2">
@@ -635,7 +819,6 @@ const TestReport: React.FC<Props> = ({ module_test_id, onBack }) => {
             </div>
           )}
 
-          {/* Table view — counts only, no step detail */}
           {viewMode === "table" && (
             <div className="overflow-x-auto rounded-xl border border-[var(--border-color)]">
               <table className="w-full text-sm">
@@ -694,7 +877,6 @@ const TestReport: React.FC<Props> = ({ module_test_id, onBack }) => {
             </div>
           )}
 
-          {/* Your Session */}
           {sessionPanel}
         </div>
       </div>
@@ -706,6 +888,13 @@ const TestReport: React.FC<Props> = ({ module_test_id, onBack }) => {
   // ══════════════════════════════════════════════════════════════════════════
   return (
     <>
+      {activeSessionGroup && (
+        <SessionDetailModal
+          group={activeSessionGroup}
+          onClose={() => setActiveSessionGroup(null)}
+        />
+      )}
+
       <Topbar
         title="Test Report"
         subtitle="Trainset-wise execution summary"
@@ -747,10 +936,13 @@ const TestReport: React.FC<Props> = ({ module_test_id, onBack }) => {
       />
 
       <div className="p-6 flex flex-col gap-6 pb-24 md:pb-6">
-        {/* Filter + View toggle — module dropdown present in both views */}
+        {/* ── GLOBAL SECTION ──────────────────────────────────────────── */}
         <div className="flex flex-wrap items-center justify-between gap-3">
           {moduleDropdown}
-          <div className="flex items-center gap-2 rounded-xl p-1 bg-bg-card border border-[var(--border-color)] w-fit">
+          <div
+            className="flex items-center gap-2 rounded-xl p-1
+            bg-bg-card border border-[var(--border-color)] w-fit"
+          >
             {(["graph", "table"] as const).map((v) => (
               <button
                 key={v}
@@ -768,7 +960,6 @@ const TestReport: React.FC<Props> = ({ module_test_id, onBack }) => {
         </div>
 
         <FadeWrapper animKey={view}>
-          {/* Graph view */}
           {view === "graph" && (
             <div className="card flex flex-col gap-3">
               <div className="flex items-center justify-between flex-wrap gap-2">
@@ -781,7 +972,6 @@ const TestReport: React.FC<Props> = ({ module_test_id, onBack }) => {
             </div>
           )}
 
-          {/* Table view — counts only */}
           {view === "table" && (
             <div className="overflow-x-auto rounded-xl border border-[var(--border-color)]">
               <table className="w-full text-sm">
@@ -861,7 +1051,7 @@ const TestReport: React.FC<Props> = ({ module_test_id, onBack }) => {
           )}
         </FadeWrapper>
 
-        {/* Your Session */}
+        {/* ── YOUR SESSION (only if user has executed steps) ──────────── */}
         {sessionPanel}
       </div>
     </>

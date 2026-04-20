@@ -166,25 +166,35 @@ export async function fetchModuleReports(
  * Fetch audit log entries for the current session user.
  * Returns pass/fail/undo actions since session start.
  */
-export async function fetchSessionActivity(
+export async function fetchSessionSteps(
   username: string,
   sessionStart: string
-): Promise<SessionActivity[]> {
+): Promise<SessionStepEntry[]> {
   const { data, error } = await supabase
-    .from("audit_log")
-    .select("id, action, severity, created_at, username")
-    .eq("username", username)
-    .gte("created_at", sessionStart)
-    .order("created_at", { ascending: false });
+    .from("step_results")
+    .select(
+      `id, test_steps_id, module_name, status, remarks, updated_at,
+       test_steps:test_steps_id (
+         action, expected_result, serial_no, is_divider, tests_name
+       )`
+    )
+    .eq("display_name", username)
+    .gte("updated_at", sessionStart)
+    .order("updated_at", { ascending: true });
 
-  if (error) throw new Error(error.message);
+  if (error) throw error;
 
-  return (data ?? []).map((row: any) => ({
-    id: row.id,
-    action: row.action,
-    status: row.severity,
-    tests_name: "",
-    module_name: "",
-    created_at: row.created_at,
-  })) as SessionActivity[];
+  return (data ?? []).map((r: any) => ({
+    id: r.id,
+    test_steps_id: r.test_steps_id,
+    module_name: r.module_name,
+    status: r.status,
+    remarks: r.remarks ?? "",
+    updated_at: r.updated_at,
+    action: r.test_steps?.action ?? "",
+    expected_result: r.test_steps?.expected_result ?? "",
+    serial_no: r.test_steps?.serial_no ?? 0,
+    is_divider: r.test_steps?.is_divider ?? false,
+    tests_name: r.test_steps?.tests_name ?? "",
+  }));
 }
