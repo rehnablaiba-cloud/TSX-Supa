@@ -126,7 +126,12 @@ function useGlassStyle() {
     const el = document.createElement("style");
     el.textContent = GLASS_STYLE;
     document.head.appendChild(el);
-    return () => document.head.removeChild(el);
+
+    return () => {
+      if (el.parentNode) {
+        el.parentNode.removeChild(el);
+      }
+    };
   }, []);
 }
 
@@ -1177,15 +1182,13 @@ const ImportStepsManualModal: React.FC<{
     setError(null);
     try {
       if (op === "create") {
-        const { error: e } = await supabase
-          .from("test_steps")
-          .insert({
-            serial_no: parseFloat(sn),
-            action,
-            expected_result: expected,
-            is_divider,
-            testsname: selTest,
-          });
+        const { error: e } = await supabase.from("test_steps").insert({
+          serial_no: parseFloat(sn),
+          action,
+          expected_result: expected,
+          is_divider,
+          testsname: selTest,
+        });
         if (e) throw new Error(e.message);
       } else if (op === "update" && selStep) {
         const { error: e } = await supabase
