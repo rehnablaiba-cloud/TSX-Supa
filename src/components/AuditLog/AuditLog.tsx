@@ -15,7 +15,7 @@ const DOT: Record<string, string> = {
   info: "bg-blue-500",
 };
 
-const audit_log: React.FC = () => {
+const AuditLog: React.FC = () => {
   const { user } = useAuth();
   const isAdmin = user?.role === "admin";
   const [events, setEvents] = useState<AuditEvent[]>([]);
@@ -93,4 +93,4 @@ const audit_log: React.FC = () => {
   );
 };
 
-export default audit_log;
+export default AuditLog;
