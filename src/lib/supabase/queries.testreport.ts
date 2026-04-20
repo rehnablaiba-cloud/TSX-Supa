@@ -48,13 +48,29 @@ export interface ModuleRow {
   step_results: ReportStepResult[];
 }
 
-export interface SessionActivity {
+export interface SessionStepEntry {
   id: string;
-  action: string;
-  status: "pass" | "fail" | "pending";
-  tests_name: string;
+  test_steps_id: string;
   module_name: string;
-  created_at: string;
+  status: string;
+  remarks: string;
+  updated_at: string;
+  // joined from test_steps
+  action: string;
+  expected_result: string;
+  serial_no: number;
+  is_divider: boolean;
+  tests_name: string;
+}
+
+export interface SessionTestGroup {
+  module_name: string;
+  tests_name: string;
+  steps: SessionStepEntry[];
+  pass: number;
+  fail: number;
+  undo: number; // status === "pending"
+  total: number;
 }
 
 // Aliases
@@ -159,13 +175,9 @@ export async function fetchModuleReports(
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Session activity query
+// Session queries
 // ─────────────────────────────────────────────────────────────────────────────
 
-/**
- * Fetch audit log entries for the current session user.
- * Returns pass/fail/undo actions since session start.
- */
 export async function fetchSessionSteps(
   username: string,
   sessionStart: string
