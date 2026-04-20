@@ -28,12 +28,12 @@ import {
 import type { ModuleSummary } from "../../utils/export";
 import { getModuleStats, buildSummaries } from "../../utils/stats";
 import { getChartTheme } from "../../utils/chartTheme";
-import { useAuth } from "../../context/AuthContext";
 import { useTheme } from "../../context/ThemeContext";
 import type { ActiveLock } from "../../types";
 import {
   fetchDashboardModules,
   fetchActiveLocks,
+  fetchOtherActiveLockModules,
 } from "../../lib/supabase/queries.dashboard";
 import type { DashboardModule } from "../../lib/supabase/queries.dashboard";
 import RBarChart from "../ModuleDashboard/charts/RBarChart";
@@ -80,7 +80,6 @@ type ChartTab = "bar" | "area" | "line" | "radar" | "pie";
 const Dashboard: React.FC<Props> = ({ onNavigate }) => {
   useInjectStyle();
 
-  const { user } = useAuth();
   const { theme } = useTheme();
 
   const [showExportModal, setShowExportModal] = useState(false);
@@ -89,6 +88,9 @@ const Dashboard: React.FC<Props> = ({ onNavigate }) => {
   const [error, setError] = useState<string | null>(null);
   const [activeLocks, setActiveLocks] = useState<ActiveLock[]>([]);
   const [activeChart, setActiveChart] = useState<ChartTab>("bar");
+  const [otherLockedModules, setOtherLockedModules] = useState<Set<string>>(
+    new Set()
+  );
 
   const gridRef = useRef<HTMLDivElement>(null);
   const mountedRef = useRef(true);
@@ -103,9 +105,13 @@ const Dashboard: React.FC<Props> = ({ onNavigate }) => {
   // ── Fetch active locks ────────────────────────────────────────────────────
   const fetchActiveLocksData = useCallback(async () => {
     try {
-      const locks = await fetchActiveLocks();
+      const [locks, otherModules] = await Promise.all([
+        fetchActiveLocks(),
+        fetchOtherActiveLockModules(),
+      ]);
       if (!mountedRef.current) return;
       setActiveLocks(locks);
+      setOtherLockedModules(otherModules);
     } catch {
       // non-critical
     }
@@ -188,25 +194,13 @@ const Dashboard: React.FC<Props> = ({ onNavigate }) => {
     [summaries]
   );
 
-  // ── Lock sets — split by ownership ───────────────────────────────────────
+  // ── Lock sets — fetchActiveLocks returns only current user's locks
   const myLockedModuleNames = useMemo(
-    () =>
-      new Set(
-        activeLocks
-          .filter((l) => (l as any).user_id === user?.id)
-          .map((l) => l.module_name)
-      ),
-    [activeLocks, user?.id]
+    () => new Set(activeLocks.map((l) => l.module_name)),
+    [activeLocks]
   );
-  const otherLockedModuleNames = useMemo(
-    () =>
-      new Set(
-        activeLocks
-          .filter((l) => (l as any).user_id !== user?.id)
-          .map((l) => l.module_name)
-      ),
-    [activeLocks, user?.id]
-  );
+  // otherLockedModules comes from fetchOtherActiveLockModules
+  const otherLockedModuleNames = otherLockedModules;
 
   const chartTheme = useMemo(() => getChartTheme(theme), [theme]);
 

@@ -34,7 +34,7 @@ export async function fetchDashboardModules(): Promise<DashboardModule[]> {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// fetchActiveLocks
+// fetchActiveLocks — current user's locks only (used for warning banner)
 // ─────────────────────────────────────────────────────────────────────────────
 
 export async function fetchActiveLocks(): Promise<ActiveLock[]> {
@@ -69,4 +69,36 @@ export async function fetchActiveLocks(): Promise<ActiveLock[]> {
       locked_at: l.locked_at ?? "",
     };
   });
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// fetchAllActiveLocks — all locks regardless of owner
+// Returns a Set of module_names that are locked by someone other than the
+// current user, used by Dashboard to show amber on other-locked cards.
+// ─────────────────────────────────────────────────────────────────────────────
+
+export async function fetchOtherActiveLockModules(): Promise<Set<string>> {
+  const { data: sessionData } = await supabase.auth.getSession();
+  const userEmail = sessionData?.session?.user?.email;
+
+  const { data: locks, error } = await supabase
+    .from("test_locks")
+    .select("module_test_id, locked_by_name");
+
+  if (error || !locks || locks.length === 0) return new Set();
+
+  // Filter to locks NOT owned by current user
+  const otherLocks = locks.filter((l: any) => l.locked_by_name !== userEmail);
+  if (otherLocks.length === 0) return new Set();
+
+  const module_test_ids = otherLocks.map((l: any) => l.module_test_id);
+
+  const { data: module_tests, error: mtErr } = await supabase
+    .from("module_tests")
+    .select("id, module_name")
+    .in("id", module_test_ids);
+
+  if (mtErr || !module_tests) return new Set();
+
+  return new Set(module_tests.map((mt: any) => mt.module_name));
 }
