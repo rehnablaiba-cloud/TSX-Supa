@@ -43,12 +43,32 @@ import RLineChart from "../ModuleDashboard/charts/RLineChart";
 import RRadarChart from "../ModuleDashboard/charts/RRadarChart";
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Inject neonPulse keyframe (same as ModuleDashboard)
+// Lock glow keyframes — cyan (mine), amber (others), dual (both)
 // ─────────────────────────────────────────────────────────────────────────────
 const ANIM_STYLE = `
 @keyframes neonPulse {
-  0%,100% { box-shadow: 0 0 0 0 rgba(34,211,238,0.0), 0 0 12px 2px rgba(34,211,238,0.18); }
-  50%      { box-shadow: 0 0 0 0 rgba(34,211,238,0.0), 0 0 22px 6px rgba(34,211,238,0.32); }
+  0%,100% { box-shadow: 0 0 0 1.5px rgba(34,211,238,0.45), 0 0 12px 2px rgba(34,211,238,0.18); }
+  50%      { box-shadow: 0 0 0 1.5px rgba(34,211,238,0.45), 0 0 22px 6px rgba(34,211,238,0.32); }
+}
+@keyframes amberPulse {
+  0%,100% { box-shadow: 0 0 0 1.5px rgba(245,158,11,0.45), 0 0 12px 2px rgba(245,158,11,0.18); }
+  50%      { box-shadow: 0 0 0 1.5px rgba(245,158,11,0.45), 0 0 22px 6px rgba(245,158,11,0.32); }
+}
+@keyframes dualPulse {
+  0%,100% {
+    box-shadow:
+      0 0 0 1.5px rgba(34,211,238,0.5),
+      0 0 0 3px rgba(245,158,11,0.35),
+      0 0 14px 3px rgba(34,211,238,0.2),
+      0 0 22px 6px rgba(245,158,11,0.15);
+  }
+  50% {
+    box-shadow:
+      0 0 0 1.5px rgba(34,211,238,0.6),
+      0 0 0 3px rgba(245,158,11,0.45),
+      0 0 22px 6px rgba(34,211,238,0.32),
+      0 0 32px 10px rgba(245,158,11,0.25);
+  }
 }
 `;
 
@@ -88,9 +108,11 @@ const Dashboard: React.FC<Props> = ({ onNavigate }) => {
   const [error, setError] = useState<string | null>(null);
   const [activeLocks, setActiveLocks] = useState<ActiveLock[]>([]);
   const [activeChart, setActiveChart] = useState<ChartTab>("bar");
-  const [otherLockedModules, setOtherLockedModules] = useState<Set<string>>(
-    new Set()
-  );
+  // Map of moduleName → count of tests locked by OTHER users
+  // NOTE: fetchOtherActiveLockModules must return Map<string, number> now
+  const [otherLockedModules, setOtherLockedModules] = useState<
+    Map<string, number>
+  >(new Map());
 
   const gridRef = useRef<HTMLDivElement>(null);
   const mountedRef = useRef(true);
@@ -107,7 +129,7 @@ const Dashboard: React.FC<Props> = ({ onNavigate }) => {
     try {
       const [locks, otherModules] = await Promise.all([
         fetchActiveLocks(),
-        fetchOtherActiveLockModules(),
+        fetchOtherActiveLockModules(), // must return Map<string, number>
       ]);
       if (!mountedRef.current) return;
       setActiveLocks(locks);
@@ -194,13 +216,15 @@ const Dashboard: React.FC<Props> = ({ onNavigate }) => {
     [summaries]
   );
 
-  // ── Lock sets — fetchActiveLocks returns only current user's locks
-  const myLockedModuleNames = useMemo(
-    () => new Set(activeLocks.map((l) => l.module_name)),
-    [activeLocks]
-  );
-  // otherLockedModules comes from fetchOtherActiveLockModules
-  const otherLockedModuleNames = otherLockedModules;
+  // ── Per-module lock counts ────────────────────────────────────────────────
+  // How many of MY tests are locked per module
+  const myLockCountByModule = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const lock of activeLocks) {
+      map.set(lock.module_name, (map.get(lock.module_name) ?? 0) + 1);
+    }
+    return map;
+  }, [activeLocks]);
 
   const chartTheme = useMemo(() => getChartTheme(theme), [theme]);
 
@@ -232,6 +256,8 @@ const Dashboard: React.FC<Props> = ({ onNavigate }) => {
     { key: "radar", label: "Radar" },
     { key: "pie", label: "Pie" },
   ];
+
+  const hasAnyLocks = activeLocks.length > 0 || otherLockedModules.size > 0;
 
   // ── Render ────────────────────────────────────────────────────────────────
   return (
@@ -288,9 +314,13 @@ const Dashboard: React.FC<Props> = ({ onNavigate }) => {
         </button>
       </div>
 
-      {/* Lock warning banner */}
-      {!initialLoad && activeLocks.length > 0 && (
-        <LockWarningBanner locks={activeLocks} onNavigate={onNavigate} />
+      {/* Lock warning banner — show when any lock exists (mine or others) */}
+      {!initialLoad && hasAnyLocks && (
+        <LockWarningBanner
+          locks={activeLocks}
+          otherLockedModules={otherLockedModules}
+          onNavigate={onNavigate}
+        />
       )}
 
       {/* ── Fleet Overview Charts ─────────────────────────────────────────── */}
@@ -423,25 +453,9 @@ const Dashboard: React.FC<Props> = ({ onNavigate }) => {
               testCount,
             } = getModuleStats(m.module_tests ?? [], m.step_results ?? []);
 
-            const isMyLock = myLockedModuleNames.has(m.name);
-            const isOtherLock = otherLockedModuleNames.has(m.name);
-
-            // ── Card style ────────────────────────────────────────────────
-            const cardStyle: React.CSSProperties = isMyLock
-              ? {
-                  border: "1.5px solid rgba(34,211,238,0.55)",
-                  background:
-                    "linear-gradient(135deg, rgba(34,211,238,0.07) 0%, transparent 60%)",
-                  animation: "neonPulse 2.6s ease-in-out infinite",
-                }
-              : isOtherLock
-              ? { borderColor: "#f59e0b55", boxShadow: "0 0 0 1px #f59e0b33" }
-              : {};
-
-            const cardCls = [
-              "card text-left hover:border-c-brand/50 hover:shadow-xl transition-all duration-300 cursor-pointer group",
-              isOtherLock ? "opacity-60 grayscale-[0.25]" : "",
-            ].join(" ");
+            // Per-module lock counts (not whole-module lock state)
+            const myLockCount = myLockCountByModule.get(m.name) ?? 0;
+            const otherLockCount = otherLockedModules.get(m.name) ?? 0;
 
             const passLabelColor =
               total === 0
@@ -452,32 +466,37 @@ const Dashboard: React.FC<Props> = ({ onNavigate }) => {
                 ? "#ef4444"
                 : "var(--text-primary)";
 
+            const hasBoth = myLockCount > 0 && otherLockCount > 0;
+            const myOnly = myLockCount > 0 && otherLockCount === 0;
+            const otherOnly = otherLockCount > 0 && myLockCount === 0;
+
+            const cardStyle: React.CSSProperties = hasBoth
+              ? { animation: "dualPulse 2.6s ease-in-out infinite" }
+              : myOnly
+              ? {
+                  border: "1.5px solid rgba(34,211,238,0.55)",
+                  background:
+                    "linear-gradient(135deg, rgba(34,211,238,0.07) 0%, transparent 60%)",
+                  animation: "neonPulse 2.6s ease-in-out infinite",
+                }
+              : otherOnly
+              ? { animation: "amberPulse 2.6s ease-in-out infinite" }
+              : {};
+
             return (
               <button
                 key={m.name}
                 onClick={() => onNavigate("module", m.name)}
-                className={cardCls}
+                className="card text-left hover:border-c-brand/50 hover:shadow-xl transition-all duration-300 cursor-pointer group"
                 style={cardStyle}
               >
                 <div className="flex items-start gap-3 mb-3">
                   <span
                     className="w-3 h-3 rounded-full mt-1.5 shrink-0"
-                    style={{
-                      backgroundColor: isMyLock
-                        ? "#22d3ee"
-                        : isOtherLock
-                        ? "#f59e0b"
-                        : "var(--color-brand)",
-                    }}
+                    style={{ backgroundColor: "var(--color-brand)" }}
                   />
                   <div className="flex-1 min-w-0">
-                    <h3
-                      className={`font-semibold transition-colors truncate ${
-                        isMyLock
-                          ? "text-cyan-300"
-                          : "text-t-primary group-hover:text-c-brand"
-                      }`}
-                    >
+                    <h3 className="font-semibold text-t-primary group-hover:text-c-brand transition-colors truncate">
                       {m.name}
                     </h3>
                     {m.description && (
@@ -486,16 +505,22 @@ const Dashboard: React.FC<Props> = ({ onNavigate }) => {
                       </p>
                     )}
                   </div>
-                  <div className="flex items-center gap-1.5 shrink-0">
-                    {isMyLock && (
+
+                  {/* Badge cluster — all badges in a flex row */}
+                  <div className="flex items-center gap-1.5 shrink-0 flex-wrap justify-end">
+                    {/* My locked tests badge */}
+                    {myLockCount > 0 && (
                       <span
                         className="flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full border whitespace-nowrap
-                        text-cyan-300 border-cyan-400/40 bg-cyan-500/10"
+                          text-cyan-300 border-cyan-400/40 bg-cyan-500/10"
                       >
-                        <Lock size={9} /> My Lock
+                        <Lock size={9} />
+                        {myLockCount} My Lock{myLockCount > 1 ? "s" : ""}
                       </span>
                     )}
-                    {isOtherLock && (
+
+                    {/* Others' locked tests badge */}
+                    {otherLockCount > 0 && (
                       <span
                         className="flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full border whitespace-nowrap"
                         style={{
@@ -505,9 +530,12 @@ const Dashboard: React.FC<Props> = ({ onNavigate }) => {
                             "color-mix(in srgb, #f59e0b 10%, transparent)",
                         }}
                       >
-                        <Lock size={9} /> Locked
+                        <Lock size={9} />
+                        {otherLockCount} Locked
                       </span>
                     )}
+
+                    {/* Test count badge */}
                     <span
                       className="text-[10px] font-bold px-2 py-0.5 rounded-full border whitespace-nowrap tracking-wide"
                       style={{

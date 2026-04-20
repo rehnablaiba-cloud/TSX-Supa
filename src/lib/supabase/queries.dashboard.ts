@@ -72,12 +72,13 @@ export async function fetchActiveLocks(): Promise<ActiveLock[]> {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// fetchAllActiveLocks — all locks regardless of owner
-// Returns a Set of module_names that are locked by someone other than the
-// current user, used by Dashboard to show amber on other-locked cards.
+// fetchOtherActiveLockModules — locks held by OTHER users
+// Returns Map<module_name, count> so the Dashboard can show per-module counts.
 // ─────────────────────────────────────────────────────────────────────────────
 
-export async function fetchOtherActiveLockModules(): Promise<Set<string>> {
+export async function fetchOtherActiveLockModules(): Promise<
+  Map<string, number>
+> {
   const { data: sessionData } = await supabase.auth.getSession();
   const userEmail = sessionData?.session?.user?.email;
 
@@ -85,11 +86,11 @@ export async function fetchOtherActiveLockModules(): Promise<Set<string>> {
     .from("test_locks")
     .select("module_test_id, locked_by_name");
 
-  if (error || !locks || locks.length === 0) return new Set();
+  if (error || !locks || locks.length === 0) return new Map();
 
   // Filter to locks NOT owned by current user
   const otherLocks = locks.filter((l: any) => l.locked_by_name !== userEmail);
-  if (otherLocks.length === 0) return new Set();
+  if (otherLocks.length === 0) return new Map();
 
   const module_test_ids = otherLocks.map((l: any) => l.module_test_id);
 
@@ -98,7 +99,20 @@ export async function fetchOtherActiveLockModules(): Promise<Set<string>> {
     .select("id, module_name")
     .in("id", module_test_ids);
 
-  if (mtErr || !module_tests) return new Set();
+  if (mtErr || !module_tests) return new Map();
 
-  return new Set(module_tests.map((mt: any) => mt.module_name));
+  // Build a lookup: module_test_id → module_name
+  const idToModule = Object.fromEntries(
+    module_tests.map((mt: any) => [mt.id, mt.module_name])
+  );
+
+  // Count how many other-user locks exist per module
+  const countMap = new Map<string, number>();
+  for (const lock of otherLocks) {
+    const moduleName = idToModule[lock.module_test_id];
+    if (!moduleName) continue;
+    countMap.set(moduleName, (countMap.get(moduleName) ?? 0) + 1);
+  }
+
+  return countMap;
 }
