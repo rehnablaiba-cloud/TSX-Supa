@@ -437,11 +437,17 @@ const MobileNav: React.FC<Props> = ({ activePage, onNavigate }) => {
 
       {/* ── Modals ────────────────────────────────────────────────────────── */}
       {activeModal === "export" && <ExportDataModal onClose={close} />}
-      {activeModal === "modules" && <ImportModulesModal onClose={close} />}
-      {activeModal === "tests" && <ImportTestsModal onClose={close} />}
-      {activeModal === "steps-csv" && <ImportStepsModal onClose={close} />}
+      {activeModal === "modules" && (
+        <ImportModulesModal onClose={close} onBack={close} />
+      )}
+      {activeModal === "tests" && (
+        <ImportTestsModal onClose={close} onBack={close} />
+      )}
+      {activeModal === "steps-csv" && (
+        <ImportStepsModal onClose={close} onBack={close} />
+      )}
       {activeModal === "steps-manual" && (
-        <ImportStepsManualModal onClose={close} />
+        <ImportStepsManualModal onClose={close} onBack={close} />
       )}
       {activeModal === "theme" && (
         <div className="fixed inset-0 z-[70] md:hidden">
