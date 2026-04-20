@@ -24,7 +24,7 @@ export async function fetchDashboardModules(): Promise<DashboardModule[]> {
       `
       name, description,
       module_tests:module_tests!module_name(id),
-      step_results:step_results!module_name(status, step:steps(is_divider))
+      step_results:step_results!module_name(status, step:test_steps!step_results_test_steps_id_fkey(is_divider))
     `
     )
     .order("name");
