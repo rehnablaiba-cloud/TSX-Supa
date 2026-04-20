@@ -64,6 +64,13 @@ const ImportStepsModal: React.FC<Props> = ({ onClose, onBack }) => {
     setStage("submitting");
     setSubmitError(null);
     try {
+      // Delete existing steps for this test, then re-insert clean
+      const { error: delErr } = await supabase
+        .from("test_steps")
+        .delete()
+        .eq("tests_name", selTest);
+      if (delErr) throw new Error(delErr.message);
+
       const payload = parsed.map((r) => ({
         serial_no: r.serial_no,
         action: r.action,
@@ -71,10 +78,11 @@ const ImportStepsModal: React.FC<Props> = ({ onClose, onBack }) => {
         is_divider: r.is_divider,
         tests_name: selTest,
       }));
-      const { error: e } = await supabase
+      const { error: insErr } = await supabase
         .from("test_steps")
-        .upsert(payload, { onConflict: "tests_name,serial_no" });
-      if (e) throw new Error(e.message);
+        .insert(payload);
+      if (insErr) throw new Error(insErr.message);
+
       setStage("done");
     } catch (e: any) {
       setSubmitError(e.message);
