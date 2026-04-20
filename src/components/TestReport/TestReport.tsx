@@ -384,6 +384,7 @@ const TestReport: React.FC<Props> = ({ module_test_id, onBack }) => {
     if (module_test_id) {
       fetchDrillDown();
     } else {
+      setSelectedModuleName(null);
       fetchModuleOptions().then(setModuleOptions);
       fetchStandalone();
     }
