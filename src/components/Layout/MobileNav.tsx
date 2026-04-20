@@ -690,16 +690,15 @@ const ImportTestsModal: React.FC<{
     setStage("submitting");
     setError(null);
     try {
-      const snNum = parseFloat(sn);
       if (op === "create") {
         const { error: e } = await supabase
           .from("tests")
-          .insert({ serial_no: snNum, name: name.trim() });
+          .insert({ serial_no: sn.trim(), name: name.trim() });
         if (e) throw new Error(e.message);
       } else if (op === "update" && selectedTest) {
         const { error: e } = await supabase
           .from("tests")
-          .update({ serial_no: snNum, name: name.trim() })
+          .update({ serial_no: sn.trim(), name: name.trim() })
           .eq("name", selectedTest.name);
         if (e) throw new Error(e.message);
       } else if (op === "delete" && selectedTest) {
@@ -774,9 +773,7 @@ const ImportTestsModal: React.FC<{
               value={sn}
               onChange={(e) => setSn(e.target.value)}
               className="input text-sm"
-              placeholder="e.g. 1.1"
-              type="number"
-              step="0.01"
+              placeholder="e.g. TXXX"
             />
           </div>
           <div>
