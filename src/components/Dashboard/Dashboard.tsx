@@ -193,7 +193,7 @@ const Dashboard: React.FC<Props> = ({ onNavigate }) => {
     () =>
       new Set(
         activeLocks
-          .filter((l) => l.user_id === user?.id)
+          .filter((l) => (l as any).user_id === user?.id)
           .map((l) => l.module_name)
       ),
     [activeLocks, user?.id]
@@ -202,7 +202,7 @@ const Dashboard: React.FC<Props> = ({ onNavigate }) => {
     () =>
       new Set(
         activeLocks
-          .filter((l) => l.user_id !== user?.id)
+          .filter((l) => (l as any).user_id !== user?.id)
           .map((l) => l.module_name)
       ),
     [activeLocks, user?.id]
@@ -442,7 +442,7 @@ const Dashboard: React.FC<Props> = ({ onNavigate }) => {
                 }
               : isOtherLock
               ? { borderColor: "#f59e0b55", boxShadow: "0 0 0 1px #f59e0b33" }
-              : undefined;
+              : {};
 
             const cardCls = [
               "card text-left hover:border-c-brand/50 hover:shadow-xl transition-all duration-300 cursor-pointer group",
