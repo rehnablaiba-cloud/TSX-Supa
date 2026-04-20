@@ -1,9 +1,4 @@
-/**
- * TestExecution.tsx
- * Fixed: channel names are user-scoped to prevent Web Lock collisions.
- * Lock acquire checks ownership before upsert — no stealing.
- * Heartbeat only runs when this user owns the lock.
- */
+// src/components/TestExecution/TestExecution.tsx
 import React, {
   useCallback,
   useEffect,
@@ -39,7 +34,7 @@ import {
   acquireLock,
   releaseLock,
   forceReleaseLock,
-  heartbeatLock,
+  heartbeatLock, // ✅ Fix 1: import heartbeatLock
 } from "../../lib/supabase/queries.testexecution";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -174,7 +169,7 @@ const getDividerLevel = (expected_result: string): number =>
   Math.min(Math.max(parseInt(expected_result, 10) || 1, 1), 3);
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Sub-components (unchanged from original)
+// Sub-components
 // ─────────────────────────────────────────────────────────────────────────────
 
 const UndoAllModal: React.FC<{
@@ -396,6 +391,10 @@ const TesterBadge: React.FC<{
   );
 };
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Desktop Table Row
+// ─────────────────────────────────────────────────────────────────────────────
+
 const TableStepRow: React.FC<{
   step: ExecutionStep;
   signedImageUrls: Record<string, string>;
@@ -571,6 +570,10 @@ const TableStepRow: React.FC<{
     </tr>
   );
 };
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Mobile Step Card
+// ─────────────────────────────────────────────────────────────────────────────
 
 const MobileStepCard: React.FC<{
   step: ExecutionStep;
@@ -885,7 +888,6 @@ const TestExecution: React.FC<Props> = ({
   const [moduleTests, setModuleTests] = useState<ModuleTestItem[]>([]);
   const [steps, setSteps] = useState<ExecutionStep[]>([]);
   const [lock, setLock] = useState<any>(null);
-  const [ownsLock, setOwnsLock] = useState(false); // ✅ tracks if THIS user holds the lock
   const [loading, setLoading] = useState(true);
   const [lockLoading, setLockLoading] = useState(true);
 
@@ -903,22 +905,6 @@ const TestExecution: React.FC<Props> = ({
     },
     [signedImageUrls]
   );
-
-  // ── Heartbeat helpers ─────────────────────────────────────────────────────
-  const stopHeartbeat = useCallback(() => {
-    if (heartbeatRef.current) {
-      clearInterval(heartbeatRef.current);
-      heartbeatRef.current = null;
-    }
-  }, []);
-
-  const startHeartbeat = useCallback(() => {
-    stopHeartbeat();
-    if (!user?.id) return;
-    heartbeatRef.current = setInterval(() => {
-      heartbeatLock(currentMtId, user.id).catch(() => {});
-    }, 20_000); // every 20s
-  }, [currentMtId, user?.id, stopHeartbeat]);
 
   // ── Load data ─────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -938,8 +924,10 @@ const TestExecution: React.FC<Props> = ({
         supabase
           .from("step_results")
           .select(
-            `id, status, remarks, display_name,
-            step:test_steps(id, serial_no, action, expected_result, is_divider, action_image_urls, expected_image_urls, tests_name)`
+            `
+            id, status, remarks, display_name,
+            step:test_steps(id, serial_no, action, expected_result, is_divider, action_image_urls, expected_image_urls, tests_name)
+          `
           )
           .eq("module_name", module_name),
         supabase
@@ -1000,7 +988,7 @@ const TestExecution: React.FC<Props> = ({
       setLockLoading(false);
     })();
 
-    // ✅ Channel names are user-scoped — prevents Web Lock collision between users
+    // ✅ Fix 2: user-scoped channel names prevent Web Lock collision
     const uid = user?.id ?? "anon";
 
     const lockChannel = supabase
@@ -1021,7 +1009,7 @@ const TestExecution: React.FC<Props> = ({
       .subscribe();
 
     const srChannel = supabase
-      .channel(`sr:${module_name}:${testsName}:${uid}`)
+      .channel(`step_results:${module_name}:${testsName}:${uid}`)
       .on(
         "postgres_changes",
         {
@@ -1052,33 +1040,6 @@ const TestExecution: React.FC<Props> = ({
       supabase.removeChannel(srChannel);
     };
   }, [module_name, currentMtId, testsName, user?.id]);
-
-  // ── Acquire lock on mount ─────────────────────────────────────────────────
-  useEffect(() => {
-    if (!user?.id || lockLoading) return;
-    let cancelled = false;
-
-    (async () => {
-      const acquired = await acquireLock(
-        currentMtId,
-        user.id,
-        user.user_metadata?.display_name ?? user.email ?? "User"
-      );
-      if (cancelled) return;
-
-      setOwnsLock(acquired);
-
-      // ✅ Only start heartbeat if WE own the lock — not if lock was refused
-      if (acquired) startHeartbeat();
-    })();
-
-    return () => {
-      cancelled = true;
-      stopHeartbeat();
-      if (user?.id) releaseLock(currentMtId, user.id).catch(() => {});
-      setOwnsLock(false);
-    };
-  }, [currentMtId, user?.id, lockLoading, startHeartbeat, stopHeartbeat]);
 
   // ── Signed image URLs ─────────────────────────────────────────────────────
   useEffect(() => {
@@ -1149,7 +1110,7 @@ const TestExecution: React.FC<Props> = ({
         if (!el || !container) return;
         const elRect = el.getBoundingClientRect();
         const cRect = container.getBoundingClientRect();
-        const theadH = isDesktop
+        const theadHeight = isDesktop
           ? (container.querySelector("thead") as HTMLElement | null)
               ?.offsetHeight ?? 0
           : 0;
@@ -1157,9 +1118,9 @@ const TestExecution: React.FC<Props> = ({
           elRect.top -
           cRect.top +
           container.scrollTop -
-          (cRect.height - theadH) / 2 +
+          (cRect.height - theadHeight) / 2 +
           elRect.height / 2 +
-          theadH;
+          theadHeight;
         container.scrollTo({ top: Math.max(0, scrollTo), behavior: "smooth" });
         setScrollTarget(null);
       });
@@ -1170,233 +1131,321 @@ const TestExecution: React.FC<Props> = ({
     };
   }, [scrollTarget, loading]);
 
-  // ── Keyboard shortcuts ────────────────────────────────────────────────────
+  // ── Lock heartbeat ────────────────────────────────────────────────────────
+  const startHeartbeat = useCallback(() => {
+    if (heartbeatRef.current) clearInterval(heartbeatRef.current);
+    // ✅ Fix 3: use heartbeatLock from queries instead of inline supabase call
+    heartbeatRef.current = setInterval(() => {
+      if (user) heartbeatLock(currentMtId, user.id).catch(() => {});
+    }, 15_000);
+  }, [currentMtId, user]);
+
+  const stopHeartbeat = useCallback(() => {
+    if (heartbeatRef.current) {
+      clearInterval(heartbeatRef.current);
+      heartbeatRef.current = null;
+    }
+  }, []);
+
+  // ── Acquire lock on mount ─────────────────────────────────────────────────
   useEffect(() => {
-    if (!ownsLock) return; // ✅ Only handle keyboard if we own the lock
-    const real = steps.filter((s) => !s.is_divider);
-    const onKey = (e: KeyboardEvent) => {
-      const tag = (e.target as HTMLElement).tagName;
-      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
-      const idx = real.findIndex((s) => s.stepId === focusedStepId);
-      if (e.key === "ArrowDown" || e.key === "j") {
-        e.preventDefault();
-        const next = real[idx + 1];
-        if (next) {
-          setFocusedStepId(next.stepId);
-          setScrollTarget(next.stepId);
-        }
-      }
-      if (e.key === "ArrowUp" || e.key === "k") {
-        e.preventDefault();
-        const prev = real[idx - 1];
-        if (prev) {
-          setFocusedStepId(prev.stepId);
-          setScrollTarget(prev.stepId);
-        }
-      }
-      if (e.key === "p" || e.key === "P") {
-        if (focusedStepId)
-          handleUpdate(
-            focusedStepId,
-            "pass",
-            remarksMap.current[focusedStepId] ?? ""
-          );
-      }
-      if (e.key === "f" || e.key === "F") {
-        if (focusedStepId)
-          handleUpdate(
-            focusedStepId,
-            "fail",
-            remarksMap.current[focusedStepId] ?? ""
-          );
-      }
-      if (e.key === "u" || e.key === "U") {
-        if (focusedStepId) handleUpdate(focusedStepId, "pending", "");
-      }
+    if (!user) return;
+    let cancelled = false;
+    (async () => {
+      // ✅ Fix 4: acquireLock now returns { success, holder } — check .success
+      const result = await acquireLock(
+        currentMtId,
+        user.id,
+        user.display_name ?? user.email ?? "User"
+      );
+      if (cancelled) return;
+      if (result.success) startHeartbeat();
+    })();
+    return () => {
+      cancelled = true;
+      stopHeartbeat();
+      releaseLock(currentMtId, user.id).catch(() => {});
     };
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  }, [focusedStepId, steps, ownsLock]);
+  }, [currentMtId, user?.id, startHeartbeat, stopHeartbeat]);
+
+  // ── beforeunload release ──────────────────────────────────────────────────
+  useEffect(() => {
+    if (!user) return;
+    const release = () => {
+      const supabaseUrl = (supabase as any).supabaseUrl as string;
+      const supabaseKey = (supabase as any).supabaseKey as string;
+      fetch(
+        `${supabaseUrl}/rest/v1/test_locks?module_test_id=eq.${currentMtId}&user_id=eq.${user.id}`,
+        {
+          method: "DELETE",
+          keepalive: true,
+          headers: {
+            apikey: supabaseKey,
+            Authorization: `Bearer ${supabaseKey}`,
+          },
+        }
+      );
+    };
+    window.addEventListener("beforeunload", release);
+    return () => window.removeEventListener("beforeunload", release);
+  }, [currentMtId, user?.id]);
 
   // ── Update step ───────────────────────────────────────────────────────────
-  const handleUpdate = useCallback(
+  const handleStepUpdate = useCallback(
     async (
       stepId: string,
       status: "pass" | "fail" | "pending",
       remarks: string
     ) => {
-      if (!ownsLock) {
-        addToast("You don't have the lock for this test.", "error");
-        return;
-      }
-
-      const step = steps.find((s) => s.stepId === stepId);
-      if (!step) return;
+      const idx = steps.findIndex((s) => s.stepId === stepId);
+      const nextPending = steps
+        .slice(idx + 1)
+        .find((s) => !s.is_divider && s.status === "pending");
+      const display_name = user?.display_name ?? user?.email ?? "User";
+      const prevSteps = steps;
 
       setSteps((prev) =>
-        prev.map((s) => (s.stepId === stepId ? { ...s, status, remarks } : s))
+        prev.map((s) =>
+          s.stepId === stepId ? { ...s, status, remarks, display_name } : s
+        )
       );
 
-      const { error } = await supabase
-        .from("step_results")
-        .update({
-          status,
-          remarks,
-          display_name: user?.user_metadata?.display_name ?? user?.email ?? "",
-        })
-        .eq("id", step.stepResultId);
-
-      if (error) {
-        addToast("Failed to update step", "error");
-        setSteps((prev) =>
-          prev.map((s) =>
-            s.stepId === stepId
-              ? { ...s, status: step.status, remarks: step.remarks }
-              : s
-          )
-        );
-        return;
+      if (status !== "pending") {
+        if (nextPending) {
+          setFocusedStepId(nextPending.stepId);
+          setScrollTarget(nextPending.stepId);
+        } else setFocusedStepId(null);
+      } else {
+        setFocusedStepId(stepId);
+        setScrollTarget(stepId);
       }
 
-      const actionLabel =
-        status === "pass" ? "Passed" : status === "fail" ? "Failed" : "Reset";
-      log(
-        `${actionLabel} step: ${step.action.slice(0, 60)}`,
-        status === "pending" ? "info" : status
-      );
-
-      // Auto-advance to next pending after pass/fail
-      if (status !== "pending") {
-        const real = steps.filter((s) => !s.is_divider);
-        const idx = real.findIndex((s) => s.stepId === stepId);
-        const next = real.slice(idx + 1).find((s) => s.status === "pending");
-        if (next) {
-          setFocusedStepId(next.stepId);
-          setScrollTarget(next.stepId);
-        }
+      try {
+        const { error } = await supabase
+          .from("step_results")
+          .update({ status, remarks, display_name })
+          .eq("test_steps_id", stepId)
+          .eq("module_name", module_name);
+        if (error) throw error;
+      } catch {
+        setSteps(prevSteps);
+        addToast("Failed to save step result. Please try again.", "error");
       }
     },
-    [steps, ownsLock, user, addToast, log]
+    [steps, module_name, user, addToast]
   );
 
-  // ── Undo all ──────────────────────────────────────────────────────────────
-  const handleUndoAll = async () => {
-    if (!ownsLock) {
-      addToast("You don't have the lock for this test.", "error");
-      return;
-    }
-    const done = steps.filter((s) => !s.is_divider && s.status !== "pending");
-    const ids = done.map((s) => s.stepResultId);
-    if (!ids.length) return;
+  // ── Reset all ─────────────────────────────────────────────────────────────
+  const handleUndoAll = useCallback(async () => {
+    setShowUndoModal(false);
+    const actionable = steps.filter((s) => !s.is_divider);
+    const prevSteps = steps;
+    const display_name = user?.display_name ?? user?.email ?? "User";
 
     setSteps((prev) =>
       prev.map((s) =>
-        s.is_divider ? s : { ...s, status: "pending", remarks: "" }
+        s.is_divider
+          ? s
+          : { ...s, status: "pending", remarks: "", display_name }
       )
     );
-    setShowUndoModal(false);
-
-    const { error } = await supabase
-      .from("step_results")
-      .update({ status: "pending", remarks: "", display_name: "" })
-      .in("id", ids);
-
-    if (error) {
-      addToast("Failed to reset steps", "error");
-      return;
+    remarksMap.current = {};
+    const first = actionable[0];
+    if (first) {
+      setFocusedStepId(first.stepId);
+      setScrollTarget(first.stepId);
     }
-    log(`Reset all steps for ${testsName} in ${module_name}`, "info");
-    stepsInitialized.current = false;
+
+    try {
+      const { error } = await supabase
+        .from("step_results")
+        .update({ status: "pending", remarks: "", display_name })
+        .eq("module_name", module_name);
+      if (error) throw error;
+      addToast("All steps reset to pending.", "info");
+      log("Undo all steps");
+    } catch {
+      setSteps(prevSteps);
+      addToast("Failed to reset steps. Please try again.", "error");
+    }
+  }, [steps, module_name, user, addToast, log]);
+
+  // ── Force release ─────────────────────────────────────────────────────────
+  const handleForceRelease = useCallback(async () => {
+    if (!isAdmin) return;
+    try {
+      await forceReleaseLock(currentMtId);
+      addToast("Lock force-released", "success");
+    } catch (e: any) {
+      addToast(e?.message ?? "Failed to force-release lock", "error");
+    }
+  }, [isAdmin, currentMtId, addToast]);
+
+  // ── Finish test ───────────────────────────────────────────────────────────
+  const handleFinish = async () => {
+    stopHeartbeat();
+    if (user) await releaseLock(currentMtId, user.id).catch(() => {});
+    log(`Finished test: ${currentTest?.name}`);
+    addToast(`Test "${currentTest?.name}" completed!`, "success");
+    onBack();
   };
 
-  // ── Export flat data ──────────────────────────────────────────────────────
-  const buildFlatData = (): FlatData[] =>
-    steps
-      .filter((s) => !s.is_divider)
-      .map((s) => ({
-        module: module_name,
-        test: testsName,
-        serial: s.serial_no,
-        action: s.action,
-        expected: s.expected_result,
-        remarks: s.remarks,
-        status: s.status,
-      }));
+  // ── Keyboard shortcuts ────────────────────────────────────────────────────
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      const tag = (document.activeElement as HTMLElement)?.tagName;
+      if (tag === "TEXTAREA" || tag === "INPUT" || tag === "BUTTON") return;
+      if (!focusedStepId || isLockedByOther) return;
+      const focused = steps.find((s) => s.stepId === focusedStepId);
+      if (!focused || focused.is_divider) return;
+      if (e.key === "p" || e.key === "P" || e.key === "Enter") {
+        e.preventDefault();
+        handleStepUpdate(
+          focusedStepId,
+          "pass",
+          remarksMap.current[focusedStepId] ?? focused.remarks ?? ""
+        );
+      } else if (e.key === "f" || e.key === "F") {
+        e.preventDefault();
+        handleStepUpdate(
+          focusedStepId,
+          "fail",
+          remarksMap.current[focusedStepId] ?? focused.remarks ?? ""
+        );
+      }
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [focusedStepId, steps, handleStepUpdate]);
 
-  // ── Filtered + searched steps ─────────────────────────────────────────────
-  const visible = useMemo(() => {
-    const q = search.toLowerCase();
-    return steps.filter((s) => {
-      if (s.is_divider) return true;
-      if (filter !== "all" && s.status !== filter) return false;
-      if (
-        q &&
-        !s.action.toLowerCase().includes(q) &&
-        !s.expected_result.toLowerCase().includes(q)
-      )
-        return false;
-      return true;
-    });
-  }, [steps, filter, search]);
+  // ── Derived state ─────────────────────────────────────────────────────────
+  const isLockedByOther = !!(lock && lock.user_id !== user?.id);
+  const currentMt = moduleTests.find((mt) => mt.id === currentMtId);
+  const currentTest = currentMt?.test;
 
-  const doneCount = steps.filter(
-    (s) => !s.is_divider && s.status !== "pending"
-  ).length;
-  const totalReal = steps.filter((s) => !s.is_divider).length;
+  const {
+    passCount,
+    failCount,
+    totalCount,
+    doneCount,
+    progressPct,
+    passPct,
+    failPct,
+  } = useMemo(() => {
+    const nd = steps.filter((s) => !s.is_divider);
+    const pass = nd.filter((s) => s.status === "pass").length;
+    const fail = nd.filter((s) => s.status === "fail").length;
+    const total = nd.length;
+    const done = pass + fail;
+    return {
+      passCount: pass,
+      failCount: fail,
+      totalCount: total,
+      doneCount: done,
+      progressPct: total > 0 ? Math.round((done / total) * 100) : 0,
+      passPct: total > 0 ? (pass / total) * 100 : 0,
+      failPct: total > 0 ? (fail / total) * 100 : 0,
+    };
+  }, [steps]);
 
-  // ── Loading ───────────────────────────────────────────────────────────────
-  if (loading || lockLoading)
+  const filtered = useMemo(
+    () =>
+      steps.filter((s) => {
+        if (s.is_divider) return true;
+        if (filter !== "all" && s.status !== filter) return false;
+        if (
+          search &&
+          !`${s.action} ${s.expected_result} ${s.remarks}`
+            .toLowerCase()
+            .includes(search.toLowerCase())
+        )
+          return false;
+        return true;
+      }),
+    [steps, filter, search]
+  );
+
+  const flatData = useMemo<FlatData[]>(
+    () =>
+      steps.map((s) =>
+        s.is_divider
+          ? {
+              module: module_name,
+              test: currentTest?.name ?? "",
+              serial: 0,
+              action: s.action,
+              expected: s.expected_result,
+              remarks: "",
+              status: "",
+              is_divider: true,
+              dividerLevel: getDividerLevel(s.expected_result),
+            }
+          : {
+              module: module_name,
+              test: currentTest?.name ?? "",
+              serial: s.serial_no,
+              action: s.action,
+              expected: s.expected_result,
+              remarks: s.remarks || "",
+              status: s.status,
+            }
+      ),
+    [steps, module_name, currentTest?.name]
+  );
+
+  const exportStats = useMemo(() => {
+    const nd = flatData.filter((s) => !s.is_divider);
+    return [
+      { label: "Total Steps", value: nd.length },
+      { label: "Pass", value: nd.filter((s) => s.status === "pass").length },
+      { label: "Fail", value: nd.filter((s) => s.status === "fail").length },
+    ];
+  }, [flatData]);
+
+  const exportTestName = currentTest
+    ? `${currentTest.serial_no}. ${currentTest.name}`
+    : "test";
+
+  // ── Render ────────────────────────────────────────────────────────────────
+  if (lockLoading)
     return (
-      <div className="flex-1 flex flex-col">
-        <Topbar title={testsName} subtitle={module_name} onBack={onBack} />
-        <div className="flex items-center justify-center flex-1">
-          <Spinner />
-        </div>
+      <div
+        className="flex flex-col items-center justify-center gap-3"
+        style={{ height: "100dvh" }}
+      >
+        <Spinner />
+        <p className="text-xs text-t-muted">Checking lock status…</p>
       </div>
     );
 
-  // ── Locked by someone else ────────────────────────────────────────────────
-  if (lock && lock.user_id !== user?.id)
+  if (isLockedByOther)
     return (
-      <div className="flex-1 flex flex-col">
+      <div className="flex flex-col" style={{ height: "100dvh" }}>
         <Topbar
-          title={testsName}
+          title={currentTest?.name ?? "Test Execution"}
           subtitle={module_name}
           onBack={onBack}
-          actions={
-            isAdmin ? (
-              <button
-                onClick={() =>
-                  forceReleaseLock(currentMtId).then(() => setLock(null))
-                }
-                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg bg-red-500/10 hover:bg-red-500/20 border border-red-500/30 text-red-400 transition"
-              >
-                <Lock size={12} /> Force Unlock
-              </button>
-            ) : undefined
-          }
         />
         <LockedScreen
           locked_by_name={lock.locked_by_name}
-          test_name={testsName}
+          test_name={currentTest?.name ?? "this test"}
           onBack={onBack}
         />
+        {isAdmin && (
+          <div className="p-4 flex justify-center">
+            <button
+              onClick={handleForceRelease}
+              className="text-xs text-red-400 hover:text-red-300 underline underline-offset-2 transition-colors"
+            >
+              Force-release lock (admin)
+            </button>
+          </div>
+        )}
       </div>
     );
 
-  // ── Render ────────────────────────────────────────────────────────────────
-  const currentTest = moduleTests.find((mt) => mt.id === currentMtId);
-
   return (
-    <div className="flex-1 flex flex-col overflow-hidden">
-      {showUndoModal && (
-        <UndoAllModal
-          doneCount={doneCount}
-          totalCount={totalReal}
-          onConfirm={handleUndoAll}
-          onCancel={() => setShowUndoModal(false)}
-        />
-      )}
+    <div className="flex flex-col" style={{ height: "100dvh" }}>
       {imagePreview && (
         <ImagePreviewModal
           images={imagePreview.urls}
@@ -1405,231 +1454,349 @@ const TestExecution: React.FC<Props> = ({
           onClose={() => setImagePreview(null)}
         />
       )}
-      {showMassImageUpload && (
-        <MassImageUploadModal
-          module_test_id={currentMtId}
-          onClose={() => setShowMassImageUpload(false)}
-        />
-      )}
-      {showExportModal && (
-        <ExportModal
-          isOpen={showExportModal}
-          onClose={() => setShowExportModal(false)}
-          title="Export Execution"
-          subtitle={testsName}
-          stats={[
-            { label: "Total", value: totalReal },
-            { label: "Done", value: doneCount },
-            { label: "Pending", value: totalReal - doneCount },
-          ]}
-          options={[
-            {
-              label: "CSV",
-              icon: <FileSpreadsheet size={16} />,
-              color: "bg-[var(--color-primary)]",
-              hoverColor: "hover:bg-[var(--color-primary-hover)]",
-              onConfirm: () => exportExecutionCSV(buildFlatData()),
-            },
-            {
-              label: "PDF",
-              icon: <FileText size={16} />,
-              color: "bg-[var(--color-blue)]",
-              hoverColor: "hover:bg-[var(--color-blue-hover)]",
-              onConfirm: () => exportExecutionPDF(buildFlatData()),
-            },
-          ]}
+      {showUndoModal && (
+        <UndoAllModal
+          doneCount={doneCount}
+          totalCount={totalCount}
+          onConfirm={handleUndoAll}
+          onCancel={() => setShowUndoModal(false)}
         />
       )}
 
-      <Topbar
-        title={currentTest?.test?.name ?? testsName}
-        subtitle={`${module_name} · ${doneCount}/${totalReal} done`}
-        onBack={onBack}
-        actions={
-          <div className="flex items-center gap-2">
-            {ownsLock && (
-              <>
-                <button
-                  onClick={() => setShowUndoModal(true)}
-                  disabled={doneCount === 0}
-                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 text-amber-400 disabled:opacity-40 transition"
-                >
-                  <RotateCcw size={12} /> Reset
-                </button>
-                <button
-                  onClick={() => setShowMassImageUpload(true)}
-                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg bg-bg-card hover:bg-bg-surface border border-[var(--border-color)] text-t-primary transition"
-                >
-                  <Upload size={12} /> Images
-                </button>
-              </>
-            )}
-            <button
-              onClick={() => setShowExportModal(true)}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg bg-bg-card hover:bg-bg-surface border border-[var(--border-color)] text-t-primary transition"
-            >
-              <FileSpreadsheet size={12} /> Export
-            </button>
-          </div>
-        }
+      <ExportModal
+        isOpen={showExportModal}
+        onClose={() => setShowExportModal(false)}
+        title="Export Test Results"
+        subtitle={`${module_name} · ${currentTest?.name ?? ""}`}
+        stats={exportStats}
+        options={[
+          {
+            label: "CSV",
+            icon: <FileSpreadsheet size={16} />,
+            color: "bg-[var(--color-primary)]",
+            hoverColor: "hover:bg-[var(--color-primary-hover)]",
+            onConfirm: () =>
+              exportExecutionCSV(module_name, exportTestName, flatData),
+          },
+          {
+            label: "PDF",
+            icon: <FileText size={16} />,
+            color: "bg-[var(--color-blue)]",
+            hoverColor: "hover:bg-[var(--color-blue-hover)]",
+            onConfirm: () =>
+              exportExecutionPDF(module_name, exportTestName, flatData),
+          },
+        ]}
       />
 
-      {/* Filter + Search bar */}
-      <div className="px-4 pt-3 pb-2 flex flex-wrap items-center gap-2 border-b border-[var(--border-color)] bg-bg-surface shrink-0">
-        <div className="flex items-center gap-1 bg-bg-base rounded-xl p-1">
-          {(["all", "pass", "fail", "pending"] as Filter[]).map((f) => (
-            <button
-              key={f}
-              onClick={() => setFilter(f)}
-              className={`text-xs font-semibold px-3 py-1 rounded-lg transition-colors capitalize ${
-                filter === f
-                  ? "bg-c-brand text-white"
-                  : "text-t-muted hover:text-t-primary"
-              }`}
-            >
-              {f}
-            </button>
-          ))}
-        </div>
-        <input
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          placeholder="Search steps…"
-          className="input text-xs py-1.5 flex-1 min-w-[140px] max-w-xs"
+      {/* ✅ Fix 5: MassImageUploadModal uses isOpen prop — preserved from original */}
+      <MassImageUploadModal
+        isOpen={showMassImageUpload}
+        onClose={() => setShowMassImageUpload(false)}
+      />
+
+      {/* Fixed header */}
+      <div className="flex-shrink-0">
+        <Topbar
+          title={
+            currentTest
+              ? `${currentTest.serial_no}. ${currentTest.name}`
+              : "Test Execution"
+          }
+          subtitle={module_name}
+          onBack={() => {
+            stopHeartbeat();
+            releaseLock(currentMtId, user?.id ?? "").catch(() => {});
+            onBack();
+          }}
+          actions={
+            <>
+              {isAdmin && (
+                <button
+                  onClick={() => setShowMassImageUpload(true)}
+                  className="px-3 py-2 rounded-xl border border-[var(--border-color)] bg-bg-card text-t-primary text-sm font-semibold hover:bg-bg-surface transition-colors"
+                >
+                  Mass Upload Images
+                </button>
+              )}
+              <button onClick={handleFinish} className="btn-primary text-sm">
+                Finish Test
+              </button>
+            </>
+          }
         />
-        {!ownsLock && lock && (
-          <span className="flex items-center gap-1.5 text-xs text-amber-400 font-medium px-3 py-1.5 rounded-lg bg-amber-500/10 border border-amber-500/20">
-            <Lock size={11} /> Read-only
-          </span>
-        )}
+
+        {/* Progress bar */}
+        <div className="px-4 pt-3 pb-2">
+          <div className="flex items-center justify-between mb-1.5">
+            <div className="flex items-center gap-4 text-xs text-t-muted">
+              <span>
+                <span className="text-green-400 font-semibold">
+                  {passCount}
+                </span>{" "}
+                pass
+              </span>
+              <span>
+                <span className="text-red-400 font-semibold">{failCount}</span>{" "}
+                fail
+              </span>
+              <span>
+                <span className="text-t-muted font-semibold">
+                  {totalCount - doneCount}
+                </span>{" "}
+                pending
+              </span>
+            </div>
+            <div className="flex items-center gap-3">
+              {focusedStepId && (
+                <span className="hidden md:flex items-center gap-2 text-xs text-t-muted">
+                  <span className="flex items-center gap-1">
+                    <kbd className="px-1.5 py-0.5 rounded bg-green-500/10 text-green-400 font-mono text-[10px] border border-green-500/20">
+                      P
+                    </kbd>
+                    <span className="text-[var(--border-color)] mx-0.5">/</span>
+                    <kbd className="px-1.5 py-0.5 rounded bg-green-500/10 text-green-400 font-mono text-[10px] border border-green-500/20">
+                      Enter
+                    </kbd>
+                    <span className="text-green-400 ml-1">pass</span>
+                  </span>
+                  <span className="text-[var(--border-color)]">·</span>
+                  <span className="flex items-center gap-1">
+                    <kbd className="px-1.5 py-0.5 rounded bg-red-500/10 text-red-400 font-mono text-[10px] border border-red-500/20">
+                      F
+                    </kbd>
+                    <span className="text-red-400 ml-1">fail</span>
+                  </span>
+                </span>
+              )}
+              <span className="text-xs text-t-muted font-medium">
+                {progressPct}%
+              </span>
+            </div>
+          </div>
+          <div className="h-1.5 bg-[var(--border-color)] rounded-full overflow-hidden flex">
+            <div
+              className="h-full bg-green-500 transition-all duration-500"
+              style={{ width: `${passPct}%` }}
+            />
+            <div
+              className="h-full bg-red-500  transition-all duration-500"
+              style={{ width: `${failPct}%` }}
+            />
+          </div>
+        </div>
+
+        {/* Filters */}
+        <div className="flex flex-col border-b border-[var(--border-color)]">
+          <div className="flex items-center gap-2 px-4 py-2">
+            <button
+              onClick={() => setShowExportModal(true)}
+              disabled={filtered.length === 0}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-[var(--border-color)] bg-bg-card hover:bg-bg-surface disabled:opacity-40 disabled:cursor-not-allowed text-t-primary text-xs font-semibold transition shrink-0"
+            >
+              <Upload size={13} /> Export
+            </button>
+            <div className="flex-1" />
+            <div className="flex gap-1">
+              {(["all", "pass", "fail", "pending"] as Filter[]).map((f) => (
+                <button
+                  key={f}
+                  onClick={() => setFilter(f)}
+                  style={filter === f ? { color: "#ffffff" } : undefined}
+                  className={`px-2.5 py-1 rounded-lg text-xs font-medium transition-colors capitalize ${
+                    filter === f
+                      ? "bg-c-brand"
+                      : "text-t-muted hover:text-t-primary"
+                  }`}
+                >
+                  {f}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="px-4 pb-2">
+            <input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search steps…"
+              className="input text-xs py-1.5 w-full"
+            />
+          </div>
+        </div>
       </div>
 
-      {/* Steps — Desktop table */}
-      <div ref={scrollContainerRef} className="flex-1 overflow-y-auto">
-        <div className="hidden md:block">
-          <table className="w-full text-sm border-collapse">
-            <thead className="sticky top-0 z-10 bg-bg-surface border-b border-[var(--border-color)]">
-              <tr>
-                <th className="px-2 py-3 text-xs text-t-muted font-semibold border-r border-[var(--border-color)] w-10">
-                  #
-                </th>
-                <th className="px-4 py-3 text-xs text-t-muted font-semibold text-left border-r border-[var(--border-color)]">
-                  Action
-                </th>
-                <th className="px-4 py-3 text-xs text-t-muted font-semibold text-left border-r border-[var(--border-color)]">
-                  Expected Result
-                </th>
-                <th className="px-3 py-3 text-xs text-t-muted font-semibold text-left border-r border-[var(--border-color)] w-44">
-                  Remarks
-                </th>
-                <th className="px-2 py-3 text-xs text-t-muted font-semibold border-r border-[var(--border-color)] w-20">
-                  Status
-                </th>
-                <th className="px-2 py-3 text-xs text-t-muted font-semibold w-24">
-                  Actions
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {visible.map((step) => {
-                if (step.is_divider) {
-                  const lvl = getDividerLevel(step.expected_result);
-                  const d = DIVIDER_LEVELS[lvl] ?? DIVIDER_LEVELS[1];
-                  return (
-                    <tr key={step.stepId} className={`${d.bg} ${d.border}`}>
-                      <td colSpan={6} className={`${d.indent} py-2`}>
-                        <div className="flex items-center gap-2">
+      {/* Scroll container */}
+      <div
+        ref={scrollContainerRef}
+        className="flex-1 min-h-0 overflow-y-auto"
+        style={{ scrollBehavior: "smooth" }}
+      >
+        {loading ? (
+          <div className="flex items-center justify-center py-20">
+            <Spinner />
+          </div>
+        ) : filtered.length === 0 ? (
+          <div className="text-center text-t-muted py-20 text-sm">
+            No steps match your filter.
+          </div>
+        ) : (
+          <>
+            {/* Desktop table */}
+            <table className="hidden md:table w-full text-sm border-collapse table-fixed">
+              <thead className="sticky top-0 z-10">
+                <tr className="bg-bg-surface border-b border-[var(--border-color)]">
+                  <th className="text-left px-2 py-2.5 text-xs font-semibold text-t-muted uppercase tracking-wider w-[6%]  border-r border-[var(--border-color)]">
+                    S.No
+                  </th>
+                  <th className="text-left px-4 py-2.5 text-xs font-semibold text-t-muted uppercase tracking-wider w-[28%] border-r border-[var(--border-color)]">
+                    Action
+                  </th>
+                  <th className="text-left px-4 py-2.5 text-xs font-semibold text-t-muted uppercase tracking-wider w-[28%] border-r border-[var(--border-color)]">
+                    Expected Result
+                  </th>
+                  <th className="text-left px-3 py-2.5 text-xs font-semibold text-t-muted uppercase tracking-wider w-[13%] border-r border-[var(--border-color)]">
+                    Remarks
+                  </th>
+                  <th className="text-center px-2 py-2.5 text-xs font-semibold text-t-muted uppercase tracking-wider w-[11%] border-r border-[var(--border-color)]">
+                    Status
+                  </th>
+                  <th className="text-center px-2 py-2.5 text-xs font-semibold text-t-muted uppercase tracking-wider w-[14%]">
+                    Result
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {filtered.map((step) =>
+                  step.is_divider ? (
+                    (() => {
+                      const level = getDividerLevel(step.expected_result);
+                      const s = DIVIDER_LEVELS[level] ?? DIVIDER_LEVELS[1];
+                      return (
+                        <tr
+                          key={step.stepId}
+                          className={`border-b border-[var(--border-color)] ${s.bg}`}
+                        >
+                          <td
+                            colSpan={6}
+                            className={`py-2 ${s.indent} ${s.border}`}
+                          >
+                            <div className="flex items-center gap-2">
+                              <span
+                                className={`rounded-full ${s.dot} inline-block shrink-0`}
+                                style={{
+                                  width: level === 1 ? 6 : level === 2 ? 5 : 4,
+                                  height: level === 1 ? 6 : level === 2 ? 5 : 4,
+                                }}
+                              />
+                              <span className={`${s.size} ${s.text}`}>
+                                {step.action}
+                              </span>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })()
+                  ) : (
+                    <TableStepRow
+                      key={step.stepId}
+                      step={step}
+                      signedImageUrls={signedImageUrls}
+                      isFocused={focusedStepId === step.stepId}
+                      onUpdate={handleStepUpdate}
+                      onFocus={() => setFocusedStepId(step.stepId)}
+                      onRemarksChange={(val: string) =>
+                        (remarksMap.current[step.stepId] = val)
+                      }
+                      onImageClick={openImagePreview}
+                      rowRef={(el: HTMLTableRowElement | null) =>
+                        (trRefs.current[step.stepId] = el)
+                      }
+                    />
+                  )
+                )}
+              </tbody>
+            </table>
+
+            {/* Mobile cards */}
+            <div className="md:hidden flex flex-col">
+              <div className="sticky top-0 z-10 grid grid-cols-[64px_1fr] border-b border-[var(--border-color)] bg-bg-surface/80 backdrop-blur-md">
+                <div className="px-3 py-2 border-r border-[var(--border-color)]">
+                  <span className="text-[10px] font-semibold text-t-muted uppercase tracking-wider">
+                    S.No
+                  </span>
+                </div>
+                <div className="px-3 py-2 flex items-center">
+                  <span className="text-[10px] font-semibold text-t-muted uppercase tracking-wider">
+                    Step Details
+                  </span>
+                </div>
+              </div>
+              <div className="flex flex-col gap-2 p-3">
+                {filtered.map((step) =>
+                  step.is_divider ? (
+                    (() => {
+                      const level = getDividerLevel(step.expected_result);
+                      const ms =
+                        MOBILE_DIVIDER_LEVELS[level] ??
+                        MOBILE_DIVIDER_LEVELS[1];
+                      return (
+                        <div
+                          key={step.stepId}
+                          className={`flex items-center gap-2 ${ms.py} pl-3 pr-3 rounded-r-lg ${ms.bg} ${ms.border} ${ms.ml}`}
+                        >
                           <span
-                            className={`w-1.5 h-1.5 rounded-full ${d.dot} shrink-0`}
+                            className={`rounded-full shrink-0 ${ms.dotClass}`}
+                            style={{ width: ms.dotSize, height: ms.dotSize }}
                           />
-                          <span className={`${d.size} ${d.text}`}>
+                          <span className={`${ms.fontSize} ${ms.textClass}`}>
                             {step.action}
                           </span>
                         </div>
-                      </td>
-                    </tr>
-                  );
-                }
-                return (
-                  <TableStepRow
-                    key={step.stepId}
-                    step={step}
-                    signedImageUrls={signedImageUrls}
-                    isFocused={focusedStepId === step.stepId}
-                    onUpdate={
-                      ownsLock
-                        ? handleUpdate
-                        : () =>
-                            addToast(
-                              "Read-only — you don't hold this lock.",
-                              "error"
-                            )
-                    }
-                    onFocus={() => setFocusedStepId(step.stepId)}
-                    onRemarksChange={(val) => {
-                      remarksMap.current[step.stepId] = val;
-                    }}
-                    onImageClick={openImagePreview}
-                    rowRef={(el) => {
-                      trRefs.current[step.stepId] = el;
-                    }}
-                  />
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-
-        {/* Steps — Mobile cards */}
-        <div className="md:hidden flex flex-col gap-2 p-3">
-          {visible.map((step) => {
-            if (step.is_divider) {
-              const lvl = getDividerLevel(step.expected_result);
-              const d = MOBILE_DIVIDER_LEVELS[lvl] ?? MOBILE_DIVIDER_LEVELS[1];
-              return (
-                <div
-                  key={step.stepId}
-                  className={`${d.bg} ${d.border} ${d.ml} ${d.py} px-3 rounded-r-lg`}
-                >
-                  <div className="flex items-center gap-2">
-                    <span
-                      className={`rounded-full ${d.dotClass}`}
-                      style={{ width: d.dotSize, height: d.dotSize }}
+                      );
+                    })()
+                  ) : (
+                    <MobileStepCard
+                      key={step.stepId}
+                      step={step}
+                      signedImageUrls={signedImageUrls}
+                      isFocused={focusedStepId === step.stepId}
+                      onUpdate={handleStepUpdate}
+                      onFocus={() => setFocusedStepId(step.stepId)}
+                      onRemarksChange={(val: string) =>
+                        (remarksMap.current[step.stepId] = val)
+                      }
+                      onImageClick={openImagePreview}
+                      cardRef={(el: HTMLDivElement | null) =>
+                        (cardRefs.current[step.stepId] = el)
+                      }
                     />
-                    <span className={`${d.fontSize} ${d.textClass}`}>
-                      {step.action}
-                    </span>
-                  </div>
+                  )
+                )}
+              </div>
+            </div>
+
+            {/* Undo All (admin only) */}
+            {isAdmin && doneCount > 0 && (
+              <div className="flex items-center justify-center py-6 px-4">
+                <div className="flex items-center gap-3 px-4 py-3 rounded-xl border border-dashed border-amber-500/30 bg-amber-500/5">
+                  <AlertTriangle
+                    size={14}
+                    className="text-amber-500 shrink-0"
+                  />
+                  <span className="text-xs text-t-muted">
+                    Admin action — resets all progress
+                  </span>
+                  <button
+                    onClick={() => setShowUndoModal(true)}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold text-amber-600 dark:text-amber-400 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 hover:border-amber-500/60 transition-colors whitespace-nowrap"
+                  >
+                    <RotateCcw size={12} /> Undo All
+                  </button>
                 </div>
-              );
-            }
-            return (
-              <MobileStepCard
-                key={step.stepId}
-                step={step}
-                signedImageUrls={signedImageUrls}
-                isFocused={focusedStepId === step.stepId}
-                onUpdate={
-                  ownsLock
-                    ? handleUpdate
-                    : () =>
-                        addToast(
-                          "Read-only — you don't hold this lock.",
-                          "error"
-                        )
-                }
-                onFocus={() => setFocusedStepId(step.stepId)}
-                onRemarksChange={(val) => {
-                  remarksMap.current[step.stepId] = val;
-                }}
-                onImageClick={openImagePreview}
-                cardRef={(el) => {
-                  cardRefs.current[step.stepId] = el;
-                }}
-              />
-            );
-          })}
-        </div>
+              </div>
+            )}
+          </>
+        )}
       </div>
     </div>
   );
