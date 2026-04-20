@@ -10,7 +10,7 @@ export interface DashboardModule {
   name: string;
   description: string | null;
   module_tests: { id: string }[];
-  step_results: { status: string }[];
+  step_results: { status: string; step: { is_divider: boolean } | null }[];
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -24,13 +24,13 @@ export async function fetchDashboardModules(): Promise<DashboardModule[]> {
       `
       name, description,
       module_tests:module_tests!module_name(id),
-      step_results:step_results!module_name(status)
+      step_results:step_results!module_name(status, step:steps(is_divider))
     `
     )
     .order("name");
 
   if (error) throw new Error(error.message);
-  return (data ?? []) as DashboardModule[];
+  return (data ?? []) as unknown as DashboardModule[];
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
