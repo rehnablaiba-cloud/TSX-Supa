@@ -355,7 +355,14 @@ const AppInner: React.FC = () => {
           <main className="flex-1 flex flex-col overflow-hidden min-w-0">
             {renderPage()}
           </main>
-          <MobileNav activePage={page} onNavigate={(p) => navigate(p)} />
+          <MobileNav
+            activePage={page}
+            onNavigate={(p) => {
+              if (p === "report") setSelectedTestId(null);
+              if (p === "audit_log") setSelectedTestId(null);
+              navigate(p);
+            }}
+          />
           {showInstall && (
             <button
               onClick={handleInstall}
