@@ -15,7 +15,6 @@ import TestReport from "./components/TestReport/TestReport";
 import UsersPanel from "./components/Users/UsersPanel";
 import AuditLog from "./components/AuditLog/AuditLog";
 import Spinner from "./components/UI/Spinner";
-import Topbar from "./components/Layout/Topbar";
 import { supabase } from "./supabase";
 import { Module } from "./types";
 import { tokens, palette, TokenKey } from "./theme";
@@ -266,9 +265,18 @@ const AppInner: React.FC = () => {
       setPage("module");
       log("info", "nav", `Navigate → module: ${module_name}`);
     } else {
+      // Sidebar "Test Report" click has no test context → clear so standalone renders
+      if (p === "report") setSelectedTestId(null);
       setPage(p as Page);
       log("info", "nav", `Navigate → ${p}`);
     }
+  };
+
+  // Used by ModuleDashboard / TestExecution to open a specific test's report
+  const navigateToReport = (testId: string) => {
+    setSelectedTestId(testId);
+    setPage("report");
+    log("info", "nav", `Navigate → report: ${testId}`);
   };
 
   // ── Page renderer ───────────────────────────────────────────────────────
@@ -290,6 +298,7 @@ const AppInner: React.FC = () => {
               setPage("execution");
               log("info", "nav", `Execute test: ${mtId}`);
             }}
+            onViewReport={navigateToReport}
           />
         ) : (
           <Dashboard onNavigate={navigate} />
@@ -311,31 +320,20 @@ const AppInner: React.FC = () => {
         );
 
       case "report":
-        return selectedTestId ? (
+        // selectedTestId set   → drill-down mode (specific test)
+        // selectedTestId null  → standalone mode (all modules overview)
+        return (
           <TestReport
-            module_test_id={selectedTestId}
-            onBack={() => setPage("module")}
+            module_test_id={selectedTestId ?? undefined}
+            onBack={
+              selectedTestId
+                ? () => {
+                    setPage("module");
+                    log("info", "nav", "Back → module");
+                  }
+                : undefined
+            }
           />
-        ) : (
-          <div className="flex-1 flex flex-col">
-            <Topbar title="Test Report" onBack={() => setPage("dashboard")} />
-            <div className="flex-1 flex flex-col items-center justify-center gap-3 p-6 text-center">
-              <p className="text-sm font-semibold text-t-primary">
-                No test selected
-              </p>
-              <p className="text-xs text-t-muted max-w-xs">
-                Open a module from the Dashboard, then click{" "}
-                <strong className="text-t-primary">View Report</strong> on a
-                test to see its report here.
-              </p>
-              <button
-                onClick={() => setPage("dashboard")}
-                className="mt-2 px-4 py-2 text-sm font-semibold rounded-lg bg-bg-card border border-[var(--border-color)] text-t-primary hover:bg-bg-surface transition"
-              >
-                Go to Dashboard
-              </button>
-            </div>
-          </div>
         );
 
       case "users":
