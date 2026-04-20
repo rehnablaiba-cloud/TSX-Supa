@@ -1057,6 +1057,7 @@ const TestExecution: React.FC<Props> = ({
   }, [module_name, currentMtId, testsName, user?.id]);
 
   // ── Acquire lock — only stop heartbeat on unmount, never release ──────────
+  // ── Acquire lock ──────────────────────────────────────────────────────────
   useEffect(() => {
     if (!user) return;
     let cancelled = false;
@@ -1067,13 +1068,19 @@ const TestExecution: React.FC<Props> = ({
         user.display_name ?? user.email ?? "User"
       );
       if (cancelled) return;
-      // ✅ Only start heartbeat if we own the lock
-      if (result.success) startHeartbeat();
+      if (result.success) {
+        startHeartbeat();
+      } else {
+        // ✅ Lock held by someone else — toast so user knows
+        addToast(
+          `Test is locked by ${result.holder ?? "another user"}. View only.`,
+          "warning"
+        );
+      }
     })();
     return () => {
       cancelled = true;
-      // ✅ ONLY stop heartbeat on unmount — do NOT release the lock
-      // Lock is released only by: handleFinish, logout, or DB cron timeout
+      // Only stop heartbeat — never release on unmount
       stopHeartbeat();
     };
   }, [currentMtId, user?.id, startHeartbeat, stopHeartbeat]);

@@ -20,13 +20,13 @@ export interface RawStepResult {
     is_divider: boolean;
     action_image_urls: string[];
     expected_image_urls: string[];
-    tests_name: string; // ✅ added — needed for filtering by testsName in TestExecution
+    tests_name: string;
   } | null;
 }
 
 export interface RawModuleTestItem {
   id: string;
-  tests_name: string; // ✅ fixed typo: was `testsname`, matches actual DB column
+  tests_name: string;
   test: { serial_no: string; name: string } | null;
 }
 
@@ -91,28 +91,58 @@ export async function acquireLock(
   user_id: string,
   display_name: string
 ): Promise<{ success: boolean; holder?: string }> {
+  // ── Step 1: Read current lock state ───────────────────────────────────────
   const { data: existing } = await supabase
     .from("test_locks")
     .select("user_id, locked_by_name")
     .eq("module_test_id", module_test_id)
     .maybeSingle();
 
-  // Locked by someone else — refuse, do NOT steal
+  // ── Step 2: Lock held by someone else — refuse completely ─────────────────
   if (existing && (existing as any).user_id !== user_id) {
     return { success: false, holder: (existing as any).locked_by_name };
   }
 
-  const { error } = await supabase.from("test_locks").upsert(
-    {
-      module_test_id,
-      user_id,
-      locked_by_name: display_name,
-      locked_at: new Date().toISOString(),
-    },
-    { onConflict: "module_test_id" }
-  );
+  // ── Step 3: We already own this lock — just refresh the timestamp ─────────
+  if (existing && (existing as any).user_id === user_id) {
+    const { error } = await supabase
+      .from("test_locks")
+      .update({
+        locked_by_name: display_name,
+        locked_at: new Date().toISOString(),
+      })
+      .eq("module_test_id", module_test_id)
+      .eq("user_id", user_id);
 
-  if (error) throw error;
+    if (error) {
+      console.error("[acquireLock] refresh error:", error.message);
+      return { success: false };
+    }
+    return { success: true };
+  }
+
+  // ── Step 4: No lock exists — insert fresh (no upsert — avoids race) ───────
+  const { error } = await supabase.from("test_locks").insert({
+    module_test_id,
+    user_id,
+    locked_by_name: display_name,
+    locked_at: new Date().toISOString(),
+  });
+
+  // If insert fails due to unique constraint race (another user got in first)
+  if (error) {
+    // Re-read to return the actual holder's name
+    const { data: winner } = await supabase
+      .from("test_locks")
+      .select("user_id, locked_by_name")
+      .eq("module_test_id", module_test_id)
+      .maybeSingle();
+
+    const holder = (winner as any)?.locked_by_name;
+    console.warn("[acquireLock] lost race to:", holder);
+    return { success: false, holder };
+  }
+
   return { success: true };
 }
 
@@ -140,7 +170,8 @@ export async function forceReleaseLock(module_test_id: string): Promise<void> {
 
 /**
  * Refreshes locked_at timestamp to keep the lock alive.
- * Call on an interval (every ~20s) while user is in execution.
+ * Called every 15s while user is in execution.
+ * Only updates if we still own the lock (user_id guard).
  */
 export async function heartbeatLock(
   module_test_id: string,
@@ -187,7 +218,6 @@ export async function resetAllStepResults(
   module_name: string,
   tests_name: string
 ): Promise<void> {
-  // Fetch step IDs that belong to this tests_name
   const { data: steps, error: stepsErr } = await supabase
     .from("test_steps")
     .select("id")
