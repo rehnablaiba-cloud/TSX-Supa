@@ -1,21 +1,16 @@
 import React, { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { Hash, Upload, CheckCircle, ArrowLeft } from "lucide-react";
+import { Hash, Upload, CheckCircle } from "lucide-react";
 
 import { supabase } from "../../supabase";
-import {
-  fetchModuleOptions,
-  fetchTestsForModule,
-} from "../../lib/supabase/queries";
 import { parseStepsCsv } from "../../utils/csvParser";
-import type { ModuleOption, StepInput } from "../../types";
+import type { StepInput } from "../../types";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Types
 // ─────────────────────────────────────────────────────────────────────────────
 
 type Stage =
-  | "selectmodule"
   | "selecttest"
   | "upload"
   | "preview"
@@ -34,28 +29,22 @@ interface Props {
 // ─────────────────────────────────────────────────────────────────────────────
 
 const ImportStepsModal: React.FC<Props> = ({ onClose, onBack }) => {
-  const [stage, setStage] = useState<Stage>("selectmodule");
-  const [modules, setModules] = useState<ModuleOption[]>([]);
-  const [tests, setTests] = useState<{ id: string; tests_name: string }[]>([]);
-  const [selMod, setSelMod] = useState("");
+  const [stage, setStage] = useState<Stage>("selecttest");
+  const [tests, setTests] = useState<{ name: string }[]>([]);
   const [selTest, setSelTest] = useState("");
   const [parsed, setParsed] = useState<StepInput[]>([]);
   const [parseErrors, setParseErrors] = useState<string[]>([]);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
+  // Fetch all tests directly — no module filter needed
   useEffect(() => {
-    fetchModuleOptions()
-      .then(setModules)
-      .catch(() => {});
+    supabase
+      .from("tests")
+      .select("name")
+      .order("name")
+      .then(({ data }) => setTests((data ?? []) as { name: string }[]));
   }, []);
-
-  const handleModuleSelect = async (mod: string) => {
-    setSelMod(mod);
-    const rows = await fetchTestsForModule(mod).catch(() => []);
-    setTests(rows);
-    setStage("selecttest");
-  };
 
   const handleFile = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -94,9 +83,7 @@ const ImportStepsModal: React.FC<Props> = ({ onClose, onBack }) => {
   };
 
   const subtitle =
-    stage === "selectmodule"
-      ? "Pick a trainset"
-      : stage === "selecttest"
+    stage === "selecttest"
       ? "Pick a test"
       : stage === "upload"
       ? "Upload CSV"
@@ -146,7 +133,7 @@ const ImportStepsModal: React.FC<Props> = ({ onClose, onBack }) => {
               className="w-8 h-8 flex items-center justify-center rounded-full text-t-muted hover:text-t-primary hover:bg-bg-card transition-colors"
               title="Back"
             >
-              <ArrowLeft size={15} />
+              ←
             </button>
             <button
               onClick={onClose}
@@ -156,27 +143,6 @@ const ImportStepsModal: React.FC<Props> = ({ onClose, onBack }) => {
             </button>
           </div>
         </div>
-
-        {/* ── selectmodule ── */}
-        {stage === "selectmodule" && (
-          <div className="flex flex-col gap-1.5 max-h-60 overflow-y-auto">
-            {modules.length === 0 && (
-              <p className="text-sm text-t-muted text-center py-4">
-                No modules found.
-              </p>
-            )}
-            {modules.map((m) => (
-              <button
-                key={m.name}
-                onClick={() => handleModuleSelect(m.name)}
-                className="text-left px-3 py-2 rounded-xl border border-[var(--border-color)]
-                  bg-bg-card hover:bg-bg-base text-sm text-t-primary"
-              >
-                {m.name}
-              </button>
-            ))}
-          </div>
-        )}
 
         {/* ── selecttest ── */}
         {stage === "selecttest" && (
@@ -188,15 +154,15 @@ const ImportStepsModal: React.FC<Props> = ({ onClose, onBack }) => {
             )}
             {tests.map((t) => (
               <button
-                key={t.id}
+                key={t.name}
                 onClick={() => {
-                  setSelTest(t.tests_name);
+                  setSelTest(t.name);
                   setStage("upload");
                 }}
                 className="text-left px-3 py-2 rounded-xl border border-[var(--border-color)]
                   bg-bg-card hover:bg-bg-base text-sm text-t-primary"
               >
-                {t.tests_name}
+                {t.name}
               </button>
             ))}
           </div>
@@ -206,7 +172,11 @@ const ImportStepsModal: React.FC<Props> = ({ onClose, onBack }) => {
         {stage === "upload" && (
           <div className="flex flex-col gap-3">
             <p className="text-xs text-t-muted">
-              CSV must have columns:{" "}
+              Target test:{" "}
+              <span className="font-medium text-t-primary">{selTest}</span>
+            </p>
+            <p className="text-xs text-t-muted">
+              CSV columns:{" "}
               <span className="font-mono text-t-primary">
                 serial_no, action, expected_result, is_divider
               </span>
@@ -224,6 +194,12 @@ const ImportStepsModal: React.FC<Props> = ({ onClose, onBack }) => {
             >
               <Upload size={14} /> Choose CSV file
             </button>
+            <button
+              onClick={() => setStage("selecttest")}
+              className="px-4 py-2.5 rounded-xl border border-[var(--border-color)] text-t-secondary text-sm"
+            >
+              Back
+            </button>
           </div>
         )}
 
@@ -240,7 +216,7 @@ const ImportStepsModal: React.FC<Props> = ({ onClose, onBack }) => {
             <div className="rounded-xl border border-[var(--border-color)] overflow-hidden max-h-48 overflow-y-auto">
               <div className="bg-bg-card px-3 py-2 border-b border-[var(--border-color)]">
                 <p className="text-xs font-semibold text-t-muted uppercase tracking-wider">
-                  {parsed.length} Steps — {selMod} › {selTest}
+                  {parsed.length} Steps → {selTest}
                 </p>
               </div>
               {parsed.slice(0, 20).map((r) => (
