@@ -6,7 +6,10 @@ import Topbar from "../Layout/Topbar";
 import Spinner from "../UI/Spinner";
 import type { AuditEvent } from "../../types";
 
-import { fetchAuditLog, AuditLog } from "../../lib/supabase/queries.auditlog";
+import {
+  fetchAuditLog,
+  AuditLog as AuditLogRow,
+} from "../../lib/supabase/queries.auditlog";
 
 const DOT: Record<string, string> = {
   pass: "bg-green-500",
@@ -28,7 +31,7 @@ const AuditLog: React.FC = () => {
     }
 
     fetchAuditLog()
-      .then((data: AuditLog[]) => setEvents(data as unknown as AuditEvent[]))
+      .then((data: AuditLogRow[]) => setEvents(data as unknown as AuditEvent[]))
       .catch(() => {})
       .finally(() => setLoading(false));
   }, [isAdmin]);
