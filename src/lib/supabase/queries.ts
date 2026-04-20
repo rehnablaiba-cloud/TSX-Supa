@@ -142,6 +142,6 @@ export {
   releaseLock,
   forceReleaseLock,
   upsertStepResult,
-  resetAllstep_results,
+  resetAllStepResults,
   fetchSignedUrls,
 } from "./queries.testexecution";
