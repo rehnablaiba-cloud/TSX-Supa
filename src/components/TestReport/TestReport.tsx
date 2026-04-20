@@ -426,6 +426,15 @@ const TestReport: React.FC<Props> = ({ module_test_id, onBack }) => {
   );
 
   // ── Standalone chart data ─────────────────────────────────────────────────
+  // ── Client-side filtered modules (dropdown never triggers re-fetch) ──────
+  const displayModules = useMemo(
+    () =>
+      selectedModuleName
+        ? modules.filter((m) => m.name === selectedModuleName)
+        : modules,
+    [modules, selectedModuleName]
+  );
+
   const moduleChartData = useMemo<ChartRow[]>(
     () =>
       displayModules.map((m) => {
@@ -438,15 +447,6 @@ const TestReport: React.FC<Props> = ({ module_test_id, onBack }) => {
         };
       }),
     [displayModules]
-  );
-
-  // ── Client-side filtered modules (dropdown never triggers re-fetch) ──────
-  const displayModules = useMemo(
-    () =>
-      selectedModuleName
-        ? modules.filter((m) => m.name === selectedModuleName)
-        : modules,
-    [modules, selectedModuleName]
   );
 
   // ── Export helpers ────────────────────────────────────────────────────────
