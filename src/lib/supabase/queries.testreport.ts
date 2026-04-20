@@ -1,6 +1,5 @@
 /**
  * queries.testreport.ts
- * All Supabase queries for TestReport (drill-down + standalone module report)
  */
 import { supabase } from "../../supabase";
 
@@ -49,7 +48,16 @@ export interface ModuleRow {
   step_results: ReportStepResult[];
 }
 
-// Aliases for backwards compatibility
+export interface SessionActivity {
+  id: string;
+  action: string;
+  status: "pass" | "fail" | "pending";
+  tests_name: string;
+  module_name: string;
+  created_at: string;
+}
+
+// Aliases
 export type ModuleTestMeta = ReportMeta;
 export type StepResultRow = ReportStepResult;
 
@@ -57,9 +65,6 @@ export type StepResultRow = ReportStepResult;
 // Drill-down queries
 // ─────────────────────────────────────────────────────────────────────────────
 
-/**
- * Fetch meta + step results for a single module_test (drill-down mode).
- */
 export async function fetchTestReportData(
   module_test_id: string
 ): Promise<TestReportData> {
@@ -95,9 +100,6 @@ export async function fetchTestReportData(
   };
 }
 
-/**
- * Re-fetch step results only (used for realtime refresh in drill-down mode).
- */
 export async function fetchReportStepResults(
   module_name: string
 ): Promise<ReportStepResult[]> {
@@ -119,20 +121,14 @@ export async function fetchReportStepResults(
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Standalone module report queries
+// Standalone queries
 // ─────────────────────────────────────────────────────────────────────────────
 
-/**
- * Fetch all module names for the filter dropdown.
- */
 export async function fetchModuleOptions(): Promise<ModuleOption[]> {
   const { data } = await supabase.from("modules").select("name").order("name");
   return (data ?? []) as ModuleOption[];
 }
 
-/**
- * Fetch full module report data, optionally filtered by module name.
- */
 export async function fetchModuleReports(
   selectedModuleName: string | null
 ): Promise<ModuleRow[]> {
@@ -160,4 +156,35 @@ export async function fetchModuleReports(
   const { data, error } = await query;
   if (error) throw new Error(error.message);
   return (data ?? []) as unknown as ModuleRow[];
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Session activity query
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Fetch audit log entries for the current session user.
+ * Returns pass/fail/undo actions since session start.
+ */
+export async function fetchSessionActivity(
+  username: string,
+  sessionStart: string
+): Promise<SessionActivity[]> {
+  const { data, error } = await supabase
+    .from("audit_log")
+    .select("id, action, severity, created_at, username")
+    .eq("username", username)
+    .gte("created_at", sessionStart)
+    .order("created_at", { ascending: false });
+
+  if (error) throw new Error(error.message);
+
+  return (data ?? []).map((row: any) => ({
+    id: row.id,
+    action: row.action,
+    status: row.severity,
+    tests_name: "",
+    module_name: "",
+    created_at: row.created_at,
+  })) as SessionActivity[];
 }
