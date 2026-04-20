@@ -1,197 +1,267 @@
-import React, { useEffect, useState, useCallback } from "react";
-import {supabase} from "../../supabase";
-import ModalShell from "../UI/ModalShell";
-import { Package, Plus, Pencil, Trash2, AlertTriangle, Check } from "lucide-react";
+import React, { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import {
-  Row, DiffRow, OpCard, LoadingList, EmptyList, ErrBanner, SuccessBanner, NavButtons,
-} from "./shared/RowHelpers";
-import type { ModuleOption, ModuleOp, ModuleManualStage } from "./shared/types";
+  Package, Plus, Pencil, Trash2,
+  CheckCircle, ArrowLeft,
+} from "lucide-react";
+
+import { supabase }                       from "../../supabase";
+import { fetchModuleOptions }             from "../../lib/supabase/queries";
+import { Row }                            from "../UI/ReviewRow";
+import type { ModuleOption }              from "../../types";
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Types
+// ─────────────────────────────────────────────────────────────────────────────
+
+type ModuleOp    = "create" | "update" | "delete";
+type Stage       = "selectop" | "selectmodule" | "fillform" | "confirm" | "submitting" | "done";
 
 const OP_META: { id: ModuleOp; label: string; icon: React.ReactNode; desc: string }[] = [
-  { id: "create", label: "Create", icon: <Plus   size={20} />, desc: "Add a new module"            },
-  { id: "update", label: "Update", icon: <Pencil size={20} />, desc: "Rename an existing module"   },
-  { id: "delete", label: "Delete", icon: <Trash2 size={20} />, desc: "Remove a module permanently" },
+  { id: "create", label: "Create", icon: <Plus   size={20} />, desc: "Add a new module"    },
+  { id: "update", label: "Update", icon: <Pencil size={20} />, desc: "Edit module details" },
+  { id: "delete", label: "Delete", icon: <Trash2 size={20} />, desc: "Remove a module"     },
 ];
 
-const SUBTITLE: Record<ModuleManualStage, (op: ModuleOp) => string> = {
-  selectop:    ()   => "Choose operation",
-  selectmodule:()   => "Select module",
-  fillform:    (op) => op === "create" ? "Enter module name" : "Edit module name",
-  confirm:     ()   => "Review & confirm",
-  submitting:  ()   => "Processing…",
-  done:        ()   => "Complete",
-};
+interface Props {
+  onClose: () => void;
+  onBack:  () => void;
+}
 
-interface Props { onClose: () => void; onBack: () => void; }
+// ─────────────────────────────────────────────────────────────────────────────
+// Component
+// ─────────────────────────────────────────────────────────────────────────────
 
 const ImportModulesModal: React.FC<Props> = ({ onClose, onBack }) => {
-  const [stage,       setStage]      = useState<ModuleManualStage>("selectop");
-  const [op,          setOp]         = useState<ModuleOp>("create");
-  const [modules,     setModules]    = useState<ModuleOption[]>([]);
-  const [loading,     setLoading]    = useState(false);
-  const [selected,    setSelected]   = useState<ModuleOption | null>(null);
-  const [name,        setName]       = useState("");
-  const [errMsg,      setErrMsg]     = useState("");
-  const [resultMsg,   setResultMsg]  = useState("");
+  const [stage,          setStage]   = useState<Stage>("selectop");
+  const [op,             setOp]      = useState<ModuleOp>("create");
+  const [modules,        setModules] = useState<ModuleOption[]>([]);
+  const [selectedModule, setSelected]= useState<ModuleOption | null>(null);
+  const [name,           setName]    = useState("");
+  const [desc,           setDesc]    = useState("");
+  const [error,          setError]   = useState<string | null>(null);
 
   useEffect(() => {
-    if (stage !== "selectmodule") return;
-    setLoading(true);
-    supabase.from("modules").select("name").order("name")
-      .then(({ data }) => { if (data) setModules(data as ModuleOption[]); setLoading(false); });
-  }, [stage]);
-
-  const handleSubmit = useCallback(async () => {
-    setStage("submitting"); setErrMsg("");
-    try {
-      if (op === "create") {
-        const trimmed = name.trim();
-        if (!trimmed) throw new Error("Module name is required.");
-        const { error } = await supabase.from("modules").insert({ name: trimmed });
-        if (error) throw error;
-        setResultMsg(`Module "${trimmed}" created successfully.`);
-      } else if (op === "update") {
-        if (!selected) throw new Error("No module selected.");
-        const newName = name.trim();
-        if (!newName) throw new Error("New name is required.");
-        const { error } = await supabase.from("modules").update({ name: newName }).eq("name", selected.name);
-        if (error) throw error;
-        setResultMsg(`"${selected.name}" renamed to "${newName}".`);
-      } else {
-        if (!selected) throw new Error("No module selected.");
-        const { error } = await supabase.from("modules").delete().eq("name", selected.name);
-        if (error) throw error;
-        setResultMsg(`Module "${selected.name}" deleted.`);
-      }
-      setStage("done");
-    } catch (e: any) { setErrMsg(e?.message ?? "Unexpected error."); setStage("confirm"); }
-  }, [op, name, selected]);
-
-  const reset = useCallback(() => {
-    setStage("selectop"); setSelected(null); setName(""); setResultMsg(""); setErrMsg("");
+    fetchModuleOptions().then(setModules).catch(() => {});
   }, []);
 
-  const sub = SUBTITLE[stage](op);
+  const handleOpSelect = (o: ModuleOp) => {
+    setOp(o);
+    setStage(o === "create" ? "fillform" : "selectmodule");
+  };
 
-  if (stage === "selectop") return (
-    <ModalShell icon={<Package size={16} />} title="Import Modules" subtitle={sub} onClose={onClose}>
-      <div className="flex flex-col gap-4">
-        <div className="flex flex-col gap-2">
-          {OP_META.map(m => (
-            <OpCard key={m.id} id={m.id} label={m.label} desc={m.desc} icon={m.icon}
-              selected={op === m.id} danger={m.id === "delete"} onClick={() => setOp(m.id)} />
-          ))}
+  const handleModuleSelect = (m: ModuleOption) => {
+    setSelected(m);
+    if (op === "update") { setName(m.name); setDesc(""); }
+    setStage(op === "delete" ? "confirm" : "fillform");
+  };
+
+  const handleSubmit = async () => {
+    setStage("submitting");
+    setError(null);
+    try {
+      if (op === "create") {
+        const { error: e } = await supabase
+          .from("modules")
+          .insert({ name: name.trim(), description: desc.trim() || null });
+        if (e) throw new Error(e.message);
+      } else if (op === "update" && selectedModule) {
+        const { error: e } = await supabase
+          .from("modules")
+          .update({ name: name.trim(), description: desc.trim() || null })
+          .eq("name", selectedModule.name);
+        if (e) throw new Error(e.message);
+      } else if (op === "delete" && selectedModule) {
+        const { error: e } = await supabase
+          .from("modules")
+          .delete()
+          .eq("name", selectedModule.name);
+        if (e) throw new Error(e.message);
+      }
+      setStage("done");
+    } catch (e: any) {
+      setError(e.message);
+      setStage("confirm");
+    }
+  };
+
+  const subtitle =
+    stage === "selectop"     ? "Choose operation" :
+    stage === "selectmodule" ? "Pick a module"    :
+    stage === "fillform"     ? "Enter details"    :
+    stage === "confirm"      ? "Review & confirm" :
+    stage === "done"         ? "Done!"            : "…";
+
+  return createPortal(
+    <div
+      className="fixed inset-0 flex items-end md:items-center justify-center"
+      style={{ zIndex: 9999 }}
+    >
+      {/* Backdrop */}
+      <div className="absolute inset-0 bg-black/50" onClick={onClose} />
+
+      {/* Panel */}
+      <div
+        className="relative w-full md:max-w-md mx-auto z-10
+          border-t md:border border-[var(--border-color)]
+          rounded-t-2xl md:rounded-2xl
+          px-6 pt-5 overflow-y-auto flex flex-col gap-4 max-h-[90vh]"
+        style={{
+          paddingBottom: "calc(96px + env(safe-area-inset-bottom, 0px))",
+          backdropFilter: "blur(16px)",
+          WebkitBackdropFilter: "blur(16px)",
+          background: "color-mix(in srgb, var(--bg-surface) 92%, transparent)",
+        }}
+      >
+        {/* Drag pill */}
+        <div className="w-10 h-1 bg-bg-card rounded-full mx-auto md:hidden shrink-0" />
+
+        {/* Header */}
+        <div className="flex items-center justify-between shrink-0">
+          <div>
+            <h2 className="text-base font-bold text-t-primary flex items-center gap-1.5">
+              <Package size={16} /> Modules
+            </h2>
+            <p className="text-xs text-t-muted mt-0.5">{subtitle}</p>
+          </div>
+          <div className="flex items-center gap-1">
+            <button
+              onClick={onBack}
+              className="w-8 h-8 flex items-center justify-center rounded-full text-t-muted hover:text-t-primary hover:bg-bg-card transition-colors"
+              title="Back"
+            >
+              <ArrowLeft size={15} />
+            </button>
+            <button
+              onClick={onClose}
+              className="w-8 h-8 flex items-center justify-center rounded-full text-t-muted hover:text-t-primary hover:bg-bg-card transition-colors"
+            >
+              ✕
+            </button>
+          </div>
         </div>
-        <NavButtons
-          onBack={onBack}
-          onNext={() => op === "create" ? (setName(""), setStage("fillform")) : setStage("selectmodule")} />
-      </div>
-    </ModalShell>
-  );
 
-  if (stage === "selectmodule") return (
-    <ModalShell icon={<Package size={16} />} title="Import Modules" subtitle={sub} onClose={onClose}>
-      <div className="flex flex-col gap-4">
-        <label className="text-xs font-semibold text-t-muted uppercase tracking-wider">Module</label>
-        {loading ? <LoadingList /> : modules.length === 0 ? <EmptyList label="No modules found." /> : (
-          <div className="flex flex-col gap-2 max-h-64 overflow-y-auto pr-0.5">
-            {modules.map(m => (
-              <button key={m.name} onClick={() => setSelected(m)}
-                className={`flex items-center gap-3 px-4 py-3 rounded-xl border transition-all text-left
-                  ${selected?.name === m.name ? "border-c-brand bg-c-brand-bg" : "border-[var(--border-color)] bg-bg-card hover:bg-bg-base"}`}>
-                <Package size={18} />
-                <span className={`text-sm font-medium flex-1 ${selected?.name === m.name ? "text-c-brand" : "text-t-primary"}`}>{m.name}</span>
-                {selected?.name === m.name && <span className="w-4 h-4 rounded-full bg-c-brand flex items-center justify-center text-white shrink-0"><Check size={10} /></span>}
+        {/* ── selectop ── */}
+        {stage === "selectop" && (
+          <div className="flex flex-col gap-2">
+            {OP_META.map(m => (
+              <button
+                key={m.id}
+                onClick={() => handleOpSelect(m.id)}
+                className="flex items-center gap-3 px-4 py-3 rounded-xl border border-[var(--border-color)]
+                  bg-bg-card hover:bg-bg-base text-left transition-all"
+              >
+                <span className="text-t-muted">{m.icon}</span>
+                <div>
+                  <p className="text-sm font-semibold text-t-primary">{m.label}</p>
+                  <p className="text-xs text-t-muted">{m.desc}</p>
+                </div>
               </button>
             ))}
           </div>
         )}
-        <NavButtons
-          onBack={() => setStage("selectop")}
-          onNext={() => op === "update" ? (setName(selected?.name ?? ""), setStage("fillform")) : setStage("confirm")}
-          nextLabel={op === "delete" ? "Review Delete" : "Next"}
-          nextDisabled={!selected}
-          nextDanger={op === "delete"} />
-      </div>
-    </ModalShell>
-  );
 
-  if (stage === "fillform") return (
-    <ModalShell icon={<Package size={16} />} title="Import Modules" subtitle={sub} onClose={onClose}>
-      <div className="flex flex-col gap-4">
-        {selected && (
-          <div className="flex items-center gap-3 px-3 py-2 rounded-xl border border-[var(--border-color)] bg-bg-card text-xs">
-            <Package size={14} /><span className="text-t-primary font-medium">{selected.name}</span>
+        {/* ── selectmodule ── */}
+        {stage === "selectmodule" && (
+          <div className="flex flex-col gap-1.5 max-h-60 overflow-y-auto">
+            {modules.length === 0 && (
+              <p className="text-sm text-t-muted text-center py-4">No modules found.</p>
+            )}
+            {modules.map(m => (
+              <button
+                key={m.name}
+                onClick={() => handleModuleSelect(m)}
+                className="text-left px-3 py-2 rounded-xl border border-[var(--border-color)]
+                  bg-bg-card hover:bg-bg-base text-sm text-t-primary transition-colors"
+              >
+                {m.name}
+              </button>
+            ))}
           </div>
         )}
-        <div className="flex flex-col gap-1.5">
-          <label className="text-xs font-semibold text-t-muted uppercase tracking-wider">
-            {op === "create" ? "Module Name" : "New Name"}
-          </label>
-          <input type="text" value={name} onChange={e => setName(e.target.value)}
-            placeholder={op === "create" ? "Enter module name" : "New module name"}
-            className="w-full px-4 py-3 rounded-xl bg-bg-card border border-[var(--border-color)] text-t-primary text-sm placeholder:text-t-muted focus:outline-none focus:border-c-brand transition-colors" />
-        </div>
-        <NavButtons
-          onBack={() => op === "create" ? setStage("selectop") : setStage("selectmodule")}
-          onNext={() => setStage("confirm")}
-          nextLabel="Review" />
-      </div>
-    </ModalShell>
-  );
 
-  if (stage === "confirm") return (
-    <ModalShell icon={<Package size={16} />} title="Import Modules" subtitle={sub} onClose={onClose}>
-      <div className="flex flex-col gap-4">
-        <div className={`rounded-xl border p-4 flex flex-col gap-3 ${op === "delete" ? "border-red-500/40 bg-red-500/10" : "border-[var(--border-color)] bg-bg-card"}`}>
-          <div className="flex items-center gap-2 pb-1 border-b border-[var(--border-color)]">
-            {op === "create" ? <Plus size={18} /> : op === "update" ? <Pencil size={18} /> : <Trash2 size={18} />}
-            <p className={`text-sm font-bold ${op === "delete" ? "text-red-400" : "text-t-primary"}`}>
-              {op === "create" ? "Creating module" : op === "update" ? "Updating module" : "Deleting module"}
-            </p>
+        {/* ── fillform ── */}
+        {stage === "fillform" && (
+          <div className="flex flex-col gap-3">
+            <div>
+              <label className="block text-xs text-t-muted mb-1">Module Name</label>
+              <input
+                value={name}
+                onChange={e => setName(e.target.value)}
+                className="input text-sm"
+                placeholder="e.g. CAR-01"
+              />
+            </div>
+            <div>
+              <label className="block text-xs text-t-muted mb-1">Description (optional)</label>
+              <input
+                value={desc}
+                onChange={e => setDesc(e.target.value)}
+                className="input text-sm"
+                placeholder="Short description"
+              />
+            </div>
+            <button
+              onClick={() => setStage("confirm")}
+              disabled={!name.trim()}
+              className="btn-primary text-sm disabled:opacity-50"
+            >
+              Review
+            </button>
           </div>
-          <div className="flex flex-col gap-2 text-xs">
-            {op === "create"  && <Row label="Name" value={name.trim()} />}
-            {op === "update"  && selected && <DiffRow label="Name" before={selected.name} after={name.trim()} />}
-            {op === "delete"  && selected && (
-              <>
-                <Row label="Module" value={selected.name} />
-                <div className="mt-1 flex items-center gap-2 text-red-400 font-semibold">
-                  <AlertTriangle size={14} /><span>This action cannot be undone.</span>
-                </div>
-              </>
-            )}
+        )}
+
+        {/* ── confirm ── */}
+        {stage === "confirm" && (
+          <div className="flex flex-col gap-3">
+            <div className="rounded-xl border border-[var(--border-color)] bg-bg-card p-3 flex flex-col gap-1.5 text-xs">
+              <Row label="Operation" value={op.toUpperCase()} brand />
+              {op !== "create" && <Row label="Target" value={selectedModule?.name ?? ""} mono />}
+              {op !== "delete" && (
+                <>
+                  <Row label="Name" value={name} />
+                  <Row label="Desc" value={desc || "—"} />
+                </>
+              )}
+            </div>
+            {error && <p className="text-xs text-red-400">{error}</p>}
+            <div className="flex gap-2">
+              <button
+                onClick={() => setStage(op === "create" ? "fillform" : op === "delete" ? "selectmodule" : "fillform")}
+                className="flex-1 px-4 py-2.5 rounded-xl border border-[var(--border-color)] text-t-secondary text-sm"
+              >
+                Back
+              </button>
+              <button
+                onClick={handleSubmit}
+                className={`flex-1 px-4 py-2.5 rounded-xl text-sm font-semibold text-white ${
+                  op === "delete" ? "bg-red-500 hover:bg-red-600" : "btn-primary"
+                }`}
+              >
+                Confirm {op}
+              </button>
+            </div>
           </div>
-        </div>
-        {errMsg && <ErrBanner msg={errMsg} />}
-        <NavButtons
-          onBack={() => op === "delete" ? setStage("selectmodule") : setStage("fillform")}
-          onNext={handleSubmit}
-          nextLabel={op === "create" ? "Confirm Create" : op === "update" ? "Confirm Update" : "Confirm Delete"}
-          nextDanger={op === "delete"} />
-      </div>
-    </ModalShell>
-  );
+        )}
 
-  if (stage === "submitting") return (
-    <ModalShell icon={<Package size={16} />} title="Import Modules" subtitle="Processing…" onClose={onClose}>
-      <div className="flex flex-col items-center gap-4 py-8">
-        <div className="w-12 h-12 rounded-full border-4 border-c-brand border-t-transparent animate-spin" />
-        <p className="text-sm text-t-secondary">Writing to Supabase…</p>
-      </div>
-    </ModalShell>
-  );
+        {/* ── submitting ── */}
+        {stage === "submitting" && (
+          <div className="flex items-center justify-center py-8">
+            <div className="w-8 h-8 border-4 border-c-brand border-t-transparent rounded-full animate-spin" />
+          </div>
+        )}
 
-  return (
-    <ModalShell icon={<Package size={16} />} title="Import Modules" subtitle="Complete" onClose={onClose}>
-      <div className="flex flex-col gap-3">
-        <SuccessBanner msg={resultMsg} />
-        <div className="flex gap-2">
-          <button onClick={reset} className="flex-1 px-4 py-2.5 rounded-xl border border-[var(--border-color)] text-t-secondary hover:text-t-primary text-sm font-medium transition-colors">Another</button>
-          <button onClick={onClose} className="flex-1 btn-primary text-sm">Done</button>
-        </div>
+        {/* ── done ── */}
+        {stage === "done" && (
+          <div className="flex flex-col items-center gap-3 py-6">
+            <CheckCircle size={32} className="text-green-400" />
+            <p className="text-sm text-t-primary font-semibold">Done!</p>
+            <button onClick={onClose} className="btn-primary text-sm px-6">Close</button>
+          </div>
+        )}
       </div>
-    </ModalShell>
+    </div>,
+    document.body
   );
 };
 

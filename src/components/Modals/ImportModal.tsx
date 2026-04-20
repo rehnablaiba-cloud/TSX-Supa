@@ -1,10 +1,11 @@
 import React, { useState } from "react";
+import { createPortal } from "react-dom";
 import { Download, Package, FlaskConical, Hash, FileSpreadsheet } from "lucide-react";
 
-import ImportModulesModal      from "./ImportModulesModal";
-import ImportTestsModal        from "./ImportTestsModal";
-import ImportStepsModal        from "./ImportStepsModal";
-import ImportStepsManualModal  from "./ImportStepsManualModal";
+import ImportModulesModal     from "./ImportModulesModal";
+import ImportTestsModal       from "./ImportTestsModal";
+import ImportStepsModal       from "./ImportStepsModal";
+import ImportStepsManualModal from "./ImportStepsManualModal";
 
 type ImportTarget = "none" | "modules" | "tests" | "steps_csv" | "steps_manual";
 
@@ -19,13 +20,13 @@ const OPTIONS: {
   {
     id:    "modules",
     label: "Modules",
-    icon:  <Package      size={20} />,
+    icon:  <Package         size={20} />,
     desc:  "Create, rename, or delete modules",
   },
   {
     id:    "tests",
     label: "Tests",
-    icon:  <FlaskConical size={20} />,
+    icon:  <FlaskConical    size={20} />,
     desc:  "Create, rename, or delete tests",
   },
   {
@@ -37,7 +38,7 @@ const OPTIONS: {
   {
     id:    "steps_manual",
     label: "Steps — Manual",
-    icon:  <Hash         size={20} />,
+    icon:  <Hash            size={20} />,
     desc:  "Add, edit, or delete a single step step-by-step",
   },
 ];
@@ -46,23 +47,33 @@ const ImportModal: React.FC<Props> = ({ onClose }) => {
   const [target, setTarget] = useState<ImportTarget>("none");
 
   // ── Sub-modal routing ──────────────────────────────────────────────────────
+  // Sub-modals handle their own portal internally (same pattern below)
   if (target === "modules")      return <ImportModulesModal     onClose={onClose} onBack={() => setTarget("none")} />;
   if (target === "tests")        return <ImportTestsModal       onClose={onClose} onBack={() => setTarget("none")} />;
   if (target === "steps_csv")    return <ImportStepsModal       onClose={onClose} onBack={() => setTarget("none")} />;
   if (target === "steps_manual") return <ImportStepsManualModal onClose={onClose} onBack={() => setTarget("none")} />;
 
   // ── Hub view ───────────────────────────────────────────────────────────────
-  return (
-    <div className="fixed inset-0 z-[70] flex items-end md:items-center justify-center">
+  return createPortal(
+    <div
+      className="fixed inset-0 flex items-end md:items-center justify-center"
+      style={{ zIndex: 9999 }}
+    >
       {/* Backdrop */}
       <div className="absolute inset-0 bg-black/50" onClick={onClose} />
 
-      <div className="relative w-full md:max-w-md mx-auto
-        bg-bg-surface/80 backdrop-blur-md
-        border-t md:border border-[var(--border-color)]
-        rounded-t-2xl md:rounded-2xl
-        px-6 pt-5 pb-10 md:pb-6 z-10 flex flex-col gap-4">
-
+      <div
+        className="relative w-full md:max-w-md mx-auto
+          bg-bg-surface border-t md:border border-[var(--border-color)]
+          rounded-t-2xl md:rounded-2xl
+          px-6 pt-5 z-10 flex flex-col gap-4"
+        style={{
+          paddingBottom: "calc(96px + env(safe-area-inset-bottom, 0px))",
+          backdropFilter: "blur(16px)",
+          WebkitBackdropFilter: "blur(16px)",
+          background: "color-mix(in srgb, var(--bg-surface) 92%, transparent)",
+        }}
+      >
         {/* Drag pill (mobile) */}
         <div className="w-10 h-1 bg-bg-card rounded-full mx-auto md:hidden" />
 
@@ -74,18 +85,23 @@ const ImportModal: React.FC<Props> = ({ onClose }) => {
             </h2>
             <p className="text-xs text-t-muted mt-0.5">Choose what to import</p>
           </div>
-          <button onClick={onClose}
-            className="w-8 h-8 flex items-center justify-center rounded-full text-t-muted hover:text-t-primary hover:bg-bg-card transition-colors">
+          <button
+            onClick={onClose}
+            className="w-8 h-8 flex items-center justify-center rounded-full text-t-muted hover:text-t-primary hover:bg-bg-card transition-colors"
+          >
             ✕
           </button>
         </div>
 
-        {/* Options grid */}
+        {/* Options */}
         <div className="flex flex-col gap-2">
           {OPTIONS.map(opt => (
-            <button key={opt.id} onClick={() => setTarget(opt.id)}
+            <button
+              key={opt.id}
+              onClick={() => setTarget(opt.id)}
               className="flex items-center gap-4 px-4 py-3.5 rounded-xl border border-[var(--border-color)]
-                bg-bg-card hover:bg-bg-base hover:border-c-brand/50 transition-all text-left">
+                bg-bg-card hover:bg-bg-base hover:border-c-brand/50 transition-all text-left"
+            >
               <span className="text-t-muted">{opt.icon}</span>
               <div>
                 <p className="text-sm font-semibold text-t-primary">{opt.label}</p>
@@ -95,7 +111,8 @@ const ImportModal: React.FC<Props> = ({ onClose }) => {
           ))}
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 };
 

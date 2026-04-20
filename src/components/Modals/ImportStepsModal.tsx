@@ -1,440 +1,281 @@
-import React, { useCallback, useEffect, useRef, useState } from "react";
-import {
-  Hash, FlaskConical, Plus, Pencil, Trash2,
-  AlertTriangle, Check, FolderOpen,
-} from "lucide-react";
+import React, { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
+import { Hash, Upload, CheckCircle, ArrowLeft } from "lucide-react";
 
-import ModalShell from "../UI/ModalShell";
-import {
-  fetchTests,
-  findStepByserial_no,
-  bulkCreateSteps,
-  updateStep,
-  deleteStep,
-} from "../../lib/supabase/queries";
-import type { TestOption, StepCsvRow, StepImportSummary, StepImportStage, StepOp } from "./shared/types";
+import { supabase }                            from "../../supabase";
+import { fetchModuleOptions, fetchTestsForModule } from "../../lib/supabase/queries";
+import { parseStepsCsv }                       from "../../utils/csvParser";
+import type { ModuleOption, StepInput }        from "../../types";
 
 // ─────────────────────────────────────────────────────────────────────────────
-// RFC-4180 CSV parser
+// Types
 // ─────────────────────────────────────────────────────────────────────────────
 
-function parseCsvToRecords(text: string): string[][] {
-  const records: string[][] = [];
-  let row: string[] = [];
-  let cell = "";
-  let inQuote = false;
-  const src = text.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+type Stage =
+  | "selectmodule"
+  | "selecttest"
+  | "upload"
+  | "preview"
+  | "confirm"
+  | "submitting"
+  | "done"
+  | "error";
 
-  for (let i = 0; i < src.length; i++) {
-    const ch = src[i];
-    if (inQuote) {
-      if (ch === '"') {
-        if (src[i + 1] === '"') { cell += '"'; i++; }
-        else inQuote = false;
-      } else {
-        cell += ch;
-      }
-    } else {
-      if      (ch === '"')  { inQuote = true; }
-      else if (ch === ",")  { row.push(cell); cell = ""; }
-      else if (ch === "\n") {
-        row.push(cell); cell = "";
-        if (row.some(c => c !== "")) records.push(row);
-        row = [];
-      } else { cell += ch; }
-    }
-  }
-  row.push(cell);
-  if (row.some(c => c !== "")) records.push(row);
-  return records;
+interface Props {
+  onClose: () => void;
+  onBack:  () => void;
 }
-
-function parseStepsCsv(text: string): { rows: StepCsvRow[]; errors: string[] } {
-  const errors: string[] = [];
-  const rows:   StepCsvRow[] = [];
-
-  const records = parseCsvToRecords(text);
-  if (records.length < 2) { errors.push("File is empty."); return { rows, errors }; }
-
-  const header = records[0].map(h => h.trim().toLowerCase().replace(/\s+/g, "_"));
-  const iSn  = header.indexOf("serial_no");
-  const iAct = header.indexOf("action");
-  const iRes = header.indexOf("expected_result");
-  const iDiv = header.indexOf("is_divider");
-
-  const missing = [
-    iSn  < 0 && "serial_no",
-    iAct < 0 && "action",
-    iRes < 0 && "expected_result",
-    iDiv < 0 && "is_divider",
-  ].filter(Boolean) as string[];
-
-  if (missing.length) { errors.push(`Missing columns: ${missing.join(", ")}`); return { rows, errors }; }
-
-  for (let i = 1; i < records.length; i++) {
-    const cells = records[i];
-    const snVal = parseInt(cells[iSn]?.trim() ?? "", 10);
-    if (isNaN(snVal) || snVal < 1) { errors.push(`Row ${i + 1}: invalid serial_no — skipped.`); continue; }
-    rows.push({
-      serial_no:        snVal,
-      action:          cells[iAct] ?? "",
-      expected_result: cells[iRes] ?? "",
-      is_divider:      /^(true|1|yes)$/i.test(cells[iDiv]?.trim() ?? ""),
-    });
-  }
-  return { rows, errors };
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Constants
-// ─────────────────────────────────────────────────────────────────────────────
-
-const STEP_CSV_OP_META: { id: StepOp; label: string; icon: React.ReactNode; desc: string }[] = [
-  { id: "create", label: "Create", icon: <Plus   size={20} />, desc: "Add new steps from CSV"          },
-  { id: "update", label: "Update", icon: <Pencil size={20} />, desc: "Overwrite existing steps by SN"  },
-  { id: "delete", label: "Delete", icon: <Trash2 size={20} />, desc: "Remove steps by serial number"   },
-];
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Component
 // ─────────────────────────────────────────────────────────────────────────────
 
-interface Props { onClose: () => void; onBack: () => void; }
-
 const ImportStepsModal: React.FC<Props> = ({ onClose, onBack }) => {
-  const [stage,        setStage]       = useState<StepImportStage>("selecttest");
-  const [tests,        setTests]       = useState<TestOption[]>([]);
-  const [testsLoading, setTestsLoading] = useState(true);
-  const [selectedTest, setSelectedTest] = useState<TestOption | null>(null);
-  const [op,           setOp]          = useState<StepOp>("create");
-  const [rows,         setRows]        = useState<StepCsvRow[]>([]);
-  const [parseErrors,  setParseErrors] = useState<string[]>([]);
-  const [summary,      setSummary]     = useState<StepImportSummary | null>(null);
+  const [stage,       setStage]      = useState<Stage>("selectmodule");
+  const [modules,     setModules]    = useState<ModuleOption[]>([]);
+  const [tests,       setTests]      = useState<{ id: string; testsname: string }[]>([]);
+  const [selMod,      setSelMod]     = useState("");
+  const [selTest,     setSelTest]    = useState("");
+  const [parsed,      setParsed]     = useState<StepInput[]>([]);
+  const [parseErrors, setParseErrors]= useState<string[]>([]);
+  const [submitError, setSubmitError]= useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    fetchTests()
-      .then(data => { setTests(data); setTestsLoading(false); })
-      .catch(() => setTestsLoading(false));
+    fetchModuleOptions().then(setModules).catch(() => {});
   }, []);
+
+  const handleModuleSelect = async (mod: string) => {
+    setSelMod(mod);
+    const rows = await fetchTestsForModule(mod).catch(() => []);
+    setTests(rows);
+    setStage("selecttest");
+  };
 
   const handleFile = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
     const reader = new FileReader();
-    reader.onload = (ev) => {
-      const { rows: parsed, errors } = parseStepsCsv(ev.target?.result as string);
-      setRows(parsed);
+    reader.onload = ev => {
+      const text = ev.target?.result as string;
+      const { rows, errors } = parseStepsCsv(text);
+      setParsed(rows);
       setParseErrors(errors);
-      setStage("preview");
+      setStage(errors.length > 0 && rows.length === 0 ? "error" : "preview");
     };
-    reader.onerror = () => setParseErrors(["Failed to read file."]);
     reader.readAsText(file);
-    e.target.value = "";
   };
 
-  const handleImport = useCallback(async () => {
-    if (!selectedTest) return;
-    setStage("importing");
-    const result: StepImportSummary = { written: 0, skipped: 0, errors: [] };
-
+  const handleSubmit = async () => {
+    setStage("submitting");
+    setSubmitError(null);
     try {
-      if (op === "create") {
-        const { written, errors } = await bulkCreateSteps(
-          selectedTest.name,
-          rows.map(r => ({
-            serial_no:        r.serial_no,
-            action:          r.action,
-            expected_result: r.expected_result,
-            is_divider:      r.is_divider,
-          }))
-        );
-        result.written = written;
-        result.skipped = rows.length - written;
-        result.errors  = errors;
-      } else {
-        for (const row of rows) {
-          const existing = await findStepByserial_no(selectedTest.name, row.serial_no);
-          if (!existing) {
-            result.errors.push(`SN ${row.serial_no}: not found — skipped.`);
-            result.skipped++;
-            continue;
-          }
-          try {
-            if (op === "update") {
-              await updateStep(existing.id, {
-                action:          row.action,
-                expected_result: row.expected_result,
-                is_divider:      row.is_divider,
-              });
-            } else {
-              await deleteStep(existing.id);
-            }
-            result.written++;
-          } catch (e: any) {
-            result.errors.push(`SN ${row.serial_no}: ${e?.message}`);
-            result.skipped++;
-          }
-        }
-      }
+      const payload = parsed.map(r => ({
+        serial_no:       r.serial_no,
+        action:          r.action,
+        expected_result: r.expected_result,
+        is_divider:      r.is_divider,
+        testsname:       selTest,
+      }));
+      const { error: e } = await supabase
+        .from("test_steps")
+        .upsert(payload, { onConflict: "testsname,serial_no" });
+      if (e) throw new Error(e.message);
+      setStage("done");
     } catch (e: any) {
-      result.errors.push(e?.message ?? "Unexpected error.");
+      setSubmitError(e.message);
+      setStage("confirm");
     }
-
-    setSummary(result);
-    setStage("done");
-  }, [selectedTest, op, rows]);
-
-  const stageLabel: Record<StepImportStage, string> = {
-    selecttest: "Step 1 of 3 — Select test",
-    selectop:   "Step 2 of 3 — Choose operation",
-    upload:     "Step 3 of 3 — Upload CSV",
-    preview:    `${rows.length} rows ready to ${op}`,
-    importing:  "Writing to Supabase…",
-    done:       "Import complete",
   };
 
-  return (
-    <ModalShell icon={<Hash size={16} />} title="Import Steps — CSV" subtitle={stageLabel[stage]} onClose={onClose}>
+  const subtitle =
+    stage === "selectmodule" ? "Pick a trainset"        :
+    stage === "selecttest"   ? "Pick a test"            :
+    stage === "upload"       ? "Upload CSV"             :
+    stage === "preview"      ? `${parsed.length} steps parsed` :
+    stage === "confirm"      ? "Review & confirm"       :
+    stage === "done"         ? "Done!"                  : "…";
 
-      {/* ── STEP 1: Select test ── */}
-      {stage === "selecttest" && (
-        <div className="flex flex-col gap-4">
-          <div className="flex flex-col gap-1.5">
-            <label className="text-xs font-semibold text-t-muted uppercase tracking-wider">Select Test</label>
-            {testsLoading ? (
-              <div className="w-full px-4 py-3 rounded-xl bg-bg-card border border-[var(--border-color)] text-t-muted text-sm flex items-center gap-2">
-                <span className="w-4 h-4 border-2 border-c-brand border-t-transparent rounded-full animate-spin inline-block" />
-                Loading tests…
-              </div>
-            ) : tests.length === 0 ? (
-              <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-xs text-amber-400">
-                No tests found. Import tests first.
-              </div>
-            ) : (
-              <select
-                defaultValue=""
-                onChange={e => setSelectedTest(tests.find(t => t.name === e.target.value) ?? null)}
-                className="w-full px-4 py-3 rounded-xl bg-bg-card border border-[var(--border-color)] text-t-primary text-sm focus:outline-none focus:border-c-brand transition-colors appearance-none cursor-pointer">
-                <option value="" disabled>Choose a test</option>
-                {tests.map(t => <option key={t.name} value={t.name}>SN {t.serial_no} · {t.name}</option>)}
-              </select>
+  return createPortal(
+    <div
+      className="fixed inset-0 flex items-end md:items-center justify-center"
+      style={{ zIndex: 9999 }}
+    >
+      {/* Backdrop */}
+      <div className="absolute inset-0 bg-black/50" onClick={onClose} />
+
+      {/* Panel */}
+      <div
+        className="relative w-full md:max-w-md mx-auto z-10
+          border-t md:border border-[var(--border-color)]
+          rounded-t-2xl md:rounded-2xl
+          px-6 pt-5 overflow-y-auto flex flex-col gap-4 max-h-[90vh]"
+        style={{
+          paddingBottom: "calc(96px + env(safe-area-inset-bottom, 0px))",
+          backdropFilter: "blur(16px)",
+          WebkitBackdropFilter: "blur(16px)",
+          background: "color-mix(in srgb, var(--bg-surface) 92%, transparent)",
+        }}
+      >
+        {/* Drag pill */}
+        <div className="w-10 h-1 bg-bg-card rounded-full mx-auto md:hidden shrink-0" />
+
+        {/* Header */}
+        <div className="flex items-center justify-between shrink-0">
+          <div>
+            <h2 className="text-base font-bold text-t-primary flex items-center gap-1.5">
+              <Hash size={16} /> Import Steps (CSV)
+            </h2>
+            <p className="text-xs text-t-muted mt-0.5">{subtitle}</p>
+          </div>
+          <div className="flex items-center gap-1">
+            <button
+              onClick={onBack}
+              className="w-8 h-8 flex items-center justify-center rounded-full text-t-muted hover:text-t-primary hover:bg-bg-card transition-colors"
+              title="Back"
+            >
+              <ArrowLeft size={15} />
+            </button>
+            <button
+              onClick={onClose}
+              className="w-8 h-8 flex items-center justify-center rounded-full text-t-muted hover:text-t-primary hover:bg-bg-card transition-colors"
+            >
+              ✕
+            </button>
+          </div>
+        </div>
+
+        {/* ── selectmodule ── */}
+        {stage === "selectmodule" && (
+          <div className="flex flex-col gap-1.5 max-h-60 overflow-y-auto">
+            {modules.length === 0 && (
+              <p className="text-sm text-t-muted text-center py-4">No modules found.</p>
             )}
-          </div>
-
-          {selectedTest && (
-            <div className="flex items-center gap-3 px-4 py-3 rounded-xl border border-c-brand/30 bg-c-brand-bg">
-              <FlaskConical size={20} className="text-c-brand" />
-              <div>
-                <p className="text-sm font-semibold text-c-brand">{selectedTest.name}</p>
-                <p className="text-xs text-t-muted">SN {selectedTest.serial_no}</p>
-              </div>
-            </div>
-          )}
-
-          <div className="flex gap-2 pt-1">
-            <button onClick={onBack}
-              className="flex-1 px-4 py-2.5 rounded-xl border border-[var(--border-color)] text-t-secondary hover:text-t-primary text-sm font-medium transition-colors">
-              Back
-            </button>
-            <button onClick={() => setStage("selectop")} disabled={!selectedTest}
-              className="flex-1 btn-primary text-sm disabled:opacity-50 disabled:cursor-not-allowed">
-              Next
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* ── STEP 2: Choose operation ── */}
-      {stage === "selectop" && (
-        <div className="flex flex-col gap-4">
-          <div className="flex items-center gap-3 px-4 py-3 rounded-xl border border-[var(--border-color)] bg-bg-card">
-            <FlaskConical size={18} />
-            <div className="flex-1 min-w-0">
-              <p className="text-sm font-semibold text-t-primary truncate">{selectedTest?.name}</p>
-              <p className="text-xs text-t-muted">SN {selectedTest?.serial_no}</p>
-            </div>
-            <button onClick={() => setStage("selecttest")} className="text-xs text-c-brand hover:underline shrink-0">Change</button>
-          </div>
-
-          <div className="flex flex-col gap-1.5">
-            <label className="text-xs font-semibold text-t-muted uppercase tracking-wider">Operation</label>
-            <div className="flex flex-col gap-2">
-              {STEP_CSV_OP_META.map(m => (
-                <button key={m.id} onClick={() => setOp(m.id)}
-                  className={`flex items-center gap-4 px-4 py-3.5 rounded-xl border transition-all text-left
-                    ${op === m.id ? "border-c-brand bg-c-brand-bg" : "border-[var(--border-color)] bg-bg-card hover:bg-bg-base"}`}>
-                  <span className={op === m.id ? "text-c-brand" : "text-t-muted"}>{m.icon}</span>
-                  <div className="flex-1">
-                    <p className={`text-sm font-semibold ${op === m.id ? "text-c-brand" : "text-t-primary"}`}>{m.label}</p>
-                    <p className="text-xs text-t-muted">{m.desc}</p>
-                  </div>
-                  {op === m.id && <span className="w-4 h-4 rounded-full bg-c-brand flex items-center justify-center text-white shrink-0"><Check size={10} /></span>}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {op === "delete" && (
-            <div className="rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-xs text-red-400 flex items-start gap-2">
-              <AlertTriangle size={14} className="mt-px shrink-0" />
-              <p>CSV only needs <code className="font-mono">serial_no</code> column for delete.</p>
-            </div>
-          )}
-
-          <div className="flex gap-2 pt-1">
-            <button onClick={() => setStage("selecttest")}
-              className="flex-1 px-4 py-2.5 rounded-xl border border-[var(--border-color)] text-t-secondary hover:text-t-primary text-sm font-medium transition-colors">
-              Back
-            </button>
-            <button onClick={() => setStage("upload")} className="flex-1 btn-primary text-sm">Next</button>
-          </div>
-        </div>
-      )}
-
-      {/* ── STEP 3: Upload CSV ── */}
-      {stage === "upload" && (
-        <div className="flex flex-col gap-4">
-          <div className="flex items-center gap-2 px-3 py-2 rounded-xl border border-[var(--border-color)] bg-bg-card text-xs">
-            <FlaskConical size={14} />
-            <span className="text-t-primary font-medium truncate">{selectedTest?.name}</span>
-            <span className="mx-1 text-t-muted">·</span>
-            <span className="text-c-brand font-semibold">{STEP_CSV_OP_META.find(m => m.id === op)?.label}</span>
-          </div>
-
-          <div className="rounded-xl border border-[var(--border-color)] bg-bg-card p-4 text-xs">
-            <p className="text-t-secondary font-semibold mb-2 uppercase tracking-wider">Required columns</p>
-            <div className="flex flex-col gap-1.5">
-              {(op === "delete"
-                ? [["serial_no", "Step serial no. (int)"]]
-                : [
-                    ["serial_no",        "Step serial no. (int)"],
-                    ["action",          "Step action text"],
-                    ["expected_result", "Expected outcome"],
-                    ["is_divider",      "true / false"],
-                  ]
-              ).map(([c, d]) => (
-                <div key={c} className="flex items-start gap-3">
-                  <code className="text-c-brand font-bold w-28 shrink-0">{c}</code>
-                  <span className="text-t-muted">{d}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          <button onClick={() => fileRef.current?.click()}
-            className="flex flex-col items-center gap-2 p-6 rounded-xl border-2 border-dashed border-[var(--border-color)] hover:border-c-brand/60 hover:bg-bg-card transition-colors cursor-pointer">
-            <FolderOpen size={32} className="text-t-muted" />
-            <span className="text-sm font-medium text-t-secondary">Tap to choose CSV file</span>
-          </button>
-          <input ref={fileRef} type="file" accept=".csv,text/csv" className="hidden" onChange={handleFile} />
-
-          <button onClick={() => setStage("selectop")}
-            className="w-full px-4 py-2.5 rounded-xl border border-[var(--border-color)] text-t-secondary hover:text-t-primary text-sm font-medium transition-colors">
-            Back
-          </button>
-        </div>
-      )}
-
-      {/* ── PREVIEW ── */}
-      {stage === "preview" && (
-        <div className="flex flex-col gap-3">
-          <div className="flex items-center gap-2 px-3 py-2 rounded-xl border border-[var(--border-color)] bg-bg-card text-xs">
-            <FlaskConical size={14} />
-            <span className="text-t-primary font-medium truncate">{selectedTest?.name}</span>
-            <span className="mx-1 text-t-muted">·</span>
-            <span className="text-c-brand font-semibold">{STEP_CSV_OP_META.find(m => m.id === op)?.label}</span>
-          </div>
-
-          {parseErrors.length > 0 && (
-            <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-400 flex flex-col gap-1">
-              <p className="font-semibold">Warnings ({parseErrors.length})</p>
-              {parseErrors.map((e, i) => <p key={i}>{e}</p>)}
-            </div>
-          )}
-
-          {rows.length === 0 ? (
-            <p className="text-sm text-red-400 text-center py-4">No valid rows found.</p>
-          ) : (
-            <>
-              <div className="rounded-xl bg-bg-card border border-[var(--border-color)] p-3 text-center">
-                <p className="text-3xl font-bold text-c-brand">{rows.length}</p>
-                <p className="text-xs text-t-muted mt-0.5">Steps to {op}</p>
-              </div>
-
-              <div className="rounded-xl border border-[var(--border-color)] overflow-hidden max-h-52 overflow-y-auto">
-                <table className="w-full text-xs">
-                  <thead className="bg-bg-card sticky top-0">
-                    <tr>
-                      <th className="px-2 py-2 text-left text-t-muted font-semibold">SN</th>
-                      {op !== "delete" && <th className="px-2 py-2 text-left text-t-muted font-semibold">Action</th>}
-                      {op !== "delete" && <th className="px-2 py-2 text-center text-t-muted font-semibold">Div?</th>}
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-[var(--border-color)]">
-                    {rows.map((r, i) => (
-                      <tr key={i} className="hover:bg-bg-card">
-                        <td className="px-2 py-2 font-mono text-c-brand">{r.serial_no}</td>
-                        {op !== "delete" && <td className="px-2 py-2 text-t-primary truncate max-w-[160px]">{r.action}</td>}
-                        {op !== "delete" && <td className="px-2 py-2 text-center text-t-muted">{r.is_divider ? "✓" : ""}</td>}
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </>
-          )}
-
-          <div className="flex gap-2">
-            <button onClick={() => { setStage("upload"); setRows([]); setParseErrors([]); }}
-              className="flex-1 px-4 py-2.5 rounded-xl border border-[var(--border-color)] text-t-secondary hover:text-t-primary text-sm font-medium transition-colors">
-              Back
-            </button>
-            <button onClick={handleImport} disabled={rows.length === 0}
-              className={`flex-1 btn-primary text-sm flex items-center justify-center gap-2 disabled:opacity-50
-                ${op === "delete" ? "!bg-red-500 hover:!bg-red-600" : ""}`}>
-              {STEP_CSV_OP_META.find(m => m.id === op)?.icon}
-              {STEP_CSV_OP_META.find(m => m.id === op)?.label} {rows.length} Steps
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* ── IMPORTING ── */}
-      {stage === "importing" && (
-        <div className="flex flex-col items-center gap-4 py-6">
-          <div className="w-12 h-12 rounded-full border-4 border-c-brand border-t-transparent animate-spin" />
-          <p className="text-sm text-t-secondary">Writing to Supabase…</p>
-        </div>
-      )}
-
-      {/* ── DONE ── */}
-      {stage === "done" && summary && (
-        <div className="flex flex-col gap-3">
-          <div className="grid grid-cols-2 gap-2">
-            {[
-              { label: "Written", value: summary.written, color: "text-green-400" },
-              { label: "Skipped", value: summary.skipped, color: "text-amber-400" },
-            ].map(s => (
-              <div key={s.label} className="rounded-xl bg-bg-card border border-[var(--border-color)] p-3 text-center">
-                <p className={`text-2xl font-bold ${s.color}`}>{s.value}</p>
-                <p className="text-xs text-t-muted mt-0.5">{s.label}</p>
-              </div>
+            {modules.map(m => (
+              <button
+                key={m.name}
+                onClick={() => handleModuleSelect(m.name)}
+                className="text-left px-3 py-2 rounded-xl border border-[var(--border-color)]
+                  bg-bg-card hover:bg-bg-base text-sm text-t-primary"
+              >
+                {m.name}
+              </button>
             ))}
           </div>
+        )}
 
-          {summary.errors.length > 0 && (
-            <div className="rounded-xl border border-red-500/30 bg-red-500/10 p-3 text-xs text-red-400 max-h-32 overflow-y-auto flex flex-col gap-1">
-              <p className="font-semibold">Errors ({summary.errors.length})</p>
-              {summary.errors.map((e, i) => <p key={i}>{e}</p>)}
+        {/* ── selecttest ── */}
+        {stage === "selecttest" && (
+          <div className="flex flex-col gap-1.5 max-h-60 overflow-y-auto">
+            {tests.length === 0 && (
+              <p className="text-sm text-t-muted text-center py-4">No tests found.</p>
+            )}
+            {tests.map(t => (
+              <button
+                key={t.id}
+                onClick={() => { setSelTest(t.testsname); setStage("upload"); }}
+                className="text-left px-3 py-2 rounded-xl border border-[var(--border-color)]
+                  bg-bg-card hover:bg-bg-base text-sm text-t-primary"
+              >
+                {t.testsname}
+              </button>
+            ))}
+          </div>
+        )}
+
+        {/* ── upload ── */}
+        {stage === "upload" && (
+          <div className="flex flex-col gap-3">
+            <p className="text-xs text-t-muted">
+              CSV must have columns:{" "}
+              <span className="font-mono text-t-primary">
+                serial_no, action, expected_result, is_divider
+              </span>
+            </p>
+            <input ref={fileRef} type="file" accept=".csv" onChange={handleFile} className="hidden" />
+            <button
+              onClick={() => fileRef.current?.click()}
+              className="btn-primary text-sm flex items-center justify-center gap-2"
+            >
+              <Upload size={14} /> Choose CSV file
+            </button>
+          </div>
+        )}
+
+        {/* ── preview / confirm ── */}
+        {(stage === "preview" || stage === "confirm") && (
+          <div className="flex flex-col gap-3">
+            {parseErrors.length > 0 && (
+              <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-400">
+                {parseErrors.map((e, i) => <p key={i}>{e}</p>)}
+              </div>
+            )}
+            <div className="rounded-xl border border-[var(--border-color)] overflow-hidden max-h-48 overflow-y-auto">
+              <div className="bg-bg-card px-3 py-2 border-b border-[var(--border-color)]">
+                <p className="text-xs font-semibold text-t-muted uppercase tracking-wider">
+                  {parsed.length} Steps — {selMod} › {selTest}
+                </p>
+              </div>
+              {parsed.slice(0, 20).map(r => (
+                <div
+                  key={r.serial_no}
+                  className="flex items-start gap-2 px-3 py-2 border-b border-[var(--border-color)] last:border-b-0 text-xs"
+                >
+                  <span className="font-mono text-c-brand w-6 shrink-0">{r.serial_no}</span>
+                  <span className="text-t-primary flex-1 break-all">
+                    {r.is_divider ? <em className="text-t-muted">divider</em> : r.action}
+                  </span>
+                </div>
+              ))}
+              {parsed.length > 20 && (
+                <div className="px-3 py-2 text-xs text-t-muted">…and {parsed.length - 20} more</div>
+              )}
             </div>
-          )}
+            {submitError && <p className="text-xs text-red-400">{submitError}</p>}
+            <div className="flex gap-2">
+              <button
+                onClick={() => setStage("upload")}
+                className="flex-1 px-4 py-2.5 rounded-xl border border-[var(--border-color)] text-t-secondary text-sm"
+              >
+                Back
+              </button>
+              <button onClick={handleSubmit} className="flex-1 btn-primary text-sm">
+                Upsert {parsed.length} steps
+              </button>
+            </div>
+          </div>
+        )}
 
-          <button onClick={onClose} className="btn-primary text-sm w-full">Done</button>
-        </div>
-      )}
+        {/* ── submitting ── */}
+        {stage === "submitting" && (
+          <div className="flex items-center justify-center py-8">
+            <div className="w-8 h-8 border-4 border-c-brand border-t-transparent rounded-full animate-spin" />
+          </div>
+        )}
 
-    </ModalShell>
+        {/* ── error ── */}
+        {stage === "error" && (
+          <div className="flex flex-col gap-3">
+            <div className="rounded-xl border border-red-500/30 bg-red-500/10 p-3 text-xs text-red-400">
+              {parseErrors.map((e, i) => <p key={i}>{e}</p>)}
+            </div>
+            <button onClick={() => setStage("upload")} className="btn-primary text-sm">
+              Try again
+            </button>
+          </div>
+        )}
+
+        {/* ── done ── */}
+        {stage === "done" && (
+          <div className="flex flex-col items-center gap-3 py-6">
+            <CheckCircle size={32} className="text-green-400" />
+            <p className="text-sm font-semibold text-t-primary">Steps imported!</p>
+            <button onClick={onClose} className="btn-primary text-sm px-6">Close</button>
+          </div>
+        )}
+      </div>
+    </div>,
+    document.body
   );
 };
 
