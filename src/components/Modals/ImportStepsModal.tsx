@@ -2,10 +2,13 @@ import React, { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Hash, Upload, CheckCircle, ArrowLeft } from "lucide-react";
 
-import { supabase }                            from "../../supabase";
-import { fetchModuleOptions, fetchTestsForModule } from "../../lib/supabase/queries";
-import { parseStepsCsv }                       from "../../utils/csvParser";
-import type { ModuleOption, StepInput }        from "../../types";
+import { supabase } from "../../supabase";
+import {
+  fetchModuleOptions,
+  fetchTestsForModule,
+} from "../../lib/supabase/queries";
+import { parseStepsCsv } from "../../utils/csvParser";
+import type { ModuleOption, StepInput } from "../../types";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Types
@@ -23,7 +26,7 @@ type Stage =
 
 interface Props {
   onClose: () => void;
-  onBack:  () => void;
+  onBack: () => void;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -31,18 +34,20 @@ interface Props {
 // ─────────────────────────────────────────────────────────────────────────────
 
 const ImportStepsModal: React.FC<Props> = ({ onClose, onBack }) => {
-  const [stage,       setStage]      = useState<Stage>("selectmodule");
-  const [modules,     setModules]    = useState<ModuleOption[]>([]);
-  const [tests,       setTests]      = useState<{ id: string; testsname: string }[]>([]);
-  const [selMod,      setSelMod]     = useState("");
-  const [selTest,     setSelTest]    = useState("");
-  const [parsed,      setParsed]     = useState<StepInput[]>([]);
-  const [parseErrors, setParseErrors]= useState<string[]>([]);
-  const [submitError, setSubmitError]= useState<string | null>(null);
+  const [stage, setStage] = useState<Stage>("selectmodule");
+  const [modules, setModules] = useState<ModuleOption[]>([]);
+  const [tests, setTests] = useState<{ id: string; tests_name: string }[]>([]);
+  const [selMod, setSelMod] = useState("");
+  const [selTest, setSelTest] = useState("");
+  const [parsed, setParsed] = useState<StepInput[]>([]);
+  const [parseErrors, setParseErrors] = useState<string[]>([]);
+  const [submitError, setSubmitError] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    fetchModuleOptions().then(setModules).catch(() => {});
+    fetchModuleOptions()
+      .then(setModules)
+      .catch(() => {});
   }, []);
 
   const handleModuleSelect = async (mod: string) => {
@@ -56,7 +61,7 @@ const ImportStepsModal: React.FC<Props> = ({ onClose, onBack }) => {
     const file = e.target.files?.[0];
     if (!file) return;
     const reader = new FileReader();
-    reader.onload = ev => {
+    reader.onload = (ev) => {
       const text = ev.target?.result as string;
       const { rows, errors } = parseStepsCsv(text);
       setParsed(rows);
@@ -70,16 +75,16 @@ const ImportStepsModal: React.FC<Props> = ({ onClose, onBack }) => {
     setStage("submitting");
     setSubmitError(null);
     try {
-      const payload = parsed.map(r => ({
-        serial_no:       r.serial_no,
-        action:          r.action,
+      const payload = parsed.map((r) => ({
+        serial_no: r.serial_no,
+        action: r.action,
         expected_result: r.expected_result,
-        is_divider:      r.is_divider,
-        testsname:       selTest,
+        is_divider: r.is_divider,
+        tests_name: selTest,
       }));
       const { error: e } = await supabase
         .from("test_steps")
-        .upsert(payload, { onConflict: "testsname,serial_no" });
+        .upsert(payload, { onConflict: "tests_name,serial_no" });
       if (e) throw new Error(e.message);
       setStage("done");
     } catch (e: any) {
@@ -89,12 +94,19 @@ const ImportStepsModal: React.FC<Props> = ({ onClose, onBack }) => {
   };
 
   const subtitle =
-    stage === "selectmodule" ? "Pick a trainset"        :
-    stage === "selecttest"   ? "Pick a test"            :
-    stage === "upload"       ? "Upload CSV"             :
-    stage === "preview"      ? `${parsed.length} steps parsed` :
-    stage === "confirm"      ? "Review & confirm"       :
-    stage === "done"         ? "Done!"                  : "…";
+    stage === "selectmodule"
+      ? "Pick a trainset"
+      : stage === "selecttest"
+      ? "Pick a test"
+      : stage === "upload"
+      ? "Upload CSV"
+      : stage === "preview"
+      ? `${parsed.length} steps parsed`
+      : stage === "confirm"
+      ? "Review & confirm"
+      : stage === "done"
+      ? "Done!"
+      : "…";
 
   return createPortal(
     <div
@@ -149,9 +161,11 @@ const ImportStepsModal: React.FC<Props> = ({ onClose, onBack }) => {
         {stage === "selectmodule" && (
           <div className="flex flex-col gap-1.5 max-h-60 overflow-y-auto">
             {modules.length === 0 && (
-              <p className="text-sm text-t-muted text-center py-4">No modules found.</p>
+              <p className="text-sm text-t-muted text-center py-4">
+                No modules found.
+              </p>
             )}
-            {modules.map(m => (
+            {modules.map((m) => (
               <button
                 key={m.name}
                 onClick={() => handleModuleSelect(m.name)}
@@ -168,16 +182,21 @@ const ImportStepsModal: React.FC<Props> = ({ onClose, onBack }) => {
         {stage === "selecttest" && (
           <div className="flex flex-col gap-1.5 max-h-60 overflow-y-auto">
             {tests.length === 0 && (
-              <p className="text-sm text-t-muted text-center py-4">No tests found.</p>
+              <p className="text-sm text-t-muted text-center py-4">
+                No tests found.
+              </p>
             )}
-            {tests.map(t => (
+            {tests.map((t) => (
               <button
                 key={t.id}
-                onClick={() => { setSelTest(t.testsname); setStage("upload"); }}
+                onClick={() => {
+                  setSelTest(t.tests_name);
+                  setStage("upload");
+                }}
                 className="text-left px-3 py-2 rounded-xl border border-[var(--border-color)]
                   bg-bg-card hover:bg-bg-base text-sm text-t-primary"
               >
-                {t.testsname}
+                {t.tests_name}
               </button>
             ))}
           </div>
@@ -192,7 +211,13 @@ const ImportStepsModal: React.FC<Props> = ({ onClose, onBack }) => {
                 serial_no, action, expected_result, is_divider
               </span>
             </p>
-            <input ref={fileRef} type="file" accept=".csv" onChange={handleFile} className="hidden" />
+            <input
+              ref={fileRef}
+              type="file"
+              accept=".csv"
+              onChange={handleFile}
+              className="hidden"
+            />
             <button
               onClick={() => fileRef.current?.click()}
               className="btn-primary text-sm flex items-center justify-center gap-2"
@@ -207,7 +232,9 @@ const ImportStepsModal: React.FC<Props> = ({ onClose, onBack }) => {
           <div className="flex flex-col gap-3">
             {parseErrors.length > 0 && (
               <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-400">
-                {parseErrors.map((e, i) => <p key={i}>{e}</p>)}
+                {parseErrors.map((e, i) => (
+                  <p key={i}>{e}</p>
+                ))}
               </div>
             )}
             <div className="rounded-xl border border-[var(--border-color)] overflow-hidden max-h-48 overflow-y-auto">
@@ -216,22 +243,32 @@ const ImportStepsModal: React.FC<Props> = ({ onClose, onBack }) => {
                   {parsed.length} Steps — {selMod} › {selTest}
                 </p>
               </div>
-              {parsed.slice(0, 20).map(r => (
+              {parsed.slice(0, 20).map((r) => (
                 <div
                   key={r.serial_no}
                   className="flex items-start gap-2 px-3 py-2 border-b border-[var(--border-color)] last:border-b-0 text-xs"
                 >
-                  <span className="font-mono text-c-brand w-6 shrink-0">{r.serial_no}</span>
+                  <span className="font-mono text-c-brand w-6 shrink-0">
+                    {r.serial_no}
+                  </span>
                   <span className="text-t-primary flex-1 break-all">
-                    {r.is_divider ? <em className="text-t-muted">divider</em> : r.action}
+                    {r.is_divider ? (
+                      <em className="text-t-muted">divider</em>
+                    ) : (
+                      r.action
+                    )}
                   </span>
                 </div>
               ))}
               {parsed.length > 20 && (
-                <div className="px-3 py-2 text-xs text-t-muted">…and {parsed.length - 20} more</div>
+                <div className="px-3 py-2 text-xs text-t-muted">
+                  …and {parsed.length - 20} more
+                </div>
               )}
             </div>
-            {submitError && <p className="text-xs text-red-400">{submitError}</p>}
+            {submitError && (
+              <p className="text-xs text-red-400">{submitError}</p>
+            )}
             <div className="flex gap-2">
               <button
                 onClick={() => setStage("upload")}
@@ -239,7 +276,10 @@ const ImportStepsModal: React.FC<Props> = ({ onClose, onBack }) => {
               >
                 Back
               </button>
-              <button onClick={handleSubmit} className="flex-1 btn-primary text-sm">
+              <button
+                onClick={handleSubmit}
+                className="flex-1 btn-primary text-sm"
+              >
                 Upsert {parsed.length} steps
               </button>
             </div>
@@ -257,9 +297,14 @@ const ImportStepsModal: React.FC<Props> = ({ onClose, onBack }) => {
         {stage === "error" && (
           <div className="flex flex-col gap-3">
             <div className="rounded-xl border border-red-500/30 bg-red-500/10 p-3 text-xs text-red-400">
-              {parseErrors.map((e, i) => <p key={i}>{e}</p>)}
+              {parseErrors.map((e, i) => (
+                <p key={i}>{e}</p>
+              ))}
             </div>
-            <button onClick={() => setStage("upload")} className="btn-primary text-sm">
+            <button
+              onClick={() => setStage("upload")}
+              className="btn-primary text-sm"
+            >
               Try again
             </button>
           </div>
@@ -269,8 +314,12 @@ const ImportStepsModal: React.FC<Props> = ({ onClose, onBack }) => {
         {stage === "done" && (
           <div className="flex flex-col items-center gap-3 py-6">
             <CheckCircle size={32} className="text-green-400" />
-            <p className="text-sm font-semibold text-t-primary">Steps imported!</p>
-            <button onClick={onClose} className="btn-primary text-sm px-6">Close</button>
+            <p className="text-sm font-semibold text-t-primary">
+              Steps imported!
+            </p>
+            <button onClick={onClose} className="btn-primary text-sm px-6">
+              Close
+            </button>
           </div>
         )}
       </div>

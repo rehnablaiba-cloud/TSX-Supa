@@ -41,14 +41,14 @@ export async function fetchModulesForSidebar(): Promise<ModuleOption[]> {
 }
 export async function fetchTestsForModule(
   module_name: string
-): Promise<{ id: string; testsname: string }[]> {
+): Promise<{ id: string; tests_name: string }[]> {
   const { data, error } = await supabase
     .from("module_tests")
-    .select("id, testsname")
+    .select("id, tests_name")
     .eq("module_name", module_name)
-    .order("testsname");
+    .order("tests_name");
   if (error) throw error;
-  return (data ?? []) as { id: string; testsname: string }[];
+  return (data ?? []) as { id: string; tests_name: string }[];
 }
 
 // ── audit_log ──────────────────────────────────────────────────────────────────
@@ -76,13 +76,13 @@ export async function fetchTests(): Promise<TestOption[]> {
 }
 
 export async function findStepByserial_no(
-  testsname: string,
+  tests_name: string,
   serial_no: number
 ): Promise<{ id: string } | null> {
   const { data, error } = await supabase
     .from("test_steps")
     .select("id")
-    .eq("testsname", testsname)
+    .eq("tests_name", tests_name)
     .eq("serial_no", serial_no)
     .maybeSingle();
   if (error) throw error;
@@ -90,10 +90,10 @@ export async function findStepByserial_no(
 }
 
 export async function bulkCreateSteps(
-  testsname: string,
+  tests_name: string,
   rows: Record<string, unknown>[]
 ): Promise<{ written: number; errors: string[] }> {
-  const payload = rows.map((r) => ({ ...r, testsname }));
+  const payload = rows.map((r) => ({ ...r, tests_name }));
   const { error } = await supabase.from("test_steps").insert(payload);
   if (error) return { written: 0, errors: [error.message] };
   return { written: rows.length, errors: [] };

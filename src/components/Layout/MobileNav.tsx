@@ -886,7 +886,7 @@ const ImportStepsModal: React.FC<{
 }> = ({ onClose, onDone }) => {
   const [stage, setStage] = useState<StepCsvStage>("selectmodule");
   const [modules, setModules] = useState<ModuleOption[]>([]);
-  const [tests, setTests] = useState<{ id: string; testsname: string }[]>([]);
+  const [tests, setTests] = useState<{ id: string; tests_name: string }[]>([]);
   const [selMod, setSelMod] = useState<string>("");
   const [selTest, setSelTest] = useState<string>("");
   const [parsed, setParsed] = useState<StepInput[]>([]);
@@ -926,11 +926,11 @@ const ImportStepsModal: React.FC<{
         action: r.action,
         expected_result: r.expected_result,
         is_divider: r.is_divider,
-        testsname: selTest,
+        tests_name: selTest,
       }));
       const { error: e } = await supabase
         .from("test_steps")
-        .upsert(payload, { onConflict: "testsname,serial_no" });
+        .upsert(payload, { onConflict: "tests_name,serial_no" });
       if (e) throw new Error(e.message);
       setStage("done");
       onDone();
@@ -979,12 +979,12 @@ const ImportStepsModal: React.FC<{
             <button
               key={t.id}
               onClick={() => {
-                setSelTest(t.testsname);
+                setSelTest(t.tests_name);
                 setStage("upload");
               }}
               className="text-left px-3 py-2 rounded-xl border border-[var(--border-color)] bg-bg-card hover:bg-bg-base text-sm text-t-primary"
             >
-              {t.testsname}
+              {t.tests_name}
             </button>
           ))}
         </div>
@@ -1130,7 +1130,7 @@ const ImportStepsManualModal: React.FC<{
   const [stage, setStage] = useState<StepManualStage>("selectop");
   const [op, setOp] = useState<StepOp>("create");
   const [modules, setModules] = useState<ModuleOption[]>([]);
-  const [tests, setTests] = useState<{ id: string; testsname: string }[]>([]);
+  const [tests, setTests] = useState<{ id: string; tests_name: string }[]>([]);
   const [steps, setSteps] = useState<ExistingStep[]>([]);
   const [selMod, setSelMod] = useState("");
   const [selTest, setSelTest] = useState("");
@@ -1151,13 +1151,13 @@ const ImportStepsManualModal: React.FC<{
     setTests(rows);
     setStage("selecttest");
   };
-  const handleTestSelect = async (testsname: string) => {
-    setSelTest(testsname);
+  const handleTestSelect = async (tests_name: string) => {
+    setSelTest(tests_name);
     if (op !== "create") {
       const { data } = await supabase
         .from("test_steps")
         .select("id, serial_no, action, expected_result, is_divider")
-        .eq("testsname", testsname)
+        .eq("tests_name", tests_name)
         .order("serial_no");
       setSteps((data ?? []) as ExistingStep[]);
       setStage("selectstep");
@@ -1185,7 +1185,7 @@ const ImportStepsManualModal: React.FC<{
           action,
           expected_result: expected,
           is_divider,
-          testsname: selTest,
+          tests_name: selTest,
         });
         if (e) throw new Error(e.message);
       } else if (op === "update" && selStep) {
@@ -1277,10 +1277,10 @@ const ImportStepsManualModal: React.FC<{
           {tests.map((t) => (
             <button
               key={t.id}
-              onClick={() => handleTestSelect(t.testsname)}
+              onClick={() => handleTestSelect(t.tests_name)}
               className="text-left px-3 py-2 rounded-xl border border-[var(--border-color)] bg-bg-card hover:bg-bg-base text-sm text-t-primary"
             >
-              {t.testsname}
+              {t.tests_name}
             </button>
           ))}
         </div>
