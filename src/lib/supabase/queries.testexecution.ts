@@ -1,4 +1,6 @@
-// src/lib/supabase/queries.testexecution.ts
+/**
+ * queries.testexecution.ts
+ */
 import { supabase } from "../../supabase";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -18,12 +20,13 @@ export interface RawStepResult {
     is_divider: boolean;
     action_image_urls: string[];
     expected_image_urls: string[];
+    tests_name: string; // ✅ added — needed for filtering by testsName in TestExecution
   } | null;
 }
 
 export interface RawModuleTestItem {
   id: string;
-  testsname: string;
+  tests_name: string; // ✅ fixed typo: was `testsname`, matches actual DB column
   test: { serial_no: string; name: string } | null;
 }
 
@@ -34,6 +37,7 @@ export interface RawModuleTestItem {
 export async function fetchTestExecution(module_test_id: string): Promise<{
   step_results: RawStepResult[];
   module_tests: RawModuleTestItem[];
+  module_name: string;
 }> {
   const { data: mtData, error: mtErr } = await supabase
     .from("module_tests")
@@ -53,7 +57,7 @@ export async function fetchTestExecution(module_test_id: string): Promise<{
         id, status, remarks, display_name,
         step:test_steps!step_results_test_steps_id_fkey(
           id, serial_no, action, expected_result, is_divider,
-          action_image_urls, expected_image_urls
+          action_image_urls, expected_image_urls, tests_name
         )
       `
       )
@@ -72,6 +76,7 @@ export async function fetchTestExecution(module_test_id: string): Promise<{
   if (allMtRes.error) throw allMtRes.error;
 
   return {
+    module_name,
     step_results: (srRes.data ?? []) as unknown as RawStepResult[],
     module_tests: (allMtRes.data ?? []) as unknown as RawModuleTestItem[],
   };
@@ -92,6 +97,7 @@ export async function acquireLock(
     .eq("module_test_id", module_test_id)
     .maybeSingle();
 
+  // Locked by someone else — refuse, do NOT steal
   if (existing && (existing as any).user_id !== user_id) {
     return { success: false, holder: (existing as any).locked_by_name };
   }
@@ -114,18 +120,39 @@ export async function releaseLock(
   module_test_id: string,
   user_id: string
 ): Promise<void> {
-  await supabase
+  const { error } = await supabase
     .from("test_locks")
     .delete()
     .eq("module_test_id", module_test_id)
-    .eq("user_id", user_id);
+    .eq("user_id", user_id); // Only releases YOUR own lock
+
+  if (error) console.error("[releaseLock]", error.message);
 }
 
 export async function forceReleaseLock(module_test_id: string): Promise<void> {
-  await supabase
+  const { error } = await supabase
     .from("test_locks")
     .delete()
     .eq("module_test_id", module_test_id);
+
+  if (error) console.error("[forceReleaseLock]", error.message);
+}
+
+/**
+ * Refreshes locked_at timestamp to keep the lock alive.
+ * Call on an interval (every ~20s) while user is in execution.
+ */
+export async function heartbeatLock(
+  module_test_id: string,
+  user_id: string
+): Promise<void> {
+  const { error } = await supabase
+    .from("test_locks")
+    .update({ locked_at: new Date().toISOString() })
+    .eq("module_test_id", module_test_id)
+    .eq("user_id", user_id);
+
+  if (error) console.error("[heartbeatLock]", error.message);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -148,14 +175,35 @@ export async function upsertStepResult(payload: {
     })
     .eq("test_steps_id", payload.test_steps_id)
     .eq("module_name", payload.module_name);
+
   if (error) throw error;
 }
 
-export async function resetAllstep_results(module_name: string): Promise<void> {
+/**
+ * Resets all step results for a specific tests_name within a module.
+ * Scoped to tests_name — prevents wiping other tests in the same module.
+ */
+export async function resetAllStepResults(
+  module_name: string,
+  tests_name: string
+): Promise<void> {
+  // Fetch step IDs that belong to this tests_name
+  const { data: steps, error: stepsErr } = await supabase
+    .from("test_steps")
+    .select("id")
+    .eq("tests_name", tests_name);
+
+  if (stepsErr) throw stepsErr;
+
+  const stepIds = (steps ?? []).map((s: any) => s.id);
+  if (!stepIds.length) return;
+
   const { error } = await supabase
     .from("step_results")
-    .update({ status: "pending", remarks: "" })
-    .eq("module_name", module_name);
+    .update({ status: "pending", remarks: "", display_name: "" })
+    .eq("module_name", module_name)
+    .in("test_steps_id", stepIds);
+
   if (error) throw error;
 }
 
