@@ -2,34 +2,44 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import { supabase } from "../supabase";
 
-const IDLE_MS    = 60_000;
+const IDLE_MS = 5 * 60_000;
 const WARNING_MS = 5 * 60_000;
 
 export function useSessionTimeout(
   user_id: string | undefined,
-  onSignOut: () => Promise<void>,
+  onSignOut: () => Promise<void>
 ) {
-  const [warning,     setWarning]     = useState(false);
+  const [warning, setWarning] = useState(false);
   const [secondsLeft, setSecondsLeft] = useState(Math.floor(WARNING_MS / 1000));
 
-  const idleTimer      = useRef<ReturnType<typeof setTimeout>  | null>(null);
-  const countdown      = useRef<ReturnType<typeof setInterval> | null>(null);
-  const inWarning      = useRef(false);
-  const secLeft        = useRef(Math.floor(WARNING_MS / 1000));
+  const idleTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const countdown = useRef<ReturnType<typeof setInterval> | null>(null);
+  const inWarning = useRef(false);
+  const secLeft = useRef(Math.floor(WARNING_MS / 1000));
 
   // ── Wall-clock anchors ────────────────────────────────────────────────────
   const lastActivityAt = useRef<number>(Date.now());
   const warningStartAt = useRef<number | null>(null);
   // ─────────────────────────────────────────────────────────────────────────
 
-  const user_idRef    = useRef(user_id);
+  const user_idRef = useRef(user_id);
   const onSignOutRef = useRef(onSignOut);
-  useEffect(() => { user_idRef.current    = user_id;    }, [user_id]);
-  useEffect(() => { onSignOutRef.current = onSignOut; }, [onSignOut]);
+  useEffect(() => {
+    user_idRef.current = user_id;
+  }, [user_id]);
+  useEffect(() => {
+    onSignOutRef.current = onSignOut;
+  }, [onSignOut]);
 
   const clearTimers = useCallback(() => {
-    if (idleTimer.current) { clearTimeout(idleTimer.current);  idleTimer.current = null; }
-    if (countdown.current) { clearInterval(countdown.current); countdown.current = null; }
+    if (idleTimer.current) {
+      clearTimeout(idleTimer.current);
+      idleTimer.current = null;
+    }
+    if (countdown.current) {
+      clearInterval(countdown.current);
+      countdown.current = null;
+    }
   }, []);
 
   const releaseAndSignOut = useCallback(async () => {
@@ -40,14 +50,14 @@ export function useSessionTimeout(
   }, [clearTimers]);
 
   const startWarning = useCallback(() => {
-    inWarning.current      = true;
+    inWarning.current = true;
     warningStartAt.current = Date.now();
-    secLeft.current        = Math.floor(WARNING_MS / 1000);
+    secLeft.current = Math.floor(WARNING_MS / 1000);
     setWarning(true);
     setSecondsLeft(secLeft.current);
 
     countdown.current = setInterval(() => {
-      const elapsed   = Date.now() - (warningStartAt.current ?? Date.now());
+      const elapsed = Date.now() - (warningStartAt.current ?? Date.now());
       const remaining = Math.max(0, Math.floor((WARNING_MS - elapsed) / 1000));
       secLeft.current = remaining;
       setSecondsLeft(remaining);
@@ -63,13 +73,15 @@ export function useSessionTimeout(
   }, [clearTimers, startWarning]);
 
   const resetIdleTimerRef = useRef(resetIdleTimer);
-  useEffect(() => { resetIdleTimerRef.current = resetIdleTimer; }, [resetIdleTimer]);
+  useEffect(() => {
+    resetIdleTimerRef.current = resetIdleTimer;
+  }, [resetIdleTimer]);
 
   const stayLoggedIn = useCallback(() => {
     clearTimers();
-    inWarning.current      = false;
+    inWarning.current = false;
     warningStartAt.current = null;
-    secLeft.current        = Math.floor(WARNING_MS / 1000);
+    secLeft.current = Math.floor(WARNING_MS / 1000);
     setWarning(false);
     setSecondsLeft(secLeft.current);
     if (user_idRef.current) {
@@ -94,7 +106,7 @@ export function useSessionTimeout(
 
     if (inWarning.current && warningStartAt.current !== null) {
       // Was already in the warning phase when hidden.
-      const elapsed   = now - warningStartAt.current;
+      const elapsed = now - warningStartAt.current;
       const remaining = Math.max(0, Math.floor((WARNING_MS - elapsed) / 1000));
       if (remaining <= 0) {
         releaseAndSignOut();
@@ -123,7 +135,10 @@ export function useSessionTimeout(
       // warningStartAt with Date.now() and reset the countdown to the full
       // WARNING_MS even though part of the warning period has already elapsed.
       const alreadyIntoWarning = idleElapsed - IDLE_MS;
-      const remaining          = Math.max(0, Math.floor((WARNING_MS - alreadyIntoWarning) / 1000));
+      const remaining = Math.max(
+        0,
+        Math.floor((WARNING_MS - alreadyIntoWarning) / 1000)
+      );
 
       if (remaining <= 0) {
         releaseAndSignOut();
@@ -132,9 +147,9 @@ export function useSessionTimeout(
 
       // Set the anchor BEFORE touching any React state, so the interval
       // callback always sees the correct (backdated) warningStartAt.
-      inWarning.current      = true;
+      inWarning.current = true;
       warningStartAt.current = now - alreadyIntoWarning; // backdated anchor
-      secLeft.current        = remaining;
+      secLeft.current = remaining;
       setWarning(true);
       setSecondsLeft(remaining);
 
@@ -147,7 +162,7 @@ export function useSessionTimeout(
       }, 1000);
     } else {
       // Still within the idle window — restart the remaining idle time.
-      const remaining   = IDLE_MS - idleElapsed;
+      const remaining = IDLE_MS - idleElapsed;
       idleTimer.current = setTimeout(startWarning, remaining);
     }
   }, [clearTimers, releaseAndSignOut, startWarning]);
@@ -162,16 +177,28 @@ export function useSessionTimeout(
     }
 
     const onActivity = () => resetIdleTimerRef.current();
-    const POINTER_EVENTS = ["mousemove", "mousedown", "keydown", "touchstart"] as const;
-    POINTER_EVENTS.forEach(e => document.addEventListener(e, onActivity, { passive: true }));
-    window.addEventListener("scroll", onActivity, { passive: true, capture: true });
+    const POINTER_EVENTS = [
+      "mousemove",
+      "mousedown",
+      "keydown",
+      "touchstart",
+    ] as const;
+    POINTER_EVENTS.forEach((e) =>
+      document.addEventListener(e, onActivity, { passive: true })
+    );
+    window.addEventListener("scroll", onActivity, {
+      passive: true,
+      capture: true,
+    });
     document.addEventListener("visibilitychange", handleVisibilityChange);
 
     lastActivityAt.current = Date.now();
     idleTimer.current = setTimeout(startWarning, IDLE_MS);
 
     return () => {
-      POINTER_EVENTS.forEach(e => document.removeEventListener(e, onActivity));
+      POINTER_EVENTS.forEach((e) =>
+        document.removeEventListener(e, onActivity)
+      );
       window.removeEventListener("scroll", onActivity, { capture: true });
       document.removeEventListener("visibilitychange", handleVisibilityChange);
       clearTimers();

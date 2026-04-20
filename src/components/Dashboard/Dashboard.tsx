@@ -28,6 +28,7 @@ import {
 import type { ModuleSummary } from "../../utils/export";
 import { getModuleStats, buildSummaries } from "../../utils/stats";
 import { getChartTheme } from "../../utils/chartTheme";
+import { useAuth } from "../../context/AuthContext";
 import { useTheme } from "../../context/ThemeContext";
 import type { ActiveLock } from "../../types";
 import {
@@ -42,6 +43,27 @@ import RLineChart from "../ModuleDashboard/charts/RLineChart";
 import RRadarChart from "../ModuleDashboard/charts/RRadarChart";
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Inject neonPulse keyframe (same as ModuleDashboard)
+// ─────────────────────────────────────────────────────────────────────────────
+const ANIM_STYLE = `
+@keyframes neonPulse {
+  0%,100% { box-shadow: 0 0 0 0 rgba(34,211,238,0.0), 0 0 12px 2px rgba(34,211,238,0.18); }
+  50%      { box-shadow: 0 0 0 0 rgba(34,211,238,0.0), 0 0 22px 6px rgba(34,211,238,0.32); }
+}
+`;
+
+function useInjectStyle() {
+  useEffect(() => {
+    const el = document.createElement("style");
+    el.textContent = ANIM_STYLE;
+    document.head.appendChild(el);
+    return () => {
+      document.head.removeChild(el);
+    };
+  }, []);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Props
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -49,7 +71,6 @@ interface Props {
   onNavigate: (page: string, module_name?: string) => void;
 }
 
-// ── Chart tab type ────────────────────────────────────────────────────────────
 type ChartTab = "bar" | "area" | "line" | "radar" | "pie";
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -57,6 +78,9 @@ type ChartTab = "bar" | "area" | "line" | "radar" | "pie";
 // ══════════════════════════════════════════════════════════════════════════════
 
 const Dashboard: React.FC<Props> = ({ onNavigate }) => {
+  useInjectStyle();
+
+  const { user } = useAuth();
   const { theme } = useTheme();
 
   const [showExportModal, setShowExportModal] = useState(false);
@@ -83,7 +107,7 @@ const Dashboard: React.FC<Props> = ({ onNavigate }) => {
       if (!mountedRef.current) return;
       setActiveLocks(locks);
     } catch {
-      // non-critical — silently ignore
+      // non-critical
     }
   }, []);
 
@@ -164,14 +188,28 @@ const Dashboard: React.FC<Props> = ({ onNavigate }) => {
     [summaries]
   );
 
-  const lockedModuleNames = useMemo(
-    () => new Set(activeLocks.map((l) => l.module_name)),
-    [activeLocks]
+  // ── Lock sets — split by ownership ───────────────────────────────────────
+  const myLockedModuleNames = useMemo(
+    () =>
+      new Set(
+        activeLocks
+          .filter((l) => l.user_id === user?.id)
+          .map((l) => l.module_name)
+      ),
+    [activeLocks, user?.id]
+  );
+  const otherLockedModuleNames = useMemo(
+    () =>
+      new Set(
+        activeLocks
+          .filter((l) => l.user_id !== user?.id)
+          .map((l) => l.module_name)
+      ),
+    [activeLocks, user?.id]
   );
 
   const chartTheme = useMemo(() => getChartTheme(theme), [theme]);
 
-  // Shared data shape used by all charts — one row per trainset
   const chartData = useMemo(
     () =>
       summaries.map((s) => ({
@@ -193,7 +231,6 @@ const Dashboard: React.FC<Props> = ({ onNavigate }) => {
       </div>
     );
 
-  // ── Chart tab config ──────────────────────────────────────────────────────
   const chartTabs: { key: ChartTab; label: string }[] = [
     { key: "bar", label: "Bar" },
     { key: "area", label: "Area" },
@@ -265,7 +302,6 @@ const Dashboard: React.FC<Props> = ({ onNavigate }) => {
       {/* ── Fleet Overview Charts ─────────────────────────────────────────── */}
       {!initialLoad && modules.length > 0 && (
         <div className="card p-4 flex flex-col gap-4">
-          {/* Chart header + tab switcher */}
           <div className="flex items-center justify-between flex-wrap gap-2">
             <div>
               <p className="text-sm font-semibold text-t-primary">
@@ -283,13 +319,8 @@ const Dashboard: React.FC<Props> = ({ onNavigate }) => {
                   className="px-3 py-1 text-xs font-semibold rounded-md transition-all"
                   style={
                     activeChart === tab.key
-                      ? {
-                          background: "var(--color-brand)",
-                          color: "#fff",
-                        }
-                      : {
-                          color: "var(--text-muted)",
-                        }
+                      ? { background: "var(--color-brand)", color: "#fff" }
+                      : { color: "var(--text-muted)" }
                   }
                 >
                   {tab.label}
@@ -298,10 +329,8 @@ const Dashboard: React.FC<Props> = ({ onNavigate }) => {
             </div>
           </div>
 
-          {/* Chart area — two column layout for pie, full width for rest */}
           {activeChart === "pie" ? (
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-center">
-              {/* Pie — fleet-wide donut with centre pass% label */}
               <div className="flex flex-col items-center justify-center">
                 <p className="text-xs text-t-muted mb-2 self-start">
                   Fleet Total Distribution
@@ -313,7 +342,6 @@ const Dashboard: React.FC<Props> = ({ onNavigate }) => {
                   showLabel
                 />
               </div>
-              {/* Mini stat cards alongside pie */}
               <div className="flex flex-col gap-3">
                 {[
                   {
@@ -359,7 +387,6 @@ const Dashboard: React.FC<Props> = ({ onNavigate }) => {
               </div>
             </div>
           ) : (
-            /* Full-width for bar / area / line / radar */
             <div className="w-full">
               {activeChart === "bar" && (
                 <RBarChart data={chartData} ct={chartTheme} />
@@ -401,7 +428,27 @@ const Dashboard: React.FC<Props> = ({ onNavigate }) => {
               pendingPct,
               testCount,
             } = getModuleStats(m.module_tests ?? [], m.step_results ?? []);
-            const isLocked = lockedModuleNames.has(m.name);
+
+            const isMyLock = myLockedModuleNames.has(m.name);
+            const isOtherLock = otherLockedModuleNames.has(m.name);
+
+            // ── Card style ────────────────────────────────────────────────
+            const cardStyle: React.CSSProperties = isMyLock
+              ? {
+                  border: "1.5px solid rgba(34,211,238,0.55)",
+                  background:
+                    "linear-gradient(135deg, rgba(34,211,238,0.07) 0%, transparent 60%)",
+                  animation: "neonPulse 2.6s ease-in-out infinite",
+                }
+              : isOtherLock
+              ? { borderColor: "#f59e0b55", boxShadow: "0 0 0 1px #f59e0b33" }
+              : undefined;
+
+            const cardCls = [
+              "card text-left hover:border-c-brand/50 hover:shadow-xl transition-all duration-300 cursor-pointer group",
+              isOtherLock ? "opacity-60 grayscale-[0.25]" : "",
+            ].join(" ");
+
             const passLabelColor =
               total === 0
                 ? "var(--text-muted)"
@@ -415,27 +462,28 @@ const Dashboard: React.FC<Props> = ({ onNavigate }) => {
               <button
                 key={m.name}
                 onClick={() => onNavigate("module", m.name)}
-                className="card text-left hover:border-c-brand/50 hover:shadow-xl transition-all duration-300 cursor-pointer group"
-                style={
-                  isLocked
-                    ? {
-                        borderColor: "#f59e0b55",
-                        boxShadow: "0 0 0 1px #f59e0b33",
-                      }
-                    : undefined
-                }
+                className={cardCls}
+                style={cardStyle}
               >
                 <div className="flex items-start gap-3 mb-3">
                   <span
                     className="w-3 h-3 rounded-full mt-1.5 shrink-0"
                     style={{
-                      backgroundColor: isLocked
+                      backgroundColor: isMyLock
+                        ? "#22d3ee"
+                        : isOtherLock
                         ? "#f59e0b"
                         : "var(--color-brand)",
                     }}
                   />
                   <div className="flex-1 min-w-0">
-                    <h3 className="font-semibold text-t-primary group-hover:text-c-brand transition-colors truncate">
+                    <h3
+                      className={`font-semibold transition-colors truncate ${
+                        isMyLock
+                          ? "text-cyan-300"
+                          : "text-t-primary group-hover:text-c-brand"
+                      }`}
+                    >
                       {m.name}
                     </h3>
                     {m.description && (
@@ -445,7 +493,15 @@ const Dashboard: React.FC<Props> = ({ onNavigate }) => {
                     )}
                   </div>
                   <div className="flex items-center gap-1.5 shrink-0">
-                    {isLocked && (
+                    {isMyLock && (
+                      <span
+                        className="flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full border whitespace-nowrap
+                        text-cyan-300 border-cyan-400/40 bg-cyan-500/10"
+                      >
+                        <Lock size={9} /> My Lock
+                      </span>
+                    )}
+                    {isOtherLock && (
                       <span
                         className="flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full border whitespace-nowrap"
                         style={{

@@ -40,39 +40,36 @@ import ImportStepsManualModal from "../Modals/ImportStepsManualModal";
 // ── Liquid Glass CSS injected once ────────────────────────────────────────────
 const GLASS_STYLE = `
   .lg-nav {
-    background: color-mix(in srgb, var(--bg-surface, #0c1226) 62%, transparent);
-    backdrop-filter: blur(28px) saturate(180%) brightness(1.08);
-    -webkit-backdrop-filter: blur(28px) saturate(180%) brightness(1.08);
-    border: 1px solid var(--border-color, rgba(255,255,255,0.10));
-    box-shadow:
-      0 8px 32px rgba(0,0,0,0.40),
-      0 1px 0 rgba(255,255,255,0.06) inset,
-      0 -1px 0 rgba(0,0,0,0.20) inset;
+    background: color-mix(in srgb, var(--bg-surface) 80%, transparent);
+    backdrop-filter: blur(28px) saturate(180%) brightness(1.04);
+    -webkit-backdrop-filter: blur(28px) saturate(180%) brightness(1.04);
+    border: 1px solid var(--border-color);
+    box-shadow: 0 8px 32px rgba(0,0,0,0.15), 0 1px 0 rgba(255,255,255,0.05) inset;
   }
   .lg-sheet {
-    background: color-mix(in srgb, var(--bg-surface, #0a1022) 78%, transparent);
+    background: color-mix(in srgb, var(--bg-surface) 94%, transparent);
     backdrop-filter: blur(40px) saturate(180%);
     -webkit-backdrop-filter: blur(40px) saturate(180%);
-    border-top: 1px solid var(--border-color, rgba(255,255,255,0.10));
-    border-left: 1px solid var(--border-color, rgba(255,255,255,0.07));
-    border-right: 1px solid var(--border-color, rgba(255,255,255,0.07));
-    box-shadow: 0 -12px 48px rgba(0,0,0,0.45);
+    border-top: 1px solid var(--border-color);
+    border-left: 1px solid var(--border-color);
+    border-right: 1px solid var(--border-color);
+    box-shadow: 0 -8px 32px rgba(0,0,0,0.10);
   }
   .lg-pill-active {
-    background: color-mix(in srgb, var(--c-brand, #38bdf8) 18%, transparent);
-    box-shadow: 0 0 12px color-mix(in srgb, var(--c-brand, #38bdf8) 22%, transparent);
+    background: color-mix(in srgb, var(--c-brand) 15%, transparent);
+    box-shadow: 0 0 12px color-mix(in srgb, var(--c-brand) 20%, transparent);
   }
   .lg-item-btn {
-    background: color-mix(in srgb, var(--bg-card, #fff) 5%, transparent);
-    border: 1px solid var(--border-color, rgba(255,255,255,0.07));
+    background: color-mix(in srgb, var(--bg-card) 70%, transparent);
+    border: 1px solid var(--border-color);
     transition: background 0.18s;
   }
   .lg-item-btn:hover {
-    background: color-mix(in srgb, var(--bg-card, #fff) 10%, transparent);
+    background: var(--bg-card);
   }
   .lg-indicator {
-    background: var(--c-brand, #38bdf8);
-    box-shadow: 0 0 10px color-mix(in srgb, var(--c-brand, #38bdf8) 50%, transparent);
+    background: var(--c-brand);
+    box-shadow: 0 0 10px color-mix(in srgb, var(--c-brand) 50%, transparent);
   }
 `;
 
@@ -278,15 +275,15 @@ const MobileNav: React.FC<Props> = ({ activePage, onNavigate }) => {
               )}
               <span
                 className={`transition-colors duration-200 ${
-                  isActive ? "text-sky-300" : "text-white/45"
-                } ${menuOpen && isMore ? "text-sky-300" : ""}`}
+                  isActive ? "text-c-brand" : "text-t-secondary opacity-60"
+                } ${menuOpen && isMore ? "text-c-brand" : ""}`}
               >
                 {item.icon}
               </span>
               <span
                 className={`text-[9.5px] font-semibold tracking-wide transition-colors duration-200 ${
-                  isActive ? "text-sky-300" : "text-white/35"
-                } ${menuOpen && isMore ? "text-sky-300" : ""}`}
+                  isActive ? "text-c-brand" : "text-t-secondary opacity-45"
+                } ${menuOpen && isMore ? "text-c-brand" : ""}`}
               >
                 {item.label}
               </span>
@@ -318,23 +315,23 @@ const MobileNav: React.FC<Props> = ({ activePage, onNavigate }) => {
       >
         {/* Handle */}
         <div className="flex justify-center pt-3 pb-2 shrink-0">
-          <div className="w-9 h-1 rounded-full bg-white/20" />
+          <div className="w-9 h-1 rounded-full bg-[var(--border-color)]" />
         </div>
 
         {/* Header */}
         <div className="flex items-center justify-between px-5 pb-3 shrink-0">
           <div>
-            <p className="text-sm font-bold text-white/90 tracking-tight">
+            <p className="text-sm font-bold text-t-primary tracking-tight">
               Options
             </p>
-            <p className="text-[11px] text-white/35 font-medium">
+            <p className="text-[11px] text-t-muted font-medium">
               {user?.email}
             </p>
           </div>
           <button
             onClick={closeMenu}
             className="w-8 h-8 rounded-full flex items-center justify-center
-              bg-white/8 border border-white/10 text-white/50 hover:text-white/80 transition"
+              bg-bg-card border border-[var(--border-color)] text-t-muted hover:text-t-primary transition"
           >
             <X size={14} />
           </button>
@@ -352,10 +349,10 @@ const MobileNav: React.FC<Props> = ({ activePage, onNavigate }) => {
               onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
               className="lg-item-btn flex-1 flex items-center gap-2.5 px-4 py-3 rounded-2xl"
             >
-              <span className="text-white/60">
+              <span className="text-t-muted">
                 {theme === "dark" ? <Sun size={16} /> : <Moon size={16} />}
               </span>
-              <span className="text-sm text-white/75 font-medium">
+              <span className="text-sm text-t-secondary font-medium">
                 {theme === "dark" ? "Light Mode" : "Dark Mode"}
               </span>
             </button>
@@ -366,14 +363,16 @@ const MobileNav: React.FC<Props> = ({ activePage, onNavigate }) => {
               }}
               className="lg-item-btn flex items-center gap-2.5 px-4 py-3 rounded-2xl"
             >
-              <Palette size={16} className="text-white/60" />
-              <span className="text-sm text-white/75 font-medium">Theme</span>
+              <Palette size={16} className="text-t-muted" />
+              <span className="text-sm text-t-secondary font-medium">
+                Theme
+              </span>
             </button>
           </div>
 
           {isAdmin && (
             <>
-              <p className="sheet-item text-[10px] font-bold text-white/25 uppercase tracking-widest px-2 mt-1 mb-0.5">
+              <p className="sheet-item text-[10px] font-bold text-t-muted uppercase tracking-widest px-2 mt-1 mb-0.5">
                 Data Management
               </p>
               {[
@@ -411,8 +410,8 @@ const MobileNav: React.FC<Props> = ({ activePage, onNavigate }) => {
                   }}
                   className="sheet-item lg-item-btn w-full flex items-center gap-3 px-4 py-3 rounded-2xl text-left"
                 >
-                  <span className="text-sky-400/70">{item.icon}</span>
-                  <span className="text-sm text-white/70 font-medium">
+                  <span className="text-c-brand/70">{item.icon}</span>
+                  <span className="text-sm text-t-secondary font-medium">
                     {item.label}
                   </span>
                 </button>
@@ -421,7 +420,7 @@ const MobileNav: React.FC<Props> = ({ activePage, onNavigate }) => {
           )}
 
           {/* Sign out */}
-          <div className="h-px bg-white/6 my-2 sheet-item" />
+          <div className="h-px bg-[var(--border-color)] my-2 sheet-item" />
           <button
             onClick={handleSignOut}
             className="sheet-item lg-item-btn w-full flex items-center gap-3 px-4 py-3 rounded-2xl text-left
