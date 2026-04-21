@@ -25,15 +25,45 @@ interface Props {
 }
 
 // ── Steps fetcher ──────────────────────────────────────────────────────────
-// test_steps links to module_tests via `tests_name` column
-async function fetchStepsForTest(testsName: string): Promise<StepRow[]> {
-  const { data, error } = await supabase
+// Fetches test_steps for the given test, then left-joins step_results
+// filtered by module_name so each step carries its execution status.
+async function fetchStepsForTest(
+  testsName: string,
+  moduleName: string
+): Promise<StepRow[]> {
+  // 1. Fetch all steps for this test
+  const { data: steps, error: stepsErr } = await supabase
     .from("test_steps")
-    .select("action, expected_result, serial_no, is_divider")
+    .select("id, action, expected_result, serial_no, is_divider")
     .eq("tests_name", testsName)
     .order("serial_no");
-  if (error) throw error;
-  return (data ?? []) as StepRow[];
+
+  if (stepsErr) throw stepsErr;
+  if (!steps?.length) return [];
+
+  // 2. Fetch step_results for this module (keyed by test_steps_id)
+  const stepIds = steps.map((s) => s.id);
+  const { data: results, error: resultsErr } = await supabase
+    .from("step_results")
+    .select("test_steps_id, status")
+    .eq("module_name", moduleName)
+    .in("test_steps_id", stepIds);
+
+  if (resultsErr) throw resultsErr;
+
+  // 3. Build a lookup map: test_steps_id → status
+  const statusMap = new Map<string, string>(
+    (results ?? []).map((r) => [r.test_steps_id, r.status])
+  );
+
+  // 4. Merge status onto each step row
+  return steps.map((s) => ({
+    action: s.action,
+    expected_result: s.expected_result,
+    serial_no: s.serial_no,
+    is_divider: s.is_divider,
+    status: statusMap.get(s.id) ?? null,
+  }));
 }
 
 // ── Component ──────────────────────────────────────────────────────────────
@@ -82,8 +112,10 @@ const ExportTestDocxModal: React.FC<Props> = ({ onClose }) => {
     setExporting(true);
     setError(null);
     try {
-      // Use tests_name (e.g. "Water Tightness Test") as the FK into test_steps
-      const steps = await fetchStepsForTest(selectedTest.tests_name);
+      const steps = await fetchStepsForTest(
+        selectedTest.tests_name,
+        selectedModule
+      );
       if (!steps.length) {
         setError("No steps found for this test.");
         return;

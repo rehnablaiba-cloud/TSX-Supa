@@ -13,7 +13,6 @@ import {
   AlignmentType,
   WidthType,
   BorderStyle,
-  ShadingType,
   VerticalAlign,
   CheckBox,
 } from "docx";
@@ -23,7 +22,10 @@ export interface StepRow {
   action: string;
   expected_result: string;
   serial_no?: number | null;
-  is_divider?: boolean | null;
+  /** 0 / null = normal row; 1 = first-level divider; 2 = second-level; … */
+  is_divider?: number | null;
+  /** step_status enum from step_results: "pass" | "fail" | "pending" | null */
+  status?: string | null;
 }
 
 export interface ExportTestDocxOptions {
@@ -38,10 +40,7 @@ function computeSerialNumbers(steps: StepRow[]): (number | null)[] {
   return steps.map((s) => (s.is_divider ? null : ++counter));
 }
 
-// ── Colours / dimensions ───────────────────────────────────────────────────
-const HEADER_BG = "F79646";
-const HEADER_FG = "000000";
-const DIV_BG = "FEE9D6"; // single tint for all dividers
+// ── Dimensions ────────────────────────────────────────────────────────────
 const TEXT_BLACK = "000000";
 const BORDER_CLR = "000000";
 
@@ -55,6 +54,12 @@ const MAR_L = 426,
 const colWidths = [500, 3897, 2873, 1690, 900] as const;
 const tableWidth = colWidths.reduce((a, b) => a + b, 0);
 
+// 1.25 cm  =  1.25 × (1440 / 2.54)  ≈  709 DXA
+const TABLE_INDENT = 709;
+
+// 0.5 cm per divider level  =  0.5 × (1440 / 2.54)  ≈  283 DXA
+const DIV_INDENT_PER_LEVEL = 283;
+
 const cellMar = { top: 80, bottom: 80, left: 115, right: 115 };
 const border = { style: BorderStyle.SINGLE, size: 4, color: BORDER_CLR };
 const borders = { top: border, bottom: border, left: border, right: border };
@@ -65,7 +70,6 @@ function mkHeaderCell(lines: string[], width: number): TableCell {
     width: { size: width, type: WidthType.DXA },
     borders,
     margins: cellMar,
-    shading: { fill: HEADER_BG, type: ShadingType.CLEAR },
     verticalAlign: VerticalAlign.CENTER,
     children: [
       new Paragraph({
@@ -77,7 +81,7 @@ function mkHeaderCell(lines: string[], width: number): TableCell {
               text: txt,
               bold: true,
               size: 24,
-              color: HEADER_FG,
+              color: TEXT_BLACK,
               font: { name: "Helvetica" },
               ...(i > 0 ? { break: 1 } : {}),
             })
@@ -139,7 +143,16 @@ function mkTextCell(text: string, width: number): TableCell {
   });
 }
 
-function mkResultCell(width: number): TableCell {
+/**
+ * Result cell.
+ * status === "pass"  → OK ☑  KO ☐
+ * status === "fail"  → OK ☐  KO ☑
+ * anything else      → OK ☐  KO ☐
+ */
+function mkResultCell(width: number, status?: string | null): TableCell {
+  const okChecked = status === "pass";
+  const koChecked = status === "fail";
+
   return new TableCell({
     width: { size: width, type: WidthType.DXA },
     borders,
@@ -158,7 +171,7 @@ function mkResultCell(width: number): TableCell {
             font: { name: "Helvetica" },
           }),
           new CheckBox({
-            checked: false,
+            checked: okChecked,
             checkedState: { value: "2612", font: "MS Gothic" },
             uncheckedState: { value: "2610", font: "MS Gothic" },
           }),
@@ -170,7 +183,7 @@ function mkResultCell(width: number): TableCell {
             font: { name: "Helvetica" },
           }),
           new CheckBox({
-            checked: false,
+            checked: koChecked,
             checkedState: { value: "2612", font: "MS Gothic" },
             uncheckedState: { value: "2610", font: "MS Gothic" },
           }),
@@ -196,15 +209,21 @@ function mkEmptyCell(width: number): TableCell {
   });
 }
 
-function mkDividerRow(text: string): TableRow {
+/**
+ * Divider row — spans all 5 columns.
+ * level 1 → left indent 0.5 cm  (283 DXA)
+ * level 2 → left indent 1.0 cm  (566 DXA)
+ */
+function mkDividerRow(text: string, level: number): TableRow {
+  const indentDxa = Math.max(1, level) * DIV_INDENT_PER_LEVEL;
+
   return new TableRow({
     children: [
       new TableCell({
         columnSpan: 5,
         width: { size: tableWidth, type: WidthType.DXA },
         borders,
-        margins: cellMar,
-        shading: { fill: DIV_BG, type: ShadingType.CLEAR },
+        margins: { ...cellMar, left: cellMar.left + indentDxa },
         verticalAlign: VerticalAlign.CENTER,
         children: [
           new Paragraph({
@@ -259,7 +278,8 @@ export async function exportTestDocx({
 
   steps.forEach((row, idx) => {
     if (row.is_divider) {
-      tableRows.push(mkDividerRow(row.action || ""));
+      const level = typeof row.is_divider === "number" ? row.is_divider : 1;
+      tableRows.push(mkDividerRow(row.action || "", level));
     } else {
       const sn = sns[idx];
       tableRows.push(
@@ -268,7 +288,7 @@ export async function exportTestDocx({
             mkSnCell(sn !== null ? String(sn) : "", colWidths[0]),
             mkTextCell(row.action || "", colWidths[1]),
             mkTextCell(row.expected_result || "", colWidths[2]),
-            mkResultCell(colWidths[3]),
+            mkResultCell(colWidths[3], row.status),
             mkEmptyCell(colWidths[4]),
           ],
         })
@@ -301,7 +321,7 @@ export async function exportTestDocx({
           new Table({
             width: { size: tableWidth, type: WidthType.DXA },
             columnWidths: [...colWidths],
-            indent: { size: 0, type: WidthType.DXA },
+            indent: { size: TABLE_INDENT, type: WidthType.DXA },
             rows: tableRows,
           }),
         ],
