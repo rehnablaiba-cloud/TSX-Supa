@@ -1,3 +1,7 @@
+// src/utils/exportTestDocx.ts
+// Generates a DOCX test-execution sheet for a single test.
+// Layout: S.N. | Action | Expected Result | Result (OK ☐ / KO ☐) | Remarks
+
 import {
   Document,
   Packer,
@@ -18,8 +22,8 @@ import {
 export interface StepRow {
   action: string;
   expected_result: string;
-  /** Optional — set to null/undefined for divider rows */
-  step_order?: number | null;
+  serial_no?: number | null;
+  is_divider?: boolean | null;
 }
 
 export interface ExportTestDocxOptions {
@@ -28,32 +32,19 @@ export interface ExportTestDocxOptions {
   steps: StepRow[];
 }
 
-// ── Helpers ────────────────────────────────────────────────────────────────
-function isDivider(expected: string | null | undefined): boolean {
-  if (!expected) return false;
-  const t = expected.trim();
-  return t === "1" || t === "2" || t === "3";
-}
-
-/** Build sequential S.N. values, skipping divider rows */
+// ── Serial numbers (skip divider rows) ────────────────────────────────────
 function computeSerialNumbers(steps: StepRow[]): (number | null)[] {
   let counter = 0;
-  return steps.map((s) => {
-    if (isDivider(s.expected_result)) return null;
-    return ++counter;
-  });
+  return steps.map((s) => (s.is_divider ? null : ++counter));
 }
 
-// ── Colours / dimensions (kept identical to the HTML reference) ────────────
+// ── Colours / dimensions ───────────────────────────────────────────────────
 const HEADER_BG = "F79646";
 const HEADER_FG = "000000";
-const DIV_H1_BG = "FEE9D6";
-const DIV_H2_BG = "FEF2E9";
-const DIV_H3_BG = "FEF8F3";
+const DIV_BG = "FEE9D6"; // single tint for all dividers
 const TEXT_BLACK = "000000";
 const BORDER_CLR = "000000";
 
-// A4 Portrait, same margins as reference DOCX
 const PAGE_W = 11906,
   PAGE_H = 16838;
 const MAR_L = 426,
@@ -61,7 +52,6 @@ const MAR_L = 426,
   MAR_T = 1418,
   MAR_B = 426;
 
-// Column widths (DXA) — sum = 9860
 const colWidths = [500, 3897, 2873, 1690, 900] as const;
 const tableWidth = colWidths.reduce((a, b) => a + b, 0);
 
@@ -206,7 +196,7 @@ function mkEmptyCell(width: number): TableCell {
   });
 }
 
-function mkDividerRow(text: string, bg: string, indent: number): TableRow {
+function mkDividerRow(text: string): TableRow {
   return new TableRow({
     children: [
       new TableCell({
@@ -214,13 +204,12 @@ function mkDividerRow(text: string, bg: string, indent: number): TableRow {
         width: { size: tableWidth, type: WidthType.DXA },
         borders,
         margins: cellMar,
-        shading: { fill: bg, type: ShadingType.CLEAR },
+        shading: { fill: DIV_BG, type: ShadingType.CLEAR },
         verticalAlign: VerticalAlign.CENTER,
         children: [
           new Paragraph({
             alignment: AlignmentType.LEFT,
             spacing: { line: 276, lineRule: "auto" },
-            indent: { left: indent },
             children: (() => {
               const dlines = (text || "").split("\n");
               const druns: TextRun[] = [];
@@ -255,10 +244,7 @@ export async function exportTestDocx({
 
   const sns = computeSerialNumbers(steps);
 
-  const tableRows: TableRow[] = [];
-
-  // Header row
-  tableRows.push(
+  const tableRows: TableRow[] = [
     new TableRow({
       tableHeader: true,
       children: [
@@ -268,20 +254,14 @@ export async function exportTestDocx({
         mkHeaderCell(["Result", "(OK/KO)"], colWidths[3]),
         mkHeaderCell(["Remarks"], colWidths[4]),
       ],
-    })
-  );
+    }),
+  ];
 
-  // Data rows
   steps.forEach((row, idx) => {
-    const sn = sns[idx];
-    const divider = isDivider(row.expected_result);
-    const divLv = divider ? parseInt(row.expected_result.trim(), 10) : 0;
-
-    if (divider) {
-      const bg = divLv === 1 ? DIV_H1_BG : divLv === 2 ? DIV_H2_BG : DIV_H3_BG;
-      const indent = divLv === 1 ? 283 : divLv === 2 ? 567 : 850;
-      tableRows.push(mkDividerRow(row.action || "", bg, indent));
+    if (row.is_divider) {
+      tableRows.push(mkDividerRow(row.action || ""));
     } else {
+      const sn = sns[idx];
       tableRows.push(
         new TableRow({
           children: [
@@ -306,7 +286,6 @@ export async function exportTestDocx({
           },
         },
         children: [
-          // Title block above table
           new Paragraph({
             spacing: { before: 0, after: 200 },
             children: [
@@ -333,7 +312,6 @@ export async function exportTestDocx({
   const blob = await Packer.toBlob(doc);
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
-  // Sanitise filename
   const safe = (s: string) => s.replace(/[^a-z0-9_\-]/gi, "_");
   a.href = url;
   a.download = `${safe(moduleName)}_${safe(testName)}.docx`;

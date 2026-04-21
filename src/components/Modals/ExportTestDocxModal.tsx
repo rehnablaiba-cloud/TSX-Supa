@@ -1,6 +1,5 @@
 // src/components/Modals/ExportTestDocxModal.tsx
 // Admin-only modal: pick a module → pick a test → export DOCX
-// The DOCX format mirrors the standalone HTML tool (OK ☐ / KO ☐ checkboxes).////
 
 import React, { useEffect, useState, useCallback } from "react";
 import { X, FileText, ChevronRight, Loader2, AlertCircle } from "lucide-react";
@@ -26,11 +25,12 @@ interface Props {
 }
 
 // ── Steps fetcher ──────────────────────────────────────────────────────────
-async function fetchStepsForTest(testId: string): Promise<StepRow[]> {
+// test_steps links to module_tests via `tests_name` column
+async function fetchStepsForTest(testsName: string): Promise<StepRow[]> {
   const { data, error } = await supabase
     .from("test_steps")
-    .select("action, expected_result, serial_no")
-    .eq("module_test_id", testId)
+    .select("action, expected_result, serial_no, is_divider")
+    .eq("tests_name", testsName)
     .order("serial_no");
   if (error) throw error;
   return (data ?? []) as StepRow[];
@@ -58,7 +58,7 @@ const ExportTestDocxModal: React.FC<Props> = ({ onClose }) => {
       .finally(() => setLoadingModules(false));
   }, []);
 
-  // Load tests whenever module changes
+  // Load tests when module is selected
   const handleSelectModule = useCallback(async (name: string) => {
     setSelectedModule(name);
     setSelectedTest(null);
@@ -82,7 +82,8 @@ const ExportTestDocxModal: React.FC<Props> = ({ onClose }) => {
     setExporting(true);
     setError(null);
     try {
-      const steps = await fetchStepsForTest(selectedTest.id);
+      // Use tests_name (e.g. "Water Tightness Test") as the FK into test_steps
+      const steps = await fetchStepsForTest(selectedTest.tests_name);
       if (!steps.length) {
         setError("No steps found for this test.");
         return;
@@ -197,7 +198,7 @@ const ExportTestDocxModal: React.FC<Props> = ({ onClose }) => {
             )}
           </div>
 
-          {/* Step 2 — Test (only shown after module is picked) */}
+          {/* Step 2 — Test */}
           {selectedModule && (
             <div className="flex flex-col gap-2">
               <p className="text-[10px] font-bold text-t-muted uppercase tracking-widest px-1">
