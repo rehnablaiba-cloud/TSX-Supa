@@ -1,6 +1,6 @@
 // src/components/Modals/ExportTestDocxModal.tsx
 // Admin-only modal: pick a module → pick a test → export DOCX
-// The DOCX format mirrors the standalone HTML tool (OK ☐ / KO ☐ checkboxes).
+// The DOCX format mirrors the standalone HTML tool (OK ☐ / KO ☐ checkboxes).////
 
 import React, { useEffect, useState, useCallback } from "react";
 import { X, FileText, ChevronRight, Loader2, AlertCircle } from "lucide-react";
