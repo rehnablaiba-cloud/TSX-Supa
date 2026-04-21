@@ -21,6 +21,7 @@ import {
   MoreHorizontal,
   LayoutDashboard,
   ClipboardList,
+  FileText,
 } from "lucide-react";
 import gsap from "gsap";
 
@@ -36,6 +37,7 @@ import ImportModulesModal from "../Modals/ImportModulesModal";
 import ImportTestsModal from "../Modals/ImportTestsModal";
 import ImportStepsModal from "../Modals/ImportStepsModal";
 import ImportStepsManualModal from "../Modals/ImportStepsManualModal";
+import ExportTestDocxModal from "../Modals/ExportTestDocxModal";
 
 // ── Liquid Glass CSS injected once ────────────────────────────────────────────
 const GLASS_STYLE = `
@@ -98,6 +100,7 @@ type ActiveModal =
   | "steps-csv"
   | "steps-manual"
   | "theme"
+  | "test-docx"
   | null;
 
 const MobileNav: React.FC<Props> = ({ activePage, onNavigate }) => {
@@ -382,6 +385,11 @@ const MobileNav: React.FC<Props> = ({ activePage, onNavigate }) => {
                   modal: "export" as ActiveModal,
                 },
                 {
+                  icon: <FileText size={15} />,
+                  label: "Export Test (DOCX)",
+                  modal: "test-docx" as ActiveModal,
+                },
+                {
                   icon: <Package size={15} />,
                   label: "Manage Modules",
                   modal: "modules" as ActiveModal,
@@ -436,6 +444,7 @@ const MobileNav: React.FC<Props> = ({ activePage, onNavigate }) => {
 
       {/* ── Modals ────────────────────────────────────────────────────────── */}
       {activeModal === "export" && <ExportDataModal onClose={close} />}
+      {activeModal === "test-docx" && <ExportTestDocxModal onClose={close} />}
       {activeModal === "modules" && (
         <ImportModulesModal onClose={close} onBack={close} />
       )}
