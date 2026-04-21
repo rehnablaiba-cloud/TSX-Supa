@@ -13,6 +13,7 @@
     "@emotion/styled": "^11.11.0",
     "@mui/material": "^6.0.0",
     "@supabase/supabase-js": "^2.101.1",
+    "docx": "^9.6.1",
     "gsap": "^3.12.5",
     "jspdf": "^2.5.1",
     "jspdf-autotable": "^3.8.3",
