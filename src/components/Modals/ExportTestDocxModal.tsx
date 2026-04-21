@@ -9,7 +9,7 @@ import {
   fetchModuleOptions,
   fetchTestsForModule,
 } from "../../lib/supabase/queries";
-import { exportTestDocx, type StepRow } from "../../lib/exports/exportTestDocx";
+import { exportTestDocx, type StepRow } from "../../utils/exportTestDocx";
 
 // ── Types ──────────────────────────────────────────────────────────────────
 interface ModuleOption {
