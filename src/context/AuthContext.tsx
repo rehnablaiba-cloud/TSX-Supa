@@ -3,17 +3,17 @@ import React, { createContext, useContext, useEffect, useState } from "react";
 import { supabase } from "../supabase";
 
 export interface AuthUser {
-  id:          string;
-  email:       string;
+  id: string;
+  email: string;
   display_name: string;
   role?: "admin" | "user" | string;
 }
 
 interface AuthCtx {
-  isLoading:       boolean;
+  isLoading: boolean;
   isAuthenticated: boolean;
-  user:            AuthUser | null;
-  signIn:  (email: string, password: string) => Promise<{ error?: string }>;
+  user: AuthUser | null;
+  signIn: (email: string, password: string) => Promise<{ error?: string }>;
   signOut: () => Promise<void>;
 }
 
@@ -23,7 +23,7 @@ const Ctx = createContext<AuthCtx>({} as AuthCtx);
 // Returns null if the account is disabled — caller must sign the user out.
 const loadProfile = async (
   user_id: string,
-  email:  string
+  email: string
 ): Promise<AuthUser | null> => {
   const { data } = await supabase
     .from("profiles")
@@ -35,16 +35,33 @@ const loadProfile = async (
   if (data?.disabled) return null;
 
   return {
-    id:          user_id,
+    id: user_id,
     email,
     display_name: data?.display_name ?? email,
-    role: data?.role         ?? "tester",
+    role: data?.role ?? "tester",
   };
 };
 
-export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+// ── Update logged_in ───────────────────────────────────────────────────────────
+// Fires the Postgres trigger that cleans stale test_locks on every login/refresh.
+const updateLoggedIn = async (user_id: string) => {
+  const { error } = await supabase
+    .from("profiles")
+    .update({ logged_in: new Date().toISOString() })
+    .eq("id", user_id);
+
+  if (error) {
+    console.warn("[AuthContext] Failed to update logged_in:", error.message);
+  } else {
+    console.log("[AuthContext] logged_in updated → stale lock trigger fired");
+  }
+};
+
+export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
+  children,
+}) => {
   const [isLoading, setIsLoading] = useState(true);
-  const [user, setUser]           = useState<AuthUser | null>(null);
+  const [user, setUser] = useState<AuthUser | null>(null);
 
   // FIX: Do NOT set a temporary user with a guessed role before the profile
   // loads. The previous code set defaultRole:"tester" immediately, causing a
@@ -54,7 +71,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   //
   // isLoading stays true until loadProfile resolves — the spinner covers the
   // gap so there is no visible flash.
-  const handleSession = async (sessionUser: { id: string; email?: string | null }) => {
+  const handleSession = async (sessionUser: {
+    id: string;
+    email?: string | null;
+  }) => {
     const profile = await loadProfile(sessionUser.id, sessionUser.email ?? "");
 
     if (!profile) {
@@ -63,6 +83,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setUser(null);
       return;
     }
+
+    // Update logged_in → fires Postgres trigger → cleans stale locks
+    await updateLoggedIn(sessionUser.id);
 
     setUser(profile);
   };
@@ -77,22 +100,28 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
     });
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      (_event, session) => {
-        if (session?.user) {
-          handleSession(session.user).finally(() => setIsLoading(false));
-        } else {
-          setUser(null);
-          setIsLoading(false);
-        }
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (session?.user) {
+        handleSession(session.user).finally(() => setIsLoading(false));
+      } else {
+        setUser(null);
+        setIsLoading(false);
       }
-    );
+    });
 
     return () => subscription.unsubscribe();
   }, []);
 
-  const signIn = async (email: string, password: string): Promise<{ error?: string }> => {
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
+  const signIn = async (
+    email: string,
+    password: string
+  ): Promise<{ error?: string }> => {
+    const { error } = await supabase.auth.signInWithPassword({
+      email,
+      password,
+    });
     if (error) return { error: error.message };
     return {};
   };
@@ -103,7 +132,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   return (
-    <Ctx.Provider value={{ isLoading, isAuthenticated: !!user, user, signIn, signOut }}>
+    <Ctx.Provider
+      value={{ isLoading, isAuthenticated: !!user, user, signIn, signOut }}
+    >
       {children}
     </Ctx.Provider>
   );

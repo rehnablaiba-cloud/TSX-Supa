@@ -180,29 +180,31 @@ const SessionDebugWidget = ({
               overflowX: "auto",
             }}
           >
-            {(
-              ["all", "heartbeat", "rehydrate", "lock", "system"] as const
-            ).map((cat) => (
-              <button
-                key={cat}
-                onClick={() => setFilter(cat)}
-                style={{
-                  padding: "2px 8px",
-                  borderRadius: 99,
-                  border: "1px solid",
-                  borderColor: filter === cat ? "#7dd3fc" : "#2a2a3e",
-                  background: filter === cat ? "#7dd3fc15" : "transparent",
-                  color: filter === cat ? "#7dd3fc" : "#475569",
-                  cursor: "pointer",
-                  fontSize: 10,
-                  whiteSpace: "nowrap",
-                }}
-              >
-                {cat === "all"
-                  ? `all (${logs.length})`
-                  : `${cat} (${logs.filter((l) => l.category === cat).length})`}
-              </button>
-            ))}
+            {(["all", "heartbeat", "rehydrate", "lock", "system"] as const).map(
+              (cat) => (
+                <button
+                  key={cat}
+                  onClick={() => setFilter(cat)}
+                  style={{
+                    padding: "2px 8px",
+                    borderRadius: 99,
+                    border: "1px solid",
+                    borderColor: filter === cat ? "#7dd3fc" : "#2a2a3e",
+                    background: filter === cat ? "#7dd3fc15" : "transparent",
+                    color: filter === cat ? "#7dd3fc" : "#475569",
+                    cursor: "pointer",
+                    fontSize: 10,
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  {cat === "all"
+                    ? `all (${logs.length})`
+                    : `${cat} (${
+                        logs.filter((l) => l.category === cat).length
+                      })`}
+                </button>
+              )
+            )}
           </div>
 
           {/* Logs */}
@@ -300,7 +302,9 @@ export const ActiveLockProvider = ({
 }) => {
   const heartbeatRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const countdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const lockRef = useRef<{ module_test_id: string; user_id: string } | null>(null);
+  const lockRef = useRef<{ module_test_id: string; user_id: string } | null>(
+    null
+  );
 
   const [logs, setLogs] = useState<SessionLog[]>([]);
   const [lockInfo, setLockInfo] = useState<{
@@ -316,7 +320,10 @@ export const ActiveLockProvider = ({
   ) => {
     const time = new Date().toLocaleTimeString();
     console.log(`[${category.toUpperCase()}][${status}] ${time} — ${message}`);
-    setLogs((prev) => [...prev.slice(-99), { time, category, status, message }]);
+    setLogs((prev) => [
+      ...prev.slice(-99),
+      { time, category, status, message },
+    ]);
   };
 
   const startCountdown = () => {
@@ -343,14 +350,24 @@ export const ActiveLockProvider = ({
       if (error) {
         addLog("heartbeat", "error", `RPC failed: ${error.message}`);
       } else {
-        addLog("heartbeat", "ok", "last_heartbeat updated ✓ — trigger cleaned stale locks");
+        addLog(
+          "heartbeat",
+          "ok",
+          "last_heartbeat updated ✓ — trigger cleaned stale locks"
+        );
       }
       startCountdown();
     };
 
     beat();
     heartbeatRef.current = setInterval(beat, HEARTBEAT_MS);
-    addLog("system", "info", `Heartbeat started — interval ${HEARTBEAT_MS / 1000}s, stale threshold ${STALE_MS / 1000}s`);
+    addLog(
+      "system",
+      "info",
+      `Heartbeat started — every ${HEARTBEAT_MS / 1000}s, stale threshold ${
+        STALE_MS / 1000
+      }s`
+    );
   };
 
   const setActiveLock = (module_test_id: string, user_id: string) => {
@@ -380,7 +397,9 @@ export const ActiveLockProvider = ({
     const rehydrate = async () => {
       addLog("rehydrate", "pending", "Checking session...");
 
-      const { data: { session } } = await supabase.auth.getSession();
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
 
       if (!session?.user) {
         addLog("rehydrate", "warn", "No session — skipping rehydration");
@@ -403,14 +422,28 @@ export const ActiveLockProvider = ({
 
       if (data) {
         const age = Date.now() - new Date(data.last_heartbeat).getTime();
-        addLog("rehydrate", "info", `Lock found — last heartbeat ${Math.round(age / 1000)}s ago`);
+        addLog(
+          "rehydrate",
+          "info",
+          `Lock found — last heartbeat ${Math.round(age / 1000)}s ago`
+        );
 
         if (age > STALE_MS) {
-          addLog("rehydrate", "warn", "Lock is stale — skipping (trigger will clean on next active heartbeat)");
+          addLog(
+            "rehydrate",
+            "warn",
+            "Lock is stale — skipping (login trigger will clean it)"
+          );
         } else {
           addLog("rehydrate", "ok", `Resuming lock: ${data.module_test_id}`);
-          lockRef.current = { module_test_id: data.module_test_id, user_id: data.user_id };
-          setLockInfo({ module_test_id: data.module_test_id, user_id: data.user_id });
+          lockRef.current = {
+            module_test_id: data.module_test_id,
+            user_id: data.user_id,
+          };
+          setLockInfo({
+            module_test_id: data.module_test_id,
+            user_id: data.user_id,
+          });
           startHeartbeat(data.module_test_id, data.user_id);
         }
       } else {
