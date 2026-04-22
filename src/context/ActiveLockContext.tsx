@@ -2,7 +2,7 @@ import { createContext, useContext, useEffect, useRef, useState } from "react";
 import { supabase } from "../supabase";
 
 const HEARTBEAT_MS = 30_000;
-const STALE_MS = 2 * 60 * 1000; // 2 minutes
+const STALE_MS = 2 * 60 * 1000;
 
 interface ActiveLockContextValue {
   setActiveLock: (module_test_id: string, user_id: string) => void;
@@ -17,7 +17,7 @@ const ActiveLockContext = createContext<ActiveLockContextValue>({
 // ─── Types ────────────────────────────────────────────────────────────────────
 interface SessionLog {
   time: string;
-  category: "heartbeat" | "rehydrate" | "hive" | "lock" | "system";
+  category: "heartbeat" | "rehydrate" | "lock" | "system";
   status: "ok" | "error" | "pending" | "info" | "warn";
   message: string;
 }
@@ -25,7 +25,6 @@ interface SessionLog {
 const CATEGORY_COLOR: Record<SessionLog["category"], string> = {
   heartbeat: "#7dd3fc",
   rehydrate: "#a78bfa",
-  hive: "#fb923c",
   lock: "#4ade80",
   system: "#94a3b8",
 };
@@ -46,7 +45,7 @@ const SessionDebugWidget = ({
 }: {
   logs: SessionLog[];
   lockInfo: { module_test_id: string; user_id: string } | null;
-  nextBeat: number | null; // seconds until next heartbeat
+  nextBeat: number | null;
 }) => {
   const [minimized, setMinimized] = useState(false);
   const [filter, setFilter] = useState<SessionLog["category"] | "all">("all");
@@ -182,14 +181,7 @@ const SessionDebugWidget = ({
             }}
           >
             {(
-              [
-                "all",
-                "heartbeat",
-                "rehydrate",
-                "hive",
-                "lock",
-                "system",
-              ] as const
+              ["all", "heartbeat", "rehydrate", "lock", "system"] as const
             ).map((cat) => (
               <button
                 key={cat}
@@ -227,7 +219,7 @@ const SessionDebugWidget = ({
                     padding: "3px 10px",
                     borderBottom: "1px solid #0f0f1e",
                     display: "grid",
-                    gridTemplateColumns: "68px 60px 1fr",
+                    gridTemplateColumns: "68px 72px 1fr",
                     gap: 4,
                     alignItems: "start",
                   }}
@@ -277,7 +269,7 @@ const SessionDebugWidget = ({
             }}
           >
             <span>heartbeat every {HEARTBEAT_MS / 1000}s</span>
-            <span>stale threshold {STALE_MS / 1000}s</span>
+            <span>stale after {STALE_MS / 1000}s</span>
             <span
               style={{ cursor: "pointer", color: "#475569" }}
               onClick={() =>
@@ -291,7 +283,7 @@ const SessionDebugWidget = ({
                 )
               }
             >
-              📋 dump to console
+              📋 dump
             </span>
           </div>
         </div>
@@ -308,9 +300,7 @@ export const ActiveLockProvider = ({
 }) => {
   const heartbeatRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const countdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const lockRef = useRef<{ module_test_id: string; user_id: string } | null>(
-    null
-  );
+  const lockRef = useRef<{ module_test_id: string; user_id: string } | null>(null);
 
   const [logs, setLogs] = useState<SessionLog[]>([]);
   const [lockInfo, setLockInfo] = useState<{
@@ -326,10 +316,7 @@ export const ActiveLockProvider = ({
   ) => {
     const time = new Date().toLocaleTimeString();
     console.log(`[${category.toUpperCase()}][${status}] ${time} — ${message}`);
-    setLogs((prev) => [
-      ...prev.slice(-99),
-      { time, category, status, message },
-    ]);
+    setLogs((prev) => [...prev.slice(-99), { time, category, status, message }]);
   };
 
   const startCountdown = () => {
@@ -348,7 +335,7 @@ export const ActiveLockProvider = ({
     if (heartbeatRef.current) clearInterval(heartbeatRef.current);
 
     const beat = async () => {
-      addLog("heartbeat", "pending", "Sending heartbeat to Supabase...");
+      addLog("heartbeat", "pending", "Sending heartbeat...");
       const { error } = await supabase.rpc("update_lock_heartbeat", {
         p_module_test_id: module_test_id,
         p_user_id: user_id,
@@ -356,18 +343,14 @@ export const ActiveLockProvider = ({
       if (error) {
         addLog("heartbeat", "error", `RPC failed: ${error.message}`);
       } else {
-        addLog("heartbeat", "ok", "last_heartbeat updated in Supabase ✓");
+        addLog("heartbeat", "ok", "last_heartbeat updated ✓ — trigger cleaned stale locks");
       }
       startCountdown();
     };
 
     beat();
     heartbeatRef.current = setInterval(beat, HEARTBEAT_MS);
-    addLog(
-      "system",
-      "info",
-      `Heartbeat interval started (every ${HEARTBEAT_MS / 1000}s)`
-    );
+    addLog("system", "info", `Heartbeat started — interval ${HEARTBEAT_MS / 1000}s, stale threshold ${STALE_MS / 1000}s`);
   };
 
   const setActiveLock = (module_test_id: string, user_id: string) => {
@@ -392,22 +375,20 @@ export const ActiveLockProvider = ({
     }
   };
 
-  // ── Rehydrate on refresh/crash ─────────────────────────────────────────────
+  // ── Rehydrate on page load / refresh / crash ───────────────────────────────
   useEffect(() => {
     const rehydrate = async () => {
       addLog("rehydrate", "pending", "Checking session...");
 
-      const {
-        data: { session },
-      } = await supabase.auth.getSession();
+      const { data: { session } } = await supabase.auth.getSession();
 
       if (!session?.user) {
-        addLog("rehydrate", "warn", "No session found — skipping rehydration");
+        addLog("rehydrate", "warn", "No session — skipping rehydration");
         return;
       }
 
-      addLog("rehydrate", "info", `Session found: ${session.user.email}`);
-      addLog("rehydrate", "pending", "Querying Supabase for active lock...");
+      addLog("rehydrate", "info", `Session: ${session.user.email}`);
+      addLog("rehydrate", "pending", "Querying for active lock...");
 
       const { data, error } = await supabase
         .from("test_locks")
@@ -422,99 +403,28 @@ export const ActiveLockProvider = ({
 
       if (data) {
         const age = Date.now() - new Date(data.last_heartbeat).getTime();
-        addLog(
-          "rehydrate",
-          "info",
-          `Lock found — last heartbeat ${Math.round(age / 1000)}s ago`
-        );
+        addLog("rehydrate", "info", `Lock found — last heartbeat ${Math.round(age / 1000)}s ago`);
 
         if (age > STALE_MS) {
-          addLog(
-            "rehydrate",
-            "warn",
-            "Lock is stale — skipping rehydration (hive will clean)"
-          );
+          addLog("rehydrate", "warn", "Lock is stale — skipping (trigger will clean on next active heartbeat)");
         } else {
-          addLog("rehydrate", "ok", `Rehydrating lock: ${data.module_test_id}`);
-          lockRef.current = {
-            module_test_id: data.module_test_id,
-            user_id: data.user_id,
-          };
-          setLockInfo({
-            module_test_id: data.module_test_id,
-            user_id: data.user_id,
-          });
+          addLog("rehydrate", "ok", `Resuming lock: ${data.module_test_id}`);
+          lockRef.current = { module_test_id: data.module_test_id, user_id: data.user_id };
+          setLockInfo({ module_test_id: data.module_test_id, user_id: data.user_id });
           startHeartbeat(data.module_test_id, data.user_id);
         }
       } else {
-        addLog("rehydrate", "ok", "No active lock found — fresh start");
+        addLog("rehydrate", "ok", "No active lock — fresh start");
       }
     };
 
     rehydrate();
   }, []);
 
-  // ── Hive cleanup ───────────────────────────────────────────────────────────
-  useEffect(() => {
-    const hiveCleanup = async () => {
-      const {
-        data: { session },
-      } = await supabase.auth.getSession();
-      if (!session?.user) return;
-
-      addLog("hive", "pending", "Scanning all locks for stale entries...");
-
-      const { data: allLocks, error } = await supabase
-        .from("test_locks")
-        .select("module_test_id, user_id, last_heartbeat");
-
-      if (error || !allLocks) {
-        addLog("hive", "error", `Failed to fetch locks: ${error?.message}`);
-        return;
-      }
-
-      const now = Date.now();
-      const staleLocks = allLocks.filter((lock) => {
-        const lastBeat = lock.last_heartbeat
-          ? new Date(lock.last_heartbeat).getTime()
-          : 0;
-        return now - lastBeat > STALE_MS;
-      });
-      const activeCount = allLocks.length - staleLocks.length;
-
-      addLog(
-        "hive",
-        "info",
-        `${allLocks.length} total — ${activeCount} active, ${staleLocks.length} stale`
-      );
-
-      if (staleLocks.length === 0) {
-        addLog("hive", "ok", "No stale locks — nothing to clean ✓");
-        return;
-      }
-
-      const { data: deletedCount, error: cleanupError } = await supabase.rpc(
-        "clear_stale_test_locks"
-      );
-
-      if (cleanupError) {
-        addLog("hive", "error", `Cleanup RPC failed: ${cleanupError.message}`);
-      } else {
-        addLog(
-          "hive",
-          "ok",
-          `Cleared ${deletedCount ?? staleLocks.length} stale lock(s) ✓`
-        );
-      }
-    };
-
-    hiveCleanup();
-  }, []);
-
   return (
     <ActiveLockContext.Provider value={{ setActiveLock, clearActiveLock }}>
       {children}
-      {/* Remove widget once lock system is confirmed stable */}
+      {/* Remove once lock system confirmed stable */}
       <SessionDebugWidget logs={logs} lockInfo={lockInfo} nextBeat={nextBeat} />
     </ActiveLockContext.Provider>
   );
