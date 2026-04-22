@@ -1,6 +1,6 @@
 import { createContext, useContext, useEffect, useRef, useState } from "react";
 import { supabase } from "../supabase";
-import { updateLoggedIn } from "./AuthContext";
+import { useAuth, updateLoggedIn } from "./AuthContext";
 
 const HEARTBEAT_MS = 30_000;
 const STALE_MS = 2 * 60 * 1000;
@@ -301,6 +301,8 @@ export const ActiveLockProvider = ({
 }: {
   children: React.ReactNode;
 }) => {
+  const { user } = useAuth();
+
   const heartbeatRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const countdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const lockRef = useRef<{ module_test_id: string; user_id: string } | null>(
@@ -356,7 +358,7 @@ export const ActiveLockProvider = ({
           "ok",
           "last_heartbeat updated ✓ — trigger cleaned stale locks"
         );
-        // Also refresh logged_in so login trigger stays active during test
+        // Refresh logged_in so login trigger stays active during test session
         await updateLoggedIn(user_id);
         addLog(
           "system",
@@ -465,8 +467,14 @@ export const ActiveLockProvider = ({
   return (
     <ActiveLockContext.Provider value={{ setActiveLock, clearActiveLock }}>
       {children}
-      {/* Remove once lock system confirmed stable */}
-      <SessionDebugWidget logs={logs} lockInfo={lockInfo} nextBeat={nextBeat} />
+      {/* Admin only — remove once lock system confirmed stable */}
+      {user?.role === "admin" && (
+        <SessionDebugWidget
+          logs={logs}
+          lockInfo={lockInfo}
+          nextBeat={nextBeat}
+        />
+      )}
     </ActiveLockContext.Provider>
   );
 };
