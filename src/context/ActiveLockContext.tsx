@@ -38,12 +38,12 @@ export const ActiveLockProvider = ({
     if (heartbeatRef.current) clearInterval(heartbeatRef.current);
 
     const beat = () => {
-      supabase
-        .rpc("update_lock_heartbeat", {
+      Promise.resolve(
+        supabase.rpc("update_lock_heartbeat", {
           p_module_test_id: module_test_id,
           p_user_id: user_id,
         })
-        .catch(() => {});
+      ).catch(() => {});
     };
 
     beat(); // immediate ping
