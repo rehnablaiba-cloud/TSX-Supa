@@ -1,8 +1,8 @@
-// src/App.tsx
 import React, { useState, useEffect, useCallback } from "react";
 import { useAuth } from "./context/AuthContext";
 import { ThemeProvider, useTheme } from "./context/ThemeContext";
 import { SessionLogProvider, useSessionLog } from "./context/SessionLogContext";
+import { ActiveLockProvider } from "./context/ActiveLockContext";
 import SessionLog from "./components/DevTools/SessionLog";
 import SessionManager from "./components/UI/SessionManager";
 import LoginPage from "./components/Auth/LoginPage";
@@ -188,7 +188,6 @@ const AppInner: React.FC = () => {
 
   const isAdmin = user?.role === "admin";
 
-  // ── Log auth state ──────────────────────────────────────────────────────
   useEffect(() => {
     if (!isAuthenticated) return;
     log(
@@ -198,7 +197,6 @@ const AppInner: React.FC = () => {
     );
   }, [isAuthenticated]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ── Fetch modules ───────────────────────────────────────────────────────
   useEffect(() => {
     if (!isAuthenticated) return;
 
@@ -258,28 +256,24 @@ const AppInner: React.FC = () => {
 
   const selectedModule = modules.find((m) => m.name === selectedmodule_name);
 
-  // ── Navigation ──────────────────────────────────────────────────────────
   const navigate = (p: string, module_name?: string) => {
     if (p === "module" && module_name) {
       setSelectedmodule_name(module_name);
       setPage("module");
       log("info", "nav", `Navigate → module: ${module_name}`);
     } else {
-      // Sidebar "Test Report" click has no test context → clear so standalone renders
       if (p === "report") setSelectedTestId(null);
       setPage(p as Page);
       log("info", "nav", `Navigate → ${p}`);
     }
   };
 
-  // Used by ModuleDashboard / TestExecution to open a specific test's report
   const navigateToReport = (testId: string) => {
     setSelectedTestId(testId);
     setPage("report");
     log("info", "nav", `Navigate → report: ${testId}`);
   };
 
-  // ── Page renderer ───────────────────────────────────────────────────────
   const renderPage = () => {
     switch (page) {
       case "dashboard":
@@ -320,8 +314,6 @@ const AppInner: React.FC = () => {
         );
 
       case "report":
-        // selectedTestId set   → drill-down mode (specific test)
-        // selectedTestId null  → standalone mode (all modules overview)
         return (
           <TestReport
             module_test_id={selectedTestId ?? undefined}
@@ -388,7 +380,9 @@ const AppInner: React.FC = () => {
 const App: React.FC = () => (
   <ThemeProvider>
     <SessionLogProvider>
-      <AppInner />
+      <ActiveLockProvider>
+        <AppInner />
+      </ActiveLockProvider>
     </SessionLogProvider>
   </ThemeProvider>
 );
