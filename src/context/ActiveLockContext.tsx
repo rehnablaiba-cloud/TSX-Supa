@@ -54,7 +54,6 @@ const HeartbeatDebugWidget = ({
         boxShadow: "0 4px 24px rgba(0,0,0,0.5)",
       }}
     >
-      {/* Header */}
       <div
         style={{
           background: "#1a1a2e",
@@ -75,7 +74,6 @@ const HeartbeatDebugWidget = ({
 
       {!minimized && (
         <div style={{ background: "#0f0f1a" }}>
-          {/* Lock info */}
           <div
             style={{
               padding: "6px 10px",
@@ -98,14 +96,7 @@ const HeartbeatDebugWidget = ({
             )}
           </div>
 
-          {/* Logs */}
-          <div
-            style={{
-              maxHeight: 200,
-              overflowY: "auto",
-              padding: "4px 0",
-            }}
-          >
+          <div style={{ maxHeight: 200, overflowY: "auto", padding: "4px 0" }}>
             {logs.length === 0 ? (
               <div style={{ color: "#555", padding: "6px 10px" }}>
                 No heartbeats yet...
@@ -139,7 +130,6 @@ const HeartbeatDebugWidget = ({
             )}
           </div>
 
-          {/* Interval indicator */}
           <div
             style={{
               padding: "4px 10px",
@@ -214,20 +204,51 @@ export const ActiveLockProvider = ({
     const onUnload = () => {
       const lock = lockRef.current;
       const token = _cachedToken;
-      if (!lock || !token) return;
 
-      fetch(
-        `${import.meta.env.VITE_SUPABASE_URL}/rest/v1/test_locks` +
-          `?module_test_id=eq.${lock.module_test_id}&user_id=eq.${lock.user_id}`,
-        {
-          method: "DELETE",
-          keepalive: true,
-          headers: {
-            apikey: import.meta.env.VITE_SUPABASE_ANON_KEY,
-            Authorization: `Bearer ${token}`,
-          },
-        }
+      // ─── Debug ───────────────────────────────────────────────────────
+      console.group("[BeforeUnload Debug]");
+      console.log("lock:", lock);
+      console.log(
+        "token:",
+        token ? token.slice(0, 20) + "..." : "❌ NULL — token not cached"
       );
+      console.log(
+        "SUPABASE_URL:",
+        import.meta.env.VITE_SUPABASE_URL ?? "❌ missing"
+      );
+      console.log(
+        "ANON_KEY:",
+        import.meta.env.VITE_SUPABASE_ANON_KEY ? "✅ present" : "❌ missing"
+      );
+
+      if (!lock) {
+        console.warn("⚠️ Aborting — lockRef is null");
+        console.groupEnd();
+        return;
+      }
+      if (!token) {
+        console.warn("⚠️ Aborting — token is null");
+        console.groupEnd();
+        return;
+      }
+
+      const url =
+        `${import.meta.env.VITE_SUPABASE_URL}/rest/v1/test_locks` +
+        `?module_test_id=eq.${lock.module_test_id}&user_id=eq.${lock.user_id}`;
+
+      console.log("🗑️ Firing DELETE:", url);
+      console.groupEnd();
+      // ─────────────────────────────────────────────────────────────────
+
+      fetch(url, {
+        method: "DELETE",
+        keepalive: true,
+        headers: {
+          apikey: import.meta.env.VITE_SUPABASE_ANON_KEY,
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+      });
     };
 
     window.addEventListener("beforeunload", onUnload);
@@ -241,7 +262,7 @@ export const ActiveLockProvider = ({
   return (
     <ActiveLockContext.Provider value={{ setActiveLock, clearActiveLock }}>
       {children}
-      {/* Remove this widget once heartbeat is confirmed working */}
+      {/* Remove this widget once confirmed working */}
       <HeartbeatDebugWidget logs={debugLogs} lockInfo={debugLockInfo} />
     </ActiveLockContext.Provider>
   );
