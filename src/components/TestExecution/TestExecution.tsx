@@ -83,7 +83,7 @@ interface ImagePreviewState {
 // Divider configs
 // ─────────────────────────────────────────────────────────────────────────────
 
-const DIVIDER_LEVELS: Record
+const DIVIDER_LEVELS: Record<
   number,
   {
     dot: string;
@@ -120,7 +120,7 @@ const DIVIDER_LEVELS: Record
   },
 };
 
-const MOBILE_DIVIDER_LEVELS: Record
+const MOBILE_DIVIDER_LEVELS: Record<
   number,
   {
     bg: string;
