@@ -2,14 +2,7 @@ import { createContext, useContext, useEffect, useRef, useState } from "react";
 import { supabase } from "../supabase";
 
 const HEARTBEAT_MS = 30_000;
-
-let _cachedToken: string | null = null;
-supabase.auth.onAuthStateChange((_e, s) => {
-  _cachedToken = s?.access_token ?? null;
-});
-supabase.auth.getSession().then(({ data: { session } }) => {
-  _cachedToken = session?.access_token ?? null;
-});
+const STALE_MS = 2 * 60 * 1000; // 2 minutes
 
 interface ActiveLockContextValue {
   setActiveLock: (module_test_id: string, user_id: string) => void;
@@ -21,22 +14,45 @@ const ActiveLockContext = createContext<ActiveLockContextValue>({
   clearActiveLock: () => {},
 });
 
-// ─── Debug types ─────────────────────────────────────────────────────────────
-interface HeartbeatLog {
+// ─── Types ────────────────────────────────────────────────────────────────────
+interface SessionLog {
   time: string;
-  status: "ok" | "error" | "pending";
+  category: "heartbeat" | "rehydrate" | "hive" | "lock" | "system";
+  status: "ok" | "error" | "pending" | "info" | "warn";
   message: string;
 }
 
+const CATEGORY_COLOR: Record<SessionLog["category"], string> = {
+  heartbeat: "#7dd3fc",
+  rehydrate: "#a78bfa",
+  hive: "#fb923c",
+  lock: "#4ade80",
+  system: "#94a3b8",
+};
+
+const STATUS_ICON: Record<SessionLog["status"], string> = {
+  ok: "✅",
+  error: "❌",
+  pending: "⏳",
+  info: "ℹ️",
+  warn: "⚠️",
+};
+
 // ─── Debug Widget ─────────────────────────────────────────────────────────────
-const HeartbeatDebugWidget = ({
+const SessionDebugWidget = ({
   logs,
   lockInfo,
+  nextBeat,
 }: {
-  logs: HeartbeatLog[];
+  logs: SessionLog[];
   lockInfo: { module_test_id: string; user_id: string } | null;
+  nextBeat: number | null; // seconds until next heartbeat
 }) => {
   const [minimized, setMinimized] = useState(false);
+  const [filter, setFilter] = useState<SessionLog["category"] | "all">("all");
+
+  const filtered =
+    filter === "all" ? logs : logs.filter((l) => l.category === filter);
 
   return (
     <div
@@ -45,99 +61,238 @@ const HeartbeatDebugWidget = ({
         bottom: 16,
         right: 16,
         zIndex: 9999,
-        width: minimized ? "auto" : 340,
+        width: minimized ? "auto" : 380,
         fontFamily: "monospace",
         fontSize: 11,
         borderRadius: 10,
         overflow: "hidden",
-        border: "1px solid #333",
-        boxShadow: "0 4px 24px rgba(0,0,0,0.5)",
+        border: "1px solid #2a2a3e",
+        boxShadow: "0 4px 32px rgba(0,0,0,0.6)",
       }}
     >
+      {/* Header */}
       <div
         style={{
-          background: "#1a1a2e",
-          padding: "6px 10px",
+          background: "#12122a",
+          padding: "7px 10px",
           display: "flex",
           alignItems: "center",
           justifyContent: "space-between",
           cursor: "pointer",
-          borderBottom: "1px solid #333",
+          borderBottom: "1px solid #2a2a3e",
         }}
         onClick={() => setMinimized((p) => !p)}
       >
-        <span style={{ color: "#7dd3fc", fontWeight: "bold" }}>
-          💓 Heartbeat Debug
+        <span style={{ color: "#7dd3fc", fontWeight: "bold", fontSize: 12 }}>
+          🛡️ Lock Session Monitor
         </span>
-        <span style={{ color: "#666" }}>{minimized ? "▲" : "▼"}</span>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          {lockInfo && !minimized && (
+            <span
+              style={{
+                background: "#4ade8020",
+                color: "#4ade80",
+                border: "1px solid #4ade8040",
+                borderRadius: 99,
+                padding: "1px 7px",
+                fontSize: 10,
+              }}
+            >
+              🔒 LOCKED
+            </span>
+          )}
+          <span style={{ color: "#555" }}>{minimized ? "▲" : "▼"}</span>
+        </div>
       </div>
 
       {!minimized && (
-        <div style={{ background: "#0f0f1a" }}>
+        <div style={{ background: "#0d0d1f" }}>
+          {/* Lock info panel */}
           <div
             style={{
-              padding: "6px 10px",
-              borderBottom: "1px solid #222",
-              color: lockInfo ? "#4ade80" : "#f87171",
+              padding: "8px 10px",
+              borderBottom: "1px solid #1e1e32",
+              display: "grid",
+              gridTemplateColumns: "1fr 1fr",
+              gap: 4,
             }}
           >
-            {lockInfo ? (
+            <div>
+              <div style={{ color: "#475569", fontSize: 10, marginBottom: 2 }}>
+                STATUS
+              </div>
+              <div
+                style={{
+                  color: lockInfo ? "#4ade80" : "#f87171",
+                  fontWeight: "bold",
+                }}
+              >
+                {lockInfo ? "🔒 Active" : "🔓 No Lock"}
+              </div>
+            </div>
+            <div>
+              <div style={{ color: "#475569", fontSize: 10, marginBottom: 2 }}>
+                NEXT HEARTBEAT
+              </div>
+              <div style={{ color: lockInfo ? "#fbbf24" : "#475569" }}>
+                {lockInfo && nextBeat !== null ? `in ${nextBeat}s` : "—"}
+              </div>
+            </div>
+            {lockInfo && (
               <>
-                <div>🔒 Active Lock</div>
-                <div style={{ color: "#94a3b8", marginTop: 2 }}>
-                  test: {lockInfo.module_test_id}
+                <div style={{ gridColumn: "1 / -1" }}>
+                  <div
+                    style={{ color: "#475569", fontSize: 10, marginBottom: 2 }}
+                  >
+                    TEST
+                  </div>
+                  <div
+                    style={{
+                      color: "#e2e8f0",
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    {lockInfo.module_test_id}
+                  </div>
                 </div>
-                <div style={{ color: "#94a3b8" }}>
-                  user: {lockInfo.user_id.slice(0, 8)}...
+                <div style={{ gridColumn: "1 / -1" }}>
+                  <div
+                    style={{ color: "#475569", fontSize: 10, marginBottom: 2 }}
+                  >
+                    USER ID
+                  </div>
+                  <div style={{ color: "#94a3b8" }}>
+                    {lockInfo.user_id.slice(0, 12)}...
+                  </div>
                 </div>
               </>
-            ) : (
-              <div>🔓 No active lock</div>
             )}
           </div>
 
-          <div style={{ maxHeight: 200, overflowY: "auto", padding: "4px 0" }}>
-            {logs.length === 0 ? (
-              <div style={{ color: "#555", padding: "6px 10px" }}>
-                No heartbeats yet...
+          {/* Category filter tabs */}
+          <div
+            style={{
+              display: "flex",
+              gap: 4,
+              padding: "6px 8px",
+              borderBottom: "1px solid #1e1e32",
+              overflowX: "auto",
+            }}
+          >
+            {(
+              [
+                "all",
+                "heartbeat",
+                "rehydrate",
+                "hive",
+                "lock",
+                "system",
+              ] as const
+            ).map((cat) => (
+              <button
+                key={cat}
+                onClick={() => setFilter(cat)}
+                style={{
+                  padding: "2px 8px",
+                  borderRadius: 99,
+                  border: "1px solid",
+                  borderColor: filter === cat ? "#7dd3fc" : "#2a2a3e",
+                  background: filter === cat ? "#7dd3fc15" : "transparent",
+                  color: filter === cat ? "#7dd3fc" : "#475569",
+                  cursor: "pointer",
+                  fontSize: 10,
+                  whiteSpace: "nowrap",
+                }}
+              >
+                {cat === "all"
+                  ? `all (${logs.length})`
+                  : `${cat} (${logs.filter((l) => l.category === cat).length})`}
+              </button>
+            ))}
+          </div>
+
+          {/* Logs */}
+          <div style={{ maxHeight: 220, overflowY: "auto", padding: "4px 0" }}>
+            {filtered.length === 0 ? (
+              <div style={{ color: "#374151", padding: "8px 10px" }}>
+                No logs yet...
               </div>
             ) : (
-              [...logs].reverse().map((log, i) => (
+              [...filtered].reverse().map((log, i) => (
                 <div
                   key={i}
                   style={{
                     padding: "3px 10px",
-                    borderBottom: "1px solid #1a1a1a",
-                    color:
-                      log.status === "ok"
-                        ? "#4ade80"
-                        : log.status === "error"
-                        ? "#f87171"
-                        : "#fbbf24",
+                    borderBottom: "1px solid #0f0f1e",
+                    display: "grid",
+                    gridTemplateColumns: "68px 60px 1fr",
+                    gap: 4,
+                    alignItems: "start",
                   }}
                 >
-                  <span style={{ color: "#475569" }}>{log.time} </span>
-                  <span>
-                    {log.status === "ok"
-                      ? "✅"
-                      : log.status === "error"
-                      ? "❌"
-                      : "⏳"}{" "}
-                    {log.message}
+                  <span style={{ color: "#334155", fontSize: 10 }}>
+                    {log.time}
+                  </span>
+                  <span
+                    style={{
+                      color: CATEGORY_COLOR[log.category],
+                      fontSize: 10,
+                    }}
+                  >
+                    [{log.category}]
+                  </span>
+                  <span
+                    style={{
+                      color:
+                        log.status === "ok"
+                          ? "#4ade80"
+                          : log.status === "error"
+                          ? "#f87171"
+                          : log.status === "warn"
+                          ? "#fbbf24"
+                          : log.status === "pending"
+                          ? "#fb923c"
+                          : "#94a3b8",
+                      wordBreak: "break-word",
+                    }}
+                  >
+                    {STATUS_ICON[log.status]} {log.message}
                   </span>
                 </div>
               ))
             )}
           </div>
 
+          {/* Footer */}
           <div
             style={{
-              padding: "4px 10px",
-              borderTop: "1px solid #222",
-              color: "#475569",
+              padding: "5px 10px",
+              borderTop: "1px solid #1e1e32",
+              display: "flex",
+              justifyContent: "space-between",
+              color: "#334155",
+              fontSize: 10,
             }}
           >
-            interval: {HEARTBEAT_MS / 1000}s
+            <span>heartbeat every {HEARTBEAT_MS / 1000}s</span>
+            <span>stale threshold {STALE_MS / 1000}s</span>
+            <span
+              style={{ cursor: "pointer", color: "#475569" }}
+              onClick={() =>
+                console.table(
+                  logs.map((l) => ({
+                    time: l.time,
+                    category: l.category,
+                    status: l.status,
+                    message: l.message,
+                  }))
+                )
+              }
+            >
+              📋 dump to console
+            </span>
           </div>
         </div>
       )}
@@ -152,118 +307,215 @@ export const ActiveLockProvider = ({
   children: React.ReactNode;
 }) => {
   const heartbeatRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const countdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const lockRef = useRef<{ module_test_id: string; user_id: string } | null>(
     null
   );
-  const [debugLogs, setDebugLogs] = useState<HeartbeatLog[]>([]);
-  const [debugLockInfo, setDebugLockInfo] = useState<{
+
+  const [logs, setLogs] = useState<SessionLog[]>([]);
+  const [lockInfo, setLockInfo] = useState<{
     module_test_id: string;
     user_id: string;
   } | null>(null);
+  const [nextBeat, setNextBeat] = useState<number | null>(null);
 
-  const addLog = (status: HeartbeatLog["status"], message: string) => {
+  const addLog = (
+    category: SessionLog["category"],
+    status: SessionLog["status"],
+    message: string
+  ) => {
     const time = new Date().toLocaleTimeString();
-    console.log(`[Heartbeat][${status}] ${time} — ${message}`);
-    setDebugLogs((prev) => [...prev.slice(-49), { time, status, message }]);
+    console.log(`[${category.toUpperCase()}][${status}] ${time} — ${message}`);
+    setLogs((prev) => [
+      ...prev.slice(-99),
+      { time, category, status, message },
+    ]);
   };
 
-  const setActiveLock = (module_test_id: string, user_id: string) => {
-    lockRef.current = { module_test_id, user_id };
-    setDebugLockInfo({ module_test_id, user_id });
+  const startCountdown = () => {
+    if (countdownRef.current) clearInterval(countdownRef.current);
+    setNextBeat(HEARTBEAT_MS / 1000);
+    countdownRef.current = setInterval(() => {
+      setNextBeat((p) => {
+        if (p === null) return null;
+        if (p <= 1) return HEARTBEAT_MS / 1000;
+        return p - 1;
+      });
+    }, 1000);
+  };
 
+  const startHeartbeat = (module_test_id: string, user_id: string) => {
     if (heartbeatRef.current) clearInterval(heartbeatRef.current);
 
     const beat = async () => {
-      addLog("pending", "Sending heartbeat...");
+      addLog("heartbeat", "pending", "Sending heartbeat to Supabase...");
       const { error } = await supabase.rpc("update_lock_heartbeat", {
         p_module_test_id: module_test_id,
         p_user_id: user_id,
       });
       if (error) {
-        addLog("error", `RPC error: ${error.message}`);
+        addLog("heartbeat", "error", `RPC failed: ${error.message}`);
       } else {
-        addLog("ok", "last_heartbeat updated ✓");
+        addLog("heartbeat", "ok", "last_heartbeat updated in Supabase ✓");
       }
+      startCountdown();
     };
 
     beat();
     heartbeatRef.current = setInterval(beat, HEARTBEAT_MS);
+    addLog(
+      "system",
+      "info",
+      `Heartbeat interval started (every ${HEARTBEAT_MS / 1000}s)`
+    );
+  };
+
+  const setActiveLock = (module_test_id: string, user_id: string) => {
+    lockRef.current = { module_test_id, user_id };
+    setLockInfo({ module_test_id, user_id });
+    addLog("lock", "ok", `Lock acquired: ${module_test_id}`);
+    startHeartbeat(module_test_id, user_id);
   };
 
   const clearActiveLock = () => {
     lockRef.current = null;
-    setDebugLockInfo(null);
-    addLog("ok", "Lock cleared, heartbeat stopped");
+    setLockInfo(null);
+    setNextBeat(null);
+    addLog("lock", "warn", "Lock cleared — heartbeat stopped");
     if (heartbeatRef.current) {
       clearInterval(heartbeatRef.current);
       heartbeatRef.current = null;
     }
+    if (countdownRef.current) {
+      clearInterval(countdownRef.current);
+      countdownRef.current = null;
+    }
   };
 
+  // ── Rehydrate on refresh/crash ─────────────────────────────────────────────
   useEffect(() => {
-    const onUnload = () => {
-      const lock = lockRef.current;
-      const token = _cachedToken;
+    const rehydrate = async () => {
+      addLog("rehydrate", "pending", "Checking session...");
 
-      // ─── Debug ───────────────────────────────────────────────────────
-      console.group("[BeforeUnload Debug]");
-      console.log("lock:", lock);
-      console.log(
-        "token:",
-        token ? token.slice(0, 20) + "..." : "❌ NULL — token not cached"
-      );
-      console.log(
-        "SUPABASE_URL:",
-        import.meta.env.VITE_SUPABASE_URL ?? "❌ missing"
-      );
-      console.log(
-        "ANON_KEY:",
-        import.meta.env.VITE_SUPABASE_ANON_KEY ? "✅ present" : "❌ missing"
-      );
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
 
-      if (!lock) {
-        console.warn("⚠️ Aborting — lockRef is null");
-        console.groupEnd();
-        return;
-      }
-      if (!token) {
-        console.warn("⚠️ Aborting — token is null");
-        console.groupEnd();
+      if (!session?.user) {
+        addLog("rehydrate", "warn", "No session found — skipping rehydration");
         return;
       }
 
-      const url =
-        `${import.meta.env.VITE_SUPABASE_URL}/rest/v1/test_locks` +
-        `?module_test_id=eq.${lock.module_test_id}&user_id=eq.${lock.user_id}`;
+      addLog("rehydrate", "info", `Session found: ${session.user.email}`);
+      addLog("rehydrate", "pending", "Querying Supabase for active lock...");
 
-      console.log("🗑️ Firing DELETE:", url);
-      console.groupEnd();
-      // ─────────────────────────────────────────────────────────────────
+      const { data, error } = await supabase
+        .from("test_locks")
+        .select("module_test_id, user_id, last_heartbeat")
+        .eq("user_id", session.user.id)
+        .maybeSingle();
 
-      fetch(url, {
-        method: "DELETE",
-        keepalive: true,
-        headers: {
-          apikey: import.meta.env.VITE_SUPABASE_ANON_KEY,
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
-        },
+      if (error) {
+        addLog("rehydrate", "error", `Query failed: ${error.message}`);
+        return;
+      }
+
+      if (data) {
+        const age = Date.now() - new Date(data.last_heartbeat).getTime();
+        addLog(
+          "rehydrate",
+          "info",
+          `Lock found — last heartbeat ${Math.round(age / 1000)}s ago`
+        );
+
+        if (age > STALE_MS) {
+          addLog(
+            "rehydrate",
+            "warn",
+            "Lock is stale — skipping rehydration (hive will clean)"
+          );
+        } else {
+          addLog("rehydrate", "ok", `Rehydrating lock: ${data.module_test_id}`);
+          lockRef.current = {
+            module_test_id: data.module_test_id,
+            user_id: data.user_id,
+          };
+          setLockInfo({
+            module_test_id: data.module_test_id,
+            user_id: data.user_id,
+          });
+          startHeartbeat(data.module_test_id, data.user_id);
+        }
+      } else {
+        addLog("rehydrate", "ok", "No active lock found — fresh start");
+      }
+    };
+
+    rehydrate();
+  }, []);
+
+  // ── Hive cleanup ───────────────────────────────────────────────────────────
+  useEffect(() => {
+    const hiveCleanup = async () => {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      if (!session?.user) return;
+
+      addLog("hive", "pending", "Scanning all locks for stale entries...");
+
+      const { data: allLocks, error } = await supabase
+        .from("test_locks")
+        .select("module_test_id, user_id, last_heartbeat");
+
+      if (error || !allLocks) {
+        addLog("hive", "error", `Failed to fetch locks: ${error?.message}`);
+        return;
+      }
+
+      const now = Date.now();
+      const staleLocks = allLocks.filter((lock) => {
+        const lastBeat = lock.last_heartbeat
+          ? new Date(lock.last_heartbeat).getTime()
+          : 0;
+        return now - lastBeat > STALE_MS;
       });
+      const activeCount = allLocks.length - staleLocks.length;
+
+      addLog(
+        "hive",
+        "info",
+        `${allLocks.length} total — ${activeCount} active, ${staleLocks.length} stale`
+      );
+
+      if (staleLocks.length === 0) {
+        addLog("hive", "ok", "No stale locks — nothing to clean ✓");
+        return;
+      }
+
+      const { data: deletedCount, error: cleanupError } = await supabase.rpc(
+        "clear_stale_test_locks"
+      );
+
+      if (cleanupError) {
+        addLog("hive", "error", `Cleanup RPC failed: ${cleanupError.message}`);
+      } else {
+        addLog(
+          "hive",
+          "ok",
+          `Cleared ${deletedCount ?? staleLocks.length} stale lock(s) ✓`
+        );
+      }
     };
 
-    window.addEventListener("beforeunload", onUnload);
-    window.addEventListener("pagehide", onUnload);
-    return () => {
-      window.removeEventListener("beforeunload", onUnload);
-      window.removeEventListener("pagehide", onUnload);
-    };
+    hiveCleanup();
   }, []);
 
   return (
     <ActiveLockContext.Provider value={{ setActiveLock, clearActiveLock }}>
       {children}
-      {/* Remove this widget once confirmed working */}
-      <HeartbeatDebugWidget logs={debugLogs} lockInfo={debugLockInfo} />
+      {/* Remove widget once lock system is confirmed stable */}
+      <SessionDebugWidget logs={logs} lockInfo={lockInfo} nextBeat={nextBeat} />
     </ActiveLockContext.Provider>
   );
 };
