@@ -1,3 +1,4 @@
+// src/components/TestExecution/TestExecution.tsx
 import React, {
   useCallback,
   useEffect,
@@ -21,7 +22,7 @@ import {
 } from "lucide-react";
 import { useAuth } from "../../context/AuthContext";
 import { useToast } from "../../context/ToastContext";
-import { useActiveLock } from "../../context/ActiveLockContext"; // ← new
+import { useActiveLock } from "../../context/ActiveLockContext";
 import { supabase } from "../../supabase";
 import Topbar from "../Layout/Topbar";
 import Spinner from "../UI/Spinner";
@@ -34,7 +35,6 @@ import {
   acquireLock,
   releaseLock,
   forceReleaseLock,
-  // heartbeatLock removed — context owns heartbeat now
 } from "../../lib/supabase/queries.testexecution";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -169,7 +169,7 @@ const getDividerLevel = (expected_result: string): number =>
   Math.min(Math.max(parseInt(expected_result, 10) || 1, 1), 3);
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Sub-components (unchanged)
+// Sub-components
 // ─────────────────────────────────────────────────────────────────────────────
 
 const UndoAllModal: React.FC<{
@@ -392,7 +392,7 @@ const TesterBadge: React.FC<{
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Desktop Table Row (unchanged)
+// Desktop Table Row
 // ─────────────────────────────────────────────────────────────────────────────
 
 const TableStepRow: React.FC<{
@@ -572,7 +572,7 @@ const TableStepRow: React.FC<{
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Mobile Step Card (unchanged)
+// Mobile Step Card
 // ─────────────────────────────────────────────────────────────────────────────
 
 const MobileStepCard: React.FC<{
@@ -869,7 +869,7 @@ const TestExecution: React.FC<Props> = ({
 }) => {
   const { user } = useAuth();
   const { addToast } = useToast();
-  const { setActiveLock, clearActiveLock } = useActiveLock(); // ← new
+  const { setActiveLock, clearActiveLock } = useActiveLock();
   const log = useaudit_log();
 
   const currentMtId = initialmodule_test_id;
@@ -883,7 +883,9 @@ const TestExecution: React.FC<Props> = ({
   const [scrollTarget, setScrollTarget] = useState<string | null>(null);
   const [focusedStepId, setFocusedStepId] = useState<string | null>(null);
   const [signedImageUrls, setSignedImageUrls] = useState<SignedImageMap>({});
-  const [imagePreview, setImagePreview] = useState<ImagePreviewState | null>(null);
+  const [imagePreview, setImagePreview] = useState<ImagePreviewState | null>(
+    null
+  );
   const [moduleTests, setModuleTests] = useState<ModuleTestItem[]>([]);
   const [steps, setSteps] = useState<ExecutionStep[]>([]);
   const [lock, setLock] = useState<any>(null);
@@ -892,7 +894,6 @@ const TestExecution: React.FC<Props> = ({
 
   const stepsInitialized = useRef(false);
   const remarksMap = useRef<Record<string, string>>({});
-  // heartbeatRef removed — context owns it
   const trRefs = useRef<Record<string, HTMLTableRowElement | null>>({});
   const cardRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const scrollContainerRef = useRef<HTMLDivElement>(null);
@@ -1051,7 +1052,7 @@ const TestExecution: React.FC<Props> = ({
       );
       if (cancelled) return;
       if (result.success) {
-        setActiveLock(currentMtId, user.id); // ← context starts/continues heartbeat
+        setActiveLock(currentMtId, user.id);
       } else {
         addToast(
           `Test is locked by ${result.holder ?? "another user"}. View only.`,
@@ -1091,14 +1092,18 @@ const TestExecution: React.FC<Props> = ({
           Object.fromEntries(results.filter(([, url]) => !!url))
         );
     })();
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [steps]);
 
   // ── Auto-focus first pending step ─────────────────────────────────────────
   useEffect(() => {
     if (steps.length === 0 || stepsInitialized.current) return;
     stepsInitialized.current = true;
-    const firstPending = steps.find((s) => !s.is_divider && s.status === "pending");
+    const firstPending = steps.find(
+      (s) => !s.is_divider && s.status === "pending"
+    );
     if (firstPending) {
       setFocusedStepId(firstPending.stepId);
       setScrollTarget(firstPending.stepId);
@@ -1131,7 +1136,8 @@ const TestExecution: React.FC<Props> = ({
         const elRect = el.getBoundingClientRect();
         const cRect = container.getBoundingClientRect();
         const theadHeight = isDesktop
-          ? (container.querySelector("thead") as HTMLElement | null)?.offsetHeight ?? 0
+          ? (container.querySelector("thead") as HTMLElement | null)
+              ?.offsetHeight ?? 0
           : 0;
         const scrollTo =
           elRect.top -
@@ -1231,7 +1237,9 @@ const TestExecution: React.FC<Props> = ({
 
     setSteps((prev) =>
       prev.map((s) =>
-        s.is_divider ? s : { ...s, status: "pending", remarks: "", display_name }
+        s.is_divider
+          ? s
+          : { ...s, status: "pending", remarks: "", display_name }
       )
     );
     remarksMap.current = {};
@@ -1269,7 +1277,7 @@ const TestExecution: React.FC<Props> = ({
   // ── Finish — ONLY place lock is explicitly released ───────────────────────
   const handleFinish = async () => {
     if (user) await releaseLock(currentMtId, user.id).catch(() => {});
-    clearActiveLock(); // stops heartbeat, clears keepalive ref
+    clearActiveLock();
     log(`Finished test: ${currentTest?.name}`);
     addToast(`Test "${currentTest?.name}" completed!`, "success");
     onBack();
@@ -1483,7 +1491,9 @@ const TestExecution: React.FC<Props> = ({
           <div className="flex items-center justify-between mb-1.5">
             <div className="flex items-center gap-4 text-xs text-t-muted">
               <span>
-                <span className="text-green-400 font-semibold">{passCount}</span>{" "}
+                <span className="text-green-400 font-semibold">
+                  {passCount}
+                </span>{" "}
                 pass
               </span>
               <span>
@@ -1530,7 +1540,7 @@ const TestExecution: React.FC<Props> = ({
               style={{ width: `${passPct}%` }}
             />
             <div
-              className="h-full bg-red-500 transition-all duration-500"
+              className="h-full bg-red-500  transition-all duration-500"
               style={{ width: `${failPct}%` }}
             />
           </div>
@@ -1683,7 +1693,8 @@ const TestExecution: React.FC<Props> = ({
                     (() => {
                       const level = getDividerLevel(step.expected_result);
                       const ms =
-                        MOBILE_DIVIDER_LEVELS[level] ?? MOBILE_DIVIDER_LEVELS[1];
+                        MOBILE_DIVIDER_LEVELS[level] ??
+                        MOBILE_DIVIDER_LEVELS[1];
                       return (
                         <div
                           key={step.stepId}
@@ -1724,7 +1735,10 @@ const TestExecution: React.FC<Props> = ({
             {isAdmin && doneCount > 0 && (
               <div className="flex items-center justify-center py-6 px-4">
                 <div className="flex items-center gap-3 px-4 py-3 rounded-xl border border-dashed border-amber-500/30 bg-amber-500/5">
-                  <AlertTriangle size={14} className="text-amber-500 shrink-0" />
+                  <AlertTriangle
+                    size={14}
+                    className="text-amber-500 shrink-0"
+                  />
                   <span className="text-xs text-t-muted">
                     Admin action — resets all progress
                   </span>
