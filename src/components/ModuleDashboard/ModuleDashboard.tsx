@@ -13,6 +13,7 @@ import { useAuth } from "../../context/AuthContext";
 import { useTheme } from "../../context/ThemeContext";
 import {
   Lock,
+  Unlock,
   Play,
   FileSpreadsheet,
   FileText,
@@ -131,6 +132,8 @@ const ModuleDashboard: React.FC<Props> = ({
 
   const { user } = useAuth();
   const { theme } = useTheme();
+
+  const isAdmin = user?.role === "admin"; // ← adjust if your auth shape differs
 
   const [module_tests, setmodule_tests] = useState<ModuleTestRow[]>([]);
   const [locks, setLocks] = useState<Record<string, LockRow>>({});
@@ -256,6 +259,23 @@ const ModuleDashboard: React.FC<Props> = ({
   useEffect(() => {
     fetchData(false);
   }, [fetchData]);
+
+  // ── Force-release a lock (admin only) ─────────────────────────────────────
+  const forceReleaseLock = useCallback(
+    async (module_test_id: string, lockedByName: string) => {
+      if (!confirm(`Force-release the lock held by ${lockedByName}?`)) return;
+      const { error } = await supabase
+        .from("test_locks")
+        .delete()
+        .eq("module_test_id", module_test_id);
+      if (error) {
+        alert(`Failed to release lock: ${error.message}`);
+      } else {
+        fetchData(true); // silent refresh — card will snap out of dimmed state
+      }
+    },
+    [fetchData]
+  );
 
   // ── Realtime — background refresh only, no spinner ────────────────────────
   useEffect(() => {
@@ -514,7 +534,6 @@ const ModuleDashboard: React.FC<Props> = ({
                       bg-amber-500/15 border border-amber-500/35 text-amber-400 text-xs font-semibold"
                     >
                       <Lock size={11} />
-                      {/* locked_by_name holds the display name from your table */}
                       <span>In use by {lock.locked_by_name}</span>
                       <span className="text-amber-400/50">·</span>
                       <span className="text-amber-400/70">
@@ -523,6 +542,28 @@ const ModuleDashboard: React.FC<Props> = ({
                           minute: "2-digit",
                         })}
                       </span>
+
+                      {/* ── Admin force-release ────────────────────────── */}
+                      {isAdmin && (
+                        <>
+                          <span className="text-amber-400/30 mx-0.5">|</span>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              forceReleaseLock(mt.id, lock.locked_by_name);
+                            }}
+                            className="flex items-center gap-1 text-[11px] font-bold
+                              text-red-400 hover:text-red-300
+                              bg-red-500/10 hover:bg-red-500/20
+                              border border-red-500/30 rounded-md px-1.5 py-0.5
+                              transition-colors"
+                            title="Admin: force release this lock"
+                          >
+                            <Unlock size={10} />
+                            Release
+                          </button>
+                        </>
+                      )}
                     </div>
                   )}
 
