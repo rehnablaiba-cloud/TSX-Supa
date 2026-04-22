@@ -1,4 +1,3 @@
-// AuthContext.tsx
 import React, { createContext, useContext, useEffect, useState } from "react";
 import { supabase } from "../supabase";
 
@@ -20,7 +19,6 @@ interface AuthCtx {
 const Ctx = createContext<AuthCtx>({} as AuthCtx);
 
 // ── Profile loader ─────────────────────────────────────────────────────────────
-// Returns null if the account is disabled — caller must sign the user out.
 const loadProfile = async (
   user_id: string,
   email: string
@@ -31,7 +29,6 @@ const loadProfile = async (
     .eq("id", user_id)
     .single();
 
-  // Block disabled accounts at the app level (RLS also blocks DB writes)
   if (data?.disabled) return null;
 
   return {
@@ -43,8 +40,8 @@ const loadProfile = async (
 };
 
 // ── Update logged_in ───────────────────────────────────────────────────────────
-// Fires the Postgres trigger that cleans stale test_locks on every login/refresh.
-const updateLoggedIn = async (user_id: string) => {
+// Fires the Postgres trigger that cleans stale test_locks
+export const updateLoggedIn = async (user_id: string) => {
   const { error } = await supabase
     .from("profiles")
     .update({ logged_in: new Date().toISOString() })
@@ -63,14 +60,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
   const [isLoading, setIsLoading] = useState(true);
   const [user, setUser] = useState<AuthUser | null>(null);
 
-  // FIX: Do NOT set a temporary user with a guessed role before the profile
-  // loads. The previous code set defaultRole:"tester" immediately, causing a
-  // brief window where admins were treated as testers by any component that
-  // rendered during the background fetch (could hide admin UI or let
-  // role-gated checks pass incorrectly).
-  //
-  // isLoading stays true until loadProfile resolves — the spinner covers the
-  // gap so there is no visible flash.
   const handleSession = async (sessionUser: {
     id: string;
     email?: string | null;
@@ -78,20 +67,31 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
     const profile = await loadProfile(sessionUser.id, sessionUser.email ?? "");
 
     if (!profile) {
-      // Account is disabled — sign out and clear user
       await supabase.auth.signOut();
       setUser(null);
       return;
     }
 
-    // Update logged_in → fires Postgres trigger → cleans stale locks
+    // Immediate update on login → fires stale lock trigger
     await updateLoggedIn(sessionUser.id);
 
     setUser(profile);
   };
 
+  // ── Periodic logged_in refresh while user is active ────────────────────────
+  // Keeps the stale lock trigger firing every 2min even if user stays on
+  // dashboard and never enters a test — covers force-close scenarios
   useEffect(() => {
-    // getSession is local (reads from storage) — no network call
+    if (!user) return;
+
+    const interval = setInterval(() => {
+      updateLoggedIn(user.id);
+    }, 2 * 60 * 1000);
+
+    return () => clearInterval(interval); // stops on logout / user change
+  }, [user?.id]);
+
+  useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
       if (session?.user) {
         handleSession(session.user).finally(() => setIsLoading(false));

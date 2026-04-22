@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useRef, useState } from "react";
 import { supabase } from "../supabase";
+import { updateLoggedIn } from "./AuthContext";
 
 const HEARTBEAT_MS = 30_000;
 const STALE_MS = 2 * 60 * 1000;
@@ -354,6 +355,13 @@ export const ActiveLockProvider = ({
           "heartbeat",
           "ok",
           "last_heartbeat updated ✓ — trigger cleaned stale locks"
+        );
+        // Also refresh logged_in so login trigger stays active during test
+        await updateLoggedIn(user_id);
+        addLog(
+          "system",
+          "info",
+          "logged_in refreshed during active test session"
         );
       }
       startCountdown();
