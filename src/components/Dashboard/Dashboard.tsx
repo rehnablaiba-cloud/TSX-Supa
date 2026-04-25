@@ -42,9 +42,6 @@ import RAreaChart from "../ModuleDashboard/charts/RAreaChart";
 import RLineChart from "../ModuleDashboard/charts/RLineChart";
 import RRadarChart from "../ModuleDashboard/charts/RRadarChart";
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Lock glow keyframes — cyan (mine), amber (others), dual (both)
-// ─────────────────────────────────────────────────────────────────────────────
 const ANIM_STYLE = `
 @keyframes neonPulse {
   0%,100% { box-shadow: 0 0 0 1.5px rgba(34,211,238,0.45), 0 0 12px 2px rgba(34,211,238,0.18); }
@@ -57,17 +54,13 @@ const ANIM_STYLE = `
 @keyframes dualPulse {
   0%,100% {
     box-shadow:
-      0 0 0 1.5px rgba(34,211,238,0.5),
-      0 0 0 3px rgba(245,158,11,0.35),
-      0 0 14px 3px rgba(34,211,238,0.2),
-      0 0 22px 6px rgba(245,158,11,0.15);
+      0 0 0 1.5px rgba(34,211,238,0.5), 0 0 0 3px rgba(245,158,11,0.35),
+      0 0 14px 3px rgba(34,211,238,0.2), 0 0 22px 6px rgba(245,158,11,0.15);
   }
   50% {
     box-shadow:
-      0 0 0 1.5px rgba(34,211,238,0.6),
-      0 0 0 3px rgba(245,158,11,0.45),
-      0 0 22px 6px rgba(34,211,238,0.32),
-      0 0 32px 10px rgba(245,158,11,0.25);
+      0 0 0 1.5px rgba(34,211,238,0.6), 0 0 0 3px rgba(245,158,11,0.45),
+      0 0 22px 6px rgba(34,211,238,0.32), 0 0 32px 10px rgba(245,158,11,0.25);
   }
 }
 `;
@@ -83,33 +76,22 @@ function useInjectStyle() {
   }, []);
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Props
-// ─────────────────────────────────────────────────────────────────────────────
-
 interface Props {
   onNavigate: (page: string, module_name?: string) => void;
 }
 
 type ChartTab = "bar" | "area" | "line" | "radar" | "pie";
 
-// ══════════════════════════════════════════════════════════════════════════════
-// MAIN COMPONENT
-// ══════════════════════════════════════════════════════════════════════════════
-
 const Dashboard: React.FC<Props> = ({ onNavigate }) => {
   useInjectStyle();
 
   const { theme } = useTheme();
-
   const [showExportModal, setShowExportModal] = useState(false);
   const [modules, setModules] = useState<DashboardModule[]>([]);
   const [initialLoad, setInitialLoad] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [activeLocks, setActiveLocks] = useState<ActiveLock[]>([]);
   const [activeChart, setActiveChart] = useState<ChartTab>("bar");
-  // Map of moduleName → count of tests locked by OTHER users
-  // NOTE: fetchOtherActiveLockModules must return Map<string, number> now
   const [otherLockedModules, setOtherLockedModules] = useState<
     Map<string, number>
   >(new Map());
@@ -124,22 +106,20 @@ const Dashboard: React.FC<Props> = ({ onNavigate }) => {
     };
   }, []);
 
-  // ── Fetch active locks ────────────────────────────────────────────────────
   const fetchActiveLocksData = useCallback(async () => {
     try {
       const [locks, otherModules] = await Promise.all([
         fetchActiveLocks(),
-        fetchOtherActiveLockModules(), // must return Map<string, number>
+        fetchOtherActiveLockModules(),
       ]);
       if (!mountedRef.current) return;
       setActiveLocks(locks);
       setOtherLockedModules(otherModules);
     } catch {
-      // non-critical
+      /* non-critical */
     }
   }, []);
 
-  // ── Fetch modules ─────────────────────────────────────────────────────────
   const fetchModules = useCallback(async (isInitial = false) => {
     try {
       const data = await fetchDashboardModules();
@@ -154,12 +134,10 @@ const Dashboard: React.FC<Props> = ({ onNavigate }) => {
     }
   }, []);
 
-  // ── Initial load ──────────────────────────────────────────────────────────
   useEffect(() => {
     Promise.all([fetchModules(true), fetchActiveLocksData()]);
   }, [fetchModules, fetchActiveLocksData]);
 
-  // ── Realtime ──────────────────────────────────────────────────────────────
   useEffect(() => {
     const channel = supabase
       .channel("dashboard-live")
@@ -184,7 +162,6 @@ const Dashboard: React.FC<Props> = ({ onNavigate }) => {
     };
   }, [fetchModules, fetchActiveLocksData]);
 
-  // ── GSAP entrance animation ───────────────────────────────────────────────
   useLayoutEffect(() => {
     if (!initialLoad && gridRef.current && gridRef.current.children.length > 0)
       gsap.fromTo(
@@ -201,7 +178,6 @@ const Dashboard: React.FC<Props> = ({ onNavigate }) => {
       );
   }, [initialLoad, modules.length]);
 
-  // ── Derived state ─────────────────────────────────────────────────────────
   const summaries = useMemo(() => buildSummaries(modules), [modules]);
 
   const globalStats = useMemo(
@@ -216,13 +192,10 @@ const Dashboard: React.FC<Props> = ({ onNavigate }) => {
     [summaries]
   );
 
-  // ── Per-module lock counts ────────────────────────────────────────────────
-  // How many of MY tests are locked per module
   const myLockCountByModule = useMemo(() => {
     const map = new Map<string, number>();
-    for (const lock of activeLocks) {
+    for (const lock of activeLocks)
       map.set(lock.module_name, (map.get(lock.module_name) ?? 0) + 1);
-    }
     return map;
   }, [activeLocks]);
 
@@ -239,7 +212,33 @@ const Dashboard: React.FC<Props> = ({ onNavigate }) => {
     [summaries]
   );
 
-  // ── Error state ───────────────────────────────────────────────────────────
+  // ── Build per-test breakdown for PDF ───────────────────────────────────────
+  const buildSummariesWithTests = useCallback((): ModuleSummary[] => {
+    return summaries.map((s) => {
+      const mod = modules.find((m) => m.name === s.name);
+      const tests = (mod?.module_tests ?? []).map((mt) => {
+        const testSteps = (mod?.step_results ?? []).filter(
+          (sr) => sr.step?.tests_name === mt.tests_name && !sr.step?.is_divider
+        );
+        const pass = testSteps.filter((sr) => sr.status === "pass").length;
+        const fail = testSteps.filter((sr) => sr.status === "fail").length;
+        const pending = testSteps.filter(
+          (sr) => sr.status === "pending"
+        ).length;
+        const total = testSteps.length;
+        return {
+          name: mt.test?.name ?? mt.tests_name,
+          total,
+          pass,
+          fail,
+          pending,
+          passRate: total > 0 ? Math.round((pass / total) * 100) : 0,
+        };
+      });
+      return { ...s, tests };
+    });
+  }, [summaries, modules]);
+
   if (error)
     return (
       <div className="p-6">
@@ -259,7 +258,6 @@ const Dashboard: React.FC<Props> = ({ onNavigate }) => {
 
   const hasAnyLocks = activeLocks.length > 0 || otherLockedModules.size > 0;
 
-  // ── Render ────────────────────────────────────────────────────────────────
   return (
     <div className="p-6 flex flex-col gap-6 pb-24 md:pb-6">
       <ExportModal
@@ -272,23 +270,23 @@ const Dashboard: React.FC<Props> = ({ onNavigate }) => {
           {
             label: "CSV",
             icon: <FileSpreadsheet size={16} />,
-            color: "bg-[var(--color-primary)]",
-            hoverColor: "hover:bg-[var(--color-primary-hover)]",
+            color: "bg-emerald-600",
+            hoverColor: "hover:bg-emerald-700",
             onConfirm: () => exportDashboardCSV(summaries),
           },
           {
             label: "PDF",
             icon: <FileText size={16} />,
-            color: "bg-[var(--color-blue)]",
-            hoverColor: "hover:bg-[var(--color-blue-hover)]",
-            onConfirm: () => exportDashboardPDF(summaries),
+            color: "bg-blue-600",
+            hoverColor: "hover:bg-blue-700",
+            onConfirm: () => exportDashboardPDF(buildSummariesWithTests()),
           },
           {
             label: "DOCX",
             icon: <FileDown size={16} />,
-            color: "bg-[var(--color-blue)]",
-            hoverColor: "hover:bg-[var(--color-blue-hover)]",
-            onConfirm: () => exportDashboardDocx(summaries),
+            color: "bg-indigo-600",
+            hoverColor: "hover:bg-indigo-700",
+            onConfirm: () => exportDashboardDocx(buildSummariesWithTests()),
           },
         ]}
       />
@@ -314,7 +312,6 @@ const Dashboard: React.FC<Props> = ({ onNavigate }) => {
         </button>
       </div>
 
-      {/* Lock warning banner — show when any lock exists (mine or others) */}
       {!initialLoad && hasAnyLocks && (
         <LockWarningBanner
           locks={activeLocks}
@@ -323,7 +320,7 @@ const Dashboard: React.FC<Props> = ({ onNavigate }) => {
         />
       )}
 
-      {/* ── Fleet Overview Charts ─────────────────────────────────────────── */}
+      {/* Fleet Overview Charts */}
       {!initialLoad && modules.length > 0 && (
         <div className="card p-4 flex flex-col gap-4">
           <div className="flex items-center justify-between flex-wrap gap-2">
@@ -453,7 +450,6 @@ const Dashboard: React.FC<Props> = ({ onNavigate }) => {
               testCount,
             } = getModuleStats(m.module_tests ?? [], m.step_results ?? []);
 
-            // Per-module lock counts (not whole-module lock state)
             const myLockCount = myLockCountByModule.get(m.name) ?? 0;
             const otherLockCount = otherLockedModules.get(m.name) ?? 0;
 
@@ -505,21 +501,13 @@ const Dashboard: React.FC<Props> = ({ onNavigate }) => {
                       </p>
                     )}
                   </div>
-
-                  {/* Badge cluster — all badges in a flex row */}
                   <div className="flex items-center gap-1.5 shrink-0 flex-wrap justify-end">
-                    {/* My locked tests badge */}
                     {myLockCount > 0 && (
-                      <span
-                        className="flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full border whitespace-nowrap
-                          text-cyan-300 border-cyan-400/40 bg-cyan-500/10"
-                      >
-                        <Lock size={9} />
-                        {myLockCount} My Lock{myLockCount > 1 ? "s" : ""}
+                      <span className="flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full border whitespace-nowrap text-cyan-300 border-cyan-400/40 bg-cyan-500/10">
+                        <Lock size={9} /> {myLockCount} My Lock
+                        {myLockCount > 1 ? "s" : ""}
                       </span>
                     )}
-
-                    {/* Others' locked tests badge */}
                     {otherLockCount > 0 && (
                       <span
                         className="flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full border whitespace-nowrap"
@@ -530,12 +518,9 @@ const Dashboard: React.FC<Props> = ({ onNavigate }) => {
                             "color-mix(in srgb, #f59e0b 10%, transparent)",
                         }}
                       >
-                        <Lock size={9} />
-                        {otherLockCount} Locked
+                        <Lock size={9} /> {otherLockCount} Locked
                       </span>
                     )}
-
-                    {/* Test count badge */}
                     <span
                       className="text-[10px] font-bold px-2 py-0.5 rounded-full border whitespace-nowrap tracking-wide"
                       style={{

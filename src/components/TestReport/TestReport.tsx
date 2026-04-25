@@ -308,7 +308,7 @@ const TestReport: React.FC<Props> = ({ module_test_id, onBack }) => {
     if (!sessionSteps.length) return [];
     const map = new Map<string, SessionTestGroup>();
     sessionSteps
-      .filter((s) => !s.isdivider)
+      .filter((s) => !s.is_divider)
       .forEach((s) => {
         const key = `${s.module_name}::${s.tests_name}`;
         if (!map.has(key)) {

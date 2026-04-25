@@ -37,7 +37,7 @@ export interface ExportTestDocxOptions {
 // ── Serial numbers (skip divider rows) ────────────────────────────────────
 function computeSerialNumbers(steps: StepRow[]): (number | null)[] {
   let counter = 0;
-  return steps.map((s) => (s.isdivider ? null : ++counter));
+  return steps.map((s) => (s.is_divider ? null : ++counter));
 }
 
 // ── Dimensions ────────────────────────────────────────────────────────────

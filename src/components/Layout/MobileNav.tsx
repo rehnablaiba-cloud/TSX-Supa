@@ -39,52 +39,30 @@ import ImportStepsModal from "../Modals/ImportStepsModal";
 import ImportStepsManualModal from "../Modals/ImportStepsManualModal";
 import ExportTestDocxModal from "../Modals/ExportTestDocxModal";
 
-// ── Liquid Glass CSS injected once ────────────────────────────────────────────
-const GLASS_STYLE = `
-  .lg-nav {
-    background: color-mix(in srgb, var(--bg-surface) 80%, transparent);
-    backdrop-filter: blur(28px) saturate(180%) brightness(1.04);
-    -webkit-backdrop-filter: blur(28px) saturate(180%) brightness(1.04);
-    border: 1px solid var(--border-color);
-    box-shadow: 0 8px 32px rgba(0,0,0,0.15), 0 1px 0 rgba(255,255,255,0.05) inset;
-  }
-  .lg-sheet {
-    background: color-mix(in srgb, var(--bg-surface) 94%, transparent);
-    backdrop-filter: blur(40px) saturate(180%);
-    -webkit-backdrop-filter: blur(40px) saturate(180%);
-    border-top: 1px solid var(--border-color);
-    border-left: 1px solid var(--border-color);
-    border-right: 1px solid var(--border-color);
-    box-shadow: 0 -8px 32px rgba(0,0,0,0.10);
-  }
-  .lg-pill-active {
-    background: color-mix(in srgb, var(--c-brand) 15%, transparent);
-    box-shadow: 0 0 12px color-mix(in srgb, var(--c-brand) 20%, transparent);
-  }
-  .lg-item-btn {
-    background: color-mix(in srgb, var(--bg-card) 70%, transparent);
-    border: 1px solid var(--border-color);
-    transition: background 0.18s;
-  }
-  .lg-item-btn:hover {
-    background: var(--bg-card);
-  }
-  .lg-indicator {
-    background: var(--c-brand);
-    box-shadow: 0 0 10px color-mix(in srgb, var(--c-brand) 50%, transparent);
-  }
-`;
+// ── Liquid Glass inline style builders ────────────────────────────────────────
+// Using inline styles avoids the race between style-tag injection, GSAP, and
+// theme hydration that caused the glass effect to silently fail.
 
-function useGlassStyle() {
-  useEffect(() => {
-    const el = document.createElement("style");
-    el.textContent = GLASS_STYLE;
-    document.head.appendChild(el);
-    return () => {
-      if (el.parentNode) el.parentNode.removeChild(el);
-    };
-  }, []);
-}
+const glassNavStyle: React.CSSProperties = {
+  background:
+    "color-mix(in srgb, var(--bg-surface, rgba(30,30,40,0.85)) 80%, transparent)",
+  backdropFilter: "blur(28px) saturate(180%) brightness(1.04)",
+  WebkitBackdropFilter: "blur(28px) saturate(180%) brightness(1.04)",
+  border: "1px solid var(--border-color, rgba(255,255,255,0.12))",
+  boxShadow:
+    "0 8px 32px rgba(0,0,0,0.18), inset 0 1px 0 rgba(255,255,255,0.06)",
+};
+
+const glassSheetStyle: React.CSSProperties = {
+  background:
+    "color-mix(in srgb, var(--bg-surface, rgba(22,22,32,0.96)) 94%, transparent)",
+  backdropFilter: "blur(40px) saturate(180%)",
+  WebkitBackdropFilter: "blur(40px) saturate(180%)",
+  borderTop: "1px solid var(--border-color, rgba(255,255,255,0.12))",
+  borderLeft: "1px solid var(--border-color, rgba(255,255,255,0.12))",
+  borderRight: "1px solid var(--border-color, rgba(255,255,255,0.12))",
+  boxShadow: "0 -8px 32px rgba(0,0,0,0.12)",
+};
 
 // ══════════════════════════════════════════════════════════════════════════════
 // MAIN MobileNav COMPONENT — iOS 26 Liquid Glass
@@ -104,8 +82,6 @@ type ActiveModal =
   | null;
 
 const MobileNav: React.FC<Props> = ({ activePage, onNavigate }) => {
-  useGlassStyle();
-
   const { user, signOut } = useAuth();
   const { theme, setTheme } = useTheme();
   const [activeModal, setModal] = useState<ActiveModal>(null);
@@ -230,15 +206,20 @@ const MobileNav: React.FC<Props> = ({ activePage, onNavigate }) => {
   return (
     <>
       {/* ── Floating glass nav bar ────────────────────────────────────────── */}
+      {/* FIX: removed `|| menuOpen` — the nav stays visible while the sheet
+          slides up over it. Hiding it caused the bar to disappear on every
+          More tap with no way to bring it back until the sheet closed. */}
       <nav
         ref={navRef}
-        className="lg-nav fixed bottom-5 left-1/2 -translate-x-1/2 z-50 md:hidden
+        className="fixed bottom-5 left-1/2 -translate-x-1/2 z-50 md:hidden
           rounded-[26px] flex items-center px-2 py-2 gap-1"
         style={{
+          ...glassNavStyle,
           width: "calc(100% - 32px)",
           maxWidth: 420,
           marginBottom: "env(safe-area-inset-bottom, 0px)",
-          display: activeModal !== null || menuOpen ? "none" : undefined,
+          // Only truly hide the bar when a modal is covering the whole screen
+          display: activeModal !== null ? "none" : undefined,
         }}
       >
         {allNavItems.map((item, i) => {
@@ -270,23 +251,43 @@ const MobileNav: React.FC<Props> = ({ activePage, onNavigate }) => {
                 handleNavPress(itemRefs.current[i], item.id);
               }}
               className={`relative flex flex-col items-center justify-center gap-0.5
-                flex-1 py-2 px-1 rounded-[18px] transition-all duration-200
-                ${isActive ? "lg-pill-active" : ""}`}
+                flex-1 py-2 px-1 rounded-[18px] transition-all duration-200`}
+              style={
+                isActive
+                  ? {
+                      background:
+                        "color-mix(in srgb, var(--c-brand) 15%, transparent)",
+                      boxShadow:
+                        "0 0 12px color-mix(in srgb, var(--c-brand) 20%, transparent)",
+                    }
+                  : undefined
+              }
             >
               {isActive && (
-                <span className="lg-indicator absolute top-1.5 left-1/2 -translate-x-1/2 w-5 h-0.5 rounded-full" />
+                <span
+                  className="absolute top-1.5 left-1/2 -translate-x-1/2 w-5 h-0.5 rounded-full"
+                  style={{
+                    background: "var(--c-brand)",
+                    boxShadow:
+                      "0 0 10px color-mix(in srgb, var(--c-brand) 50%, transparent)",
+                  }}
+                />
               )}
               <span
                 className={`transition-colors duration-200 ${
-                  isActive ? "text-c-brand" : "text-t-secondary opacity-60"
-                } ${menuOpen && isMore ? "text-c-brand" : ""}`}
+                  (isActive || (menuOpen && isMore))
+                    ? "text-c-brand"
+                    : "text-t-secondary opacity-60"
+                }`}
               >
                 {item.icon}
               </span>
               <span
                 className={`text-[9.5px] font-semibold tracking-wide transition-colors duration-200 ${
-                  isActive ? "text-c-brand" : "text-t-secondary opacity-45"
-                } ${menuOpen && isMore ? "text-c-brand" : ""}`}
+                  (isActive || (menuOpen && isMore))
+                    ? "text-c-brand"
+                    : "text-t-secondary opacity-45"
+                }`}
               >
                 {item.label}
               </span>
@@ -313,12 +314,15 @@ const MobileNav: React.FC<Props> = ({ activePage, onNavigate }) => {
       {/* ── More sheet — liquid glass bottom sheet ────────────────────────── */}
       <div
         ref={sheetRef}
-        className="lg-sheet fixed bottom-0 inset-x-0 z-[60] md:hidden rounded-t-[28px] flex-col"
-        style={{ display: "none", maxHeight: "80vh" }}
+        className="fixed bottom-0 inset-x-0 z-[60] md:hidden rounded-t-[28px] flex-col"
+        style={{ ...glassSheetStyle, display: "none", maxHeight: "80vh" }}
       >
         {/* Handle */}
         <div className="flex justify-center pt-3 pb-2 shrink-0">
-          <div className="w-9 h-1 rounded-full bg-[var(--border-color)]" />
+          <div
+            className="w-9 h-1 rounded-full"
+            style={{ background: "var(--border-color)" }}
+          />
         </div>
 
         {/* Header */}
@@ -350,7 +354,11 @@ const MobileNav: React.FC<Props> = ({ activePage, onNavigate }) => {
           <div className="sheet-item flex gap-2 mb-1">
             <button
               onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
-              className="lg-item-btn flex-1 flex items-center gap-2.5 px-4 py-3 rounded-2xl"
+              className="flex-1 flex items-center gap-2.5 px-4 py-3 rounded-2xl transition-colors"
+              style={{
+                background: "color-mix(in srgb, var(--bg-card) 70%, transparent)",
+                border: "1px solid var(--border-color)",
+              }}
             >
               <span className="text-t-muted">
                 {theme === "dark" ? <Sun size={16} /> : <Moon size={16} />}
@@ -364,7 +372,11 @@ const MobileNav: React.FC<Props> = ({ activePage, onNavigate }) => {
                 setModal("theme");
                 closeMenu();
               }}
-              className="lg-item-btn flex items-center gap-2.5 px-4 py-3 rounded-2xl"
+              className="flex items-center gap-2.5 px-4 py-3 rounded-2xl transition-colors"
+              style={{
+                background: "color-mix(in srgb, var(--bg-card) 70%, transparent)",
+                border: "1px solid var(--border-color)",
+              }}
             >
               <Palette size={16} className="text-t-muted" />
               <span className="text-sm text-t-secondary font-medium">
@@ -416,7 +428,11 @@ const MobileNav: React.FC<Props> = ({ activePage, onNavigate }) => {
                     setModal(item.modal);
                     closeMenu();
                   }}
-                  className="sheet-item lg-item-btn w-full flex items-center gap-3 px-4 py-3 rounded-2xl text-left"
+                  className="sheet-item w-full flex items-center gap-3 px-4 py-3 rounded-2xl text-left transition-colors"
+                  style={{
+                    background: "color-mix(in srgb, var(--bg-card) 70%, transparent)",
+                    border: "1px solid var(--border-color)",
+                  }}
                 >
                   <span className="text-c-brand/70">{item.icon}</span>
                   <span className="text-sm text-t-secondary font-medium">
@@ -428,11 +444,17 @@ const MobileNav: React.FC<Props> = ({ activePage, onNavigate }) => {
           )}
 
           {/* Sign out */}
-          <div className="h-px bg-[var(--border-color)] my-2 sheet-item" />
+          <div
+            className="h-px my-2 sheet-item"
+            style={{ background: "var(--border-color)" }}
+          />
           <button
             onClick={handleSignOut}
-            className="sheet-item lg-item-btn w-full flex items-center gap-3 px-4 py-3 rounded-2xl text-left
-              border-red-500/15 hover:bg-red-500/10"
+            className="sheet-item w-full flex items-center gap-3 px-4 py-3 rounded-2xl text-left transition-colors hover:bg-red-500/10"
+            style={{
+              background: "color-mix(in srgb, var(--bg-card) 70%, transparent)",
+              border: "1px solid rgba(239,68,68,0.15)",
+            }}
           >
             <LogOut size={15} className="text-red-400/70" />
             <span className="text-sm text-red-400/80 font-medium">

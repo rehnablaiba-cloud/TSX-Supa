@@ -298,7 +298,7 @@ const ImportStepsManualModal: React.FC<Props> = ({ onClose, onBack }) => {
                 <span className="font-mono text-c-brand mr-2">
                   {s.serial_no}
                 </span>
-                {s.isdivider ? (
+                {s.is_divider ? (
                   <em className="text-t-muted">divider</em>
                 ) : (
                   s.action

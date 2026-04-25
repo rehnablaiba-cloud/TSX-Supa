@@ -1,6 +1,17 @@
-import jsPDF from "jspdf";
-import autoTable from "jspdf-autotable";
-import type { Module } from "../types";
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
+import type { Module } from '../types';
+import { parseCSV } from './csvParser';
+
+// ─── Shared Types ──────────────────────────────────────────────────────────────
+export interface TestSummary {
+  name: string;
+  total: number;
+  pass: number;
+  fail: number;
+  pending: number;
+  passRate: number;
+}
 
 export interface FlatData {
   module: string;
@@ -23,47 +34,59 @@ export interface ModuleSummary {
   fail: number;
   pending: number;
   passRate: number;
+  tests?: TestSummary[];
 }
 
-const DARK = [30, 30, 30] as [number, number, number];
-const MID = [80, 80, 80] as [number, number, number];
-const MUTED = [130, 130, 130] as [number, number, number];
-const FAINT = [190, 190, 190] as [number, number, number];
-const WHITE = [255, 255, 255] as [number, number, number];
+// ─── Color Palette ─────────────────────────────────────────────────────────────
+const DARK     = [20,  20,  20]  as [number, number, number];
+const MID      = [70,  70,  70]  as [number, number, number];
+const MUTED    = [130, 130, 130] as [number, number, number];
+const FAINT    = [200, 200, 200] as [number, number, number];
+const WHITE    = [255, 255, 255] as [number, number, number];
 
-const HDRBG = [235, 235, 237] as [number, number, number];
-const HDRTXT = [55, 55, 65] as [number, number, number];
+const HDRBG    = [35,  35,  35]  as [number, number, number];
+const HDRTXT   = [255, 255, 255] as [number, number, number];
+const ROWALT   = [246, 246, 246] as [number, number, number];
+const DIVBG    = [220, 220, 220] as [number, number, number];
+const DIVTXT   = [25,  25,  25]  as [number, number, number];
+const MODBG    = [45,  45,  45]  as [number, number, number];
+const MODTXT   = [255, 255, 255] as [number, number, number];
+const TESTBG   = [210, 210, 210] as [number, number, number];
+const TESTTXT  = [25,  25,  25]  as [number, number, number];
 
-const PASSBG = [232, 247, 237] as [number, number, number];
-const FAILBG = [254, 235, 235] as [number, number, number];
-const PENDBG = [255, 247, 237] as [number, number, number];
-const ROWALT = [249, 249, 251] as [number, number, number];
+const PASSBG   = [230, 248, 236] as [number, number, number];
+const FAILBG   = [252, 234, 234] as [number, number, number];
+const GREENINK = [16,  100, 45]  as [number, number, number];
+const REDINK   = [160, 22,  22]  as [number, number, number];
+const PENDINK  = [90,  90,  90]  as [number, number, number];
 
-const BLUEINK = [37, 99, 235] as [number, number, number];
-const GREENINK = [22, 163, 74] as [number, number, number];
-const REDINK = [220, 38, 38] as [number, number, number];
-const AMBERINK = [217, 119, 6] as [number, number, number];
+// light variants for use on dark (inverted) rows
+const GREEN_ON_DARK = [144, 238, 144] as [number, number, number];
+const RED_ON_DARK   = [255, 160, 160] as [number, number, number];
+const GREY_ON_DARK  = [180, 180, 180] as [number, number, number];
 
-const MODBG = [241, 245, 249] as [number, number, number];
-const MODTXT = [71, 85, 105] as [number, number, number];
+// ─── Utilities ─────────────────────────────────────────────────────────────────
+const statusBg    = (s: string): [number, number, number] =>
+  s === 'pass' ? PASSBG : s === 'fail' ? FAILBG : WHITE;
+const statusColor = (s: string): [number, number, number] =>
+  s === 'pass' ? GREENINK : s === 'fail' ? REDINK : PENDINK;
+const statusLabel = (s: string) =>
+  s === 'pass' ? 'PASS' : s === 'fail' ? 'FAIL' : 'PENDING';
+const rateColor   = (rate: number, total: number): [number, number, number] =>
+  rate === 100 ? GREENINK : rate === 0 && total > 0 ? REDINK : DARK;
+const rateColorOnDark = (rate: number, total: number): [number, number, number] =>
+  rate === 100 ? GREEN_ON_DARK : rate === 0 && total > 0 ? RED_ON_DARK : HDRTXT;
+const pad2        = (n: number) => String(n).padStart(2, '0');
+const today       = new Date().toISOString().split('T')[0];
 
-const TESTBG = [239, 246, 255] as [number, number, number];
-const TESTTXT = [30, 64, 175] as [number, number, number];
-
-const DIV1BG = [255, 247, 237] as [number, number, number];
-const DIV2BG = [239, 246, 255] as [number, number, number];
-const DIV3BG = [240, 253, 244] as [number, number, number];
-
-const ORANGEINK = [234, 88, 12] as [number, number, number];
-const BLUEDIV = [37, 99, 235] as [number, number, number];
-const GREENDIV = [22, 163, 74] as [number, number, number];
-
-const today = new Date().toISOString().split("T")[0];
-
-const pad2 = (n: number) => String(n).padStart(2, "0");
+const resolveDividerLevel = (d: FlatData): number => {
+  if (d.dividerLevel && d.dividerLevel >= 1 && d.dividerLevel <= 3) return d.dividerLevel;
+  const n = parseInt(d.expected, 10);
+  return !isNaN(n) && n >= 1 && n <= 3 ? n : 1;
+};
 
 const download = (blob: Blob, filename: string) => {
-  const a = document.createElement("a");
+  const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
   a.download = filename;
   a.click();
@@ -71,237 +94,115 @@ const download = (blob: Blob, filename: string) => {
 };
 
 const openPrintPreview = (doc: jsPDF) => {
-  const url = doc.output("bloburl");
-  const win = window.open(url as unknown as string, "_blank");
+  const url = doc.output('bloburl');
+  const win = window.open(url as unknown as string, '_blank');
   if (!win) {
-    const a = document.createElement("a");
+    const a = document.createElement('a');
     a.href = url as unknown as string;
-    a.download = "report.pdf";
+    a.download = 'report.pdf';
     a.click();
   }
 };
 
-const statusBg = (status: string): [number, number, number] => {
-  if (status === "pass") return PASSBG;
-  if (status === "fail") return FAILBG;
-  if (status === "pending") return PENDBG;
-  return WHITE;
-};
-
-const statusColor = (status: string): [number, number, number] => {
-  if (status === "pass") return GREENINK;
-  if (status === "fail") return REDINK;
-  if (status === "pending") return AMBERINK;
-  return DARK;
-};
-
-const statusLabel = (status: string) => {
-  if (status === "pass") return "PASS";
-  if (status === "fail") return "FAIL";
-  if (status === "pending") return "PENDING";
-  return "";
-};
-
-const dividerStyle = (
-  level: number
-): { bg: [number, number, number]; txt: [number, number, number] } => {
-  if (level === 2) return { bg: DIV2BG, txt: BLUEDIV };
-  if (level === 3) return { bg: DIV3BG, txt: GREENDIV };
-  return { bg: DIV1BG, txt: ORANGEINK };
-};
-
-const resolveDividerLevel = (d: FlatData): number => {
-  if (d.dividerLevel && d.dividerLevel >= 1 && d.dividerLevel <= 3) {
-    return d.dividerLevel;
-  }
-  const fromExpected = parseInt(d.expected, 10);
-  if (!isNaN(fromExpected) && fromExpected >= 1 && fromExpected <= 3) {
-    return fromExpected;
-  }
-  return 1;
-};
-
-type IconType = "total" | "pass" | "fail" | "pending" | "tests";
-
-const drawLineIcon = (
-  doc: jsPDF,
-  cx: number,
-  cy: number,
-  r: number,
-  color: [number, number, number],
-  icon: IconType
-) => {
-  doc.setDrawColor(...color);
-  doc.setLineWidth(0.55);
-
-  switch (icon) {
-    case "total": {
-      const lx = cx - r * 0.55;
-      const rx = cx + r * 0.55;
-      [-0.55, 0, 0.55].forEach((oy) =>
-        doc.line(lx, cy + r * oy, rx, cy + r * oy)
-      );
-      break;
-    }
-    case "pass":
-      doc.line(cx - r * 0.6, cy, cx - r * 0.05, cy + r * 0.55);
-      doc.line(cx - r * 0.05, cy + r * 0.55, cx + r * 0.65, cy - r * 0.55);
-      break;
-    case "fail":
-      doc.line(cx - r * 0.55, cy - r * 0.55, cx + r * 0.55, cy + r * 0.55);
-      doc.line(cx + r * 0.55, cy - r * 0.55, cx - r * 0.55, cy + r * 0.55);
-      break;
-    case "pending":
-      doc.circle(cx, cy, r * 0.7, "S");
-      doc.line(cx, cy - r * 0.45, cx, cy);
-      doc.line(cx, cy, cx + r * 0.35, cy + r * 0.2);
-      break;
-    case "tests": {
-      const g = r * 0.38;
-      doc.line(cx - g, cy - r * 0.55, cx - g, cy + r * 0.55);
-      doc.line(cx + g, cy - r * 0.55, cx + g, cy + r * 0.55);
-      doc.line(cx - r * 0.55, cy - g, cx + r * 0.55, cy - g);
-      doc.line(cx - r * 0.55, cy + g, cx + r * 0.55, cy + g);
-      break;
-    }
-  }
-};
-
+// ─── Page Header ───────────────────────────────────────────────────────────────
 const drawHeader = (doc: jsPDF, title: string, subtitle?: string): number => {
   const W = doc.internal.pageSize.getWidth();
 
   doc.setDrawColor(...DARK);
-  doc.setLineWidth(0.6);
+  doc.setLineWidth(0.8);
   doc.line(14, 5, W - 14, 5);
 
-  const safeTitle = title && title.trim() ? title.trim() : "Unnamed Test";
-  const safeSubtitle =
-    subtitle && subtitle.trim() ? subtitle.trim() : undefined;
-
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(14);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(15);
   doc.setTextColor(...DARK);
-  doc.text(safeTitle, W / 2, 14, { align: "center" });
+  doc.text((title || 'Report').trim(), W / 2, 15, { align: 'center' });
 
-  let lineY = 19;
-
-  if (safeSubtitle) {
-    doc.setFont("helvetica", "normal");
-    doc.setFontSize(8);
-    doc.setTextColor(...MUTED);
-    doc.text(safeSubtitle, W / 2, 21, { align: "center" });
-    lineY = 26;
+  let y = 20;
+  if (subtitle?.trim()) {
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8.5);
+    doc.setTextColor(...MID);
+    doc.text(subtitle.trim(), W / 2, 22, { align: 'center' });
+    y = 27;
   }
 
-  doc.setFont("helvetica", "normal");
+  doc.setFont('helvetica', 'normal');
   doc.setFontSize(6.5);
   doc.setTextColor(...MUTED);
-  doc.text(`Generated ${new Date().toLocaleString()}`, W - 14, lineY - 1, {
-    align: "right",
-  });
+  doc.text(`Generated: ${new Date().toLocaleString()}`, W - 14, y - 1, { align: 'right' });
 
   doc.setDrawColor(...FAINT);
   doc.setLineWidth(0.25);
-  doc.line(14, lineY + 2, W - 14, lineY + 2);
+  doc.line(14, y + 2, W - 14, y + 2);
 
-  return lineY + 7;
+  return y + 7;
 };
 
-interface ExtraCard {
-  label: string;
-  value: string;
-  color: [number, number, number];
-  icon: IconType;
-}
-
-const drawStatsBar = (
+// ─── Stats Text Line ───────────────────────────────────────────────────────────
+const drawStatsText = (
   doc: jsPDF,
   total: number,
   pass: number,
   fail: number,
   pending: number,
   startY: number,
-  extraCards?: ExtraCard[]
+  extra?: { label: string; value: string | number }[]
 ): number => {
-  const W = doc.internal.pageSize.getWidth();
-  const usableW = W - 28;
+  const W    = doc.internal.pageSize.getWidth();
+  const rate = total > 0 ? Math.round((pass / total) * 100) : 0;
+  let cx     = 14;
+  const cy   = startY + 4;
 
-  const cards: ExtraCard[] = [
-    { label: "Total Steps", value: String(total), color: DARK, icon: "total" },
-    { label: "Passed", value: String(pass), color: GREENINK, icon: "pass" },
-    { label: "Failed", value: String(fail), color: REDINK, icon: "fail" },
-    {
-      label: "Pending",
-      value: String(pending),
-      color: AMBERINK,
-      icon: "pending",
-    },
-    ...(extraCards ?? []),
+  const segments: { label: string; value: string; valueColor: [number, number, number] }[] = [
+    { label: 'Total:',     value: String(total),   valueColor: DARK     },
+    { label: 'Pass:',      value: String(pass),    valueColor: GREENINK },
+    { label: 'Fail:',      value: String(fail),    valueColor: REDINK   },
+    { label: 'Pending:',   value: String(pending), valueColor: PENDINK  },
+    { label: 'Pass Rate:', value: `${rate}%`,      valueColor: rateColor(rate, total) },
+    ...(extra ?? []).map(e => ({
+      label: `${e.label}:`, value: String(e.value),
+      valueColor: DARK as [number, number, number],
+    })),
   ];
 
-  const cardW = (usableW - (cards.length - 1) * 3) / cards.length;
-  const cardH = 22;
-
-  cards.forEach((card, i) => {
-    const x = 14 + i * (cardW + 3);
-    const y = startY;
-
-    doc.setFillColor(...WHITE);
-    doc.setDrawColor(...FAINT);
-    doc.setLineWidth(0.3);
-    doc.roundedRect(x, y, cardW, cardH, 2, 2, "FD");
-
-    doc.setDrawColor(...card.color);
-    doc.setLineWidth(1.2);
-    doc.line(x + 1.5, y + 3, x + 1.5, y + cardH - 3);
-
-    doc.setLineWidth(0.3);
-    drawLineIcon(doc, x + cardW - 8, y + 7.5, 3.5, card.color, card.icon);
-
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(14);
-    doc.setTextColor(...card.color);
-    doc.text(card.value, x + 7, y + 13);
-
-    doc.setFont("helvetica", "normal");
-    doc.setFontSize(6);
+  doc.setFontSize(8);
+  segments.forEach((seg, i) => {
+    doc.setFont('helvetica', 'normal');
     doc.setTextColor(...MUTED);
-    doc.text(card.label.toUpperCase(), x + 7, y + 19);
+    doc.text(seg.label, cx, cy);
+    cx += doc.getTextWidth(seg.label) + 1.5;
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(...seg.valueColor);
+    doc.text(seg.value, cx, cy);
+    cx += doc.getTextWidth(seg.value) + (i < segments.length - 1 ? 6 : 0);
   });
 
-  const rate = total > 0 ? Math.round((pass / total) * 100) : 0;
-  const barY = startY + cardH + 4;
-  const barH = 3;
-
   doc.setDrawColor(...FAINT);
-  doc.setFillColor(...WHITE);
-  doc.setLineWidth(0.25);
-  doc.roundedRect(14, barY, usableW, barH, 1.5, 1.5, "FD");
+  doc.setLineWidth(0.2);
+  doc.line(14, cy + 3, W - 14, cy + 3);
 
-  if (rate > 0) {
-    doc.setFillColor(...GREENINK);
-    doc.setDrawColor(...GREENINK);
-    doc.roundedRect(14, barY, (usableW * rate) / 100, barH, 1.5, 1.5, "F");
-  }
-
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(7);
-  doc.setTextColor(...GREENINK);
-  doc.text(`${rate}% pass rate`, 14, barY + barH + 5);
-
-  doc.setFont("helvetica", "normal");
-  doc.setFontSize(6.5);
-  doc.setTextColor(...MUTED);
-  doc.text(
-    `${pass} passed   ${fail} failed   ${pending} pending   ${total} total`,
-    W - 14,
-    barY + barH + 5,
-    { align: "right" }
-  );
-
-  return barY + barH + 11;
+  return cy + 9;
 };
 
+// ─── Page Footer ───────────────────────────────────────────────────────────────
+const drawFooter = (doc: jsPDF) => {
+  const W     = doc.internal.pageSize.getWidth();
+  const H     = doc.internal.pageSize.getHeight();
+  const pages = (doc.internal as any).getNumberOfPages();
+  for (let i = 1; i <= pages; i++) {
+    doc.setPage(i);
+    doc.setDrawColor(...FAINT);
+    doc.setLineWidth(0.25);
+    doc.line(14, H - 12, W - 14, H - 12);
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(6.5);
+    doc.setTextColor(...MUTED);
+    doc.text('Confidential QA Report', 14, H - 6);
+    doc.text(`Page ${i} of ${pages}`, W - 14, H - 6, { align: 'right' });
+  }
+};
+
+// ─── Table Defaults ────────────────────────────────────────────────────────────
 const tableDefaults = (doc: jsPDF, startY: number) => ({
   startY,
   styles: {
@@ -315,198 +216,185 @@ const tableDefaults = (doc: jsPDF, startY: number) => ({
   headStyles: {
     fillColor: HDRBG,
     textColor: HDRTXT,
-    fontStyle: "bold" as const,
-    lineColor: FAINT,
-    lineWidth: 0.35,
-    fontSize: 7,
-    cellPadding: { top: 4, bottom: 4, left: 4, right: 4 },
+    fontStyle: 'bold' as const,
+    lineColor: HDRBG,
+    lineWidth: 0,
+    fontSize: 7.5,
+    cellPadding: { top: 4.5, bottom: 4.5, left: 4, right: 4 },
   },
   alternateRowStyles: { fillColor: ROWALT },
-  margin: { top: 34, left: 14, right: 14, bottom: 16 },
+  margin: { top: 34, left: 14, right: 14, bottom: 18 },
 });
 
-const buildStepRow = (step: FlatData) => {
-  const bg = statusBg(step.status);
-  const sc = statusColor(step.status);
-
-  return [
-    {
-      content: String(step.serial),
-      styles: {
-        halign: "center" as const,
-        fillColor: bg,
-        textColor: DARK,
-        fontStyle: "bold" as const,
-        fontSize: 8.5,
-      },
-    },
-    {
-      content: step.action,
-      styles: { fillColor: bg, textColor: DARK },
-    },
-    {
-      content: step.expected,
-      styles: { fillColor: bg, textColor: MID },
-    },
-    {
-      content: step.remarks,
-      styles: { fillColor: bg, textColor: MID },
-    },
-    {
-      content: statusLabel(step.status),
-      styles: {
-        halign: "center" as const,
-        fillColor: bg,
-        textColor: sc,
-        fontStyle: "bold" as const,
-        fontSize: 7.5,
-      },
-    },
-  ];
-};
-
+// ─── Divider Row ───────────────────────────────────────────────────────────────
 const buildDividerRow = (d: FlatData, colSpan: number) => {
-  const level = resolveDividerLevel(d);
-  const { bg, txt } = dividerStyle(level);
-
-  const prefix = level === 1 ? "" : level === 2 ? "- " : "- - ";
-  const label = d.action.replace(/^#{1,3}\s*/, "").toUpperCase();
-
+  const level  = resolveDividerLevel(d);
+  const prefix = level === 1 ? '▸ ' : level === 2 ? '  ▸▸ ' : '    ▸▸▸ ';
+  const label  = d.action.replace(/^#{1,3}\s*/, '').toUpperCase();
   return {
-    content: `${prefix}${label}`,
+    content: prefix + label,
     colSpan,
     styles: {
-      fillColor: bg,
-      textColor: txt,
-      fontStyle: "bold" as const,
-      fontSize: 8,
+      fillColor: DIVBG,
+      textColor: DIVTXT,
+      fontStyle: 'bold' as const,
+      fontSize: 7.5,
       lineColor: FAINT as [number, number, number],
       lineWidth: 0.3,
       cellPadding: {
-        top: level === 1 ? 4.5 : level === 2 ? 3.5 : 3,
-        bottom: level === 1 ? 4.5 : level === 2 ? 3.5 : 3,
-        left: level === 1 ? 10 : level === 2 ? 16 : 22,
-        right: 4,
+        top:    level === 1 ? 4   : 3,
+        bottom: level === 1 ? 4   : 3,
+        left:   level === 1 ? 10  : level === 2 ? 16 : 22,
+        right:  4,
       },
     },
   };
 };
 
-const drawFooter = (doc: jsPDF) => {
-  const W = doc.internal.pageSize.getWidth();
-  const H = doc.internal.pageSize.getHeight();
-  const pages = (doc.internal as any).getNumberOfPages();
-
-  for (let i = 1; i <= pages; i++) {
-    doc.setPage(i);
-    doc.setDrawColor(...FAINT);
-    doc.setLineWidth(0.25);
-    doc.line(14, H - 12, W - 14, H - 12);
-
-    doc.setFont("helvetica", "normal");
-    doc.setFontSize(6.5);
-    doc.setTextColor(...MUTED);
-    doc.text("Confidential QA Report", 14, H - 6);
-    doc.text(`Page ${i} of ${pages}`, W - 14, H - 6, { align: "right" });
-  }
+// ─── Step Row ──────────────────────────────────────────────────────────────────
+const buildStepRow = (step: FlatData) => {
+  const bg = statusBg(step.status);
+  const sc = statusColor(step.status);
+  return [
+    { content: String(step.serial),      styles: { halign: 'center' as const, fillColor: bg, textColor: DARK,  fontStyle: 'bold' as const, fontSize: 8.5 } },
+    { content: step.action,              styles: { fillColor: bg, textColor: DARK } },
+    { content: step.expected,            styles: { fillColor: bg, textColor: MID  } },
+    { content: step.remarks,             styles: { fillColor: bg, textColor: MID  } },
+    { content: statusLabel(step.status), styles: { halign: 'center' as const, fillColor: bg, textColor: sc, fontStyle: 'bold' as const, fontSize: 7.5 } },
+  ];
 };
 
-const docxWrapper = (title: string, body: string) => `
-<html xmlns:o="urn:schemas-microsoft-com:office:office"
-      xmlns:w="urn:schemas-microsoft-com:office:word"
-      xmlns="http://www.w3.org/TR/REC-html40">
-<head>
-  <meta charset="utf-8" />
-  <style>
-    body { font-family: Calibri, Arial, sans-serif; margin: 24px; }
-    h1 { color: #1e3a8a; border-bottom: 1px solid #e2e8f0; padding-bottom: 8px; font-size: 18px; }
-    p { color: #64748b; font-size: 11px; margin: 4px 0 16px; }
-    table { border-collapse: collapse; width: 100%; }
-    th { background: #f1f5f9; color: #475569; padding: 8px 10px; text-align: left; font-size: 10px; border: 1px solid #e2e8f0; }
-    td { padding: 7px 10px; border: 1px solid #e2e8f0; font-size: 11px; }
-    tr:nth-child(even) td { background: #f8fafc; }
-  </style>
-</head>
-<body>
-  <h1>${title}</h1>
-  <p>Generated ${new Date().toLocaleString()}</p>
-  ${body}
-</body>
-</html>
-`;
-
-const downloadDocx = (html: string, filename: string) =>
-  download(new Blob([html], { type: "application/msword" }), filename);
+// ═══════════════════════════════════════════════════════════════════════════════
+// 1. DASHBOARD EXPORTS
+// ═══════════════════════════════════════════════════════════════════════════════
 
 export const exportDashboardCSV = (summaries: ModuleSummary[]) => {
-  const headers =
-    "S.No,Module,Description,Tests,Total Steps,Pass,Fail,Pending,Pass Rate";
-  const rows = summaries.map((s, i) =>
-    [
-      pad2(i + 1),
-      s.name,
-      s.description ?? "",
-      s.testCount ?? "",
-      s.total,
-      s.pass,
-      s.fail,
-      s.pending,
-      s.passRate,
-    ].join(",")
-  );
-
-  download(
-    new Blob([[headers, ...rows].join("\n")], { type: "text/csv" }),
-    `TestProDashboard${today}.csv`
-  );
+  const lines = ['#,Module,Description,Test Name,Steps,Pass,Fail,Pending,Pass Rate'];
+  summaries.forEach((s, i) => {
+    if (s.tests && s.tests.length > 0) {
+      // Module banner row
+      lines.push([
+        pad2(i + 1), s.name, s.description ?? '',
+        `[${s.tests.length} tests]`, s.total, s.pass, s.fail, s.pending, `${s.passRate}%`,
+      ].join(','));
+      // Per-test rows
+      s.tests.forEach((t, ti) => {
+        lines.push([
+          `${pad2(i + 1)}.${pad2(ti + 1)}`, s.name, '',
+          t.name, t.total, t.pass, t.fail, t.pending, `${t.passRate}%`,
+        ].join(','));
+      });
+    } else {
+      lines.push([
+        pad2(i + 1), s.name, s.description ?? '',
+        '—', s.total, s.pass, s.fail, s.pending, `${s.passRate}%`,
+      ].join(','));
+    }
+  });
+  download(new Blob([lines.join('\n')], { type: 'text/csv' }), `TestPro-Fleet-${today}.csv`);
 };
 
 export const exportDashboardPDF = (summaries: ModuleSummary[]) => {
-  const doc = new jsPDF({ orientation: "landscape" });
+  const doc = new jsPDF({ orientation: 'landscape' });
 
-  const contentY = drawHeader(doc, "Dashboard Report", "All Modules Summary");
+  const fleetTotal   = summaries.reduce((a, s) => a + s.total,   0);
+  const fleetPass    = summaries.reduce((a, s) => a + s.pass,    0);
+  const fleetFail    = summaries.reduce((a, s) => a + s.fail,    0);
+  const fleetPending = summaries.reduce((a, s) => a + s.pending, 0);
+  const totalTests   = summaries.reduce((a, s) => a + (s.tests?.length ?? s.testCount ?? 0), 0);
+  const totalModules = summaries.length;
 
-  const total = summaries.reduce((a, s) => a + s.total, 0);
-  const pass = summaries.reduce((a, s) => a + s.pass, 0);
-  const fail = summaries.reduce((a, s) => a + s.fail, 0);
-  const pending = summaries.reduce((a, s) => a + s.pending, 0);
-  const totalTests = summaries.reduce((a, s) => a + (s.testCount ?? 0), 0);
+  let y = drawHeader(doc, 'Fleet Report', `${totalModules} Module${totalModules !== 1 ? 's' : ''}`);
+  y = drawStatsText(doc, fleetTotal, fleetPass, fleetFail, fleetPending, y, [
+    { label: 'Modules',     value: totalModules },
+    { label: 'Total Tests', value: totalTests   },
+  ]);
 
-  const afterStats = drawStatsBar(doc, total, pass, fail, pending, contentY, [
-    {
-      label: "Total Tests",
-      value: String(totalTests),
-      color: BLUEINK,
-      icon: "tests",
-    },
+  const body: any[] = [];
+  let moduleSerial = 0;
+
+  for (const s of summaries) {
+    moduleSerial++;
+    const testCount = s.tests?.length ?? s.testCount ?? 0;
+
+    // ── Module banner row ──────────────────────────────────────────────────────
+    body.push([{
+      content: `${pad2(moduleSerial)}  ${s.name.toUpperCase()}   ·   ${testCount} test${testCount !== 1 ? 's' : ''}   Steps: ${s.total}   Pass: ${s.pass}   Fail: ${s.fail}   Pending: ${s.pending}   (${s.passRate}%)`,
+      colSpan: 9,
+      styles: {
+        fillColor: MODBG,
+        textColor: MODTXT,
+        fontStyle: 'bold' as const,
+        fontSize: 8,
+        lineColor: FAINT as [number, number, number],
+        lineWidth: 0,
+        cellPadding: { top: 5, bottom: 5, left: 8, right: 4 },
+      },
+    }]);
+
+    // ── Per-test rows ──────────────────────────────────────────────────────────
+    if (s.tests && s.tests.length > 0) {
+      s.tests.forEach((t, ti) => {
+        const tc = rateColor(t.passRate, t.total);
+        body.push([
+          { content: `${pad2(moduleSerial)}.${pad2(ti + 1)}`, styles: { textColor: MUTED,    halign: 'center' as const, fontSize: 7.5 } },
+          { content: s.name,             styles: { textColor: MUTED,    fontSize: 7 } },
+          { content: s.description ?? '—', styles: { textColor: MUTED,  fontSize: 7 } },
+          { content: t.name,             styles: { textColor: DARK,     fontStyle: 'bold' as const } },
+          { content: String(t.total),    styles: { textColor: DARK,     halign: 'center' as const } },
+          { content: String(t.pass),     styles: { textColor: GREENINK, halign: 'center' as const, fontStyle: 'bold' as const } },
+          { content: String(t.fail),     styles: { textColor: REDINK,   halign: 'center' as const, fontStyle: 'bold' as const } },
+          { content: String(t.pending),  styles: { textColor: PENDINK,  halign: 'center' as const } },
+          { content: `${t.passRate}%`,   styles: { textColor: tc,       halign: 'center' as const, fontStyle: 'bold' as const } },
+        ]);
+      });
+    } else {
+      // Fallback: no per-test data, one module-level row
+      const mc = rateColor(s.passRate, s.total);
+      body.push([
+        { content: pad2(moduleSerial),    styles: { textColor: MUTED,    halign: 'center' as const } },
+        { content: s.name,                styles: { textColor: DARK,     fontStyle: 'bold' as const } },
+        { content: s.description ?? '—',  styles: { textColor: MUTED } },
+        { content: '—',                   styles: { textColor: MUTED,    halign: 'center' as const } },
+        { content: String(s.total),       styles: { textColor: DARK,     halign: 'center' as const } },
+        { content: String(s.pass),        styles: { textColor: GREENINK, halign: 'center' as const, fontStyle: 'bold' as const } },
+        { content: String(s.fail),        styles: { textColor: REDINK,   halign: 'center' as const, fontStyle: 'bold' as const } },
+        { content: String(s.pending),     styles: { textColor: PENDINK,  halign: 'center' as const } },
+        { content: `${s.passRate}%`,      styles: { textColor: mc,       halign: 'center' as const, fontStyle: 'bold' as const } },
+      ]);
+    }
+  }
+
+  // ── Fleet total row (inverted) ─────────────────────────────────────────────
+  const fleetRate = fleetTotal > 0 ? Math.round((fleetPass / fleetTotal) * 100) : 0;
+  body.push([
+    { content: '',                           styles: { fillColor: HDRBG, textColor: HDRTXT } },
+    { content: 'FLEET TOTAL',               styles: { fillColor: HDRBG, textColor: HDRTXT,      fontStyle: 'bold' as const, fontSize: 8 } },
+    { content: `${totalModules} modules`,   styles: { fillColor: HDRBG, textColor: GREY_ON_DARK, fontSize: 7 } },
+    { content: `${totalTests} tests`,       styles: { fillColor: HDRBG, textColor: GREY_ON_DARK, fontSize: 7 } },
+    { content: String(fleetTotal),          styles: { fillColor: HDRBG, textColor: HDRTXT,       halign: 'center' as const, fontStyle: 'bold' as const } },
+    { content: String(fleetPass),           styles: { fillColor: HDRBG, textColor: GREEN_ON_DARK, halign: 'center' as const, fontStyle: 'bold' as const } },
+    { content: String(fleetFail),           styles: { fillColor: HDRBG, textColor: RED_ON_DARK,   halign: 'center' as const, fontStyle: 'bold' as const } },
+    { content: String(fleetPending),        styles: { fillColor: HDRBG, textColor: GREY_ON_DARK,  halign: 'center' as const } },
+    { content: `${fleetRate}%`,             styles: { fillColor: HDRBG, textColor: rateColorOnDark(fleetRate, fleetTotal), halign: 'center' as const, fontStyle: 'bold' as const } },
   ]);
 
   autoTable(doc, {
-    ...tableDefaults(doc, afterStats),
-    head: [
-      [
-        "#",
-        "Module",
-        "Description",
-        "Tests",
-        "Total Steps",
-        "Pass",
-        "Fail",
-        "Pending",
-        "Pass Rate",
-      ],
-    ],
-    body: summaries.map((s, i) => [
-      pad2(i + 1),
-      s.name,
-      s.description ?? "-",
-      s.testCount ?? "-",
-      s.total,
-      s.pass,
-      s.fail,
-      s.pending,
-      `${s.passRate}%`,
-    ]),
+    ...tableDefaults(doc, y),
+    head: [['#', 'Module', 'Description', 'Test Name', 'Steps', 'Pass', 'Fail', 'Pending', 'Pass Rate']],
+    body,
+    alternateRowStyles: { fillColor: ROWALT },
+    columnStyles: {
+      0: { cellWidth: 16, halign: 'center' },
+      1: { cellWidth: 34 },
+      2: { cellWidth: 44 },
+      3: { cellWidth: 58 },
+      4: { cellWidth: 18, halign: 'center' },
+      5: { cellWidth: 18, halign: 'center' },
+      6: { cellWidth: 18, halign: 'center' },
+      7: { cellWidth: 20, halign: 'center' },
+      8: { cellWidth: 22, halign: 'center' },
+    },
   });
 
   drawFooter(doc);
@@ -514,316 +402,275 @@ export const exportDashboardPDF = (summaries: ModuleSummary[]) => {
 };
 
 export const exportDashboardDocx = (summaries: ModuleSummary[]) => {
-  const rows = summaries
-    .map(
-      (s, i) => `
-      <tr>
-        <td align="center">${pad2(i + 1)}</td>
-        <td><b>${s.name}</b></td>
-        <td>${s.description ?? ""}</td>
-        <td align="center">${s.testCount ?? "-"}</td>
+  const fleetTotal   = summaries.reduce((a, s) => a + s.total,   0);
+  const fleetPass    = summaries.reduce((a, s) => a + s.pass,    0);
+  const fleetFail    = summaries.reduce((a, s) => a + s.fail,    0);
+  const fleetPending = summaries.reduce((a, s) => a + s.pending, 0);
+  const fleetRate    = fleetTotal > 0 ? Math.round((fleetPass / fleetTotal) * 100) : 0;
+
+  const rows: string[] = [];
+  let moduleSerial = 0;
+  summaries.forEach(s => {
+    moduleSerial++;
+    const testCount = s.tests?.length ?? s.testCount ?? 0;
+    rows.push(`<tr style="background:#232323;color:#fff">
+      <td colspan="9"><b>${pad2(moduleSerial)}  ${s.name.toUpperCase()}  ·  ${testCount} tests  ·  Pass: ${s.pass}  Fail: ${s.fail}  Pending: ${s.pending}  (${s.passRate}%)</b></td>
+    </tr>`);
+    if (s.tests && s.tests.length > 0) {
+      s.tests.forEach((t, ti) => {
+        rows.push(`<tr>
+          <td align="center" style="color:#6b7280">${pad2(moduleSerial)}.${pad2(ti + 1)}</td>
+          <td style="color:#6b7280">${s.name}</td>
+          <td style="color:#6b7280">${s.description ?? '—'}</td>
+          <td><b>${t.name}</b></td>
+          <td align="center">${t.total}</td>
+          <td align="center" style="color:#10642d"><b>${t.pass}</b></td>
+          <td align="center" style="color:#a01616"><b>${t.fail}</b></td>
+          <td align="center" style="color:#5a5a5a">${t.pending}</td>
+          <td align="center"><b>${t.passRate}%</b></td>
+        </tr>`);
+      });
+    } else {
+      rows.push(`<tr>
+        <td align="center">${pad2(moduleSerial)}</td>
+        <td><b>${s.name}</b></td><td>${s.description ?? '—'}</td><td>—</td>
         <td align="center">${s.total}</td>
-        <td align="center">${s.pass}</td>
-        <td align="center">${s.fail}</td>
-        <td align="center">${s.pending}</td>
+        <td align="center" style="color:#10642d"><b>${s.pass}</b></td>
+        <td align="center" style="color:#a01616"><b>${s.fail}</b></td>
+        <td align="center" style="color:#5a5a5a">${s.pending}</td>
         <td align="center"><b>${s.passRate}%</b></td>
-      </tr>
-    `
-    )
-    .join("");
+      </tr>`);
+    }
+  });
+  rows.push(`<tr style="background:#232323;color:#fff">
+    <td></td><td><b>FLEET TOTAL</b></td>
+    <td style="color:#b4b4b4">${summaries.length} modules</td>
+    <td style="color:#b4b4b4">${summaries.reduce((a, s) => a + (s.tests?.length ?? s.testCount ?? 0), 0)} tests</td>
+    <td align="center"><b>${fleetTotal}</b></td>
+    <td align="center" style="color:#90ee90"><b>${fleetPass}</b></td>
+    <td align="center" style="color:#ffa0a0"><b>${fleetFail}</b></td>
+    <td align="center" style="color:#b4b4b4">${fleetPending}</td>
+    <td align="center"><b>${fleetRate}%</b></td>
+  </tr>`);
 
   const html = docxWrapper(
-    "Dashboard Report - All Modules",
-    `
+    'Fleet Report',
+    `<p style="font-size:11px;color:#333">
+      Total: <b>${fleetTotal}</b> &nbsp;|&nbsp;
+      Pass: <b style="color:#10642d">${fleetPass}</b> &nbsp;|&nbsp;
+      Fail: <b style="color:#a01616">${fleetFail}</b> &nbsp;|&nbsp;
+      Pending: <b>${fleetPending}</b> &nbsp;|&nbsp;
+      Pass Rate: <b>${fleetRate}%</b>
+    </p>
     <table border="1" style="border-collapse:collapse;width:100%">
-      <thead>
-        <tr>
-          <th>#</th>
-          <th>Module</th>
-          <th>Description</th>
-          <th>Tests</th>
-          <th>Total Steps</th>
-          <th>Pass</th>
-          <th>Fail</th>
-          <th>Pending</th>
-          <th>Pass Rate</th>
-        </tr>
-      </thead>
-      <tbody>${rows}</tbody>
-    </table>
-  `
+      <thead><tr style="background:#232323;color:#fff">
+        <th>#</th><th>Module</th><th>Description</th><th>Test Name</th>
+        <th>Steps</th><th>Pass</th><th>Fail</th><th>Pending</th><th>Pass Rate</th>
+      </tr></thead>
+      <tbody>${rows.join('')}</tbody>
+    </table>`
   );
-
-  downloadDocx(html, `TestProDashboard${today}.doc`);
+  downloadDocx(html, `TestPro-Fleet-${today}.doc`);
 };
 
+// ═══════════════════════════════════════════════════════════════════════════════
+// 2. REPORT PAGE EXPORTS
+// ═══════════════════════════════════════════════════════════════════════════════
+
 interface TestSummaryRow {
-  module: string;
-  test: string;
-  total: number;
-  pass: number;
-  fail: number;
-  pending: number;
-  passRate: number;
+  module: string; test: string;
+  total: number; pass: number; fail: number; pending: number; passRate: number;
 }
 
 const buildTestSummaries = (data: FlatData[]): TestSummaryRow[] => {
   const map = new Map<string, TestSummaryRow>();
-
   for (const d of data) {
     if (d.isdivider) continue;
-
-    const key = `${d.module}__${d.test}`;
-
-    if (!map.has(key)) {
-      map.set(key, {
-        module: d.module,
-        test: d.test,
-        total: 0,
-        pass: 0,
-        fail: 0,
-        pending: 0,
-        passRate: 0,
-      });
-    }
-
+    const key = `${d.module}\x00${d.test}`;
+    if (!map.has(key))
+      map.set(key, { module: d.module, test: d.test, total: 0, pass: 0, fail: 0, pending: 0, passRate: 0 });
     const row = map.get(key)!;
-    row.total += 1;
-
-    if (d.status === "pass") row.pass += 1;
-    else if (d.status === "fail") row.fail += 1;
-    else row.pending += 1;
+    row.total++;
+    if (d.status === 'pass') row.pass++;
+    else if (d.status === 'fail') row.fail++;
+    else row.pending++;
   }
-
-  for (const row of map.values()) {
+  for (const row of map.values())
     row.passRate = row.total > 0 ? Math.round((row.pass / row.total) * 100) : 0;
-  }
-
   return Array.from(map.values());
 };
 
-export const exportReportCSV = (modules: Module[], data: FlatData[]) => {
+export const exportReportCSV = (_modules: Module[], data: FlatData[]) => {
   const summaries = buildTestSummaries(data);
-
-  const headers = "S.No,Module,Test,Total Steps,Pass,Fail,Pending,Pass Rate";
-  const rows = summaries.map((s, i) =>
-    [
-      pad2(i + 1),
-      s.module,
-      s.test,
-      s.total,
-      s.pass,
-      s.fail,
-      s.pending,
-      s.passRate,
-    ].join(",")
+  const lines = ['#,Module,Test,Total Steps,Pass,Fail,Pending,Pass Rate'];
+  summaries.forEach((s, i) =>
+    lines.push([pad2(i + 1), s.module, s.test, s.total, s.pass, s.fail, s.pending, `${s.passRate}%`].join(','))
   );
-
-  download(
-    new Blob([[headers, ...rows].join("\n")], { type: "text/csv" }),
-    `TestProReport${today}.csv`
-  );
+  download(new Blob([lines.join('\n')], { type: 'text/csv' }), `TestPro-Report-${today}.csv`);
 };
 
-export const exportReportPDF = (modules: Module[], data: FlatData[]) => {
-  const doc = new jsPDF({ orientation: "landscape" });
+export const exportReportPDF = (_modules: Module[], data: FlatData[]) => {
+  const doc       = new jsPDF({ orientation: 'landscape' });
   const summaries = buildTestSummaries(data);
+  const total     = summaries.reduce((a, s) => a + s.total,   0);
+  const pass      = summaries.reduce((a, s) => a + s.pass,    0);
+  const fail      = summaries.reduce((a, s) => a + s.fail,    0);
+  const pending   = summaries.reduce((a, s) => a + s.pending, 0);
 
-  const contentY = drawHeader(doc, "Test Report", "All Modules - Test Summary");
-
-  const total = summaries.reduce((a, s) => a + s.total, 0);
-  const pass = summaries.reduce((a, s) => a + s.pass, 0);
-  const fail = summaries.reduce((a, s) => a + s.fail, 0);
-  const pending = summaries.reduce((a, s) => a + s.pending, 0);
-
-  const afterStats = drawStatsBar(doc, total, pass, fail, pending, contentY, [
-    {
-      label: "Total Tests",
-      value: String(summaries.length),
-      color: BLUEINK,
-      icon: "tests",
-    },
+  let y = drawHeader(doc, 'Test Report', 'All Modules — Test Summary');
+  y = drawStatsText(doc, total, pass, fail, pending, y, [
+    { label: 'Total Tests', value: summaries.length },
   ]);
 
   const body: any[] = [];
-  let lastModule = "";
+  let lastModule = '';
   let globalSerial = 0;
 
   for (const s of summaries) {
     if (s.module !== lastModule) {
       lastModule = s.module;
-      body.push([
-        {
-          content: s.module.toUpperCase(),
-          colSpan: 7,
-          styles: {
-            fillColor: MODBG,
-            textColor: MODTXT,
-            fontStyle: "bold",
-          },
+      body.push([{
+        content: s.module.toUpperCase(),
+        colSpan: 8,
+        styles: {
+          fillColor: MODBG, textColor: MODTXT, fontStyle: 'bold' as const,
+          fontSize: 7.5, lineColor: FAINT as [number, number, number], lineWidth: 0,
+          cellPadding: { top: 3.5, bottom: 3.5, left: 8, right: 4 },
         },
-      ]);
+      }]);
     }
-
-    globalSerial += 1;
+    globalSerial++;
+    const rc = rateColor(s.passRate, s.total);
     body.push([
-      pad2(globalSerial),
-      s.test,
-      s.total,
-      s.pass,
-      s.fail,
-      s.pending,
-      `${s.passRate}%`,
+      { content: pad2(globalSerial),  styles: { textColor: MUTED,    halign: 'center' as const, fontStyle: 'bold' as const, fontSize: 8.5 } },
+      { content: s.module,            styles: { textColor: MUTED,    fontSize: 7 } },
+      { content: s.test,              styles: { textColor: DARK,     fontStyle: 'bold' as const } },
+      { content: String(s.total),     styles: { textColor: DARK,     halign: 'center' as const } },
+      { content: String(s.pass),      styles: { textColor: GREENINK, halign: 'center' as const, fontStyle: 'bold' as const } },
+      { content: String(s.fail),      styles: { textColor: REDINK,   halign: 'center' as const, fontStyle: 'bold' as const } },
+      { content: String(s.pending),   styles: { textColor: PENDINK,  halign: 'center' as const } },
+      { content: `${s.passRate}%`,    styles: { textColor: rc,       halign: 'center' as const, fontStyle: 'bold' as const } },
     ]);
   }
 
   autoTable(doc, {
-    ...tableDefaults(doc, afterStats),
-    head: [
-      ["#", "Test", "Total Steps", "Pass", "Fail", "Pending", "Pass Rate"],
-    ],
+    ...tableDefaults(doc, y),
+    head: [['#', 'Module', 'Test Name', 'Steps', 'Pass', 'Fail', 'Pending', 'Pass Rate']],
     body,
+    alternateRowStyles: { fillColor: ROWALT },
+    columnStyles: {
+      0: { cellWidth: 12, halign: 'center' },
+      1: { cellWidth: 34 },
+      2: { cellWidth: 80 },
+      3: { cellWidth: 20, halign: 'center' },
+      4: { cellWidth: 20, halign: 'center' },
+      5: { cellWidth: 20, halign: 'center' },
+      6: { cellWidth: 22, halign: 'center' },
+      7: { cellWidth: 22, halign: 'center' },
+    },
   });
 
   drawFooter(doc);
   openPrintPreview(doc);
 };
 
+// ═══════════════════════════════════════════════════════════════════════════════
+// 3. MODULE DETAIL EXPORTS
+// ═══════════════════════════════════════════════════════════════════════════════
+
 export const exportModuleDetailCSV = (data: FlatData[]) => {
-  const lines: string[] = [
-    "Module,Test,S.No,Action,Expected Result,Remarks,Status",
-  ];
-
-  let lastModule = "";
-  let lastTest = "";
-  let testSerial = 0;
-
+  const lines = ['Module,Test,#,Action,Expected Result,Remarks,Status'];
+  let lastModule = '', lastTest = '', testSerial = 0;
   for (const d of data) {
     if (d.isdivider) continue;
-
     if (d.module !== lastModule) {
-      if (lastModule !== "") lines.push("");
+      if (lastModule !== '') lines.push('');
       lines.push(`${d.module},,,,,,`);
-      lastModule = d.module;
-      lastTest = "";
-      testSerial = 0;
+      lastModule = d.module; lastTest = ''; testSerial = 0;
     }
-
     if (d.test !== lastTest) {
-      testSerial += 1;
-      lines.push(`,--- ${pad2(testSerial)}. ${d.test} ---,,,,,`);
+      testSerial++;
+      lines.push(`,${pad2(testSerial)}. ${d.test},,,,,`);
       lastTest = d.test;
     }
-
-    lines.push(
-      [
-        d.module,
-        d.test,
-        d.serial,
-        d.action.replace(/,/g, " "),
-        d.expected.replace(/,/g, " "),
-        d.remarks.replace(/,/g, " "),
-        d.status,
-      ].join(",")
-    );
+    lines.push([
+      d.module, d.test, d.serial,
+      d.action.replace(/,/g, ' '), d.expected.replace(/,/g, ' '),
+      d.remarks.replace(/,/g, ' '), d.status,
+    ].join(','));
   }
-
-  download(
-    new Blob([lines.join("\n")], { type: "text/csv" }),
-    `TestProModuleDetail${today}.csv`
-  );
+  download(new Blob([lines.join('\n')], { type: 'text/csv' }), `TestPro-ModuleDetail-${today}.csv`);
 };
 
-export const exportModuleDetailPDF = (
-  moduleName: string,
-  stats: {
-    pass: number;
-    fail: number;
-    pending: number;
-    total: number;
-    passRate: number;
-  },
-  data: FlatData[]
-) => {
-  const doc = new jsPDF({ orientation: "landscape" });
+export const exportModuleDetailPDF = (data: FlatData[]) => {
+  const doc = new jsPDF({ orientation: 'landscape' });
 
-  const safeModuleName =
-    moduleName && moduleName.trim() ? moduleName.trim() : "Unknown Module";
+  const nd      = data.filter(d => !d.isdivider);
+  const pass    = nd.filter(d => d.status === 'pass').length;
+  const fail    = nd.filter(d => d.status === 'fail').length;
+  const pending = nd.filter(d => d.status === 'pending').length;
 
-  const nonDividerRows = data.filter((d) => !d.isdivider);
-  const totalTests = new Set(nonDividerRows.map((d) => d.test)).size;
+  let y = drawHeader(doc, 'Module Detail Report', 'All Modules — Full Step Results');
+  y = drawStatsText(doc, nd.length, pass, fail, pending, y);
 
-  const contentY = drawHeader(
-    doc,
-    "Module Detail Report",
-    `${safeModuleName} - Full Step Results`
-  );
+  type TestBlock   = { name: string; steps: FlatData[]; serial: number };
+  type ModuleBlock = { name: string; tests: TestBlock[] };
+  const mods: ModuleBlock[] = [];
+  const modIdx = new Map<string, number>();
+  const tstIdx = new Map<string, number>();
 
-  const afterStats = drawStatsBar(
-    doc,
-    stats.total,
-    stats.pass,
-    stats.fail,
-    stats.pending,
-    contentY,
-    [
-      {
-        label: "Total Tests",
-        value: String(totalTests),
-        color: BLUEINK,
-        icon: "tests",
-      },
-      {
-        label: "Pass Rate",
-        value: `${stats.passRate}%`,
-        color: stats.passRate === 100 ? GREENINK : BLUEINK,
-        icon: "pass",
-      },
-    ]
-  );
-
-  type TestBlock = { name: string; steps: FlatData[]; serial: number };
-  const tests = new Map<string, TestBlock>();
-
-  for (const row of data) {
-    if (!tests.has(row.test)) {
-      tests.set(row.test, {
-        name: row.test,
-        steps: [],
-        serial: tests.size + 1,
-      });
-    }
-    tests.get(row.test)!.steps.push(row);
+  for (const d of data) {
+    if (!modIdx.has(d.module)) { modIdx.set(d.module, mods.length); mods.push({ name: d.module, tests: [] }); }
+    const mod = mods[modIdx.get(d.module)!];
+    const tk  = `${d.module}\x00${d.test}`;
+    if (!tstIdx.has(tk)) { tstIdx.set(tk, mod.tests.length); mod.tests.push({ name: d.test, steps: [], serial: mod.tests.length + 1 }); }
+    mod.tests[tstIdx.get(tk)!].steps.push(d);
   }
 
   const body: any[] = [];
+  for (const mod of mods) {
+    const allSteps = mod.tests.flatMap(t => t.steps).filter(s => !s.isdivider);
+    const mPass    = allSteps.filter(s => s.status === 'pass').length;
+    const mFail    = allSteps.filter(s => s.status === 'fail').length;
+    const mPending = allSteps.filter(s => s.status === 'pending').length;
+    const mRate    = allSteps.length > 0 ? Math.round((mPass / allSteps.length) * 100) : 0;
 
-  for (const test of tests.values()) {
-    body.push([
-      {
-        content: `TEST ${pad2(test.serial)}  ${test.name}`,
+    body.push([{
+      content: `${mod.name.toUpperCase()}   ·   ${mod.tests.length} test${mod.tests.length !== 1 ? 's' : ''}   Steps: ${allSteps.length}   Pass: ${mPass}   Fail: ${mFail}   Pending: ${mPending}   (${mRate}%)`,
+      colSpan: 5,
+      styles: {
+        fillColor: MODBG, textColor: MODTXT, fontStyle: 'bold' as const,
+        fontSize: 8, lineColor: FAINT as [number, number, number], lineWidth: 0,
+        cellPadding: { top: 5, bottom: 5, left: 8, right: 4 },
+      },
+    }]);
+
+    for (const test of mod.tests) {
+      const tSteps   = test.steps.filter(s => !s.isdivider);
+      const tPass    = tSteps.filter(s => s.status === 'pass').length;
+      const tFail    = tSteps.filter(s => s.status === 'fail').length;
+      const tPending = tSteps.filter(s => s.status === 'pending').length;
+      const tRate    = tSteps.length > 0 ? Math.round((tPass / tSteps.length) * 100) : 0;
+
+      body.push([{
+        content: `  ${pad2(test.serial)}. ${test.name}   —   Pass: ${tPass}   Fail: ${tFail}   Pending: ${tPending}   (${tRate}%)`,
         colSpan: 5,
         styles: {
-          fillColor: TESTBG,
-          textColor: TESTTXT,
-          fontStyle: "bold" as const,
-          fontSize: 7.5,
-          lineColor: FAINT as [number, number, number],
-          lineWidth: 0.3,
-          cellPadding: { top: 3, bottom: 3, left: 20, right: 6 },
+          fillColor: TESTBG, textColor: TESTTXT, fontStyle: 'bold' as const,
+          fontSize: 7.5, lineColor: FAINT as [number, number, number], lineWidth: 0.3,
+          cellPadding: { top: 3.5, bottom: 3.5, left: 20, right: 6 },
         },
-      },
-    ]);
+      }]);
 
-    for (const row of test.steps) {
-      if (row.isdivider) body.push([buildDividerRow(row, 5)]);
-      else body.push(buildStepRow(row));
+      for (const row of test.steps) {
+        body.push(row.isdivider ? [buildDividerRow(row, 5)] : buildStepRow(row));
+      }
     }
   }
 
   autoTable(doc, {
-    ...tableDefaults(doc, afterStats),
-    head: [["S.NO", "ACTION", "EXPECTED RESULT", "REMARKS", "STATUS"]],
+    ...tableDefaults(doc, y),
+    head: [['S.NO', 'ACTION', 'EXPECTED RESULT', 'REMARKS', 'STATUS']],
     body,
     alternateRowStyles: { fillColor: WHITE },
     columnStyles: {
@@ -839,65 +686,38 @@ export const exportModuleDetailPDF = (
   openPrintPreview(doc);
 };
 
-export const exportExecutionCSV = (
-  moduleName: string,
-  testName: string,
-  data: FlatData[]
-) => {
-  const headers = "S.No,Action,Expected Result,Remarks,Status";
-  const rows = data.map((d) => {
-    if (d.isdivider) return `,${d.action.replace(/,/g, " ")},,,`;
-    return [
-      d.serial,
-      d.action.replace(/,/g, " "),
-      d.expected.replace(/,/g, " "),
-      d.remarks.replace(/,/g, " "),
-      d.status,
-    ].join(",");
-  });
+// ═══════════════════════════════════════════════════════════════════════════════
+// 4. TEST EXECUTION EXPORTS
+// ═══════════════════════════════════════════════════════════════════════════════
 
-  download(
-    new Blob([[headers, ...rows].join("\n")], { type: "text/csv" }),
-    `${moduleName}${testName}${today}.csv`
-  );
+export const exportExecutionCSV = (modulename: string, testname: string, data: FlatData[]) => {
+  const lines = ['#,Action,Expected Result,Remarks,Status'];
+  data.forEach(d => {
+    lines.push(
+      d.isdivider
+        ? `,,${d.action.replace(/,/g, ' ')},,,`
+        : [d.serial, d.action.replace(/,/g, ' '), d.expected.replace(/,/g, ' '), d.remarks.replace(/,/g, ' '), d.status].join(',')
+    );
+  });
+  download(new Blob([lines.join('\n')], { type: 'text/csv' }), `${modulename}-${testname}-${today}.csv`);
 };
 
-export const exportExecutionPDF = (
-  moduleName: string,
-  testName: string,
-  data: FlatData[]
-) => {
-  const doc = new jsPDF({ orientation: "landscape" });
+export const exportExecutionPDF = (modulename: string, testname: string, data: FlatData[]) => {
+  const doc = new jsPDF({ orientation: 'landscape' });
 
-  const safeTestName =
-    testName && testName.trim() ? testName.trim() : "Unnamed Test";
-  const safeModuleName =
-    moduleName && moduleName.trim() ? moduleName.trim() : "Unknown Module";
+  const nd      = data.filter(d => !d.isdivider);
+  const pass    = nd.filter(d => d.status === 'pass').length;
+  const fail    = nd.filter(d => d.status === 'fail').length;
+  const pending = nd.filter(d => d.status === 'pending').length;
 
-  const contentY = drawHeader(doc, safeTestName, safeModuleName);
+  let y = drawHeader(doc, testname?.trim() || 'Unnamed Test', modulename?.trim() || 'Unknown Module');
+  y = drawStatsText(doc, nd.length, pass, fail, pending, y);
 
-  const nd = data.filter((d) => !d.isdivider);
-  const pass = nd.filter((d) => d.status === "pass").length;
-  const fail = nd.filter((d) => d.status === "fail").length;
-  const pending = nd.filter((d) => d.status === "pending").length;
-
-  const afterStats = drawStatsBar(
-    doc,
-    nd.length,
-    pass,
-    fail,
-    pending,
-    contentY
-  );
-
-  const body: any[] = data.map((d) => {
-    if (d.isdivider) return [buildDividerRow(d, 5)];
-    return buildStepRow(d);
-  });
+  const body = data.map(d => d.isdivider ? [buildDividerRow(d, 5)] : buildStepRow(d));
 
   autoTable(doc, {
-    ...tableDefaults(doc, afterStats),
-    head: [["S.NO", "ACTION", "EXPECTED RESULT", "REMARKS", "STATUS"]],
+    ...tableDefaults(doc, y),
+    head: [['S.NO', 'ACTION', 'EXPECTED RESULT', 'REMARKS', 'STATUS']],
     body,
     alternateRowStyles: { fillColor: WHITE },
     columnStyles: {
@@ -913,21 +733,46 @@ export const exportExecutionPDF = (
   openPrintPreview(doc);
 };
 
+// ═══════════════════════════════════════════════════════════════════════════════
+// Re-exports & Aliases
+// ═══════════════════════════════════════════════════════════════════════════════
+export const exportAllCSV    = exportReportCSV;
+export const exportAllPDF    = exportReportPDF;
+export const exportModuleCSV = (_name: string, data: FlatData[]) => exportReportCSV([] as Module[], data);
+export const exportModulePDF = (_name: string, data: FlatData[]) => exportReportPDF([] as Module[], data);
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// DOCX Helpers
+// ═══════════════════════════════════════════════════════════════════════════════
+const docxWrapper = (title: string, body: string) => `
+<html xmlns:o='urn:schemas-microsoft-com:office:office'
+      xmlns:w='urn:schemas-microsoft-com:office:word'
+      xmlns='http://www.w3.org/TR/REC-html40'>
+<head><meta charset='utf-8'><style>
+  body { font-family: Calibri, Arial, sans-serif; margin: 24px }
+  h1   { border-bottom: 1px solid #ccc; padding-bottom: 8px; font-size: 18px; color: #141414 }
+  p    { color: #555; font-size: 11px; margin: 4px 0 14px }
+  table{ border-collapse: collapse; width: 100% }
+  th   { background: #232323; color: #fff; padding: 8px 10px; font-size: 10px; border: 1px solid #ccc }
+  td   { padding: 7px 10px; border: 1px solid #ddd; font-size: 11px }
+  tr:nth-child(even) td { background: #f6f6f6 }
+</style></head>
+<body><h1>${title}</h1><p>Generated: ${new Date().toLocaleString()}</p>${body}</body>
+</html>`;
+
+const downloadDocx = (html: string, filename: string) =>
+  download(new Blob([html], { type: 'application/msword' }), filename);
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// CSV Parse Helper (used by import modals)
+// ═══════════════════════════════════════════════════════════════════════════════
 export function parseCsvToRecords(raw: string): Record<string, string>[] {
-  const allRows = raw
-    .trimStart()
-    .split(/\r?\n/)
-    .map((line) => line.split(","));
-
+  const allRows = parseCSV(raw.trimStart());
   if (allRows.length < 2) return [];
-
-  const headers = allRows[0].map((h) => h.trim());
-
-  return allRows.slice(1).map((cols) => {
+  const headers = allRows[0].map(h => h.trim());
+  return allRows.slice(1).map(cols => {
     const record: Record<string, string> = {};
-    headers.forEach((h, i) => {
-      record[h] = (cols[i] ?? "").trim();
-    });
+    headers.forEach((h, i) => { record[h] = (cols[i] ?? '').trim(); });
     return record;
   });
 }
