@@ -16,7 +16,7 @@ export interface TestSummary {
 export interface FlatData {
   module: string;
   test: string;
-  test_serial_no?: string; // ← ADDED: tests.serial_no
+  test_serial_no?: string;
   serial: number;
   action: string;
   expected: string;
@@ -77,15 +77,22 @@ const download = (blob: Blob, filename: string) => {
   URL.revokeObjectURL(a.href);
 };
 
-const openPrintPreview = (doc: jsPDF) => {
-  const url = doc.output("bloburl");
-  const win = window.open(url as unknown as string, "_blank");
+// ← CHANGED: accepts filename, uses it for fallback download
+const openPrintPreview = (doc: jsPDF, filename: string) => {
+  const blob = doc.output("blob");
+  const url = URL.createObjectURL(blob);
+  const win = window.open(url, "_blank");
   if (!win) {
     const a = document.createElement("a");
-    a.href = url as unknown as string;
-    a.download = "report.pdf";
+    a.href = url;
+    a.download = filename;
     a.click();
+  } else {
+    try {
+      win.document.title = filename;
+    } catch {}
   }
+  setTimeout(() => URL.revokeObjectURL(url), 60000);
 };
 
 // ─── Page Header ───────────────────────────────────────────────────────────────
@@ -545,7 +552,7 @@ export const exportDashboardPDF = (summaries: ModuleSummary[]) => {
   });
 
   drawFooter(doc);
-  openPrintPreview(doc);
+  openPrintPreview(doc, `TestPro-Fleet-${today}.pdf`);
 };
 
 export const exportDashboardDocx = (summaries: ModuleSummary[]) => {
@@ -687,7 +694,6 @@ export const exportReportCSV = (_modules: Module[], data: FlatData[]) => {
   );
 };
 
-// ← CHANGED: uses test_serial_no from tests table when rendering test headers
 export const exportReportPDF = (_modules: Module[], data: FlatData[]) => {
   const doc = new jsPDF({ orientation: "landscape" });
 
@@ -724,7 +730,7 @@ export const exportReportPDF = (_modules: Module[], data: FlatData[]) => {
 
     if (d.test !== lastTest) {
       lastTest = d.test;
-      const testLabel = d.test_serial_no // ← CHANGED
+      const testLabel = d.test_serial_no
         ? `${d.test_serial_no}. ${d.test}`
         : d.test;
       body.push([
@@ -765,11 +771,11 @@ export const exportReportPDF = (_modules: Module[], data: FlatData[]) => {
   });
 
   drawFooter(doc);
-  openPrintPreview(doc);
+  openPrintPreview(doc, `TestPro-Session-${today}.pdf`);
 };
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// 3. MODULE DETAIL EXPORTS  —  page break per test, banner before header
+// 3. MODULE DETAIL EXPORTS  —  page break per test, banner AS TABLE ROWS
 // ═══════════════════════════════════════════════════════════════════════════════
 
 export const exportModuleDetailCSV = (data: FlatData[]) => {
@@ -809,6 +815,7 @@ export const exportModuleDetailCSV = (data: FlatData[]) => {
   );
 };
 
+// ← CHANGED: test banners are now real table rows (colSpan) instead of doc.text()
 export const exportModuleDetailPDF = (
   data: FlatData[],
   moduleName?: string
@@ -866,21 +873,70 @@ export const exportModuleDetailPDF = (
       const tRate =
         tSteps.length > 0 ? Math.round((tPass / tSteps.length) * 100) : 0;
 
-      const bannerPrefix = mods.length > 1 ? `${mod.name} › ` : "";
-      const testSerialNo = test.steps[0]?.test_serial_no ?? pad2(test.serial); // ← CHANGED
-      const bannerText = `${bannerPrefix}${testSerialNo}. ${test.name}   —   Steps: ${tSteps.length}   Pass: ${tPass}   Fail: ${tFail}   Pending: ${tPending}   (${tRate}%)`;
+      const testSerialNo = test.steps[0]?.test_serial_no ?? pad2(test.serial);
 
-      doc.setFont("helvetica", "bold");
-      doc.setFontSize(9);
-      doc.setTextColor(...DARK);
-      doc.text(bannerText, 14, startY + 6);
-      doc.setDrawColor(...FAINT);
-      doc.setLineWidth(0.3);
-      doc.line(14, startY + 9, 283, startY + 9);
-
-      const tableStartY = startY + 12;
-
+      // ── Build table body: test banners + header + steps ───────────────────
       const body: any[] = [];
+
+      // Test serial banner — full width table row
+      body.push([
+        {
+          content: `${testSerialNo}.`,
+          colSpan: 5,
+          styles: {
+            textColor: DARK,
+            fontStyle: "bold" as const,
+            fontSize: 9.5,
+            halign: "left" as const,
+            lineColor: DARK as [number, number, number],
+            lineWidth: 0.5,
+            cellPadding: { top: 6, bottom: 6, left: 5, right: 5 },
+          },
+        },
+      ]);
+
+      // Test name banner — full width table row, centered
+      const bannerPrefix = mods.length > 1 ? `${mod.name} › ` : "";
+      body.push([
+        {
+          content: `${bannerPrefix}${test.name}`,
+          colSpan: 5,
+          styles: {
+            textColor: DARK,
+            fontStyle: "bold" as const,
+            fontSize: 9,
+            halign: "center" as const,
+            lineColor: DARK as [number, number, number],
+            lineWidth: 0.3,
+            cellPadding: { top: 4, bottom: 4, left: 10, right: 5 },
+          },
+        },
+      ]);
+
+      // Manual header row (since banners must come before it)
+      body.push([
+        {
+          content: "S/N",
+          styles: { fontStyle: "bold", fontSize: 10, halign: "center" },
+        },
+        {
+          content: "ACTION",
+          styles: { fontStyle: "bold", fontSize: 10, halign: "center" },
+        },
+        {
+          content: "EXPECTED RESULT",
+          styles: { fontStyle: "bold", fontSize: 10, halign: "center" },
+        },
+        {
+          content: "REMARKS",
+          styles: { fontStyle: "bold", fontSize: 10, halign: "center" },
+        },
+        {
+          content: "STATUS",
+          styles: { fontStyle: "bold", fontSize: 10, halign: "center" },
+        },
+      ]);
+
       let stepIndex = 0;
       for (const row of test.steps) {
         if (!row.isdivider) stepIndex++;
@@ -893,9 +949,8 @@ export const exportModuleDetailPDF = (
 
       autoTable(doc, {
         ...baseTableStyles(),
-        startY: tableStartY,
+        startY: startY,
         margin: { top: 20, left: 14, right: 14, bottom: 18 },
-        head: [["S/N", "ACTION", "EXPECTED RESULT", "REMARKS", "STATUS"]],
         body,
         columnStyles: {
           0: { cellWidth: 16, halign: "center" },
@@ -909,7 +964,8 @@ export const exportModuleDetailPDF = (
   }
 
   drawFooter(doc);
-  openPrintPreview(doc);
+  const safeModule = (moduleName || "Module").replace(/[^a-zA-Z0-9_-]/g, "_");
+  openPrintPreview(doc, `TestPro-${safeModule}-${today}.pdf`);
 };
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -980,7 +1036,9 @@ export const exportExecutionPDF = (
   });
 
   drawFooter(doc);
-  openPrintPreview(doc);
+  const safeModule = (modulename || "Module").replace(/[^a-zA-Z0-9_-]/g, "_");
+  const safeTest = (testname || "Test").replace(/[^a-zA-Z0-9_-]/g, "_");
+  openPrintPreview(doc, `TestPro-${safeModule}-${safeTest}-${today}.pdf`);
 };
 
 // ═══════════════════════════════════════════════════════════════════════════════
