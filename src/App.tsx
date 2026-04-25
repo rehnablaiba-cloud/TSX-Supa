@@ -131,7 +131,7 @@ const MuiActivator: React.FC<{ children: React.ReactNode }> = ({
       muiError.includes("not found");
     return (
       <>
-        <div className="fixed top-0 left-0 right-0 z-[9999] bg-pend/90 text-white text-xs py-1.5 px-4 text-center">
+        <div className="fixed top-0 left-0 right-0 z-[9999] bg-pend/90 text-t-primary text-xs py-1.5 px-4 text-center">
           {isMissing ? (
             <>
               <code>@mui/material</code> not installed.
@@ -246,7 +246,7 @@ const AppInner: React.FC = () => {
 
   if (authLoading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-950">
+      <div className="min-h-screen flex items-center justify-center bg-bg-base">
         <Spinner size={48} />
       </div>
     );
@@ -342,7 +342,7 @@ const AppInner: React.FC = () => {
   return (
     <MuiActivator>
       <SessionManager>
-        <div className="flex min-h-screen bg-gray-950">
+        <div className="flex min-h-screen bg-bg-base">
           <Sidebar activePage={page} onNavigate={navigate} modules={modules} />
           <main className="flex-1 flex flex-col overflow-hidden min-w-0">
             {renderPage()}
