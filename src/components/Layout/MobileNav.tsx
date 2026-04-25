@@ -324,7 +324,7 @@ const MobileNav: React.FC<Props> = ({ activePage, onNavigate }) => {
         <div
           className="overflow-y-auto flex-1 px-3 flex flex-col gap-1"
           style={{
-            paddingBottom: "calc(72px + env(safe-area-inset-bottom, 0px))",
+            paddingBottom: "calc(96px + env(safe-area-inset-bottom, 0px))",
           }}
         >
           {/* Theme row */}

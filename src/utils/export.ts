@@ -46,8 +46,6 @@ const WHITE = [255, 255, 255] as [number, number, number];
 const LIGHT = [242, 242, 242] as [number, number, number];
 const BANBDR = [160, 160, 160] as [number, number, number];
 
-const HDRBG = [35, 35, 35] as [number, number, number];
-const HDRTXT = [255, 255, 255] as [number, number, number];
 const ROWALT = [246, 246, 246] as [number, number, number];
 const DIVBG = [225, 225, 225] as [number, number, number];
 const DIVTXT = [25, 25, 25] as [number, number, number];
@@ -215,13 +213,13 @@ const baseTableStyles = () => ({
     fontStyle: "normal" as const,
   } as any,
   headStyles: {
-    fillColor: HDRBG,
-    textColor: HDRTXT,
+    fillColor: LIGHT,
+    textColor: DARK,
     fontStyle: "bold" as const,
-    lineColor: HDRBG,
-    lineWidth: 0,
-    fontSize: 8,
-    cellPadding: { top: 5, bottom: 5, left: 5, right: 5 },
+    lineColor: BANBDR,
+    lineWidth: 0.5,
+    fontSize: 10,
+    cellPadding: { top: 6, bottom: 6, left: 5, right: 5 },
   },
   alternateRowStyles: { fillColor: false as any },
   margin: { top: 34, bottom: 18 },
@@ -235,7 +233,7 @@ const moduleBannerRow = (content: string, colSpan: number) => [
     styles: {
       fillColor: WHITE,
       textColor: DARK,
-      fontStyle: "normal" as const,
+      fontStyle: "bold" as const,
       fontSize: 9.5,
       lineColor: BANBDR as [number, number, number],
       lineWidth: 0.5,
@@ -353,7 +351,6 @@ export const exportDashboardCSV = (summaries: ModuleSummary[]) => {
   );
 };
 
-// Column widths: 14+36+42+60+18+18+18+20+22 = 248 → margin (297-248)/2 = 24.5
 const DASH_COL_WIDTHS = {
   0: 14,
   1: 36,
@@ -397,7 +394,6 @@ export const exportDashboardPDF = (summaries: ModuleSummary[]) => {
   for (const s of summaries) {
     const testCount = s.tests?.length ?? s.testCount ?? 0;
 
-    // ── Module banner: no serial, no fill, left-aligned, larger font ──────
     body.push(
       moduleBannerRow(
         `${s.name}   ·   ${testCount} test${
@@ -480,13 +476,17 @@ export const exportDashboardPDF = (summaries: ModuleSummary[]) => {
     }
   }
 
-  // ── Fleet total footer: bold, light fill ──────────────────────────────────
   const fleetRate =
     fleetTotal > 0 ? Math.round((fleetPass / fleetTotal) * 100) : 0;
   body.push([
     {
       content: "",
-      styles: { fillColor: LIGHT, textColor: DARK, fontStyle: "bold" as const },
+      styles: {
+        fillColor: LIGHT,
+        textColor: DARK,
+        fontStyle: "bold" as const,
+        fontSize: 10,
+      },
     },
     {
       content: "FLEET TOTAL",
@@ -494,16 +494,26 @@ export const exportDashboardPDF = (summaries: ModuleSummary[]) => {
         fillColor: LIGHT,
         textColor: DARK,
         fontStyle: "bold" as const,
-        fontSize: 8.5,
+        fontSize: 10,
       },
     },
     {
       content: `${totalModules} modules`,
-      styles: { fillColor: LIGHT, textColor: DARK, fontStyle: "bold" as const },
+      styles: {
+        fillColor: LIGHT,
+        textColor: DARK,
+        fontStyle: "bold" as const,
+        fontSize: 10,
+      },
     },
     {
       content: `${totalTests} tests`,
-      styles: { fillColor: LIGHT, textColor: DARK, fontStyle: "bold" as const },
+      styles: {
+        fillColor: LIGHT,
+        textColor: DARK,
+        fontStyle: "bold" as const,
+        fontSize: 10,
+      },
     },
     {
       content: String(fleetTotal),
@@ -511,6 +521,7 @@ export const exportDashboardPDF = (summaries: ModuleSummary[]) => {
         fillColor: LIGHT,
         textColor: DARK,
         fontStyle: "bold" as const,
+        fontSize: 10,
         halign: "center" as const,
       },
     },
@@ -520,6 +531,7 @@ export const exportDashboardPDF = (summaries: ModuleSummary[]) => {
         fillColor: LIGHT,
         textColor: GREENINK,
         fontStyle: "bold" as const,
+        fontSize: 10,
         halign: "center" as const,
       },
     },
@@ -529,6 +541,7 @@ export const exportDashboardPDF = (summaries: ModuleSummary[]) => {
         fillColor: LIGHT,
         textColor: REDINK,
         fontStyle: "bold" as const,
+        fontSize: 10,
         halign: "center" as const,
       },
     },
@@ -538,6 +551,7 @@ export const exportDashboardPDF = (summaries: ModuleSummary[]) => {
         fillColor: LIGHT,
         textColor: DARK,
         fontStyle: "bold" as const,
+        fontSize: 10,
         halign: "center" as const,
       },
     },
@@ -547,6 +561,7 @@ export const exportDashboardPDF = (summaries: ModuleSummary[]) => {
         fillColor: LIGHT,
         textColor: rateColor(fleetRate, fleetTotal),
         fontStyle: "bold" as const,
+        fontSize: 10,
         halign: "center" as const,
       },
     },
@@ -599,7 +614,7 @@ export const exportDashboardDocx = (summaries: ModuleSummary[]) => {
   summaries.forEach((s) => {
     const testCount = s.tests?.length ?? s.testCount ?? 0;
     rows.push(`<tr style="background:#fff;border-top:2px solid #aaa;">
-      <td colspan="9" style="font-size:12px">${s.name}  ·  ${testCount} tests  ·  Pass: ${s.pass}  Fail: ${s.fail}  Pending: ${s.pending}  (${s.passRate}%)</td>
+      <td colspan="9" style="font-size:12px;font-weight:bold">${s.name}  ·  ${testCount} tests  ·  Pass: ${s.pass}  Fail: ${s.fail}  Pending: ${s.pending}  (${s.passRate}%)</td>
     </tr>`);
     if (s.tests && s.tests.length > 0) {
       s.tests.forEach((t, ti) => {
@@ -652,9 +667,16 @@ export const exportDashboardDocx = (summaries: ModuleSummary[]) => {
       Pass Rate: <b>${fleetRate}%</b>
     </p>
     <table border="1" style="border-collapse:collapse;width:100%">
-      <thead><tr style="background:#232323;color:#fff">
-        <th>#</th><th>Module</th><th>Description</th><th>Test Name</th>
-        <th>Steps</th><th>Pass</th><th>Fail</th><th>Pending</th><th>Pass Rate</th>
+      <thead><tr style="background:#f2f2f2;">
+        <th style="color:#141414">#</th>
+        <th style="color:#141414">Module</th>
+        <th style="color:#141414">Description</th>
+        <th style="color:#141414">Test Name</th>
+        <th style="color:#141414">Steps</th>
+        <th style="color:#141414">Pass</th>
+        <th style="color:#141414">Fail</th>
+        <th style="color:#141414">Pending</th>
+        <th style="color:#141414">Pass Rate</th>
       </tr></thead>
       <tbody>${rows.join("")}</tbody>
     </table>`
@@ -1058,9 +1080,8 @@ const docxWrapper = (title: string, body: string) => `
   h1   { border-bottom: 1px solid #ccc; padding-bottom: 8px; font-size: 18px; color: #141414 }
   p    { color: #555; font-size: 11px; margin: 4px 0 14px }
   table{ border-collapse: collapse; width: 100% }
-  th   { background: #232323; color: #fff; padding: 8px 10px; font-size: 10px; border: 1px solid #ccc }
+  th   { background: #f2f2f2; color: #141414; font-weight: bold; padding: 8px 10px; font-size: 11px; border: 1px solid #bbb }
   td   { padding: 7px 10px; border: 1px solid #ddd; font-size: 11px; color: #141414 }
-  tr:nth-child(even) td { background: #f6f6f6 }
 </style></head>
 <body><h1>${title}</h1><p>Generated: ${new Date().toLocaleString()}</p>${body}</body>
 </html>`;
