@@ -217,8 +217,7 @@ const Dashboard: React.FC<Props> = ({ onNavigate }) => {
       const mod = modules.find((m) => m.name === s.name);
       const tests = (mod?.module_tests ?? []).map((mt) => {
         const testSteps = (mod?.step_results ?? []).filter(
-          (sr) =>
-            !sr.step?.is_divider && sr.step?.tests_name === mt.tests_name
+          (sr) => !sr.step?.is_divider && sr.step?.tests_name === mt.tests_name
         );
         const pass = testSteps.filter((sr) => sr.status === "pass").length;
         const fail = testSteps.filter((sr) => sr.status === "fail").length;
@@ -228,6 +227,7 @@ const Dashboard: React.FC<Props> = ({ onNavigate }) => {
         const total = testSteps.length;
         return {
           name: mt.test?.name ?? mt.tests_name ?? "Unknown",
+          serialno: mt.test?.serialno ?? null,
           total,
           pass,
           fail,

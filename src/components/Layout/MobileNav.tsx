@@ -211,7 +211,7 @@ const MobileNav: React.FC<Props> = ({ activePage, onNavigate }) => {
           More tap with no way to bring it back until the sheet closed. */}
       <nav
         ref={navRef}
-        className="fixed bottom-5 left-1/2 -translate-x-1/2 z-50 md:hidden
+        className="fixed bottom-5 left-1/2 -translate-x-1/2 z-[56] md:hidden
           rounded-[26px] flex items-center px-2 py-2 gap-1"
         style={{
           ...glassNavStyle,
@@ -275,7 +275,7 @@ const MobileNav: React.FC<Props> = ({ activePage, onNavigate }) => {
               )}
               <span
                 className={`transition-colors duration-200 ${
-                  (isActive || (menuOpen && isMore))
+                  isActive || (menuOpen && isMore)
                     ? "text-c-brand"
                     : "text-t-secondary opacity-60"
                 }`}
@@ -284,7 +284,7 @@ const MobileNav: React.FC<Props> = ({ activePage, onNavigate }) => {
               </span>
               <span
                 className={`text-[9.5px] font-semibold tracking-wide transition-colors duration-200 ${
-                  (isActive || (menuOpen && isMore))
+                  isActive || (menuOpen && isMore)
                     ? "text-c-brand"
                     : "text-t-secondary opacity-45"
                 }`}
@@ -356,7 +356,8 @@ const MobileNav: React.FC<Props> = ({ activePage, onNavigate }) => {
               onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
               className="flex-1 flex items-center gap-2.5 px-4 py-3 rounded-2xl transition-colors"
               style={{
-                background: "color-mix(in srgb, var(--bg-card) 70%, transparent)",
+                background:
+                  "color-mix(in srgb, var(--bg-card) 70%, transparent)",
                 border: "1px solid var(--border-color)",
               }}
             >
@@ -374,7 +375,8 @@ const MobileNav: React.FC<Props> = ({ activePage, onNavigate }) => {
               }}
               className="flex items-center gap-2.5 px-4 py-3 rounded-2xl transition-colors"
               style={{
-                background: "color-mix(in srgb, var(--bg-card) 70%, transparent)",
+                background:
+                  "color-mix(in srgb, var(--bg-card) 70%, transparent)",
                 border: "1px solid var(--border-color)",
               }}
             >
@@ -430,7 +432,8 @@ const MobileNav: React.FC<Props> = ({ activePage, onNavigate }) => {
                   }}
                   className="sheet-item w-full flex items-center gap-3 px-4 py-3 rounded-2xl text-left transition-colors"
                   style={{
-                    background: "color-mix(in srgb, var(--bg-card) 70%, transparent)",
+                    background:
+                      "color-mix(in srgb, var(--bg-card) 70%, transparent)",
                     border: "1px solid var(--border-color)",
                   }}
                 >

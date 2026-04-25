@@ -11,7 +11,7 @@ export interface DashboardModule {
   module_tests: {
     id: string;
     tests_name: string;
-    test: { name: string } | null;
+    test: { name: string; serialno: string | null } | null;
   }[];
   step_results: {
     status: string;
@@ -33,7 +33,7 @@ export async function fetchDashboardModules(): Promise<DashboardModule[]> {
       module_tests:module_tests!module_name(
         id,
         tests_name,
-        test:tests!module_tests_tests_name_fkey(name)
+        test:tests!module_tests_tests_name_fkey(name, serialno)
       ),
       step_results:step_results!module_name(
         status,

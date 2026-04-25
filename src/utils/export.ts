@@ -5,6 +5,7 @@ import type { Module } from "../types";
 // ─── Shared Types ──────────────────────────────────────────────────────────────
 export interface TestSummary {
   name: string;
+  serialno?: string | null;
   total: number;
   pass: number;
   fail: number;
@@ -64,8 +65,6 @@ const RED_ON_DARK = [255, 160, 160] as [number, number, number];
 const GREY_ON_DARK = [180, 180, 180] as [number, number, number];
 
 // ─── Utilities ─────────────────────────────────────────────────────────────────
-const statusBg = (s: string): [number, number, number] =>
-  s === "pass" ? PASSBG : s === "fail" ? FAILBG : WHITE;
 const statusColor = (s: string): [number, number, number] =>
   s === "pass" ? GREENINK : s === "fail" ? REDINK : PENDINK;
 const statusLabel = (s: string) =>
@@ -266,27 +265,24 @@ const buildDividerRow = (d: FlatData, colSpan: number) => {
 
 // ─── Step Row ──────────────────────────────────────────────────────────────────
 const buildStepRow = (step: FlatData) => {
-  const bg = statusBg(step.status);
   const sc = statusColor(step.status);
   return [
     {
       content: String(step.serial),
       styles: {
         halign: "center" as const,
-        fillColor: bg,
         textColor: DARK,
         fontStyle: "bold" as const,
         fontSize: 8.5,
       },
     },
-    { content: step.action, styles: { fillColor: bg, textColor: DARK } },
-    { content: step.expected, styles: { fillColor: bg, textColor: MID } },
-    { content: step.remarks, styles: { fillColor: bg, textColor: MID } },
+    { content: step.action, styles: { textColor: DARK } },
+    { content: step.expected, styles: { textColor: MID } },
+    { content: step.remarks, styles: { textColor: MID } },
     {
       content: statusLabel(step.status),
       styles: {
         halign: "center" as const,
-        fillColor: bg,
         textColor: sc,
         fontStyle: "bold" as const,
         fontSize: 7.5,
@@ -319,12 +315,13 @@ export const exportDashboardCSV = (summaries: ModuleSummary[]) => {
         ].join(",")
       );
       s.tests.forEach((t, ti) => {
+        const testLabel = t.serialno ? `${t.serialno}. ${t.name}` : t.name;
         lines.push(
           [
             `${pad2(i + 1)}.${pad2(ti + 1)}`,
             s.name,
             "",
-            t.name,
+            testLabel,
             t.total,
             t.pass,
             t.fail,
@@ -410,6 +407,7 @@ export const exportDashboardPDF = (summaries: ModuleSummary[]) => {
     if (s.tests && s.tests.length > 0) {
       s.tests.forEach((t, ti) => {
         const tc = rateColor(t.passRate, t.total);
+        const testLabel = t.serialno ? `${t.serialno}. ${t.name}` : t.name;
         body.push([
           {
             content: `${pad2(moduleSerial)}.${pad2(ti + 1)}`,
@@ -425,7 +423,7 @@ export const exportDashboardPDF = (summaries: ModuleSummary[]) => {
             styles: { textColor: MUTED, fontSize: 7 },
           },
           {
-            content: t.name,
+            content: testLabel,
             styles: { textColor: DARK, fontStyle: "bold" as const },
           },
           {
@@ -597,7 +595,7 @@ export const exportDashboardPDF = (summaries: ModuleSummary[]) => {
       ],
     ],
     body,
-    alternateRowStyles: { fillColor: ROWALT },
+    alternateRowStyles: { fillColor: WHITE }, // ← no fill on data rows
     columnStyles: {
       0: { cellWidth: 16, halign: "center" },
       1: { cellWidth: 34 },
@@ -637,13 +635,14 @@ export const exportDashboardDocx = (summaries: ModuleSummary[]) => {
     </tr>`);
     if (s.tests && s.tests.length > 0) {
       s.tests.forEach((t, ti) => {
+        const testLabel = t.serialno ? `${t.serialno}. ${t.name}` : t.name;
         rows.push(`<tr>
           <td align="center" style="color:#6b7280">${pad2(moduleSerial)}.${pad2(
           ti + 1
         )}</td>
           <td style="color:#6b7280">${s.name}</td>
           <td style="color:#6b7280">${s.description ?? "—"}</td>
-          <td><b>${t.name}</b></td>
+          <td><b>${testLabel}</b></td>
           <td align="center">${t.total}</td>
           <td align="center" style="color:#10642d"><b>${t.pass}</b></td>
           <td align="center" style="color:#a01616"><b>${t.fail}</b></td>
@@ -1095,7 +1094,7 @@ export const exportExecutionPDF = (
     ...tableDefaults(doc, y),
     head: [["S.NO", "ACTION", "EXPECTED RESULT", "REMARKS", "STATUS"]],
     body,
-    alternateRowStyles: { fillColor: WHITE },
+    alternateRowStyles: { fillColor: ROWALT },
     columnStyles: {
       0: { cellWidth: 14 },
       1: { cellWidth: 80 },
