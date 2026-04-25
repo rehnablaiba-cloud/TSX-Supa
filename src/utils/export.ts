@@ -406,39 +406,43 @@ export const exportDashboardPDF = (summaries: ModuleSummary[]) => {
     );
 
     if (s.tests && s.tests.length > 0) {
+      const testCount = s.tests.length;
       s.tests.forEach((t, ti) => {
         const tc = rateColor(t.passRate, t.total);
         const testLabel = t.serialno ? `${t.serialno}. ${t.name}` : t.name;
-        body.push([
-          {
-            content: pad2(ti + 1),
-            styles: { textColor: DARK, halign: "center" as const },
-          },
-          { content: s.name, styles: { textColor: DARK } },
-          { content: s.description ?? "—", styles: { textColor: DARK } },
-          { content: testLabel, styles: { textColor: DARK } },
-          {
-            content: String(t.total),
-            styles: { textColor: DARK, halign: "center" as const },
-          },
-          {
-            content: String(t.pass),
-            styles: { textColor: GREENINK, halign: "center" as const },
-          },
-          {
-            content: String(t.fail),
-            styles: { textColor: REDINK, halign: "center" as const },
-          },
-          {
-            content: String(t.pending),
-            styles: { textColor: DARK, halign: "center" as const },
-          },
-          {
-            content: `${t.passRate}%`,
-            styles: { textColor: tc, halign: "center" as const },
-          },
-        ]);
+        const row: any[] = [
+          { content: pad2(ti + 1), styles: { textColor: DARK, halign: 'center' as const } },
+        ];
+    
+        // Merge Module + Description columns across all test rows for this module
+        if (ti === 0) {
+          row.push(
+            {
+              content: s.name,
+              rowSpan: testCount,
+              styles: { textColor: DARK, valign: 'middle' as const },
+            },
+            {
+              content: s.description ?? '—',
+              rowSpan: testCount,
+              styles: { textColor: DARK, valign: 'middle' as const },
+            },
+          );
+        }
+        // ti > 0: skip module/description cells — rowSpan handles them
+    
+        row.push(
+          { content: testLabel,         styles: { textColor: DARK,     } },
+          { content: String(t.total),   styles: { textColor: DARK,     halign: 'center' as const } },
+          { content: String(t.pass),    styles: { textColor: GREENINK, halign: 'center' as const } },
+          { content: String(t.fail),    styles: { textColor: REDINK,   halign: 'center' as const } },
+          { content: String(t.pending), styles: { textColor: DARK,     halign: 'center' as const } },
+          { content: `${t.passRate}%`,  styles: { textColor: tc,       halign: 'center' as const } },
+        );
+    
+        body.push(row);
       });
+    }
     } else {
       const mc = rateColor(s.passRate, s.total);
       body.push([
