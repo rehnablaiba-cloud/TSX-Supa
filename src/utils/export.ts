@@ -248,7 +248,8 @@ const moduleBannerRow = (content: string, colSpan: number) => [
 const buildDividerRow = (d: FlatData, colSpan: number) => {
   const level = resolveDividerLevel(d);
   const prefix = level === 1 ? "▸ " : level === 2 ? "    ▸▸ " : "        ▸▸▸ ";
-  const label = d.action.replace(/^#{1,3}\s*/, "");
+  // Strip both # prefix and %,%, prefix
+  const label = d.action.replace(/^#{1,3}\s*/, "").replace(/^%,%,?\s*/, "");
   return {
     content: prefix + label,
     colSpan,
@@ -689,11 +690,8 @@ export const exportDashboardDocx = (summaries: ModuleSummary[]) => {
     </p>
     <table border="1" style="border-collapse:collapse;width:100%">
       <thead><tr style="background:#f2f2f2;">
-        <th style="color:#141414">#</th><th style="color:#141414">Module</th>
-        <th style="color:#141414">Description</th><th style="color:#141414">Test Name</th>
-        <th style="color:#141414">Steps</th><th style="color:#141414">Pass</th>
-        <th style="color:#141414">Fail</th><th style="color:#141414">Pending</th>
-        <th style="color:#141414">Pass Rate</th>
+        <th>#</th><th>Module</th><th>Description</th><th>Test Name</th>
+        <th>Steps</th><th>Pass</th><th>Fail</th><th>Pending</th><th>Pass Rate</th>
       </tr></thead>
       <tbody>${rows.join("")}</tbody>
     </table>`
@@ -906,8 +904,8 @@ export const exportModuleDetailPDF = (
 
   const title = moduleName?.trim() || "Module Detail Report";
   const subtitle = moduleName?.trim()
-    ? "Full Step Results"
-    : "All Modules — Full Step Results";
+    ? "All Test Results"
+    : "All Modules — All Test Results";
 
   let y = drawHeader(doc, title, subtitle);
   y = drawStatsText(doc, nd.length, pass, fail, pending, y);
@@ -936,27 +934,6 @@ export const exportModuleDetailPDF = (
   const bannerMap = new Map<number, { label: string; isModule: boolean }>();
 
   for (const mod of mods) {
-    const allSteps = mod.tests
-      .flatMap((t) => t.steps)
-      .filter((s) => !s.isdivider);
-    const mPass = allSteps.filter((s) => s.status === "pass").length;
-    const mFail = allSteps.filter((s) => s.status === "fail").length;
-    const mPending = allSteps.filter((s) => s.status === "pending").length;
-    const mRate =
-      allSteps.length > 0 ? Math.round((mPass / allSteps.length) * 100) : 0;
-
-    bannerMap.set(body.length, { label: mod.name, isModule: true });
-    body.push(
-      moduleBannerRow(
-        `${mod.name}   ·   ${mod.tests.length} test${
-          mod.tests.length !== 1 ? "s" : ""
-        }   Steps: ${
-          allSteps.length
-        }   Pass: ${mPass}   Fail: ${mFail}   Pending: ${mPending}   (${mRate}%)`,
-        5
-      )
-    );
-
     for (const test of mod.tests) {
       const tSteps = test.steps.filter((s) => !s.isdivider);
       const tPass = tSteps.filter((s) => s.status === "pass").length;

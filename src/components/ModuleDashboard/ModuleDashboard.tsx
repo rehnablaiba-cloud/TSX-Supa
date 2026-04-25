@@ -186,7 +186,6 @@ const ModuleDashboard: React.FC<Props> = ({
       ]);
 
       if (!mountedRef.current) return;
-
       if (mtRes.error) {
         setError(mtRes.error.message);
         setLoading(false);
@@ -308,19 +307,22 @@ const ModuleDashboard: React.FC<Props> = ({
     };
   }, [chartData]);
 
-  // ── Build export data with full step content ──────────────────────────────
+  // ── Build export data — sorted by serial_no ───────────────────────────────
   const buildFlatData = (): FlatData[] =>
     module_tests.flatMap((mt) =>
-      mt.step_results.map((sr) => ({
-        module: module_name,
-        test: mt.test?.name ?? mt.tests_name,
-        serial: sr.step?.serial_no ?? 0,
-        action: sr.step?.action ?? "",
-        expected: sr.step?.expected_result ?? "",
-        remarks: "",
-        status: sr.status,
-        isdivider: sr.step?.is_divider ?? false,
-      }))
+      mt.step_results
+        .slice()
+        .sort((a, b) => (a.step?.serial_no ?? 0) - (b.step?.serial_no ?? 0))
+        .map((sr) => ({
+          module: module_name,
+          test: mt.test?.name ?? mt.tests_name,
+          serial: sr.step?.serial_no ?? 0,
+          action: sr.step?.action ?? "",
+          expected: sr.step?.expected_result ?? "",
+          remarks: "",
+          status: sr.status,
+          isdivider: sr.step?.is_divider ?? false,
+        }))
     );
 
   if (loading)
@@ -519,7 +521,6 @@ const ModuleDashboard: React.FC<Props> = ({
                               forceReleaseLock(mt.id, lock.locked_by_name);
                             }}
                             className="flex items-center gap-1 text-[11px] font-bold text-red-400 hover:text-red-300 bg-red-500/10 hover:bg-red-500/20 border border-red-500/30 rounded-md px-1.5 py-0.5 transition-colors"
-                            title="Admin: force release this lock"
                           >
                             <Unlock size={10} />
                             Release
