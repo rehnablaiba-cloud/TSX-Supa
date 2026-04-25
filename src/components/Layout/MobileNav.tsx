@@ -38,7 +38,6 @@ import ImportTestsModal from "../Modals/ImportTestsModal";
 import ImportStepsModal from "../Modals/ImportStepsModal";
 import ImportStepsManualModal from "../Modals/ImportStepsManualModal";
 import ExportTestDocxModal from "../Modals/ExportTestDocxModal";
-import type { AppTheme } from "../../context/ThemeContext";
 
 // ══════════════════════════════════════════════════════════════════════════════
 // REMOVED: useThemeColor() and useBorderColor() hooks
@@ -114,7 +113,6 @@ const MobileNav: React.FC<Props> = ({ activePage, onNavigate }) => {
   );
 
   // ── Sheet drag-handle color ─────────────────────────────────────────────
-  // Was previously `border` from useBorderColor(); now uses same color-mix.
   const dragHandleColor = `color-mix(in srgb, var(--border-color) 55%, transparent)`;
 
   useEffect(() => {
@@ -123,7 +121,6 @@ const MobileNav: React.FC<Props> = ({ activePage, onNavigate }) => {
       .catch(() => {});
   }, []);
 
-  // ... rest of component unchanged below this point ...
   // ── Navbar entrance ───────────────────────────────────────────────────────
   useEffect(() => {
     if (!navRef.current) return;
@@ -233,10 +230,9 @@ const MobileNav: React.FC<Props> = ({ activePage, onNavigate }) => {
           which makes z-index comparisons with siblings unreliable. */}
       <div
         ref={overlayRef}
-        className="fixed top-0 left-0 right-0 md:hidden"
+        className="fixed top-0 left-0 right-0 md:hidden backdrop-dim"
         style={{
           bottom: 60,
-          background: "rgba(0,0,0,0.48)",
           opacity: 0,
           display: menuOpen ? "block" : "none",
           pointerEvents: menuOpen ? "auto" : "none",
@@ -254,7 +250,7 @@ const MobileNav: React.FC<Props> = ({ activePage, onNavigate }) => {
         <div className="flex justify-center pt-3 pb-2 shrink-0">
           <div
             className="w-9 h-1 rounded-full"
-            style={{ border: "1px solid var(--border-color)" }}
+            style={{ background: dragHandleColor }}
           />
         </div>
 
@@ -372,7 +368,10 @@ const MobileNav: React.FC<Props> = ({ activePage, onNavigate }) => {
             </>
           )}
 
-          <div className="h-px my-2 sheet-item border border-[var(--border-color)]" />
+          <div
+            className="h-px my-2 sheet-item"
+            style={{ background: dragHandleColor }}
+          />
           <button
             onClick={handleSignOut}
             className="sheet-item w-full flex items-center gap-3 px-4 py-3 rounded-2xl text-left transition-colors hover:bg-red-500/10"
@@ -491,8 +490,8 @@ const MobileNav: React.FC<Props> = ({ activePage, onNavigate }) => {
       )}
       {activeModal === "theme" && (
         <div className="fixed inset-0 z-[70] md:hidden">
-          <div className="absolute inset-0 bg-black/50" onClick={close} />
-          <div className="absolute inset-x-0 bottom-0 max-h-[90vh] overflow-y-auto bg-bg-surface rounded-t-2xl border-t border-[var(--border-color)]">
+          <div className="absolute inset-0 backdrop-dim" onClick={close} />
+          <div className="absolute inset-x-0 bottom-0 max-h-[90vh] overflow-y-auto glass-frost">
             <ThemeEditor onClose={close} />
           </div>
         </div>

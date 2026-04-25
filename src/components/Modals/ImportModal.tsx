@@ -1,45 +1,53 @@
 import React, { useState } from "react";
 import { createPortal } from "react-dom";
-import { Download, Package, FlaskConical, Hash, FileSpreadsheet } from "lucide-react";
+import {
+  Download,
+  Package,
+  FlaskConical,
+  Hash,
+  FileSpreadsheet,
+} from "lucide-react";
 
-import ImportModulesModal     from "./ImportModulesModal";
-import ImportTestsModal       from "./ImportTestsModal";
-import ImportStepsModal       from "./ImportStepsModal";
+import ImportModulesModal from "./ImportModulesModal";
+import ImportTestsModal from "./ImportTestsModal";
+import ImportStepsModal from "./ImportStepsModal";
 import ImportStepsManualModal from "./ImportStepsManualModal";
 
 type ImportTarget = "none" | "modules" | "tests" | "steps_csv" | "steps_manual";
 
-interface Props { onClose: () => void; }
+interface Props {
+  onClose: () => void;
+}
 
 const OPTIONS: {
-  id:    ImportTarget;
+  id: ImportTarget;
   label: string;
-  icon:  React.ReactNode;
-  desc:  string;
+  icon: React.ReactNode;
+  desc: string;
 }[] = [
   {
-    id:    "modules",
+    id: "modules",
     label: "Modules",
-    icon:  <Package         size={20} />,
-    desc:  "Create, rename, or delete modules",
+    icon: <Package size={20} />,
+    desc: "Create, rename, or delete modules",
   },
   {
-    id:    "tests",
+    id: "tests",
     label: "Tests",
-    icon:  <FlaskConical    size={20} />,
-    desc:  "Create, rename, or delete tests",
+    icon: <FlaskConical size={20} />,
+    desc: "Create, rename, or delete tests",
   },
   {
-    id:    "steps_csv",
+    id: "steps_csv",
     label: "Steps — CSV",
-    icon:  <FileSpreadsheet size={20} />,
-    desc:  "Bulk add / update / delete steps via CSV upload",
+    icon: <FileSpreadsheet size={20} />,
+    desc: "Bulk add / update / delete steps via CSV upload",
   },
   {
-    id:    "steps_manual",
+    id: "steps_manual",
     label: "Steps — Manual",
-    icon:  <Hash            size={20} />,
-    desc:  "Add, edit, or delete a single step step-by-step",
+    icon: <Hash size={20} />,
+    desc: "Add, edit, or delete a single step step-by-step",
   },
 ];
 
@@ -47,11 +55,25 @@ const ImportModal: React.FC<Props> = ({ onClose }) => {
   const [target, setTarget] = useState<ImportTarget>("none");
 
   // ── Sub-modal routing ──────────────────────────────────────────────────────
-  // Sub-modals handle their own portal internally (same pattern below)
-  if (target === "modules")      return <ImportModulesModal     onClose={onClose} onBack={() => setTarget("none")} />;
-  if (target === "tests")        return <ImportTestsModal       onClose={onClose} onBack={() => setTarget("none")} />;
-  if (target === "steps_csv")    return <ImportStepsModal       onClose={onClose} onBack={() => setTarget("none")} />;
-  if (target === "steps_manual") return <ImportStepsManualModal onClose={onClose} onBack={() => setTarget("none")} />;
+  if (target === "modules")
+    return (
+      <ImportModulesModal onClose={onClose} onBack={() => setTarget("none")} />
+    );
+  if (target === "tests")
+    return (
+      <ImportTestsModal onClose={onClose} onBack={() => setTarget("none")} />
+    );
+  if (target === "steps_csv")
+    return (
+      <ImportStepsModal onClose={onClose} onBack={() => setTarget("none")} />
+    );
+  if (target === "steps_manual")
+    return (
+      <ImportStepsManualModal
+        onClose={onClose}
+        onBack={() => setTarget("none")}
+      />
+    );
 
   // ── Hub view ───────────────────────────────────────────────────────────────
   return createPortal(
@@ -60,18 +82,15 @@ const ImportModal: React.FC<Props> = ({ onClose }) => {
       style={{ zIndex: 9999 }}
     >
       {/* Backdrop */}
-      <div className="absolute inset-0 bg-black/50" onClick={onClose} />
+      <div className="absolute inset-0 backdrop-dim" onClick={onClose} />
 
       <div
-        className="relative w-full md:max-w-md mx-auto
-          bg-bg-surface border-t md:border border-[var(--border-color)]
+        className="relative w-full md:max-w-md mx-auto glass-frost
+          border-t md:border border-[var(--border-color)]
           rounded-t-2xl md:rounded-2xl
           px-6 pt-5 z-10 flex flex-col gap-4"
         style={{
           paddingBottom: "calc(96px + env(safe-area-inset-bottom, 0px))",
-          backdropFilter: "blur(16px)",
-          WebkitBackdropFilter: "blur(16px)",
-          background: "color-mix(in srgb, var(--bg-surface) 92%, transparent)",
         }}
       >
         {/* Drag pill (mobile) */}
@@ -95,7 +114,7 @@ const ImportModal: React.FC<Props> = ({ onClose }) => {
 
         {/* Options */}
         <div className="flex flex-col gap-2">
-          {OPTIONS.map(opt => (
+          {OPTIONS.map((opt) => (
             <button
               key={opt.id}
               onClick={() => setTarget(opt.id)}
@@ -104,7 +123,9 @@ const ImportModal: React.FC<Props> = ({ onClose }) => {
             >
               <span className="text-t-muted">{opt.icon}</span>
               <div>
-                <p className="text-sm font-semibold text-t-primary">{opt.label}</p>
+                <p className="text-sm font-semibold text-t-primary">
+                  {opt.label}
+                </p>
                 <p className="text-xs text-t-muted">{opt.desc}</p>
               </div>
             </button>

@@ -260,8 +260,8 @@ const ImagePreviewModal: React.FC<{
     <div
       className="fixed inset-0 z-[100] flex items-center justify-center p-4"
       style={{
-        backgroundColor: "rgba(0,0,0,0.88)",
-        backdropFilter: "blur(8px)",
+        background: "color-mix(in srgb, var(--bg-base) 92%, transparent)",
+        backdropFilter: "blur(12px)",
       }}
       onClick={onClose}
     >

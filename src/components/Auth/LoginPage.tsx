@@ -6,10 +6,10 @@ import Spinner from "../UI/Spinner";
 import { TrainFront } from "lucide-react";
 
 const LoginPage: React.FC = () => {
-  const [email, setEmail]       = useState("");
+  const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [error, setError]       = useState("");
-  const [loading, setLoading]   = useState(false);
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
   const cardRef = useRef<HTMLDivElement>(null);
   const { signIn } = useAuth();
   useTheme();
@@ -37,17 +37,19 @@ const LoginPage: React.FC = () => {
 
       <div
         ref={cardRef}
-        className="glass rounded-3xl p-8 w-full max-w-md shadow-2xl relative overflow-hidden"
+        className="glass-frost rounded-3xl p-8 w-full max-w-md shadow-2xl relative overflow-hidden"
       >
         <div className="absolute inset-0 shimmer opacity-10 pointer-events-none transform-gpu" />
 
         {/* Header */}
         <div className="flex flex-col items-center mb-8">
           <div className="w-14 h-14 rounded-2xl bg-c-brand flex items-center justify-center mb-3">
-            <TrainFront size={28} className="text-white" />
+            <TrainFront size={28} className="text-t-primary" />
           </div>
           <h1 className="text-2xl font-bold text-t-primary">TestPro</h1>
-          <p className="text-t-muted text-sm mt-1">Test Execution Management System</p>
+          <p className="text-t-muted text-sm mt-1">
+            Test Execution Management System
+          </p>
         </div>
 
         {/* Form */}
@@ -58,19 +60,21 @@ const LoginPage: React.FC = () => {
               type="email"
               required
               value={email}
-              onChange={e => setEmail(e.target.value)}
+              onChange={(e) => setEmail(e.target.value)}
               placeholder="you@company.com"
               className="input"
             />
           </div>
 
           <div>
-            <label className="block text-xs text-t-muted mb-1.5">Password</label>
+            <label className="block text-xs text-t-muted mb-1.5">
+              Password
+            </label>
             <input
               type="password"
               required
               value={password}
-              onChange={e => setPassword(e.target.value)}
+              onChange={(e) => setPassword(e.target.value)}
               placeholder="••••••••"
               className="input"
             />
@@ -92,7 +96,13 @@ const LoginPage: React.FC = () => {
             disabled={loading}
             className="btn-primary flex items-center justify-center gap-2 mt-2 min-h-[48px]"
           >
-            {loading ? <><Spinner size={18} /> Signing in…</> : "Sign In"}
+            {loading ? (
+              <>
+                <Spinner size={18} /> Signing in…
+              </>
+            ) : (
+              "Sign In"
+            )}
           </button>
         </form>
       </div>

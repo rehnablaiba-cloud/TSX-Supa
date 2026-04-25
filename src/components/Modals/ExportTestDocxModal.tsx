@@ -25,13 +25,10 @@ interface Props {
 }
 
 // ── Steps fetcher ──────────────────────────────────────────────────────────
-// Fetches test_steps for the given test, then left-joins step_results
-// filtered by module_name so each step carries its execution status.
 async function fetchStepsForTest(
   testsName: string,
   moduleName: string
 ): Promise<StepRow[]> {
-  // 1. Fetch all steps for this test
   const { data: steps, error: stepsErr } = await supabase
     .from("test_steps")
     .select("id, action, expected_result, serial_no, is_divider")
@@ -41,7 +38,6 @@ async function fetchStepsForTest(
   if (stepsErr) throw stepsErr;
   if (!steps?.length) return [];
 
-  // 2. Fetch step_results for this module (keyed by test_steps_id)
   const stepIds = steps.map((s) => s.id);
   const { data: results, error: resultsErr } = await supabase
     .from("step_results")
@@ -51,18 +47,15 @@ async function fetchStepsForTest(
 
   if (resultsErr) throw resultsErr;
 
-  // 3. Build a lookup map: test_steps_id → status
   const statusMap = new Map<string, string>(
     (results ?? []).map((r) => [r.test_steps_id, r.status])
   );
 
-  // 4. Merge status onto each step row
-  // After
   return steps.map((s) => ({
     action: s.action,
     expected_result: s.expected_result,
     serial_no: s.serial_no,
-    is_divider: s.is_divider // ← parse level from expected_result
+    is_divider: s.is_divider
       ? parseInt(s.expected_result, 10) || 1
       : null,
     status: statusMap.get(s.id) ?? null,
@@ -81,7 +74,6 @@ const ExportTestDocxModal: React.FC<Props> = ({ onClose }) => {
   const [exporting, setExporting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Load modules on mount
   useEffect(() => {
     fetchModuleOptions()
       .then(setModules)
@@ -91,7 +83,6 @@ const ExportTestDocxModal: React.FC<Props> = ({ onClose }) => {
       .finally(() => setLoadingModules(false));
   }, []);
 
-  // Load tests when module is selected
   const handleSelectModule = useCallback(async (name: string) => {
     setSelectedModule(name);
     setSelectedTest(null);
@@ -109,7 +100,6 @@ const ExportTestDocxModal: React.FC<Props> = ({ onClose }) => {
     }
   }, []);
 
-  // Export
   const handleExport = async () => {
     if (!selectedModule || !selectedTest) return;
     setExporting(true);
@@ -141,14 +131,14 @@ const ExportTestDocxModal: React.FC<Props> = ({ onClose }) => {
   return (
     <div className="fixed inset-0 z-[70] flex items-end justify-center md:hidden">
       <div
-        className="absolute inset-0 bg-black/50"
+        className="absolute inset-0 backdrop-dim"
         style={{ backdropFilter: "blur(2px)" }}
         onClick={onClose}
       />
 
       {/* Sheet */}
       <div
-        className="relative w-full rounded-t-[28px] bg-bg-surface border-t border-l border-r border-[var(--border-color)]"
+        className="relative w-full rounded-t-[28px] glass-frost border-t border-l border-r border-[var(--border-color)]"
         style={{ maxHeight: "85vh", overflowY: "auto" }}
       >
         {/* Handle */}

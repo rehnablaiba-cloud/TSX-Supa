@@ -143,19 +143,16 @@ const ImportTestsModal: React.FC<Props> = ({ onClose, onBack }) => {
       style={{ zIndex: 9999 }}
     >
       {/* Backdrop */}
-      <div className="absolute inset-0 bg-black/50" onClick={onClose} />
+      <div className="absolute inset-0 backdrop-dim" onClick={onClose} />
 
       {/* Panel */}
       <div
         className="relative w-full md:max-w-md mx-auto z-10
           border-t md:border border-[var(--border-color)]
           rounded-t-2xl md:rounded-2xl
-          px-6 pt-5 overflow-y-auto flex flex-col gap-4 max-h-[90vh]"
+          px-6 pt-5 overflow-y-auto flex flex-col gap-4 max-h-[90vh] glass-frost"
         style={{
           paddingBottom: "calc(96px + env(safe-area-inset-bottom, 0px))",
-          backdropFilter: "blur(16px)",
-          WebkitBackdropFilter: "blur(16px)",
-          background: "color-mix(in srgb, var(--bg-surface) 92%, transparent)",
         }}
       >
         {/* Drag pill */}

@@ -1,5 +1,6 @@
 // src/components/UI/LockWarningBanner.tsx
 // Displays all active test locks — current user's (cyan) and others' (amber).
+// Uses CSS custom properties for lock colors so ThemeEditor can override them.
 
 import React, { useLayoutEffect, useRef } from "react";
 import gsap from "gsap";
@@ -7,8 +8,8 @@ import { AlertTriangle, Lock } from "lucide-react";
 import type { ActiveLock } from "../../types";
 
 interface Props {
-  locks: ActiveLock[];                       // current user's locks
-  otherLockedModules: Map<string, number>;   // module_name → count (other users)
+  locks: ActiveLock[]; // current user's locks
+  otherLockedModules: Map<string, number>; // module_name → count (other users)
   onNavigate: (page: string, module_name?: string) => void;
 }
 
@@ -41,8 +42,8 @@ const LockWarningBanner: React.FC<Props> = ({
       ref={bannerRef}
       className="rounded-xl border px-4 py-3 flex flex-col gap-3"
       style={{
-        background: "color-mix(in srgb, #94a3b8 6%, transparent)",
-        borderColor: "#94a3b833",
+        background: "color-mix(in srgb, var(--text-muted) 6%, transparent)",
+        borderColor: "color-mix(in srgb, var(--text-muted) 20%, transparent)",
       }}
     >
       {/* ── Header ────────────────────────────────────────────────────────── */}
@@ -61,7 +62,7 @@ const LockWarningBanner: React.FC<Props> = ({
         <div className="flex flex-col gap-1.5">
           <p
             className="text-[11px] font-bold uppercase tracking-widest pl-1"
-            style={{ color: "#22d3ee" }}
+            style={{ color: "var(--color-my-lock)" }}
           >
             Locked by me
           </p>
@@ -72,7 +73,9 @@ const LockWarningBanner: React.FC<Props> = ({
             >
               <div
                 className="flex items-center gap-2 text-xs"
-                style={{ color: "#67e8f9" }}
+                style={{
+                  color: "color-mix(in srgb, var(--color-my-lock) 80%, white)",
+                }}
               >
                 <Lock size={11} className="shrink-0" />
                 <span>
@@ -85,9 +88,11 @@ const LockWarningBanner: React.FC<Props> = ({
                 onClick={() => onNavigate("module", lock.module_name)}
                 className="text-[11px] font-bold px-2.5 py-0.5 rounded-full border transition-colors"
                 style={{
-                  color: "#22d3ee",
-                  borderColor: "#22d3ee88",
-                  background: "color-mix(in srgb, #22d3ee 12%, transparent)",
+                  color: "var(--color-my-lock)",
+                  borderColor:
+                    "color-mix(in srgb, var(--color-my-lock) 50%, transparent)",
+                  background:
+                    "color-mix(in srgb, var(--color-my-lock) 12%, transparent)",
                 }}
               >
                 Resume
@@ -96,7 +101,11 @@ const LockWarningBanner: React.FC<Props> = ({
           ))}
           <p
             className="pl-2 text-[11px] leading-snug mt-0.5"
-            style={{ color: "#67e8f9", opacity: 0.75 }}
+            style={{
+              color:
+                "color-mix(in srgb, var(--color-my-lock) 75%, transparent)",
+              opacity: 0.75,
+            }}
           >
             Please finish or release{" "}
             {locks.length === 1 ? "this test" : "these tests"} before signing
@@ -118,7 +127,7 @@ const LockWarningBanner: React.FC<Props> = ({
         <div className="flex flex-col gap-1.5">
           <p
             className="text-[11px] font-bold uppercase tracking-widest pl-1"
-            style={{ color: "#f59e0b" }}
+            style={{ color: "var(--color-other-lock)" }}
           >
             Locked by others
           </p>
@@ -130,7 +139,10 @@ const LockWarningBanner: React.FC<Props> = ({
               >
                 <div
                   className="flex items-center gap-2 text-xs"
-                  style={{ color: "#fbbf24" }}
+                  style={{
+                    color:
+                      "color-mix(in srgb, var(--color-other-lock) 80%, white)",
+                  }}
                 >
                   <Lock size={11} className="shrink-0" />
                   <span>
@@ -145,9 +157,11 @@ const LockWarningBanner: React.FC<Props> = ({
                   onClick={() => onNavigate("module", moduleName)}
                   className="text-[11px] font-bold px-2.5 py-0.5 rounded-full border transition-colors"
                   style={{
-                    color: "#f59e0b",
-                    borderColor: "#f59e0b88",
-                    background: "color-mix(in srgb, #f59e0b 12%, transparent)",
+                    color: "var(--color-other-lock)",
+                    borderColor:
+                      "color-mix(in srgb, var(--color-other-lock) 50%, transparent)",
+                    background:
+                      "color-mix(in srgb, var(--color-other-lock) 12%, transparent)",
                   }}
                 >
                   View
@@ -157,7 +171,11 @@ const LockWarningBanner: React.FC<Props> = ({
           )}
           <p
             className="pl-2 text-[11px] leading-snug mt-0.5"
-            style={{ color: "#fbbf24", opacity: 0.75 }}
+            style={{
+              color:
+                "color-mix(in srgb, var(--color-other-lock) 75%, transparent)",
+              opacity: 0.75,
+            }}
           >
             These tests are currently in use by other testers and cannot be
             edited.

@@ -1,4 +1,3 @@
-// src/components/DevTools/SessionLog.tsx
 import React, { useState, useRef, useEffect } from "react";
 import {
   Terminal,
@@ -21,7 +20,7 @@ import {
   LogCategory,
 } from "../../context/SessionLogContext";
 import { useAuth } from "../../context/AuthContext";
-import { useTheme } from "../../context/ThemeContext"; // ← ADD
+import { useTheme } from "../../context/ThemeContext";
 
 // ── Styling maps ────────────────────────────────────────────────────────
 const LEVEL_DOT: Record<LogLevel, string> = {
@@ -82,7 +81,7 @@ function useLogGlassStyles() {
     panel: {
       background: isDark
         ? "rgba(10, 10, 16, 0.92)"
-        : "rgba(248, 250, 252, 0.92)", // slate-50 with opacity
+        : "rgba(248, 250, 252, 0.92)",
       backdropFilter: "blur(20px) saturate(180%)",
       WebkitBackdropFilter: "blur(20px) saturate(180%)",
       borderColor: isDark ? "rgba(255,255,255,0.08)" : "rgba(0,0,0,0.08)",
@@ -95,11 +94,10 @@ function useLogGlassStyles() {
       WebkitBackdropFilter: "blur(16px) saturate(180%)",
       borderColor: isDark ? "rgba(255,255,255,0.10)" : "rgba(0,0,0,0.10)",
     },
-    // Terminal colors that work in both modes
-    logText: isDark ? "#e2e8f0" : "#1e293b", // slate-200 / slate-800
-    mutedText: isDark ? "#64748b" : "#94a3b8", // slate-500 / slate-400
+    logText: isDark ? "#e2e8f0" : "#1e293b",
+    mutedText: isDark ? "#64748b" : "#94a3b8",
     border: isDark ? "rgba(255,255,255,0.06)" : "rgba(0,0,0,0.06)",
-    detailBg: isDark ? "rgba(0,0,0,0.30)" : "rgba(241,245,249,0.60)", // black-30 / slate-100-60
+    detailBg: isDark ? "rgba(0,0,0,0.30)" : "rgba(241,245,249,0.60)",
   };
 }
 
@@ -184,7 +182,7 @@ const EntryRow: React.FC<{
 // ── Main component ──────────────────────────────────────────────────────
 const SessionLog: React.FC = () => {
   const { user } = useAuth();
-  const { theme } = useTheme(); // ← ADD
+  const { theme } = useTheme();
   const { entries, clear, errorCount } = useSessionLog();
   const [open, setOpen] = useState(false);
   const [filter, setFilter] = useState<LogCategory | "all">("all");
@@ -294,11 +292,7 @@ const SessionLog: React.FC = () => {
             <button
               onClick={() => setFilter("all")}
               className={`text-[9px] font-bold px-2 py-1 rounded-full shrink-0 uppercase tracking-wide transition-colors
-                ${
-                  filter === "all"
-                    ? "bg-c-brand text-white"
-                    : "text-t-muted hover:text-t-primary"
-                }`}
+                ${filter === "all" ? "bg-c-brand text-white" : ""}`}
               style={filter === "all" ? {} : { color: styles.mutedText }}
             >
               All · {entries.length}
