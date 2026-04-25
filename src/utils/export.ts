@@ -2,7 +2,6 @@ import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import type { Module } from "../types";
 
-// Shared Types
 export interface FlatData {
   module: string;
   test: string;
@@ -26,7 +25,6 @@ export interface ModuleSummary {
   passRate: number;
 }
 
-// Palette
 const DARK = [30, 30, 30] as [number, number, number];
 const MID = [80, 80, 80] as [number, number, number];
 const MUTED = [130, 130, 130] as [number, number, number];
@@ -60,7 +58,6 @@ const ORANGEINK = [234, 88, 12] as [number, number, number];
 const BLUEDIV = [37, 99, 235] as [number, number, number];
 const GREENDIV = [22, 163, 74] as [number, number, number];
 
-// Helpers
 const today = new Date().toISOString().split("T")[0];
 
 const pad2 = (n: number) => String(n).padStart(2, "0");
@@ -441,7 +438,6 @@ const docxWrapper = (title: string, body: string) => `
 const downloadDocx = (html: string, filename: string) =>
   download(new Blob([html], { type: "application/msword" }), filename);
 
-// 1. DASHBOARD EXPORTS
 export const exportDashboardCSV = (summaries: ModuleSummary[]) => {
   const headers =
     "S.No,Module,Description,Tests,Total Steps,Pass,Fail,Pending,Pass Rate";
@@ -460,7 +456,7 @@ export const exportDashboardCSV = (summaries: ModuleSummary[]) => {
   );
 
   download(
-    new Blob([headers, ...rows].join("\n"), { type: "text/csv" }),
+    new Blob([[headers, ...rows].join("\n")], { type: "text/csv" }),
     `TestProDashboard${today}.csv`
   );
 };
@@ -511,32 +507,6 @@ export const exportDashboardPDF = (summaries: ModuleSummary[]) => {
       s.pending,
       `${s.passRate}%`,
     ]),
-    columnStyles: {
-      0: { cellWidth: 10, halign: "center", textColor: MUTED as any },
-      1: { cellWidth: 36, fontStyle: "bold" },
-      2: { cellWidth: 52 },
-      3: {
-        cellWidth: 18,
-        halign: "center",
-        textColor: BLUEINK as any,
-        fontStyle: "bold",
-      },
-      4: { cellWidth: 22, halign: "center" },
-      5: {
-        cellWidth: 18,
-        halign: "center",
-        textColor: GREENINK as any,
-        fontStyle: "bold",
-      },
-      6: {
-        cellWidth: 18,
-        halign: "center",
-        textColor: REDINK as any,
-        fontStyle: "bold",
-      },
-      7: { cellWidth: 18, halign: "center", textColor: AMBERINK as any },
-      8: { halign: "center", fontStyle: "bold" },
-    },
   });
 
   drawFooter(doc);
@@ -548,16 +518,14 @@ export const exportDashboardDocx = (summaries: ModuleSummary[]) => {
     .map(
       (s, i) => `
       <tr>
-        <td align="center" style="color:#64748b">${pad2(i + 1)}</td>
+        <td align="center">${pad2(i + 1)}</td>
         <td><b>${s.name}</b></td>
         <td>${s.description ?? ""}</td>
-        <td align="center" style="color:#2563eb"><b>${
-          s.testCount ?? "-"
-        }</b></td>
+        <td align="center">${s.testCount ?? "-"}</td>
         <td align="center">${s.total}</td>
-        <td align="center" style="color:#16a34a"><b>${s.pass}</b></td>
-        <td align="center" style="color:#dc2626"><b>${s.fail}</b></td>
-        <td align="center" style="color:#d97706"><b>${s.pending}</b></td>
+        <td align="center">${s.pass}</td>
+        <td align="center">${s.fail}</td>
+        <td align="center">${s.pending}</td>
         <td align="center"><b>${s.passRate}%</b></td>
       </tr>
     `
@@ -569,7 +537,7 @@ export const exportDashboardDocx = (summaries: ModuleSummary[]) => {
     `
     <table border="1" style="border-collapse:collapse;width:100%">
       <thead>
-        <tr style="background:#f1f5f9;color:#475569">
+        <tr>
           <th>#</th>
           <th>Module</th>
           <th>Description</th>
@@ -589,7 +557,6 @@ export const exportDashboardDocx = (summaries: ModuleSummary[]) => {
   downloadDocx(html, `TestProDashboard${today}.doc`);
 };
 
-// 2. REPORT PAGE EXPORTS
 interface TestSummaryRow {
   module: string;
   test: string;
@@ -653,7 +620,7 @@ export const exportReportCSV = (modules: Module[], data: FlatData[]) => {
   );
 
   download(
-    new Blob([headers, ...rows].join("\n"), { type: "text/csv" }),
+    new Blob([[headers, ...rows].join("\n")], { type: "text/csv" }),
     `TestProReport${today}.csv`
   );
 };
@@ -688,58 +655,25 @@ export const exportReportPDF = (modules: Module[], data: FlatData[]) => {
       body.push([
         {
           content: s.module.toUpperCase(),
-          colSpan: 8,
+          colSpan: 7,
           styles: {
             fillColor: MODBG,
             textColor: MODTXT,
-            fontStyle: "bold" as const,
-            fontSize: 7.5,
-            lineColor: FAINT as [number, number, number],
-            lineWidth: 0.3,
-            cellPadding: { top: 3.5, bottom: 3.5, left: 8, right: 4 },
+            fontStyle: "bold",
           },
         },
       ]);
     }
 
     globalSerial += 1;
-    const passRateColor = s.passRate === 100 ? GREENINK : DARK;
-
     body.push([
-      {
-        content: pad2(globalSerial),
-        styles: { halign: "center" as const, textColor: MUTED },
-      },
-      { content: s.test, styles: { fontStyle: "bold" as const } },
-      { content: String(s.total), styles: { halign: "center" as const } },
-      {
-        content: String(s.pass),
-        styles: {
-          halign: "center" as const,
-          textColor: GREENINK,
-          fontStyle: "bold" as const,
-        },
-      },
-      {
-        content: String(s.fail),
-        styles: {
-          halign: "center" as const,
-          textColor: REDINK,
-          fontStyle: "bold" as const,
-        },
-      },
-      {
-        content: String(s.pending),
-        styles: { halign: "center" as const, textColor: AMBERINK },
-      },
-      {
-        content: `${s.passRate}%`,
-        styles: {
-          halign: "center" as const,
-          textColor: passRateColor,
-          fontStyle: "bold" as const,
-        },
-      },
+      pad2(globalSerial),
+      s.test,
+      s.total,
+      s.pass,
+      s.fail,
+      s.pending,
+      `${s.passRate}%`,
     ]);
   }
 
@@ -749,22 +683,12 @@ export const exportReportPDF = (modules: Module[], data: FlatData[]) => {
       ["#", "Test", "Total Steps", "Pass", "Fail", "Pending", "Pass Rate"],
     ],
     body,
-    columnStyles: {
-      0: { cellWidth: 10 },
-      1: { cellWidth: 115 },
-      2: { cellWidth: 24 },
-      3: { cellWidth: 18 },
-      4: { cellWidth: 18 },
-      5: { cellWidth: 20 },
-      6: { cellWidth: 22 },
-    },
   });
 
   drawFooter(doc);
   openPrintPreview(doc);
 };
 
-// 3. MODULE DETAIL EXPORTS
 export const exportModuleDetailCSV = (data: FlatData[]) => {
   const lines: string[] = [
     "Module,Test,S.No,Action,Expected Result,Remarks,Status",
@@ -915,7 +839,6 @@ export const exportModuleDetailPDF = (
   openPrintPreview(doc);
 };
 
-// 4. TEST EXECUTION EXPORTS
 export const exportExecutionCSV = (
   moduleName: string,
   testName: string,
@@ -934,7 +857,7 @@ export const exportExecutionCSV = (
   });
 
   download(
-    new Blob([headers, ...rows].join("\n"), { type: "text/csv" }),
+    new Blob([[headers, ...rows].join("\n")], { type: "text/csv" }),
     `${moduleName}${testName}${today}.csv`
   );
 };
@@ -967,8 +890,8 @@ export const exportExecutionPDF = (
     contentY
   );
 
-  const body = data.map((d) => {
-    if (d.isdivider) return buildDividerRow(d, 5);
+  const body: any[] = data.map((d) => {
+    if (d.isdivider) return [buildDividerRow(d, 5)];
     return buildStepRow(d);
   });
 
@@ -990,7 +913,6 @@ export const exportExecutionPDF = (
   openPrintPreview(doc);
 };
 
-// Generic helper used elsewhere
 export function parseCsvToRecords(raw: string): Record<string, string>[] {
   const allRows = raw
     .trimStart()

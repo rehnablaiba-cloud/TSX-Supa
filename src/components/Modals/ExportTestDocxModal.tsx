@@ -62,7 +62,7 @@ async function fetchStepsForTest(
     action: s.action,
     expected_result: s.expected_result,
     serial_no: s.serial_no,
-    is_divider: s.is_divider // ← parse level from expected_result
+    is_divider: s.isdivider // ← parse level from expected_result
       ? parseInt(s.expected_result, 10) || 1
       : null,
     status: statusMap.get(s.id) ?? null,

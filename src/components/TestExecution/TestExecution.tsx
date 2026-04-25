@@ -1102,7 +1102,7 @@ const TestExecution: React.FC<Props> = ({
     if (steps.length === 0 || stepsInitialized.current) return;
     stepsInitialized.current = true;
     const firstPending = steps.find(
-      (s) => !s.is_divider && s.status === "pending"
+      (s) => !s.isdivider && s.status === "pending"
     );
     if (firstPending) {
       setFocusedStepId(firstPending.stepId);
@@ -1194,7 +1194,7 @@ const TestExecution: React.FC<Props> = ({
       const idx = steps.findIndex((s) => s.stepId === stepId);
       const nextPending = steps
         .slice(idx + 1)
-        .find((s) => !s.is_divider && s.status === "pending");
+        .find((s) => !s.isdivider && s.status === "pending");
       const display_name = user?.display_name ?? user?.email ?? "User";
       const prevSteps = steps;
 
@@ -1237,13 +1237,13 @@ const TestExecution: React.FC<Props> = ({
 
     setSteps((prev) =>
       prev.map((s) =>
-        s.is_divider
+        s.isdivider
           ? s
           : { ...s, status: "pending", remarks: "", display_name }
       )
     );
     remarksMap.current = {};
-    const first = steps.filter((s) => !s.is_divider)[0];
+    const first = steps.filter((s) => !s.isdivider)[0];
     if (first) {
       setFocusedStepId(first.stepId);
       setScrollTarget(first.stepId);
@@ -1297,7 +1297,7 @@ const TestExecution: React.FC<Props> = ({
     failPct,
     progressPct,
   } = useMemo(() => {
-    const nd = steps.filter((s) => !s.is_divider);
+    const nd = steps.filter((s) => !s.isdivider);
     const pass = nd.filter((s) => s.status === "pass").length;
     const fail = nd.filter((s) => s.status === "fail").length;
     const total = nd.length;
@@ -1316,7 +1316,7 @@ const TestExecution: React.FC<Props> = ({
   const filtered = useMemo(
     () =>
       steps.filter((s) => {
-        if (s.is_divider) return true;
+        if (s.isdivider) return true;
         if (filter !== "all" && s.status !== filter) return false;
         if (
           search &&
@@ -1333,7 +1333,7 @@ const TestExecution: React.FC<Props> = ({
   const flatData = useMemo<FlatData[]>(
     () =>
       steps.map((s) =>
-        s.is_divider
+        s.isdivider
           ? {
               module: module_name,
               test: currentTest?.name ?? "",
@@ -1359,7 +1359,7 @@ const TestExecution: React.FC<Props> = ({
   );
 
   const exportStats = useMemo(() => {
-    const nd = flatData.filter((s) => !s.is_divider);
+    const nd = flatData.filter((s) => !s.isdivider);
     return [
       { label: "Total Steps", value: nd.length },
       { label: "Pass", value: nd.filter((s) => s.status === "pass").length },
