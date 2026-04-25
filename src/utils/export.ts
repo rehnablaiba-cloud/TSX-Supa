@@ -37,7 +37,7 @@ export interface ModuleSummary {
   tests?: TestSummary[];
 }
 
-// ─── Color Palette (WHITE + DARK only for fills) ────────────────────────────────
+// ─── Color Palette (text/ink only — no fills) ───────────────────────────────────
 const DARK = [20, 20, 20] as [number, number, number];
 const MID = [70, 70, 70] as [number, number, number];
 const MUTED = [130, 130, 130] as [number, number, number];
@@ -196,7 +196,7 @@ const drawFooter = (doc: jsPDF) => {
   }
 };
 
-// ─── Base Table Styles — DARK header, WHITE data rows, no alternating ──────────
+// ─── Base Table Styles — NO FILLS ANYWHERE ─────────────────────────────────────
 const baseTableStyles = () => ({
   styles: {
     fontSize: 8,
@@ -204,12 +204,10 @@ const baseTableStyles = () => ({
     textColor: DARK,
     lineColor: DARK,
     lineWidth: 0.3,
-    fillColor: WHITE,
     fontStyle: "normal" as const,
   } as any,
   headStyles: {
-    fillColor: DARK, // ← was LIGHT (grey) — now pure black
-    textColor: WHITE, // ← was DARK — white text on black header
+    textColor: DARK,
     fontStyle: "bold" as const,
     lineColor: DARK,
     lineWidth: 0.3,
@@ -218,20 +216,20 @@ const baseTableStyles = () => ({
     cellPadding: { top: 6, bottom: 6, left: 5, right: 5 },
     overflow: "hidden" as const,
   },
-  alternateRowStyles: { fillColor: false as any }, // ← no grey alternating rows
+  alternateRowStyles: { fillColor: false as any },
   margin: { top: 34, bottom: 18 },
 });
 
-// ─── Module Banner Row — DARK bg, WHITE text ───────────────────────────────────
+// ─── Module Banner Row — NO FILL, left aligned ─────────────────────────────────
 const moduleBannerRow = (content: string, colSpan: number) => [
   {
     content,
     colSpan,
     styles: {
-      fillColor: DARK, // ← was WHITE
-      textColor: WHITE, // ← was DARK
+      textColor: DARK,
       fontStyle: "bold" as const,
       fontSize: 9.5,
+      halign: "left" as const,
       lineColor: DARK as [number, number, number],
       lineWidth: 0.5,
       cellPadding: { top: 6, bottom: 6, left: 5, right: 5 },
@@ -239,25 +237,24 @@ const moduleBannerRow = (content: string, colSpan: number) => [
   },
 ];
 
-// ─── Divider Row — WHITE bg, indent via cellPadding, no ▸ symbols ──────────────
+// ─── Divider Row — NO FILL, left aligned ───────────────────────────────────────
 const buildDividerRow = (d: FlatData, colSpan: number) => {
   const level = resolveDividerLevel(d);
-  // Strip ALL leading non-alphanumeric chars (%, ,, #, spaces, etc.)
   const label = d.action.replace(/^[^a-zA-Z0-9]+/, "");
   return {
     content: label,
     colSpan,
     styles: {
-      fillColor: WHITE, // ← was DIVBG (grey)
       textColor: DARK,
       fontStyle: "bold" as const,
       fontSize: 8,
+      halign: "left" as const,
       lineColor: FAINT as [number, number, number],
       lineWidth: 0.3,
       cellPadding: {
         top: level === 1 ? 4 : 3,
         bottom: level === 1 ? 4 : 3,
-        left: level === 1 ? 10 : level === 2 ? 22 : 34, // indentation via padding
+        left: level === 1 ? 10 : level === 2 ? 22 : 34,
         right: 5,
       },
     },
@@ -351,7 +348,7 @@ export const exportDashboardCSV = (summaries: ModuleSummary[]) => {
 };
 
 const DASH_COL_WIDTHS: Record<number, number> = {
-  0: 12,
+  0: 16,
   1: 30,
   2: 36,
   3: 52,
@@ -489,13 +486,11 @@ export const exportDashboardPDF = (summaries: ModuleSummary[]) => {
     }
   }
 
-  // ── Fleet total row — WHITE bg, DARK bold text (no grey fill) ──────────────
   const fleetRate =
     fleetTotal > 0 ? Math.round((fleetPass / fleetTotal) * 100) : 0;
   const ftCell = (content: string, tc: [number, number, number] = DARK) => ({
     content,
     styles: {
-      fillColor: WHITE,
       textColor: tc,
       fontStyle: "bold" as const,
       fontSize: 10,
@@ -562,7 +557,6 @@ export const exportDashboardDocx = (summaries: ModuleSummary[]) => {
   const rows: string[] = [];
   summaries.forEach((s) => {
     const testCount = s.tests?.length ?? s.testCount ?? 0;
-    // ── Module banner — DARK bg, WHITE text ────────────────────────────────
     rows.push(`<tr style="background:#141414;color:#fff;">
       <td colspan="9" style="font-size:12px;font-weight:bold;padding:8px 10px;">
         ${s.name}  ·  ${testCount} tests  ·  Pass: ${s.pass}  Fail: ${s.fail}  Pending: ${s.pending}  (${s.passRate}%)
@@ -594,7 +588,6 @@ export const exportDashboardDocx = (summaries: ModuleSummary[]) => {
       </tr>`);
     }
   });
-  // ── Fleet total — DARK bg, WHITE text ──────────────────────────────────────
   rows.push(`<tr style="background:#141414;color:#fff;">
     <td></td><td><b>FLEET TOTAL</b></td>
     <td><b>${summaries.length} modules</b></td>
@@ -630,7 +623,7 @@ export const exportDashboardDocx = (summaries: ModuleSummary[]) => {
 };
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// 2. REPORT PAGE EXPORTS
+// 2. REPORT PAGE EXPORTS  —  SESSION LOG (detailed steps, no fills)
 // ═══════════════════════════════════════════════════════════════════════════════
 
 interface TestSummaryRow {
@@ -694,85 +687,73 @@ export const exportReportCSV = (_modules: Module[], data: FlatData[]) => {
 
 export const exportReportPDF = (_modules: Module[], data: FlatData[]) => {
   const doc = new jsPDF({ orientation: "landscape" });
-  const summaries = buildTestSummaries(data);
-  const total = summaries.reduce((a, s) => a + s.total, 0);
-  const pass = summaries.reduce((a, s) => a + s.pass, 0);
-  const fail = summaries.reduce((a, s) => a + s.fail, 0);
-  const pending = summaries.reduce((a, s) => a + s.pending, 0);
 
-  let y = drawHeader(doc, "Test Report", "All Modules — Test Summary");
-  y = drawStatsText(doc, total, pass, fail, pending, y, [
-    { label: "Total Tests", value: summaries.length },
+  const nd = data.filter((d) => !d.isdivider);
+  const pass = nd.filter((d) => d.status === "pass").length;
+  const fail = nd.filter((d) => d.status === "fail").length;
+  const pending = nd.filter((d) => d.status === "pending").length;
+  const moduleCount = new Set(nd.map((d) => d.module)).size;
+  const testCount = new Set(nd.map((d) => d.test)).size;
+
+  let y = drawHeader(doc, "Test Report", "Session Execution Log");
+  y = drawStatsText(doc, nd.length, pass, fail, pending, y, [
+    { label: "Modules", value: moduleCount },
+    { label: "Tests", value: testCount },
   ]);
 
   const body: any[] = [];
   let lastModule = "";
-  let globalSerial = 0;
+  let lastTest = "";
+  let stepSerial = 0;
 
-  for (const s of summaries) {
-    if (s.module !== lastModule) {
-      lastModule = s.module;
-      body.push(moduleBannerRow(s.module, 8));
+  for (const d of data) {
+    if (d.isdivider) {
+      body.push([buildDividerRow(d, 5)]);
+      continue;
     }
-    globalSerial++;
-    const rc = rateColor(s.passRate, s.total);
-    body.push([
-      {
-        content: pad2(globalSerial),
-        styles: { textColor: DARK, halign: "center" as const },
-      },
-      { content: s.module, styles: { textColor: DARK } },
-      { content: s.test, styles: { textColor: DARK } },
-      {
-        content: String(s.total),
-        styles: { textColor: DARK, halign: "center" as const },
-      },
-      {
-        content: String(s.pass),
-        styles: { textColor: GREENINK, halign: "center" as const },
-      },
-      {
-        content: String(s.fail),
-        styles: { textColor: REDINK, halign: "center" as const },
-      },
-      {
-        content: String(s.pending),
-        styles: { textColor: DARK, halign: "center" as const },
-      },
-      {
-        content: `${s.passRate}%`,
-        styles: { textColor: rc, halign: "center" as const },
-      },
-    ]);
+
+    if (d.module !== lastModule) {
+      lastModule = d.module;
+      body.push(moduleBannerRow(d.module, 5));
+      lastTest = "";
+      stepSerial = 0;
+    }
+
+    if (d.test !== lastTest) {
+      lastTest = d.test;
+      body.push([
+        {
+          content: d.test,
+          colSpan: 5,
+          styles: {
+            fontStyle: "bold" as const,
+            fontSize: 9,
+            textColor: DARK,
+            lineColor: DARK,
+            lineWidth: 0.3,
+            cellPadding: { top: 4, bottom: 4, left: 10, right: 5 },
+          },
+        },
+      ]);
+      stepSerial = 0;
+    }
+
+    stepSerial++;
+    body.push(buildStepRow(d, stepSerial));
   }
 
   autoTable(doc, {
     ...baseTableStyles(),
     startY: y,
     margin: { top: 34, left: 14, right: 14, bottom: 18 },
-    head: [
-      [
-        "#",
-        "Module",
-        "Test Name",
-        "Steps",
-        "Pass",
-        "Fail",
-        "Pending",
-        "Pass Rate",
-      ],
-    ],
+    head: [["S/N", "ACTION", "EXPECTED RESULT", "REMARKS", "STATUS"]],
     body,
-    // ← no alternateRowStyles override (base already sets fillColor: false)
     columnStyles: {
-      0: { cellWidth: 12, halign: "center" },
-      1: { cellWidth: 34 },
-      2: { cellWidth: 80 },
-      3: { cellWidth: 20, halign: "center" },
-      4: { cellWidth: 20, halign: "center" },
-      5: { cellWidth: 20, halign: "center" },
-      6: { cellWidth: 22, halign: "center" },
-      7: { cellWidth: 22, halign: "center" },
+      0: { cellWidth: 14, halign: "center" },
+      1: { cellWidth: 80 },
+      2: { cellWidth: 78 },
+      3: { cellWidth: 60 },
+      4: { cellWidth: 36, halign: "center" },
     },
   });
 
@@ -781,7 +762,7 @@ export const exportReportPDF = (_modules: Module[], data: FlatData[]) => {
 };
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// 3. MODULE DETAIL EXPORTS
+// 3. MODULE DETAIL EXPORTS  —  page break per test, banner before header
 // ═══════════════════════════════════════════════════════════════════════════════
 
 export const exportModuleDetailCSV = (data: FlatData[]) => {
@@ -860,11 +841,18 @@ export const exportModuleDetailPDF = (
     mod.tests[tstIdx.get(tk)!].steps.push(d);
   }
 
-  const body: any[] = [];
-  const bannerMap = new Map<number, { label: string; isModule: boolean }>();
+  let testCount = 0;
 
   for (const mod of mods) {
     for (const test of mod.tests) {
+      testCount++;
+
+      // Page break before every test except the first
+      if (testCount > 1) {
+        doc.addPage();
+      }
+      const startY = testCount === 1 ? y : 20;
+
       const tSteps = test.steps.filter((s) => !s.isdivider);
       const tPass = tSteps.filter((s) => s.status === "pass").length;
       const tFail = tSteps.filter((s) => s.status === "fail").length;
@@ -872,30 +860,26 @@ export const exportModuleDetailPDF = (
       const tRate =
         tSteps.length > 0 ? Math.round((tPass / tSteps.length) * 100) : 0;
 
-      bannerMap.set(body.length, {
-        label: `${pad2(test.serial)}. ${test.name}`,
-        isModule: false,
-      });
+      // ── Test banner (text + rule) drawn BEFORE the table header ───────────
+      const bannerPrefix = mods.length > 1 ? `${mod.name} › ` : "";
+      const bannerText = `${bannerPrefix}${pad2(test.serial)}. ${
+        test.name
+      }   —   Steps: ${
+        tSteps.length
+      }   Pass: ${tPass}   Fail: ${tFail}   Pending: ${tPending}   (${tRate}%)`;
 
-      // ── Test banner — DARK bg, WHITE text ────────────────────────────────
-      body.push([
-        {
-          content: `${pad2(test.serial)}. ${test.name}   —   Steps: ${
-            tSteps.length
-          }   Pass: ${tPass}   Fail: ${tFail}   Pending: ${tPending}   (${tRate}%)`,
-          colSpan: 5,
-          styles: {
-            fillColor: DARK, // ← was TESTBG (grey)
-            textColor: WHITE, // ← was TESTTXT (dark)
-            fontStyle: "bold" as const,
-            fontSize: 8.5,
-            lineColor: DARK as [number, number, number],
-            lineWidth: 0.3,
-            cellPadding: { top: 5, bottom: 5, left: 10, right: 5 },
-          },
-        },
-      ]);
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(9);
+      doc.setTextColor(...DARK);
+      doc.text(bannerText, 14, startY + 6);
+      doc.setDrawColor(...FAINT);
+      doc.setLineWidth(0.3);
+      doc.line(14, startY + 9, 283, startY + 9);
 
+      const tableStartY = startY + 12;
+
+      // ── Steps table with header ───────────────────────────────────────────
+      const body: any[] = [];
       let stepIndex = 0;
       for (const row of test.steps) {
         if (!row.isdivider) stepIndex++;
@@ -905,50 +889,22 @@ export const exportModuleDetailPDF = (
             : buildStepRow(row, stepIndex)
         );
       }
+
+      autoTable(doc, {
+        ...baseTableStyles(),
+        startY: tableStartY,
+        margin: { top: 20, left: 14, right: 14, bottom: 18 },
+        head: [["S/N", "ACTION", "EXPECTED RESULT", "REMARKS", "STATUS"]],
+        body,
+        columnStyles: {
+          0: { cellWidth: 16, halign: "center" },
+          1: { cellWidth: 82 },
+          2: { cellWidth: 78 },
+          3: { cellWidth: 60 },
+          4: { cellWidth: 30, halign: "center" },
+        },
+      });
     }
-  }
-
-  const bookmarks: Array<{ label: string; isModule: boolean; page: number }> =
-    [];
-
-  autoTable(doc, {
-    ...baseTableStyles(),
-    startY: y,
-    margin: { top: 34, left: 14, right: 14, bottom: 18 },
-    head: [["S/N", "ACTION", "EXPECTED RESULT", "REMARKS", "STATUS"]],
-    body,
-    columnStyles: {
-      0: { cellWidth: 16, halign: "center" },
-      1: { cellWidth: 82 },
-      2: { cellWidth: 78 },
-      3: { cellWidth: 60 },
-      4: { cellWidth: 30, halign: "center" },
-    },
-    didDrawRow: (hookData: any) => {
-      const idx = hookData.row.index;
-      if (bannerMap.has(idx)) {
-        const info = bannerMap.get(idx)!;
-        bookmarks.push({
-          label: info.label,
-          isModule: info.isModule,
-          page: (doc.internal as any).getCurrentPageInfo().pageNumber,
-        });
-      }
-    },
-  } as any);
-
-  try {
-    const outline = (doc as any).outline;
-    let currentModNode: any = null;
-    for (const bm of bookmarks) {
-      if (bm.isModule) {
-        currentModNode = outline.add(null, bm.label, { pageNumber: bm.page });
-      } else {
-        outline.add(currentModNode ?? null, bm.label, { pageNumber: bm.page });
-      }
-    }
-  } catch (_) {
-    // outline API unavailable — skip silently
   }
 
   drawFooter(doc);
@@ -1013,7 +969,6 @@ export const exportExecutionPDF = (
     margin: { top: 34, left: 14, right: 14, bottom: 18 },
     head: [["S.NO", "ACTION", "EXPECTED RESULT", "REMARKS", "STATUS"]],
     body,
-    // ← no alternateRowStyles override (base already sets fillColor: false)
     columnStyles: {
       0: { cellWidth: 14 },
       1: { cellWidth: 80 },
