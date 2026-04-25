@@ -123,7 +123,7 @@ interface TrimmedStepResult {
 interface ModuleTestRow {
   id: string;
   tests_name: string;
-  test: { serial_no: number; name: string };
+  test: { serial_no: string; name: string };
   step_results: TrimmedStepResult[];
 }
 
