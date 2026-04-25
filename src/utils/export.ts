@@ -16,6 +16,7 @@ export interface TestSummary {
 export interface FlatData {
   module: string;
   test: string;
+  test_serial_no?: string; // ← ADDED: tests.serial_no
   serial: number;
   action: string;
   expected: string;
@@ -197,7 +198,6 @@ const drawFooter = (doc: jsPDF) => {
 };
 
 // ─── Base Table Styles — NO FILLS ANYWHERE ─────────────────────────────────────
-// ← CHANGED: added fillColor: false to headStyles
 const baseTableStyles = () => ({
   styles: {
     fontSize: 8,
@@ -208,7 +208,7 @@ const baseTableStyles = () => ({
     fontStyle: "normal" as const,
   } as any,
   headStyles: {
-    fillColor: false as any, // ← CHANGED: removes blue/default header fill
+    fillColor: false as any,
     textColor: DARK,
     fontStyle: "bold" as const,
     lineColor: DARK,
@@ -687,7 +687,7 @@ export const exportReportCSV = (_modules: Module[], data: FlatData[]) => {
   );
 };
 
-// ← CHANGED: session log format with centered test sub-headers
+// ← CHANGED: uses test_serial_no from tests table when rendering test headers
 export const exportReportPDF = (_modules: Module[], data: FlatData[]) => {
   const doc = new jsPDF({ orientation: "landscape" });
 
@@ -724,15 +724,18 @@ export const exportReportPDF = (_modules: Module[], data: FlatData[]) => {
 
     if (d.test !== lastTest) {
       lastTest = d.test;
+      const testLabel = d.test_serial_no // ← CHANGED
+        ? `${d.test_serial_no}. ${d.test}`
+        : d.test;
       body.push([
         {
-          content: d.test,
+          content: testLabel,
           colSpan: 5,
           styles: {
             fontStyle: "bold" as const,
             fontSize: 9,
             textColor: DARK,
-            halign: "center" as const, // ← CHANGED: centered test name
+            halign: "center" as const,
             lineColor: DARK as [number, number, number],
             lineWidth: 0.3,
             cellPadding: { top: 4, bottom: 4, left: 10, right: 5 },
@@ -864,11 +867,8 @@ export const exportModuleDetailPDF = (
         tSteps.length > 0 ? Math.round((tPass / tSteps.length) * 100) : 0;
 
       const bannerPrefix = mods.length > 1 ? `${mod.name} › ` : "";
-      const bannerText = `${bannerPrefix}${pad2(test.serial)}. ${
-        test.name
-      }   —   Steps: ${
-        tSteps.length
-      }   Pass: ${tPass}   Fail: ${tFail}   Pending: ${tPending}   (${tRate}%)`;
+      const testSerialNo = test.steps[0]?.test_serial_no ?? pad2(test.serial); // ← CHANGED
+      const bannerText = `${bannerPrefix}${testSerialNo}. ${test.name}   —   Steps: ${tSteps.length}   Pass: ${tPass}   Fail: ${tFail}   Pending: ${tPending}   (${tRate}%)`;
 
       doc.setFont("helvetica", "bold");
       doc.setFontSize(9);

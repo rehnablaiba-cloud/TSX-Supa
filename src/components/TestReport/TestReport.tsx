@@ -1,3 +1,8 @@
+/**
+ * TestReport.tsx
+ * Drill-down mode  → pass module_test_id + onBack
+ * Standalone mode  → render with no props
+ */
 import React, {
   useEffect,
   useRef,
@@ -10,6 +15,7 @@ import Spinner from "../UI/Spinner";
 import ExportModal from "../UI/ExportModal";
 import FadeWrapper from "../UI/FadeWrapper";
 import SegmentedBar from "../UI/SegmentedBar";
+import { useAuth } from "../../context/AuthContext";
 import { useTheme } from "../../context/ThemeContext";
 import { useInjectStyle } from "../../utils/animation";
 import { exportReportCSV, exportReportPDF } from "../../utils/export";
@@ -52,10 +58,7 @@ import {
   type SessionTestGroup,
 } from "../../lib/supabase/queries.testreport";
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Props
-// ─────────────────────────────────────────────────────────────────────────────
-
+// ─── Props ───────────────────────────────────────────────────────────────────
 interface Props {
   module_test_id?: string;
   onBack?: () => void;
@@ -63,10 +66,7 @@ interface Props {
 
 type ViewMode = "table" | "chart";
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Constants
-// ─────────────────────────────────────────────────────────────────────────────
-
+// ─── Constants ─────────────────────────────────────────────────────────────────
 const STATUS_ICON: Record<string, React.ReactNode> = {
   pass: <CheckCircle2 size={13} className="text-green-400 shrink-0" />,
   fail: <XCircle size={13} className="text-red-400 shrink-0" />,
@@ -88,19 +88,18 @@ function getNonDividerResults(rows: ReportStepResult[]) {
 function getOrCreateSessionStart(): string {
   const existing = sessionStorage.getItem(SESSION_STORAGE_KEY);
   if (existing) return existing;
-  const now = new Date().toISOString();
-  sessionStorage.setItem(SESSION_STORAGE_KEY, now);
-  return now;
+  const startOfDay = new Date();
+  startOfDay.setHours(0, 0, 0, 0);
+  const iso = startOfDay.toISOString();
+  sessionStorage.setItem(SESSION_STORAGE_KEY, iso);
+  return iso;
 }
 
 function clearSessionStart() {
   sessionStorage.removeItem(SESSION_STORAGE_KEY);
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Session Step Detail Modal
-// ─────────────────────────────────────────────────────────────────────────────
-
+// ─── Session Step Detail Modal ─────────────────────────────────────────────────
 interface SessionModalProps {
   group: SessionTestGroup;
   onClose: () => void;
@@ -237,30 +236,10 @@ const SessionDetailModal: React.FC<SessionModalProps> = ({
 const TestReport: React.FC<Props> = ({ module_test_id, onBack }) => {
   useInjectStyle();
   const { theme } = useTheme();
+  const { user } = useAuth();
   const ct = useMemo(() => getChartTheme(theme), [theme]);
 
-  // ── Auth ──────────────────────────────────────────────────────────────────
-  const [currentUser, setCurrentUser] = useState<string | null>(null);
-
-  useEffect(() => {
-    supabase.auth.getUser().then(({ data }) => {
-      setCurrentUser(data?.user?.email ?? null);
-    });
-
-    const { data: authListener } = supabase.auth.onAuthStateChange(
-      (event, session) => {
-        if (event === "SIGNED_OUT") {
-          clearSessionStart();
-          setCurrentUser(null);
-          setSessionSteps([]);
-        } else {
-          setCurrentUser(session?.user?.email ?? null);
-        }
-      }
-    );
-
-    return () => authListener.subscription.unsubscribe();
-  }, []);
+  const sessionUser = user?.display_name ?? user?.email ?? null;
 
   // ── Drill-down state ──────────────────────────────────────────────────────
   const [meta, setMeta] = useState<ReportMeta | null>(null);
@@ -293,6 +272,14 @@ const TestReport: React.FC<Props> = ({ module_test_id, onBack }) => {
       mountedRef.current = false;
     };
   }, []);
+
+  // ── Clear session on sign-out ─────────────────────────────────────────────
+  useEffect(() => {
+    if (!user) {
+      clearSessionStart();
+      setSessionSteps([]);
+    }
+  }, [user]);
 
   // ── Session groups (derived) ──────────────────────────────────────────────
   const sessionGroups = useMemo<SessionTestGroup[]>(() => {
@@ -335,8 +322,8 @@ const TestReport: React.FC<Props> = ({ module_test_id, onBack }) => {
   }, []);
 
   useEffect(() => {
-    if (currentUser) loadSessionSteps(currentUser);
-  }, [currentUser, loadSessionSteps]);
+    if (sessionUser) loadSessionSteps(sessionUser);
+  }, [sessionUser, loadSessionSteps]);
 
   // ── Drill-down fetch ──────────────────────────────────────────────────────
   const fetchDrillDown = useCallback(async () => {
@@ -355,7 +342,7 @@ const TestReport: React.FC<Props> = ({ module_test_id, onBack }) => {
     }
   }, [module_test_id]);
 
-  // ── Standalone fetch — always loads ALL modules; filtering is client-side ──
+  // ── Standalone fetch ──────────────────────────────────────────────────────
   const fetchStandalone = useCallback(async () => {
     setLoading(true);
     setError(null);
@@ -418,7 +405,6 @@ const TestReport: React.FC<Props> = ({ module_test_id, onBack }) => {
   );
 
   // ── Standalone chart data ─────────────────────────────────────────────────
-  // ── Client-side filtered modules (dropdown never triggers re-fetch) ──────
   const displayModules = useMemo(
     () =>
       selectedModuleName
@@ -441,6 +427,36 @@ const TestReport: React.FC<Props> = ({ module_test_id, onBack }) => {
     [displayModules]
   );
 
+  // ── Lookup map: tests_name → tests.serial_no ──────────────────────────────
+  // ← CHANGED
+  const testSerialMap = useMemo(() => {
+    const map = new Map<string, string>();
+    modules.forEach((m) => {
+      m.module_tests?.forEach((mt) => {
+        if (mt.tests_name && mt.test?.serial_no) {
+          map.set(mt.tests_name, mt.test.serial_no);
+        }
+      });
+    });
+    return map;
+  }, [modules]);
+
+  // ── Session data formatted as FlatData for export ─────────────────────────
+  // ← CHANGED
+  const sessionFlatData = useMemo<FlatData[]>(() => {
+    return sessionSteps.map((s) => ({
+      module: s.module_name,
+      test: s.tests_name,
+      test_serial_no: testSerialMap.get(s.tests_name) ?? "",
+      serial: s.serial_no,
+      action: s.action || "",
+      expected: s.expected_result || "",
+      remarks: s.remarks || "",
+      status: s.status,
+      isdivider: s.is_divider,
+    }));
+  }, [sessionSteps, testSerialMap]);
+
   // ── Export helpers ────────────────────────────────────────────────────────
   const toFlatData = (): FlatData[] =>
     results
@@ -448,6 +464,7 @@ const TestReport: React.FC<Props> = ({ module_test_id, onBack }) => {
       .map((r) => ({
         module: meta?.module_name ?? "",
         test: meta?.test?.name ?? meta?.tests_name ?? "",
+        test_serial_no: meta?.test?.serial_no ?? "", // ← CHANGED
         serial: r.step?.serial_no ?? 0,
         action: r.step?.action ?? "",
         expected: r.step?.expected_result ?? "",
@@ -476,6 +493,7 @@ const TestReport: React.FC<Props> = ({ module_test_id, onBack }) => {
               flat.push({
                 module: m.name,
                 test: mt.test?.name ?? "",
+                test_serial_no: mt.test?.serial_no ?? "", // ← CHANGED
                 serial: sr.step?.serial_no ?? 0,
                 action: sr.step?.action ?? "",
                 expected: sr.step?.expected_result ?? "",
@@ -488,8 +506,9 @@ const TestReport: React.FC<Props> = ({ module_test_id, onBack }) => {
     return flat;
   };
 
+  // ← CHANGED: stats now come from session data
   const exportStats = () => {
-    const flat = buildFlatData(displayModules);
+    const flat = sessionFlatData.filter((s) => !s.isdivider);
     return [
       { label: "Total Steps", value: flat.length },
       { label: "Pass", value: flat.filter((s) => s.status === "pass").length },
@@ -547,15 +566,14 @@ const TestReport: React.FC<Props> = ({ module_test_id, onBack }) => {
   );
 
   // ── Your Session panel ────────────────────────────────────────────────────
-  // Only renders when the current user has executed at least one step this session
   const sessionPanel =
-    currentUser && sessionGroups.length > 0 ? (
+    user && sessionGroups.length > 0 ? (
       <div className="card flex flex-col gap-3">
         {/* Header */}
         <div className="flex items-center gap-2">
           <User size={14} className="text-c-brand" />
           <p className="text-sm font-semibold text-t-primary">Your Session</p>
-          <span className="ml-auto text-xs text-t-muted">{currentUser}</span>
+          <span className="ml-auto text-xs text-t-muted">{sessionUser}</span>
         </div>
 
         {/* Summary pills */}
@@ -906,7 +924,7 @@ const TestReport: React.FC<Props> = ({ module_test_id, onBack }) => {
         actions={
           <button
             onClick={() => setShowExportModal(true)}
-            disabled={displayModules.length === 0}
+            disabled={sessionFlatData.length === 0} // ← CHANGED
             className="flex items-center gap-1.5 px-4 py-2 bg-bg-card hover:bg-bg-surface
               disabled:opacity-40 disabled:cursor-not-allowed text-t-primary
               text-sm font-semibold rounded-lg transition border border-[var(--border-color)]"
@@ -920,7 +938,7 @@ const TestReport: React.FC<Props> = ({ module_test_id, onBack }) => {
         isOpen={showExportModal}
         onClose={() => setShowExportModal(false)}
         title="Export Report"
-        subtitle={selectedModuleName ?? "All Modules"}
+        subtitle="Session Log"
         stats={exportStats()}
         options={[
           {
@@ -928,14 +946,14 @@ const TestReport: React.FC<Props> = ({ module_test_id, onBack }) => {
             icon: <FileSpreadsheet size={16} />,
             color: "bg-[var(--color-primary)]",
             hoverColor: "hover:bg-[var(--color-primary-hover)]",
-            onConfirm: () => exportReportCSV([], buildFlatData(displayModules)),
+            onConfirm: () => exportReportCSV([], sessionFlatData), // ← CHANGED
           },
           {
             label: "PDF",
             icon: <FileText size={16} />,
             color: "bg-[var(--color-blue)]",
             hoverColor: "hover:bg-[var(--color-blue-hover)]",
-            onConfirm: () => exportReportPDF([], buildFlatData(displayModules)),
+            onConfirm: () => exportReportPDF([], sessionFlatData), // ← CHANGED
           },
         ]}
       />
@@ -1056,7 +1074,7 @@ const TestReport: React.FC<Props> = ({ module_test_id, onBack }) => {
           )}
         </FadeWrapper>
 
-        {/* ── YOUR SESSION (only if user has executed steps) ──────────── */}
+        {/* ── YOUR SESSION ──────────── */}
         {sessionPanel}
       </div>
     </>
