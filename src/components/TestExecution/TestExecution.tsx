@@ -1359,7 +1359,7 @@ const TestExecution: React.FC<Props> = ({
   );
 
   const exportStats = useMemo(() => {
-    const nd = flatData.filter((s) => !s.is_divider);
+    const nd = flatData.filter((s) => !s.isdivider);
     return [
       { label: "Total Steps", value: nd.length },
       { label: "Pass", value: nd.filter((s) => s.status === "pass").length },

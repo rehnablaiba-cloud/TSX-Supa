@@ -1,4 +1,3 @@
-// src/components/Dashboard/Dashboard.tsx
 import React, {
   useEffect,
   useLayoutEffect,
@@ -212,22 +211,23 @@ const Dashboard: React.FC<Props> = ({ onNavigate }) => {
     [summaries]
   );
 
-  // ── Build per-test breakdown for PDF ───────────────────────────────────────
+  // ── Build per-test breakdown for PDF/DOCX ──────────────────────────────────
   const buildSummariesWithTests = useCallback((): ModuleSummary[] => {
     return summaries.map((s) => {
-      const mod = modules.find((m) => m.name === s.name);
-      const tests = (mod?.module_tests ?? []).map((mt) => {
+      const mod = modules.find((m) => m.name === s.name) as any;
+      const tests = (mod?.module_tests ?? []).map((mt: any) => {
         const testSteps = (mod?.step_results ?? []).filter(
-          (sr) => sr.step?.tests_name === mt.tests_name && !sr.step?.is_divider
+          (sr: any) =>
+            sr.step?.tests_name === mt.tests_name && !sr.step?.is_divider
         );
-        const pass = testSteps.filter((sr) => sr.status === "pass").length;
-        const fail = testSteps.filter((sr) => sr.status === "fail").length;
+        const pass = testSteps.filter((sr: any) => sr.status === "pass").length;
+        const fail = testSteps.filter((sr: any) => sr.status === "fail").length;
         const pending = testSteps.filter(
-          (sr) => sr.status === "pending"
+          (sr: any) => sr.status === "pending"
         ).length;
         const total = testSteps.length;
         return {
-          name: mt.test?.name ?? mt.tests_name,
+          name: mt.test?.name ?? mt.tests_name ?? "Unknown",
           total,
           pass,
           fail,
