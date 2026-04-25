@@ -1,4 +1,3 @@
-// src/lib/supabase/queries.dashboard.ts
 import { supabase } from "../../supabase";
 import type { ActiveLock } from "../../types";
 
@@ -9,8 +8,15 @@ import type { ActiveLock } from "../../types";
 export interface DashboardModule {
   name: string;
   description: string | null;
-  module_tests: { id: string }[];
-  step_results: { status: string; step: { is_divider: boolean } | null }[];
+  module_tests: {
+    id: string;
+    tests_name: string;
+    test: { name: string } | null;
+  }[];
+  step_results: {
+    status: string;
+    step: { is_divider: boolean; tests_name: string | null } | null;
+  }[];
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -22,9 +28,17 @@ export async function fetchDashboardModules(): Promise<DashboardModule[]> {
     .from("modules")
     .select(
       `
-      name, description,
-      module_tests:module_tests!module_name(id),
-      step_results:step_results!module_name(status, step:test_steps!step_results_test_steps_id_fkey(is_divider))
+      name,
+      description,
+      module_tests:module_tests!module_name(
+        id,
+        tests_name,
+        test:tests!module_tests_tests_name_fkey(name)
+      ),
+      step_results:step_results!module_name(
+        status,
+        step:test_steps!step_results_test_steps_id_fkey(is_divider, tests_name)
+      )
     `
     )
     .order("name");
@@ -88,7 +102,6 @@ export async function fetchOtherActiveLockModules(): Promise<
 
   if (error || !locks || locks.length === 0) return new Map();
 
-  // Filter to locks NOT owned by current user
   const otherLocks = locks.filter((l: any) => l.locked_by_name !== userEmail);
   if (otherLocks.length === 0) return new Map();
 
@@ -101,12 +114,10 @@ export async function fetchOtherActiveLockModules(): Promise<
 
   if (mtErr || !module_tests) return new Map();
 
-  // Build a lookup: module_test_id → module_name
   const idToModule = Object.fromEntries(
     module_tests.map((mt: any) => [mt.id, mt.module_name])
   );
 
-  // Count how many other-user locks exist per module
   const countMap = new Map<string, number>();
   for (const lock of otherLocks) {
     const moduleName = idToModule[lock.module_test_id];

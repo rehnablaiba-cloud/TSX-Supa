@@ -214,16 +214,16 @@ const Dashboard: React.FC<Props> = ({ onNavigate }) => {
   // ── Build per-test breakdown for PDF/DOCX ──────────────────────────────────
   const buildSummariesWithTests = useCallback((): ModuleSummary[] => {
     return summaries.map((s) => {
-      const mod = modules.find((m) => m.name === s.name) as any;
-      const tests = (mod?.module_tests ?? []).map((mt: any) => {
+      const mod = modules.find((m) => m.name === s.name);
+      const tests = (mod?.module_tests ?? []).map((mt) => {
         const testSteps = (mod?.step_results ?? []).filter(
-          (sr: any) =>
-            sr.step?.tests_name === mt.tests_name && !sr.step?.is_divider
+          (sr) =>
+            !sr.step?.is_divider && sr.step?.tests_name === mt.tests_name
         );
-        const pass = testSteps.filter((sr: any) => sr.status === "pass").length;
-        const fail = testSteps.filter((sr: any) => sr.status === "fail").length;
+        const pass = testSteps.filter((sr) => sr.status === "pass").length;
+        const fail = testSteps.filter((sr) => sr.status === "fail").length;
         const pending = testSteps.filter(
-          (sr: any) => sr.status === "pending"
+          (sr) => sr.status === "pending"
         ).length;
         const total = testSteps.length;
         return {
@@ -270,22 +270,22 @@ const Dashboard: React.FC<Props> = ({ onNavigate }) => {
           {
             label: "CSV",
             icon: <FileSpreadsheet size={16} />,
-            color: "bg-emerald-600",
-            hoverColor: "hover:bg-emerald-700",
+            color: "bg-c-brand",
+            hoverColor: "hover:bg-c-brand-hover",
             onConfirm: () => exportDashboardCSV(summaries),
           },
           {
             label: "PDF",
             icon: <FileText size={16} />,
-            color: "bg-blue-600",
-            hoverColor: "hover:bg-blue-700",
+            color: "bg-c-brand",
+            hoverColor: "hover:bg-c-brand-hover",
             onConfirm: () => exportDashboardPDF(buildSummariesWithTests()),
           },
           {
             label: "DOCX",
             icon: <FileDown size={16} />,
-            color: "bg-indigo-600",
-            hoverColor: "hover:bg-indigo-700",
+            color: "bg-c-brand",
+            hoverColor: "hover:bg-c-brand-hover",
             onConfirm: () => exportDashboardDocx(buildSummariesWithTests()),
           },
         ]}
