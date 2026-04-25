@@ -3,59 +3,84 @@
 @tailwind utilities;
 
 /*
- * ── Theme tokens ─────────────────────────────────────────────────────
- *  Real values set at runtime by applyTheme() in src/theme.ts.
- * ─────────────────────────────────────────────────────────────────────
+ * ═══════════════════════════════════════════════════════════════════════
+ *  THEME TOKENS  —  Set at runtime by applyTheme() in src/theme.ts
+ *  :root holds NEUTRAL defaults only. Real values injected via JS.
+ * ═══════════════════════════════════════════════════════════════════════
  */
 :root {
-  /* dark-mode defaults */
-  --bg-base:          #030712;
-  --bg-surface:       #111827;
-  --bg-card:          #1f2937;
-  --bg-nav:           rgba(17,24,39,0.80);
-  --border-color:     rgba(255,255,255,0.05);
-  --text-primary:     #f9fafb;
-  --text-secondary:   #d1d5db;
-  --text-muted:       #6b7280;
-  --input-bg:         #1f2937;
-  --input-border:     rgba(255,255,255,0.10);
-  --input-text:       #f3f4f6;
-  --glass-bg:         rgba(255,255,255,0.05);
-  --glass-border:     rgba(255,255,255,0.10);
-  --grad-from:        #1e1b4b;
-  --grad-via:         #0f172a;
-  --grad-to:          #1e3a5f;
-  --color-brand:      #3b82f6;
-  --color-brand-hover:#60a5fa;
-  --color-brand-bg:   rgba(59,130,246,0.15);
-  --color-pass:       #22c55e;
-  --color-fail:       #ef4444;
-  --color-pend:       #f59e0b;
-  /* Lock / semantic accent colors */
-  --color-my-lock:    #22d3ee;
+  /* Neutral fallbacks — overridden immediately by applyTheme() */
+  --bg-base: #f8fafc;
+  --bg-surface: #ffffff;
+  --bg-card: #f1f5f9;
+  --bg-nav: rgba(255, 255, 255, 0.85);
+  --border-color: rgba(0, 0, 0, 0.08);
+  --text-primary: #0f172a;
+  --text-secondary: #334155;
+  --text-muted: #64748b;
+  --input-bg: #ffffff;
+  --input-border: rgba(0, 0, 0, 0.12);
+  --input-text: #0f172a;
+  --glass-bg: rgba(0, 0, 0, 0.03);
+  --glass-border: rgba(0, 0, 0, 0.06);
+  --grad-from: #e0e7ff;
+  --grad-via: #f0f9ff;
+  --grad-to: #e0f2fe;
+  --color-brand: #2563eb;
+  --color-brand-hover: #3b82f6;
+  --color-brand-bg: rgba(37, 99, 235, 0.1);
+  --color-pass: #22c55e;
+  --color-fail: #ef4444;
+  --color-pend: #f59e0b;
+  --color-my-lock: #22d3ee;
   --color-other-lock: #f59e0b;
-  /* Neon glow RGB components (for keyframe animations) */
   --neon-cyan: 34, 211, 238;
   --neon-amber: 245, 158, 11;
-  /* Brand shades */
-  --brand-50:  #eff6ff;  --brand-100: #dbeafe;  --brand-200: #bfdbfe;
-  --brand-300: #93c5fd;  --brand-400: #60a5fa;  --brand-500: #3b82f6;
-  --brand-600: #2563eb;  --brand-700: #1d4ed8;  --brand-800: #1e40af;
+  --brand-50: #eff6ff;
+  --brand-100: #dbeafe;
+  --brand-200: #bfdbfe;
+  --brand-300: #93c5fd;
+  --brand-400: #60a5fa;
+  --brand-500: #3b82f6;
+  --brand-600: #2563eb;
+  --brand-700: #1d4ed8;
+  --brand-800: #1e40af;
   --brand-900: #1e3a8a;
 }
 
 /* ── Base ── */
 @layer base {
-  * { box-sizing: border-box; }
+  * {
+    box-sizing: border-box;
+  }
+
+  html,
   body {
     background-color: var(--bg-base);
     color: var(--text-primary);
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
+    transition: background-color 0.35s ease, color 0.35s ease;
   }
-  ::-webkit-scrollbar { width: 6px; height: 6px; }
-  ::-webkit-scrollbar-track { background: var(--bg-surface); }
-  ::-webkit-scrollbar-thumb { background: var(--bg-card); border-radius: 9999px; }
+
+  /* Scrollbar theming */
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  ::-webkit-scrollbar-track {
+    background: var(--bg-surface);
+  }
+  ::-webkit-scrollbar-thumb {
+    background: var(--bg-card);
+    border-radius: 9999px;
+  }
+
+  /* Selection color */
+  ::selection {
+    background: color-mix(in srgb, var(--color-brand) 30%, transparent);
+    color: var(--text-primary);
+  }
 }
 
 /* ═══════════════════════════════════════════════════════════════════
@@ -63,12 +88,12 @@
    ═══════════════════════════════════════════════════════════════════ */
 
 @layer utilities {
-
   /* ── Standard glass card ── */
   .glass {
     background: color-mix(in srgb, var(--bg-surface) 86%, transparent);
     border: 1px solid color-mix(in srgb, var(--border-color) 80%, transparent);
     @apply backdrop-blur-md rounded-2xl;
+    transition: background-color 0.3s ease, border-color 0.3s ease;
   }
 
   /* ── Heavy frost (modals, floating nav, overlays) ── */
@@ -76,9 +101,10 @@
     background: color-mix(in srgb, var(--bg-surface) 72%, transparent);
     border: 1px solid color-mix(in srgb, var(--border-color) 60%, transparent);
     @apply backdrop-blur-xl rounded-2xl;
-    box-shadow:
-      0 8px 32px color-mix(in srgb, var(--bg-base) 40%, transparent),
+    box-shadow: 0 8px 32px color-mix(in srgb, var(--bg-base) 40%, transparent),
       inset 0 1px 0 color-mix(in srgb, var(--text-primary) 6%, transparent);
+    transition: background-color 0.3s ease, border-color 0.3s ease,
+      box-shadow 0.3s ease;
   }
 
   /* ── Liquid glass (iOS-style, high saturation boost) ── */
@@ -86,11 +112,12 @@
     background: color-mix(in srgb, var(--bg-surface) 55%, transparent);
     border: 1px solid color-mix(in srgb, var(--border-color) 50%, transparent);
     @apply backdrop-blur-2xl rounded-3xl;
-    box-shadow:
-      0 8px 32px color-mix(in srgb, var(--bg-base) 35%, transparent),
+    box-shadow: 0 8px 32px color-mix(in srgb, var(--bg-base) 35%, transparent),
       inset 0 1px 0 color-mix(in srgb, var(--text-primary) 8%, transparent);
     backdrop-filter: blur(28px) saturate(180%) brightness(1.06);
     -webkit-backdrop-filter: blur(28px) saturate(180%) brightness(1.06);
+    transition: background-color 0.3s ease, border-color 0.3s ease,
+      box-shadow 0.3s ease;
   }
 
   /* ── Card (uses glass internally) ── */
@@ -102,6 +129,7 @@
   .backdrop-dim {
     background: color-mix(in srgb, var(--bg-base) 55%, transparent);
     @apply backdrop-blur-sm;
+    transition: background-color 0.3s ease;
   }
 
   /* ── Primary button (auto-inverse text via color-mix) ── */
@@ -131,6 +159,8 @@
     background-color: var(--input-bg);
     color: var(--input-text);
     border: 1px solid var(--input-border);
+    transition: background-color 0.2s ease, border-color 0.2s ease,
+      color 0.2s ease;
   }
   .input::placeholder {
     color: var(--text-muted);
@@ -173,7 +203,13 @@
 
   /* ── Gradient background ── */
   .grad-bg {
-    background: linear-gradient(135deg, var(--grad-from) 0%, var(--grad-via) 50%, var(--grad-to) 100%);
+    background: linear-gradient(
+      135deg,
+      var(--grad-from) 0%,
+      var(--grad-via) 50%,
+      var(--grad-to) 100%
+    );
+    transition: background 0.5s ease;
   }
 
   /* ── Shimmer overlay ── */
@@ -190,29 +226,50 @@
     animation: shimmerMove 3s ease-in-out infinite;
   }
   @keyframes shimmerMove {
-    0% { background-position: 200% 0; }
-    100% { background-position: -200% 0; }
+    0% {
+      background-position: 200% 0;
+    }
+    100% {
+      background-position: -200% 0;
+    }
   }
 
   /* ── Neon pulse keyframes (theme-adaptive via CSS vars) ── */
   @keyframes neonPulse {
-    0%,100% { box-shadow: 0 0 0 1.5px rgba(var(--neon-cyan),0.45), 0 0 12px 2px rgba(var(--neon-cyan),0.18); }
-    50%      { box-shadow: 0 0 0 1.5px rgba(var(--neon-cyan),0.45), 0 0 22px 6px rgba(var(--neon-cyan),0.32); }
-  }
-  @keyframes amberPulse {
-    0%,100% { box-shadow: 0 0 0 1.5px rgba(var(--neon-amber),0.45), 0 0 12px 2px rgba(var(--neon-amber),0.18); }
-    50%      { box-shadow: 0 0 0 1.5px rgba(var(--neon-amber),0.45), 0 0 22px 6px rgba(var(--neon-amber),0.32); }
-  }
-  @keyframes dualPulse {
-    0%,100% {
-      box-shadow:
-        0 0 0 1.5px rgba(var(--neon-cyan),0.5), 0 0 0 3px rgba(var(--neon-amber),0.35),
-        0 0 14px 3px rgba(var(--neon-cyan),0.2), 0 0 22px 6px rgba(var(--neon-amber),0.15);
+    0%,
+    100% {
+      box-shadow: 0 0 0 1.5px rgba(var(--neon-cyan), 0.45),
+        0 0 12px 2px rgba(var(--neon-cyan), 0.18);
     }
     50% {
-      box-shadow:
-        0 0 0 1.5px rgba(var(--neon-cyan),0.6), 0 0 0 3px rgba(var(--neon-amber),0.45),
-        0 0 22px 6px rgba(var(--neon-cyan),0.32), 0 0 32px 10px rgba(var(--neon-amber),0.25);
+      box-shadow: 0 0 0 1.5px rgba(var(--neon-cyan), 0.45),
+        0 0 22px 6px rgba(var(--neon-cyan), 0.32);
+    }
+  }
+  @keyframes amberPulse {
+    0%,
+    100% {
+      box-shadow: 0 0 0 1.5px rgba(var(--neon-amber), 0.45),
+        0 0 12px 2px rgba(var(--neon-amber), 0.18);
+    }
+    50% {
+      box-shadow: 0 0 0 1.5px rgba(var(--neon-amber), 0.45),
+        0 0 22px 6px rgba(var(--neon-amber), 0.32);
+    }
+  }
+  @keyframes dualPulse {
+    0%,
+    100% {
+      box-shadow: 0 0 0 1.5px rgba(var(--neon-cyan), 0.5),
+        0 0 0 3px rgba(var(--neon-amber), 0.35),
+        0 0 14px 3px rgba(var(--neon-cyan), 0.2),
+        0 0 22px 6px rgba(var(--neon-amber), 0.15);
+    }
+    50% {
+      box-shadow: 0 0 0 1.5px rgba(var(--neon-cyan), 0.6),
+        0 0 0 3px rgba(var(--neon-amber), 0.45),
+        0 0 22px 6px rgba(var(--neon-cyan), 0.32),
+        0 0 32px 10px rgba(var(--neon-amber), 0.25);
     }
   }
 }

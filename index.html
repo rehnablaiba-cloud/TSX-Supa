@@ -3,13 +3,114 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="theme-color" content="#0f172a" />
+    <meta name="theme-color" content="#0f172a" id="theme-color-meta" />
     <title>TestPro</title>
     <link rel="manifest" href="/manifest.json" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <!--
+      ═══════════════════════════════════════════════════════════════
+      Anti-FOUC: Apply saved theme BEFORE React renders.
+      This prevents a dark flash when the user prefers light mode.
+      ═══════════════════════════════════════════════════════════════
+    -->
+    <script>
+      (function () {
+        const saved = localStorage.getItem("theme");
+        const prefersDark = window.matchMedia(
+          "(prefers-color-scheme: dark)"
+        ).matches;
+        const mode = saved || (prefersDark ? "dark" : "light");
+
+        // Light theme tokens (must match src/theme.ts exactly)
+        const light = {
+          "--bg-base": "#f8fafc",
+          "--bg-surface": "#ffffff",
+          "--bg-card": "#f1f5f9",
+          "--bg-nav": "rgba(255,255,255,0.85)",
+          "--border-color": "rgba(0,0,0,0.08)",
+          "--text-primary": "#0f172a",
+          "--text-secondary": "#334155",
+          "--text-muted": "#64748b",
+          "--input-bg": "#ffffff",
+          "--input-border": "rgba(0,0,0,0.12)",
+          "--input-text": "#0f172a",
+          "--glass-bg": "rgba(0,0,0,0.03)",
+          "--glass-border": "rgba(0,0,0,0.06)",
+          "--grad-from": "#e0e7ff",
+          "--grad-via": "#f0f9ff",
+          "--grad-to": "#e0f2fe",
+          "--color-brand": "#2563eb",
+          "--color-brand-hover": "#3b82f6",
+          "--color-brand-bg": "rgba(37,99,235,0.10)",
+          "--color-pass": "#22c55e",
+          "--color-fail": "#ef4444",
+          "--color-pend": "#f59e0b",
+          "--color-my-lock": "#22d3ee",
+          "--color-other-lock": "#f59e0b",
+          "--neon-cyan": "34, 211, 238",
+          "--neon-amber": "245, 158, 11",
+        };
+        // Dark theme tokens
+        const dark = {
+          "--bg-base": "#030712",
+          "--bg-surface": "#111827",
+          "--bg-card": "#1f2937",
+          "--bg-nav": "rgba(17,24,39,0.80)",
+          "--border-color": "rgba(255,255,255,0.05)",
+          "--text-primary": "#f9fafb",
+          "--text-secondary": "#d1d5db",
+          "--text-muted": "#6b7280",
+          "--input-bg": "#1f2937",
+          "--input-border": "rgba(255,255,255,0.10)",
+          "--input-text": "#f3f4f6",
+          "--glass-bg": "rgba(255,255,255,0.05)",
+          "--glass-border": "rgba(255,255,255,0.10)",
+          "--grad-from": "#1e1b4b",
+          "--grad-via": "#0f172a",
+          "--grad-to": "#1e3a5f",
+          "--color-brand": "#3b82f6",
+          "--color-brand-hover": "#60a5fa",
+          "--color-brand-bg": "rgba(59,130,246,0.15)",
+          "--color-pass": "#22c55e",
+          "--color-fail": "#ef4444",
+          "--color-pend": "#f59e0b",
+          "--color-my-lock": "#22d3ee",
+          "--color-other-lock": "#f59e0b",
+          "--neon-cyan": "34, 211, 238",
+          "--neon-amber": "245, 158, 11",
+        };
+
+        const tokens = mode === "dark" ? dark : light;
+        const root = document.documentElement;
+        for (const [k, v] of Object.entries(tokens)) {
+          root.style.setProperty(k, v);
+        }
+        root.setAttribute("data-theme", mode);
+
+        // Update theme-color meta for mobile browsers
+        const meta = document.getElementById("theme-color-meta");
+        if (meta) meta.content = tokens["--bg-base"];
+      })();
+    </script>
+    <style>
+      /* Prevent FOUC: hide body until theme is applied */
+      html {
+        visibility: visible;
+      }
+      body {
+        font-family: "Inter", system-ui, sans-serif;
+        margin: 0;
+        background-color: var(--bg-base);
+        color: var(--text-primary);
+      }
+    </style>
+    <base target="_blank" />
   </head>
-  <body class="bg-gray-950 text-gray-100 font-[Inter]">
+  <body>
     <div id="root"></div>
     <script type="module" src="/src/index.tsx"></script>
   </body>
