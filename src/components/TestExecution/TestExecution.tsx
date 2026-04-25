@@ -267,16 +267,16 @@ const ImagePreviewModal: React.FC<{
     >
       <button
         onClick={onClose}
-        className="absolute top-4 right-4 w-9 h-9 rounded-full bg-white/10 hover:bg-white/20 border border-white/20 flex items-center justify-center text-white transition-colors z-10"
+        className="absolute top-4 right-4 w-9 h-9 rounded-full bg-t-primary/10 hover:bg-t-primary/20 border border-t-primary/20 flex items-center justify-center text-t-primary transition-colors z-10"
       >
         <X size={16} />
       </button>
       <div className="absolute top-4 left-4 flex items-center gap-2 z-10">
-        <span className="text-xs font-semibold text-white/70 uppercase tracking-wider">
+        <span className="text-xs font-semibold text-t-muted uppercase tracking-wider">
           {label}
         </span>
         {total > 1 && (
-          <span className="text-xs text-white/40">
+          <span className="text-xs text-t-muted/60">
             {idx + 1} / {total}
           </span>
         )}
@@ -287,7 +287,7 @@ const ImagePreviewModal: React.FC<{
             e.stopPropagation();
             setIdx((i) => (i - 1 + total) % total);
           }}
-          className="absolute left-3 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-white/10 hover:bg-white/20 border border-white/20 flex items-center justify-center text-white transition-colors z-10"
+          className="absolute left-3 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-t-primary/10 hover:bg-t-primary/20 border border-t-primary/20 flex items-center justify-center text-t-primary transition-colors z-10"
         >
           <ChevronLeft size={20} />
         </button>
@@ -299,7 +299,7 @@ const ImagePreviewModal: React.FC<{
         <img
           src={images[idx]}
           alt={`${label} ${idx + 1}`}
-          className="max-w-full max-h-[80vh] rounded-xl object-contain shadow-2xl border border-white/10"
+          className="max-w-full max-h-[80vh] rounded-xl object-contain shadow-2xl border border-t-primary/10"
         />
       </div>
       {total > 1 && (
@@ -308,7 +308,7 @@ const ImagePreviewModal: React.FC<{
             e.stopPropagation();
             setIdx((i) => (i + 1) % total);
           }}
-          className="absolute right-3 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-white/10 hover:bg-white/20 border border-white/20 flex items-center justify-center text-white transition-colors z-10"
+          className="absolute right-3 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-t-primary/10 hover:bg-t-primary/20 border border-t-primary/20 flex items-center justify-center text-t-primary transition-colors z-10"
         >
           <ChevronRight size={20} />
         </button>
@@ -324,8 +324,8 @@ const ImagePreviewModal: React.FC<{
               onClick={() => setIdx(i)}
               className={`w-10 h-10 rounded-lg overflow-hidden border-2 transition-all ${
                 i === idx
-                  ? "border-white scale-110"
-                  : "border-white/25 opacity-55 hover:opacity-90"
+                  ? "border-t-primary scale-110"
+                  : "border-t-primary/25 opacity-55 hover:opacity-90"
               }`}
             >
               <img src={url} alt="" className="w-full h-full object-cover" />
