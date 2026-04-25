@@ -33,7 +33,7 @@ export async function fetchDashboardModules(): Promise<DashboardModule[]> {
       module_tests:module_tests!module_name(
         id,
         tests_name,
-        test:tests!module_tests_tests_name_fkey(name, serialno)
+        test:tests!module_tests_tests_name_fkey(name, serial_no)
       ),
       step_results:step_results!module_name(
         status,

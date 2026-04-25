@@ -227,7 +227,7 @@ const Dashboard: React.FC<Props> = ({ onNavigate }) => {
         const total = testSteps.length;
         return {
           name: mt.test?.name ?? mt.tests_name ?? "Unknown",
-          serialno: mt.test?.serialno ?? null,
+          serialno: mt.test?.serial_no ?? null,
           total,
           pass,
           fail,
