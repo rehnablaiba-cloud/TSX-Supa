@@ -111,7 +111,6 @@ interface TrimmedStepResult {
     serial_no: number | null;
     action: string | null;
     expected_result: string | null;
-    remarks: string | null;
   } | null;
 }
 
@@ -181,7 +180,7 @@ const ModuleDashboard: React.FC<Props> = ({
         supabase
           .from("step_results")
           .select(
-            "id, status, test_steps_id, step:test_steps!step_results_test_steps_id_fkey(id, is_divider, tests_name, serial_no, action, expected_result, remarks)"
+            "id, status, test_steps_id, step:test_steps!step_results_test_steps_id_fkey(id, is_divider, tests_name, serial_no, action, expected_result)"
           )
           .eq("module_name", module_name),
       ]);
@@ -318,7 +317,7 @@ const ModuleDashboard: React.FC<Props> = ({
         serial: sr.step?.serial_no ?? 0,
         action: sr.step?.action ?? "",
         expected: sr.step?.expected_result ?? "",
-        remarks: sr.step?.remarks ?? "",
+        remarks: "",
         status: sr.status,
         isdivider: sr.step?.is_divider ?? false,
       }))
