@@ -354,9 +354,9 @@ export const exportDashboardCSV = (summaries: ModuleSummary[]) => {
 
 // ─── Dashboard PDF column layout (landscape A4 = 297mm wide) ──────────────────
 const DASH_COL_WIDTHS: Record<number, number> = {
-  0: 12, // #
+  0: 15, // #
   1: 30, // Module
-  2: 36, // Description
+  2: 33, // Description
   3: 52, // Test Name
   4: 22, // Steps
   5: 22, // Pass
