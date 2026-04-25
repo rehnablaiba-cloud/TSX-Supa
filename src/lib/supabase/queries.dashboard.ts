@@ -11,7 +11,7 @@ export interface DashboardModule {
   module_tests: {
     id: string;
     tests_name: string;
-    test: { name: string; serialno: string | null } | null;
+    test: { name: string; serial_no: string | null } | null;
   }[];
   step_results: {
     status: string;
