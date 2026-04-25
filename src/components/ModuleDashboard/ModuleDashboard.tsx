@@ -34,7 +34,6 @@ import {
 } from "./charts";
 import type { ChartRow, ChartTheme } from "./charts";
 
-// ── Animation keyframes ───────────────────────────────────────────────────────
 const ANIM_STYLE = `
 @keyframes fadeSlideIn    { from{opacity:0;transform:translateY(10px)}  to{opacity:1;transform:translateY(0)} }
 @keyframes fadeSlideInRow { from{opacity:0;transform:translateX(-6px)}  to{opacity:1;transform:translateX(0)} }
@@ -79,7 +78,6 @@ const StaggerRow: React.FC<{ index: number; children: React.ReactNode }> = ({
   </div>
 );
 
-// ── Constants ─────────────────────────────────────────────────────────────────
 type ChartType = "bar" | "area" | "line" | "pie" | "radar";
 const CHART_TYPES: { type: ChartType; label: string }[] = [
   { type: "bar", label: "Bar" },
@@ -89,7 +87,6 @@ const CHART_TYPES: { type: ChartType; label: string }[] = [
   { type: "radar", label: "Radar" },
 ];
 
-// ── Props & DB types ──────────────────────────────────────────────────────────
 interface Props {
   module_name: string;
   onBack: () => void;
@@ -125,9 +122,6 @@ interface ModuleTestRow {
   step_results: TrimmedStepResult[];
 }
 
-// ══════════════════════════════════════════════════════════════════════════════
-// MAIN COMPONENT
-// ══════════════════════════════════════════════════════════════════════════════
 const ModuleDashboard: React.FC<Props> = ({
   module_name,
   onBack,
@@ -138,7 +132,6 @@ const ModuleDashboard: React.FC<Props> = ({
 
   const { user } = useAuth();
   const { theme } = useTheme();
-
   const isAdmin = user?.role === "admin";
 
   const [module_tests, setmodule_tests] = useState<ModuleTestRow[]>([]);
@@ -156,7 +149,6 @@ const ModuleDashboard: React.FC<Props> = ({
     };
   }, []);
 
-  // ── ChartTheme ────────────────────────────────────────────────────────────
   const ct = useMemo<ChartTheme>(() => {
     const s = getComputedStyle(document.documentElement);
     const get = (v: string) => s.getPropertyValue(v).trim();
@@ -173,7 +165,6 @@ const ModuleDashboard: React.FC<Props> = ({
     };
   }, [theme]);
 
-  // ── Fetch ─────────────────────────────────────────────────────────────────
   const fetchData = useCallback(
     async (isBackground = false) => {
       if (!isBackground) setLoading(true);
@@ -187,7 +178,6 @@ const ModuleDashboard: React.FC<Props> = ({
           )
           .eq("module_name", module_name)
           .order("tests_name"),
-
         supabase
           .from("step_results")
           .select(
@@ -212,7 +202,6 @@ const ModuleDashboard: React.FC<Props> = ({
       }
 
       const moduleTestIds = (mtRes.data ?? []).map((mt: any) => mt.id);
-
       const lockRes =
         moduleTestIds.length > 0
           ? await supabase
@@ -260,7 +249,6 @@ const ModuleDashboard: React.FC<Props> = ({
     fetchData(false);
   }, [fetchData]);
 
-  // ── Force-release lock ────────────────────────────────────────────────────
   const forceReleaseLock = useCallback(
     async (module_test_id: string, lockedByName: string) => {
       if (!confirm(`Force-release the lock held by ${lockedByName}?`)) return;
@@ -274,7 +262,6 @@ const ModuleDashboard: React.FC<Props> = ({
     [fetchData]
   );
 
-  // ── Realtime ──────────────────────────────────────────────────────────────
   useEffect(() => {
     const channel = supabase
       .channel(`module-dashboard-${module_name}`)
@@ -294,7 +281,6 @@ const ModuleDashboard: React.FC<Props> = ({
     };
   }, [module_name, fetchData]);
 
-  // ── Derived stats ─────────────────────────────────────────────────────────
   const chartData = useMemo<ChartRow[]>(
     () =>
       module_tests.map((mt) => {
@@ -323,7 +309,7 @@ const ModuleDashboard: React.FC<Props> = ({
     };
   }, [chartData]);
 
-  // ── Build export data (now with full step content) ────────────────────────
+  // ── Build export data with full step content ──────────────────────────────
   const buildFlatData = (): FlatData[] =>
     module_tests.flatMap((mt) =>
       mt.step_results.map((sr) => ({
@@ -338,7 +324,6 @@ const ModuleDashboard: React.FC<Props> = ({
       }))
     );
 
-  // ── Loading / error ───────────────────────────────────────────────────────
   if (loading)
     return (
       <div className="flex-1 flex flex-col">
@@ -361,7 +346,6 @@ const ModuleDashboard: React.FC<Props> = ({
       </div>
     );
 
-  // ── Render ────────────────────────────────────────────────────────────────
   return (
     <div className="flex-1 flex flex-col">
       <Topbar
@@ -380,7 +364,9 @@ const ModuleDashboard: React.FC<Props> = ({
               CSV
             </button>
             <button
-              onClick={() => exportModuleDetailPDF(buildFlatData())}
+              onClick={() =>
+                exportModuleDetailPDF(buildFlatData(), module_name)
+              }
               className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg bg-bg-card hover:bg-bg-surface border border-[var(--border-color)] text-t-primary transition"
             >
               <FileText size={13} />
@@ -391,7 +377,6 @@ const ModuleDashboard: React.FC<Props> = ({
       />
 
       <div className="p-6 flex flex-col gap-6 pb-24 md:pb-6">
-        {/* ── Global stat pills ── */}
         <div className="flex flex-wrap gap-2">
           {[
             {
@@ -429,7 +414,6 @@ const ModuleDashboard: React.FC<Props> = ({
           ))}
         </div>
 
-        {/* ── Chart ── */}
         {module_tests.length > 0 && (
           <div className="card flex flex-col gap-3">
             <div className="flex items-center justify-between flex-wrap gap-2">
@@ -464,7 +448,6 @@ const ModuleDashboard: React.FC<Props> = ({
           </div>
         )}
 
-        {/* ── Test list ── */}
         <div className="flex flex-col gap-3">
           {module_tests.length === 0 && (
             <div className="text-center text-t-muted py-12">
@@ -494,15 +477,15 @@ const ModuleDashboard: React.FC<Props> = ({
                 }
               : {};
 
-            const cardCls = [
-              "card flex flex-col gap-3 relative transition-all duration-200",
-              isOtherLock ? "opacity-40 grayscale-[0.35]" : "",
-            ].join(" ");
-
             return (
               <StaggerRow key={mt.id} index={idx}>
-                <div className={cardCls} style={cardStyle}>
-                  {/* ── MY lock badge ── */}
+                <div
+                  className={[
+                    "card flex flex-col gap-3 relative transition-all duration-200",
+                    isOtherLock ? "opacity-40 grayscale-[0.35]" : "",
+                  ].join(" ")}
+                  style={cardStyle}
+                >
                   {isMyLock && (
                     <div className="flex items-center gap-1.5 self-start px-2.5 py-1 rounded-lg w-fit bg-cyan-500/15 border border-cyan-400/40 text-cyan-300 text-xs font-semibold">
                       <Lock size={11} className="text-cyan-400" />
@@ -517,7 +500,6 @@ const ModuleDashboard: React.FC<Props> = ({
                     </div>
                   )}
 
-                  {/* ── OTHER lock badge ── */}
                   {isOtherLock && (
                     <div className="flex items-center gap-1.5 self-start px-2.5 py-1 rounded-lg w-fit bg-amber-500/15 border border-amber-500/35 text-amber-400 text-xs font-semibold">
                       <Lock size={11} />
@@ -548,7 +530,6 @@ const ModuleDashboard: React.FC<Props> = ({
                     </div>
                   )}
 
-                  {/* ── Header ── */}
                   <div className="flex items-start justify-between gap-2">
                     <div className="flex items-center gap-2 flex-wrap min-w-0">
                       <span
@@ -594,7 +575,6 @@ const ModuleDashboard: React.FC<Props> = ({
                     </div>
                   </div>
 
-                  {/* ── Stats row ── */}
                   <div className="flex items-center gap-3 flex-wrap text-xs">
                     <span className="badge-pass">
                       <span className="w-1.5 h-1.5 rounded-full bg-green-500 inline-block mr-1" />
@@ -610,7 +590,6 @@ const ModuleDashboard: React.FC<Props> = ({
                     </span>
                   </div>
 
-                  {/* ── Progress bar ── */}
                   <div>
                     <div className="flex justify-between text-xs text-t-muted mb-1">
                       <span>Progress</span>

@@ -221,6 +221,7 @@ const baseTableStyles = () => ({
     fontSize: 10,
     halign: "center" as const,
     cellPadding: { top: 6, bottom: 6, left: 5, right: 5 },
+    overflow: "hidden" as const,
   },
   alternateRowStyles: { fillColor: false as any },
   margin: { top: 34, bottom: 18 },
@@ -354,18 +355,16 @@ export const exportDashboardCSV = (summaries: ModuleSummary[]) => {
   );
 };
 
-// ─── Dashboard PDF column layout (landscape A4 = 297mm wide) ──────────────────
 const DASH_COL_WIDTHS: Record<number, number> = {
-  0: 15, // #
-  1: 30, // Module
-  2: 33, // Description
-  3: 52, // Test Name
-  4: 22, // Steps
-  5: 22, // Pass
-  6: 22, // Fail
-  7: 26, // Pending
-  8: 26, // Pass Rate
-  // total = 248mm ✓
+  0: 12,
+  1: 30,
+  2: 36,
+  3: 52,
+  4: 22,
+  5: 22,
+  6: 22,
+  7: 26,
+  8: 26,
 };
 const DASH_TABLE_W = Object.values(DASH_COL_WIDTHS).reduce((a, b) => a + b, 0);
 const DASH_MARGIN = Math.round((297 - DASH_TABLE_W) / 2);
@@ -397,7 +396,6 @@ export const exportDashboardPDF = (summaries: ModuleSummary[]) => {
 
   for (const s of summaries) {
     const testCount = s.tests?.length ?? s.testCount ?? 0;
-
     body.push(
       moduleBannerRow(
         `${s.name}   ·   ${testCount} test${
@@ -645,8 +643,7 @@ export const exportDashboardDocx = (summaries: ModuleSummary[]) => {
         const testLabel = t.serialno ? `${t.serialno}. ${t.name}` : t.name;
         rows.push(`<tr>
           <td align="center">${pad2(ti + 1)}</td>
-          <td>${s.name}</td>
-          <td>${s.description ?? "—"}</td>
+          <td>${s.name}</td><td>${s.description ?? "—"}</td>
           <td>${testLabel}</td>
           <td align="center">${t.total}</td>
           <td align="center" style="color:#10642d">${t.pass}</td>
@@ -692,14 +689,10 @@ export const exportDashboardDocx = (summaries: ModuleSummary[]) => {
     </p>
     <table border="1" style="border-collapse:collapse;width:100%">
       <thead><tr style="background:#f2f2f2;">
-        <th style="color:#141414">#</th>
-        <th style="color:#141414">Module</th>
-        <th style="color:#141414">Description</th>
-        <th style="color:#141414">Test Name</th>
-        <th style="color:#141414">Steps</th>
-        <th style="color:#141414">Pass</th>
-        <th style="color:#141414">Fail</th>
-        <th style="color:#141414">Pending</th>
+        <th style="color:#141414">#</th><th style="color:#141414">Module</th>
+        <th style="color:#141414">Description</th><th style="color:#141414">Test Name</th>
+        <th style="color:#141414">Steps</th><th style="color:#141414">Pass</th>
+        <th style="color:#141414">Fail</th><th style="color:#141414">Pending</th>
         <th style="color:#141414">Pass Rate</th>
       </tr></thead>
       <tbody>${rows.join("")}</tbody>
@@ -863,7 +856,47 @@ export const exportReportPDF = (_modules: Module[], data: FlatData[]) => {
 // 3. MODULE DETAIL EXPORTS
 // ═══════════════════════════════════════════════════════════════════════════════
 
-export const exportModuleDetailPDF = (data: FlatData[]) => {
+export const exportModuleDetailCSV = (data: FlatData[]) => {
+  const lines = ["Module,Test,#,Action,Expected Result,Remarks,Status"];
+  let lastModule = "",
+    lastTest = "",
+    testSerial = 0;
+  for (const d of data) {
+    if (d.isdivider) continue;
+    if (d.module !== lastModule) {
+      if (lastModule !== "") lines.push("");
+      lines.push(`${d.module},,,,,,`);
+      lastModule = d.module;
+      lastTest = "";
+      testSerial = 0;
+    }
+    if (d.test !== lastTest) {
+      testSerial++;
+      lines.push(`,${pad2(testSerial)}. ${d.test},,,,,`);
+      lastTest = d.test;
+    }
+    lines.push(
+      [
+        d.module,
+        d.test,
+        d.serial,
+        d.action.replace(/,/g, " "),
+        d.expected.replace(/,/g, " "),
+        d.remarks.replace(/,/g, " "),
+        d.status,
+      ].join(",")
+    );
+  }
+  download(
+    new Blob([lines.join("\n")], { type: "text/csv" }),
+    `TestPro-ModuleDetail-${today}.csv`
+  );
+};
+
+export const exportModuleDetailPDF = (
+  data: FlatData[],
+  moduleName?: string
+) => {
   const doc = new jsPDF({ orientation: "landscape" });
 
   const nd = data.filter((d) => !d.isdivider);
@@ -871,11 +904,12 @@ export const exportModuleDetailPDF = (data: FlatData[]) => {
   const fail = nd.filter((d) => d.status === "fail").length;
   const pending = nd.filter((d) => d.status === "pending").length;
 
-  let y = drawHeader(
-    doc,
-    "Module Detail Report",
-    "All Modules — Full Step Results"
-  );
+  const title = moduleName?.trim() || "Module Detail Report";
+  const subtitle = moduleName?.trim()
+    ? "Full Step Results"
+    : "All Modules — Full Step Results";
+
+  let y = drawHeader(doc, title, subtitle);
   y = drawStatsText(doc, nd.length, pass, fail, pending, y);
 
   type TestBlock = { name: string; steps: FlatData[]; serial: number };
@@ -898,9 +932,7 @@ export const exportModuleDetailPDF = (data: FlatData[]) => {
     mod.tests[tstIdx.get(tk)!].steps.push(d);
   }
 
-  // ── Build body + track which row indices are banners for bookmarks ─────────
   const body: any[] = [];
-  // Map: body row index → { label, isModule }
   const bannerMap = new Map<number, { label: string; isModule: boolean }>();
 
   for (const mod of mods) {
@@ -967,7 +999,6 @@ export const exportModuleDetailPDF = (data: FlatData[]) => {
     }
   }
 
-  // ── Collect bookmarks during render ───────────────────────────────────────
   const bookmarks: Array<{ label: string; isModule: boolean; page: number }> =
     [];
 
@@ -995,9 +1026,8 @@ export const exportModuleDetailPDF = (data: FlatData[]) => {
         });
       }
     },
-  });
+  } as any);
 
-  // ── Add PDF bookmarks (outline) ────────────────────────────────────────────
   try {
     const outline = (doc as any).outline;
     let currentModNode: any = null;
@@ -1009,7 +1039,7 @@ export const exportModuleDetailPDF = (data: FlatData[]) => {
       }
     }
   } catch (_) {
-    // outline API not available — skip silently
+    // outline API unavailable — skip silently
   }
 
   drawFooter(doc);
