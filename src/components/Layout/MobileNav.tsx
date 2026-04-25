@@ -40,62 +40,13 @@ import ImportStepsManualModal from "../Modals/ImportStepsManualModal";
 import ExportTestDocxModal from "../Modals/ExportTestDocxModal";
 import type { AppTheme } from "../../context/ThemeContext";
 
-// ── Read --bg-surface from the live :root after applyTheme() has run ──────────
-// color-mix(in srgb, var(--x) N%, transparent) is unreliable when the first
-// arg is a CSS custom property. Instead we read the resolved hex value at
-// runtime and build a proper rgba(). rAF ensures ThemeContext's useEffect
-// (which calls applyTheme) has already committed the new vars to :root.
-function parseCssColor(raw: string): [number, number, number] | null {
-  const hex = raw.trim().match(/^#([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i);
-  if (hex)
-    return [parseInt(hex[1], 16), parseInt(hex[2], 16), parseInt(hex[3], 16)];
-  const rgb = raw.trim().match(/^rgb\(\s*(\d+),\s*(\d+),\s*(\d+)\s*\)$/);
-  if (rgb) return [+rgb[1], +rgb[2], +rgb[3]];
-  return null;
-}
-
-function useThemeColor(cssVar: string, mode: AppTheme, alpha: number) {
-  const darkFallback = `rgba(15, 15, 22, ${alpha})`;
-  const lightFallback = `rgba(242, 242, 248, ${alpha})`;
-  const [color, setColor] = useState(
-    mode === "dark" ? darkFallback : lightFallback
-  );
-
-  useEffect(() => {
-    const id = requestAnimationFrame(() => {
-      const raw = getComputedStyle(document.documentElement).getPropertyValue(
-        cssVar
-      );
-      const parsed = parseCssColor(raw);
-      if (parsed)
-        setColor(`rgba(${parsed[0]},${parsed[1]},${parsed[2]},${alpha})`);
-      else setColor(mode === "dark" ? darkFallback : lightFallback);
-    });
-    return () => cancelAnimationFrame(id);
-    // re-read whenever the theme mode changes (applyTheme re-sets :root vars)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mode, cssVar, alpha]);
-
-  return color;
-}
-
-// ── Border color helper ────────────────────────────────────────────────────────
-function useBorderColor(mode: AppTheme) {
-  const [color, setColor] = useState("rgba(255,255,255,0.10)");
-  useEffect(() => {
-    const id = requestAnimationFrame(() => {
-      const raw = getComputedStyle(document.documentElement).getPropertyValue(
-        "--border-color"
-      );
-      const parsed = parseCssColor(raw);
-      if (parsed) setColor(`rgba(${parsed[0]},${parsed[1]},${parsed[2]},0.55)`);
-    });
-    return () => cancelAnimationFrame(id);
-  }, [mode]);
-  return color;
-}
-
 // ══════════════════════════════════════════════════════════════════════════════
+// REMOVED: useThemeColor() and useBorderColor() hooks
+// REPLACED BY: CSS color-mix() in style objects below
+// color-mix(in srgb, var(--x) N%, transparent) works with any CSS custom
+// property value (hex, rgb, hsl) without JS parsing.
+// ══════════════════════════════════════════════════════════════════════════════
+
 interface Props {
   activePage: string;
   onNavigate: (page: string, module_name?: string) => void;
@@ -124,44 +75,47 @@ const MobileNav: React.FC<Props> = ({ activePage, onNavigate }) => {
 
   const isAdmin = user?.role === "admin";
 
-  // ── Dynamic glass colors from live CSS variables ──────────────────────────
-  const navBg = useThemeColor("--bg-surface", theme, 0.4);
-  const sheetBg = useThemeColor("--bg-surface", theme, 0.55);
-  const itemBg = useThemeColor("--bg-card", theme, 0.28);
-  const border = useBorderColor(theme);
+  // ── Dynamic glass colors via CSS color-mix() ────────────────────────────
+  // No parsing, no rAF, no hardcoded fallbacks. The browser resolves
+  // var(--bg-surface) etc. instantly and correctly, even if overridden
+  // by the ThemeEditor.
 
   const glassNav = useMemo(
     (): React.CSSProperties => ({
-      background: navBg,
+      background: `color-mix(in srgb, var(--bg-surface) 40%, transparent)`,
       backdropFilter: "blur(28px) saturate(180%) brightness(1.06)",
       WebkitBackdropFilter: "blur(28px) saturate(180%) brightness(1.06)",
-      border: `1px solid ${border}`,
+      border: `1px solid color-mix(in srgb, var(--border-color) 55%, transparent)`,
       boxShadow:
         "0 8px 32px rgba(0,0,0,0.20), inset 0 1px 0 rgba(255,255,255,0.06)",
     }),
-    [navBg, border]
+    [] // ← no dependencies! CSS vars are resolved by browser at paint time
   );
 
   const glassSheet = useMemo(
     (): React.CSSProperties => ({
-      background: sheetBg,
+      background: `color-mix(in srgb, var(--bg-surface) 55%, transparent)`,
       backdropFilter: "blur(40px) saturate(180%)",
       WebkitBackdropFilter: "blur(40px) saturate(180%)",
-      borderTop: `1px solid ${border}`,
-      borderLeft: `1px solid ${border}`,
-      borderRight: `1px solid ${border}`,
+      borderTop: `1px solid color-mix(in srgb, var(--border-color) 55%, transparent)`,
+      borderLeft: `1px solid color-mix(in srgb, var(--border-color) 55%, transparent)`,
+      borderRight: `1px solid color-mix(in srgb, var(--border-color) 55%, transparent)`,
       boxShadow: "0 -8px 32px rgba(0,0,0,0.12)",
     }),
-    [sheetBg, border]
+    []
   );
 
   const glassItem = useMemo(
     (): React.CSSProperties => ({
-      background: itemBg,
-      border: `1px solid ${border}`,
+      background: `color-mix(in srgb, var(--bg-card) 28%, transparent)`,
+      border: `1px solid color-mix(in srgb, var(--border-color) 55%, transparent)`,
     }),
-    [itemBg, border]
+    []
   );
+
+  // ── Sheet drag-handle color ─────────────────────────────────────────────
+  // Was previously `border` from useBorderColor(); now uses same color-mix.
+  const dragHandleColor = `color-mix(in srgb, var(--border-color) 55%, transparent)`;
 
   useEffect(() => {
     fetchModuleOptions()
@@ -169,6 +123,7 @@ const MobileNav: React.FC<Props> = ({ activePage, onNavigate }) => {
       .catch(() => {});
   }, []);
 
+  // ... rest of component unchanged below this point ...
   // ── Navbar entrance ───────────────────────────────────────────────────────
   useEffect(() => {
     if (!navRef.current) return;
