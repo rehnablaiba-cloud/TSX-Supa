@@ -216,7 +216,7 @@ const baseTableStyles = () => ({
     fillColor: LIGHT,
     textColor: DARK,
     fontStyle: "bold" as const,
-    lineColor: WHITE,
+    lineColor: DARK,
     lineWidth: 0.3,
     fontSize: 10,
     halign: "center" as const,
@@ -354,15 +354,16 @@ export const exportDashboardCSV = (summaries: ModuleSummary[]) => {
 
 // ─── Dashboard PDF column layout (landscape A4 = 297mm wide) ──────────────────
 const DASH_COL_WIDTHS: Record<number, number> = {
-  0: 14,
-  1: 36,
-  2: 42,
-  3: 60,
-  4: 18,
-  5: 18,
-  6: 18,
-  7: 20,
-  8: 22,
+  0: 12, // #
+  1: 30, // Module
+  2: 36, // Description
+  3: 52, // Test Name
+  4: 22, // Steps
+  5: 22, // Pass
+  6: 22, // Fail
+  7: 26, // Pending
+  8: 26, // Pass Rate
+  // total = 248mm ✓
 };
 const DASH_TABLE_W = Object.values(DASH_COL_WIDTHS).reduce((a, b) => a + b, 0);
 const DASH_MARGIN = Math.round((297 - DASH_TABLE_W) / 2);
