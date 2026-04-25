@@ -294,78 +294,6 @@ const buildStepRow = (step: FlatData) => {
 // 1. DASHBOARD EXPORTS
 // ═══════════════════════════════════════════════════════════════════════════════
 
-export const exportDashboardCSV = (summaries: ModuleSummary[]) => {
-  const lines = [
-    "#,Module,Description,Test Name,Steps,Pass,Fail,Pending,Pass Rate",
-  ];
-  summaries.forEach((s, i) => {
-    if (s.tests && s.tests.length > 0) {
-      lines.push(
-        [
-          pad2(i + 1),
-          s.name,
-          s.description ?? "",
-          `[${s.tests.length} tests]`,
-          s.total,
-          s.pass,
-          s.fail,
-          s.pending,
-          `${s.passRate}%`,
-        ].join(",")
-      );
-      s.tests.forEach((t, ti) => {
-        const testLabel = t.serialno ? `${t.serialno}. ${t.name}` : t.name;
-        lines.push(
-          [
-            `${pad2(i + 1)}.${pad2(ti + 1)}`,
-            s.name,
-            "",
-            testLabel,
-            t.total,
-            t.pass,
-            t.fail,
-            t.pending,
-            `${t.passRate}%`,
-          ].join(",")
-        );
-      });
-    } else {
-      lines.push(
-        [
-          pad2(i + 1),
-          s.name,
-          s.description ?? "",
-          "—",
-          s.total,
-          s.pass,
-          s.fail,
-          s.pending,
-          `${s.passRate}%`,
-        ].join(",")
-      );
-    }
-  });
-  download(
-    new Blob([lines.join("\n")], { type: "text/csv" }),
-    `TestPro-Fleet-${today}.csv`
-  );
-};
-
-const DASH_COL_WIDTHS = {
-  0: 14,
-  1: 36,
-  2: 42,
-  3: 60,
-  4: 18,
-  5: 18,
-  6: 18,
-  7: 20,
-  8: 22,
-};
-const DASH_MARGIN = Math.round(
-  (297 - Object.values(DASH_COL_WIDTHS).reduce((a, b) => a + b, 0)) / 2
-);
-
 export const exportDashboardPDF = (summaries: ModuleSummary[]) => {
   const doc = new jsPDF({ orientation: "landscape" });
 
@@ -406,43 +334,55 @@ export const exportDashboardPDF = (summaries: ModuleSummary[]) => {
     );
 
     if (s.tests && s.tests.length > 0) {
-      const testCount = s.tests.length;
+      const tCount = s.tests.length;
       s.tests.forEach((t, ti) => {
         const tc = rateColor(t.passRate, t.total);
         const testLabel = t.serialno ? `${t.serialno}. ${t.name}` : t.name;
         const row: any[] = [
-          { content: pad2(ti + 1), styles: { textColor: DARK, halign: 'center' as const } },
+          {
+            content: pad2(ti + 1),
+            styles: { textColor: DARK, halign: "center" as const },
+          },
         ];
-    
-        // Merge Module + Description columns across all test rows for this module
         if (ti === 0) {
           row.push(
             {
               content: s.name,
-              rowSpan: testCount,
-              styles: { textColor: DARK, valign: 'middle' as const },
+              rowSpan: tCount,
+              styles: { textColor: DARK, valign: "middle" as const },
             },
             {
-              content: s.description ?? '—',
-              rowSpan: testCount,
-              styles: { textColor: DARK, valign: 'middle' as const },
-            },
+              content: s.description ?? "—",
+              rowSpan: tCount,
+              styles: { textColor: DARK, valign: "middle" as const },
+            }
           );
         }
-        // ti > 0: skip module/description cells — rowSpan handles them
-    
         row.push(
-          { content: testLabel,         styles: { textColor: DARK,     } },
-          { content: String(t.total),   styles: { textColor: DARK,     halign: 'center' as const } },
-          { content: String(t.pass),    styles: { textColor: GREENINK, halign: 'center' as const } },
-          { content: String(t.fail),    styles: { textColor: REDINK,   halign: 'center' as const } },
-          { content: String(t.pending), styles: { textColor: DARK,     halign: 'center' as const } },
-          { content: `${t.passRate}%`,  styles: { textColor: tc,       halign: 'center' as const } },
+          { content: testLabel, styles: { textColor: DARK } },
+          {
+            content: String(t.total),
+            styles: { textColor: DARK, halign: "center" as const },
+          },
+          {
+            content: String(t.pass),
+            styles: { textColor: GREENINK, halign: "center" as const },
+          },
+          {
+            content: String(t.fail),
+            styles: { textColor: REDINK, halign: "center" as const },
+          },
+          {
+            content: String(t.pending),
+            styles: { textColor: DARK, halign: "center" as const },
+          },
+          {
+            content: `${t.passRate}%`,
+            styles: { textColor: tc, halign: "center" as const },
+          }
         );
-    
         body.push(row);
       });
-    }
     } else {
       const mc = rateColor(s.passRate, s.total);
       body.push([
