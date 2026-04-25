@@ -1,3 +1,4 @@
+// src/components/Dashboard/Dashboard.tsx
 import React, {
   useEffect,
   useLayoutEffect,
@@ -211,7 +212,6 @@ const Dashboard: React.FC<Props> = ({ onNavigate }) => {
     [summaries]
   );
 
-  // ── Build per-test breakdown for PDF/DOCX ──────────────────────────────────
   const buildSummariesWithTests = useCallback((): ModuleSummary[] => {
     return summaries.map((s) => {
       const mod = modules.find((m) => m.name === s.name);
@@ -260,6 +260,7 @@ const Dashboard: React.FC<Props> = ({ onNavigate }) => {
 
   return (
     <div className="p-6 flex flex-col gap-6 pb-24 md:pb-6">
+      {/* ── Export Modal — matches TestExecution design ────────────────────── */}
       <ExportModal
         isOpen={showExportModal}
         onClose={() => setShowExportModal(false)}
@@ -270,22 +271,22 @@ const Dashboard: React.FC<Props> = ({ onNavigate }) => {
           {
             label: "CSV",
             icon: <FileSpreadsheet size={16} />,
-            color: "bg-c-brand",
-            hoverColor: "hover:bg-c-brand-hover",
+            color: "bg-[var(--color-primary)]",
+            hoverColor: "hover:bg-[var(--color-primary-hover)]",
             onConfirm: () => exportDashboardCSV(summaries),
           },
           {
             label: "PDF",
             icon: <FileText size={16} />,
-            color: "bg-c-brand",
-            hoverColor: "hover:bg-c-brand-hover",
+            color: "bg-[var(--color-blue)]",
+            hoverColor: "hover:bg-[var(--color-blue-hover)]",
             onConfirm: () => exportDashboardPDF(buildSummariesWithTests()),
           },
           {
             label: "DOCX",
             icon: <FileDown size={16} />,
-            color: "bg-c-brand",
-            hoverColor: "hover:bg-c-brand-hover",
+            color: "bg-[var(--color-violet)]",
+            hoverColor: "hover:bg-[var(--color-violet-hover)]",
             onConfirm: () => exportDashboardDocx(buildSummariesWithTests()),
           },
         ]}

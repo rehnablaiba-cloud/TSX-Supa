@@ -8,6 +8,7 @@ import React, {
 import { supabase } from "../../supabase";
 import Spinner from "../UI/Spinner";
 import Topbar from "../Layout/Topbar";
+import ExportModal from "../UI/ExportModal";
 import { useAuth } from "../../context/AuthContext";
 import { useTheme } from "../../context/ThemeContext";
 import {
@@ -18,6 +19,7 @@ import {
   FileText,
   ChevronRight,
   RotateCcw,
+  Upload,
 } from "lucide-react";
 import {
   exportModuleDetailCSV,
@@ -77,6 +79,10 @@ const StaggerRow: React.FC<{ index: number; children: React.ReactNode }> = ({
     {children}
   </div>
 );
+
+// ── Strip all leading %, , and whitespace from divider labels ─────────────
+const cleanDividerLabel = (action: string): string =>
+  action.replace(/^#{1,3}\s*/, "").replace(/^[%,\s]+/, "");
 
 type ChartType = "bar" | "area" | "line" | "pie" | "radar";
 const CHART_TYPES: { type: ChartType; label: string }[] = [
@@ -139,6 +145,7 @@ const ModuleDashboard: React.FC<Props> = ({
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [chartType, setChartType] = useState<ChartType>("bar");
+  const [showExportModal, setShowExportModal] = useState(false);
   const mountedRef = useRef(true);
 
   useEffect(() => {
@@ -175,8 +182,7 @@ const ModuleDashboard: React.FC<Props> = ({
           .select(
             "id, tests_name, test:tests!module_tests_tests_name_fkey(serial_no, name)"
           )
-          .eq("module_name", module_name)
-          .order("tests_name"),
+          .eq("module_name", module_name),
         supabase
           .from("step_results")
           .select(
@@ -230,10 +236,16 @@ const ModuleDashboard: React.FC<Props> = ({
         return acc;
       }, {});
 
-      const joined = (mtRes.data ?? []).map((mt: any) => ({
-        ...mt,
-        step_results: srByTestsName[mt.tests_name] ?? [],
-      }));
+      // ── Sort by original test serial_no, not alphabetically ─────────────────
+      const joined = (mtRes.data ?? [])
+        .map((mt: any) => ({
+          ...mt,
+          step_results: srByTestsName[mt.tests_name] ?? [],
+        }))
+        .sort(
+          (a: any, b: any) =>
+            (a.test?.serial_no ?? 0) - (b.test?.serial_no ?? 0)
+        );
 
       setmodule_tests(joined as ModuleTestRow[]);
       setError(null);
@@ -307,7 +319,7 @@ const ModuleDashboard: React.FC<Props> = ({
     };
   }, [chartData]);
 
-  // ── Build export data — sorted by serial_no ───────────────────────────────
+  // ── Build export data — sorted + divider labels cleaned ──────────────────
   const buildFlatData = (): FlatData[] =>
     module_tests.flatMap((mt) =>
       mt.step_results
@@ -322,15 +334,24 @@ const ModuleDashboard: React.FC<Props> = ({
           module: module_name,
           test: mt.test?.name ?? mt.tests_name,
           serial: sr.step?.serial_no ?? 0,
-          action: (sr.step?.action ?? "")
-            .replace(/^#{1,3}\s*/, "")
-            .replace(/^%+,?\s*/, ""),
+          action: cleanDividerLabel(sr.step?.action ?? ""),
           expected: sr.step?.expected_result ?? "",
           remarks: "",
           status: sr.status,
           isdivider: sr.step?.is_divider ?? false,
         }))
     );
+
+  // ── Export stats for modal ────────────────────────────────────────────────
+  const exportStats = useMemo(() => {
+    const flat = buildFlatData();
+    const nd = flat.filter((d) => !d.isdivider);
+    return [
+      { label: "Total Steps", value: nd.length },
+      { label: "Pass", value: nd.filter((d) => d.status === "pass").length },
+      { label: "Fail", value: nd.filter((d) => d.status === "fail").length },
+    ];
+  }, [module_tests]);
 
   if (loading)
     return (
@@ -356,6 +377,32 @@ const ModuleDashboard: React.FC<Props> = ({
 
   return (
     <div className="flex-1 flex flex-col">
+      {/* ── Export Modal — same design as TestExecution ────────────────────── */}
+      <ExportModal
+        isOpen={showExportModal}
+        onClose={() => setShowExportModal(false)}
+        title="Export Module Results"
+        subtitle={module_name}
+        stats={exportStats}
+        options={[
+          {
+            label: "CSV",
+            icon: <FileSpreadsheet size={16} />,
+            color: "bg-[var(--color-primary)]",
+            hoverColor: "hover:bg-[var(--color-primary-hover)]",
+            onConfirm: () => exportModuleDetailCSV(buildFlatData()),
+          },
+          {
+            label: "PDF",
+            icon: <FileText size={16} />,
+            color: "bg-[var(--color-blue)]",
+            hoverColor: "hover:bg-[var(--color-blue-hover)]",
+            onConfirm: () =>
+              exportModuleDetailPDF(buildFlatData(), module_name),
+          },
+        ]}
+      />
+
       <Topbar
         title={module_name}
         subtitle={`${module_tests.length} test${
@@ -363,24 +410,13 @@ const ModuleDashboard: React.FC<Props> = ({
         } · ${globalStats.total} steps${refreshing ? " · syncing…" : ""}`}
         onBack={onBack}
         actions={
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => exportModuleDetailCSV(buildFlatData())}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg bg-bg-card hover:bg-bg-surface border border-[var(--border-color)] text-t-primary transition"
-            >
-              <FileSpreadsheet size={13} />
-              CSV
-            </button>
-            <button
-              onClick={() =>
-                exportModuleDetailPDF(buildFlatData(), module_name)
-              }
-              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg bg-bg-card hover:bg-bg-surface border border-[var(--border-color)] text-t-primary transition"
-            >
-              <FileText size={13} />
-              PDF
-            </button>
-          </div>
+          <button
+            onClick={() => setShowExportModal(true)}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg bg-bg-card hover:bg-bg-surface border border-[var(--border-color)] text-t-primary transition"
+          >
+            <Upload size={13} />
+            Export
+          </button>
         }
       />
 
