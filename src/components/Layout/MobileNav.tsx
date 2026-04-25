@@ -125,9 +125,9 @@ const MobileNav: React.FC<Props> = ({ activePage, onNavigate }) => {
   const isAdmin = user?.role === "admin";
 
   // ── Dynamic glass colors from live CSS variables ──────────────────────────
-  const navBg = useThemeColor("--bg-surface", theme, 0.72);
-  const sheetBg = useThemeColor("--bg-surface", theme, 0.9);
-  const itemBg = useThemeColor("--bg-card", theme, 0.55);
+  const navBg = useThemeColor("--bg-surface", theme, 0.4);
+  const sheetBg = useThemeColor("--bg-surface", theme, 0.55);
+  const itemBg = useThemeColor("--bg-card", theme, 0.28);
   const border = useBorderColor(theme);
 
   const glassNav = useMemo(
@@ -280,7 +280,7 @@ const MobileNav: React.FC<Props> = ({ activePage, onNavigate }) => {
         ref={overlayRef}
         className="fixed top-0 left-0 right-0 md:hidden"
         style={{
-          bottom: 80,
+          bottom: 60,
           background: "rgba(0,0,0,0.48)",
           opacity: 0,
           display: menuOpen ? "block" : "none",
@@ -324,7 +324,7 @@ const MobileNav: React.FC<Props> = ({ activePage, onNavigate }) => {
         <div
           className="overflow-y-auto flex-1 px-3 flex flex-col gap-1"
           style={{
-            paddingBottom: "calc(96px + env(safe-area-inset-bottom, 0px))",
+            paddingBottom: "calc(72px + env(safe-area-inset-bottom, 0px))",
           }}
         >
           {/* Theme row */}
@@ -439,7 +439,7 @@ const MobileNav: React.FC<Props> = ({ activePage, onNavigate }) => {
           display is only hidden when a full-screen modal is open. */}
       <nav
         ref={navRef}
-        className="fixed bottom-5 left-1/2 -translate-x-1/2 z-[62] md:hidden
+        className="fixed bottom-2 left-1/2 -translate-x-1/2 z-[62] md:hidden
           rounded-[26px] flex items-center px-2 py-2 gap-1"
         style={{
           ...glassNav,
