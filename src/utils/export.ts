@@ -197,6 +197,7 @@ const drawFooter = (doc: jsPDF) => {
 };
 
 // ─── Base Table Styles — NO FILLS ANYWHERE ─────────────────────────────────────
+// ← CHANGED: added fillColor: false to headStyles
 const baseTableStyles = () => ({
   styles: {
     fontSize: 8,
@@ -207,6 +208,7 @@ const baseTableStyles = () => ({
     fontStyle: "normal" as const,
   } as any,
   headStyles: {
+    fillColor: false as any, // ← CHANGED: removes blue/default header fill
     textColor: DARK,
     fontStyle: "bold" as const,
     lineColor: DARK,
@@ -685,6 +687,7 @@ export const exportReportCSV = (_modules: Module[], data: FlatData[]) => {
   );
 };
 
+// ← CHANGED: session log format with centered test sub-headers
 export const exportReportPDF = (_modules: Module[], data: FlatData[]) => {
   const doc = new jsPDF({ orientation: "landscape" });
 
@@ -729,7 +732,8 @@ export const exportReportPDF = (_modules: Module[], data: FlatData[]) => {
             fontStyle: "bold" as const,
             fontSize: 9,
             textColor: DARK,
-            lineColor: DARK,
+            halign: "center" as const, // ← CHANGED: centered test name
+            lineColor: DARK as [number, number, number],
             lineWidth: 0.3,
             cellPadding: { top: 4, bottom: 4, left: 10, right: 5 },
           },
@@ -847,7 +851,6 @@ export const exportModuleDetailPDF = (
     for (const test of mod.tests) {
       testCount++;
 
-      // Page break before every test except the first
       if (testCount > 1) {
         doc.addPage();
       }
@@ -860,7 +863,6 @@ export const exportModuleDetailPDF = (
       const tRate =
         tSteps.length > 0 ? Math.round((tPass / tSteps.length) * 100) : 0;
 
-      // ── Test banner (text + rule) drawn BEFORE the table header ───────────
       const bannerPrefix = mods.length > 1 ? `${mod.name} › ` : "";
       const bannerText = `${bannerPrefix}${pad2(test.serial)}. ${
         test.name
@@ -878,7 +880,6 @@ export const exportModuleDetailPDF = (
 
       const tableStartY = startY + 12;
 
-      // ── Steps table with header ───────────────────────────────────────────
       const body: any[] = [];
       let stepIndex = 0;
       for (const row of test.steps) {

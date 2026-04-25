@@ -1,12 +1,3 @@
-/**
- * TestReport.tsx
- * Drill-down mode  → pass module_test_id + onBack
- * Standalone mode  → render with no props
- *
- * Global view  : all modules, filterable by dropdown, NOT user-dependent
- * Your Session : steps executed by current user this session, grouped by test,
- *                click a row → popup with full step detail
- */
 import React, {
   useEffect,
   useRef,
