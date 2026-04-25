@@ -805,7 +805,7 @@ const ThemeEditorPanel: React.FC<{ onClose: () => void }> = ({ onClose }) => {
   ];
 
   return (
-    <div className="md:hidden fixed inset-0 z-[60] flex items-end">
+    <div className="fixed fixed inset-0 z-[60] flex items-end">
       <div className="absolute inset-0 backdrop-dim" onClick={onClose} />
       <div
         className="relative w-full rounded-t-2xl z-10 flex flex-col glass-frost"
@@ -908,7 +908,7 @@ const ThemeEditor: React.FC<{ onClose: () => void }> = ({ onClose }) => {
 
   if (state === "password") {
     return (
-      <div className="md:hidden fixed inset-0 z-[60] flex items-end">
+      <div className="fixed fixed inset-0 z-[60] flex items-end">
         <div className="absolute inset-0 backdrop-dim" onClick={onClose} />
         <div
           className="relative w-full rounded-t-2xl z-10 glass-frost"
