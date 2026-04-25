@@ -1,4 +1,3 @@
-// src/components/ModuleDashboard/ModuleDashboard.tsx
 import React, {
   useEffect,
   useRef,
@@ -98,7 +97,6 @@ interface Props {
   onViewReport: (module_test_id: string) => void;
 }
 
-// Matches actual test_locks table schema
 interface LockRow {
   module_test_id: string;
   user_id: string;
@@ -109,7 +107,15 @@ interface LockRow {
 interface TrimmedStepResult {
   id: string;
   status: "pass" | "fail" | "pending";
-  step: { id: string; is_divider: boolean; tests_name: string } | null;
+  step: {
+    id: string;
+    is_divider: boolean;
+    tests_name: string;
+    serial_no: number | null;
+    action: string | null;
+    expected_result: string | null;
+    remarks: string | null;
+  } | null;
 }
 
 interface ModuleTestRow {
@@ -133,12 +139,12 @@ const ModuleDashboard: React.FC<Props> = ({
   const { user } = useAuth();
   const { theme } = useTheme();
 
-  const isAdmin = user?.role === "admin"; // ← adjust if your auth shape differs
+  const isAdmin = user?.role === "admin";
 
   const [module_tests, setmodule_tests] = useState<ModuleTestRow[]>([]);
   const [locks, setLocks] = useState<Record<string, LockRow>>({});
-  const [loading, setLoading] = useState(true); // initial load only
-  const [refreshing, setRefreshing] = useState(false); // silent background refresh
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [chartType, setChartType] = useState<ChartType>("bar");
   const mountedRef = useRef(true);
@@ -150,7 +156,7 @@ const ModuleDashboard: React.FC<Props> = ({
     };
   }, []);
 
-  // ── ChartTheme derived from CSS vars ──────────────────────────────────────
+  // ── ChartTheme ────────────────────────────────────────────────────────────
   const ct = useMemo<ChartTheme>(() => {
     const s = getComputedStyle(document.documentElement);
     const get = (v: string) => s.getPropertyValue(v).trim();
@@ -168,13 +174,11 @@ const ModuleDashboard: React.FC<Props> = ({
   }, [theme]);
 
   // ── Fetch ─────────────────────────────────────────────────────────────────
-  // isBackground=true → silent refresh (no spinner); false → full load spinner
   const fetchData = useCallback(
     async (isBackground = false) => {
       if (!isBackground) setLoading(true);
       else setRefreshing(true);
 
-      // Step 1 — fetch module_tests and step_results in parallel
       const [mtRes, srRes] = await Promise.all([
         supabase
           .from("module_tests")
@@ -183,10 +187,11 @@ const ModuleDashboard: React.FC<Props> = ({
           )
           .eq("module_name", module_name)
           .order("tests_name"),
+
         supabase
           .from("step_results")
           .select(
-            "id, status, test_steps_id, step:test_steps!step_results_test_steps_id_fkey(id, is_divider, tests_name)"
+            "id, status, test_steps_id, step:test_steps!step_results_test_steps_id_fkey(id, is_divider, tests_name, serial_no, action, expected_result, remarks)"
           )
           .eq("module_name", module_name),
       ]);
@@ -206,8 +211,6 @@ const ModuleDashboard: React.FC<Props> = ({
         return;
       }
 
-      // Step 2 — fetch locks filtered by the actual module_test ids we just got
-      // (test_locks has no module_name column — only module_test_id)
       const moduleTestIds = (mtRes.data ?? []).map((mt: any) => mt.id);
 
       const lockRes =
@@ -220,7 +223,6 @@ const ModuleDashboard: React.FC<Props> = ({
 
       if (!mountedRef.current) return;
 
-      // Always update locks — reset to {} if no rows or query error
       const lockMap =
         !lockRes.error && lockRes.data
           ? (lockRes.data as LockRow[]).reduce<Record<string, LockRow>>(
@@ -233,7 +235,6 @@ const ModuleDashboard: React.FC<Props> = ({
           : {};
       setLocks(lockMap);
 
-      // Step 3 — join step_results onto module_tests
       const srByTestsName = (srRes.data ?? []).reduce((acc: any, sr: any) => {
         const key = sr.step?.tests_name;
         if (!key) return acc;
@@ -255,12 +256,11 @@ const ModuleDashboard: React.FC<Props> = ({
     [module_name]
   );
 
-  // Initial load
   useEffect(() => {
     fetchData(false);
   }, [fetchData]);
 
-  // ── Force-release a lock (admin only) ─────────────────────────────────────
+  // ── Force-release lock ────────────────────────────────────────────────────
   const forceReleaseLock = useCallback(
     async (module_test_id: string, lockedByName: string) => {
       if (!confirm(`Force-release the lock held by ${lockedByName}?`)) return;
@@ -268,16 +268,13 @@ const ModuleDashboard: React.FC<Props> = ({
         .from("test_locks")
         .delete()
         .eq("module_test_id", module_test_id);
-      if (error) {
-        alert(`Failed to release lock: ${error.message}`);
-      } else {
-        fetchData(true); // silent refresh — card will snap out of dimmed state
-      }
+      if (error) alert(`Failed to release lock: ${error.message}`);
+      else fetchData(true);
     },
     [fetchData]
   );
 
-  // ── Realtime — background refresh only, no spinner ────────────────────────
+  // ── Realtime ──────────────────────────────────────────────────────────────
   useEffect(() => {
     const channel = supabase
       .channel(`module-dashboard-${module_name}`)
@@ -326,23 +323,22 @@ const ModuleDashboard: React.FC<Props> = ({
     };
   }, [chartData]);
 
-  // ── Build export data ─────────────────────────────────────────────────────
+  // ── Build export data (now with full step content) ────────────────────────
   const buildFlatData = (): FlatData[] =>
     module_tests.flatMap((mt) =>
-      mt.step_results
-        .filter((sr) => !sr.step?.is_divider)
-        .map((sr) => ({
-          module: module_name,
-          test: mt.test?.name ?? mt.tests_name,
-          serial: 0,
-          action: "",
-          expected: "",
-          remarks: "",
-          status: sr.status,
-        }))
+      mt.step_results.map((sr) => ({
+        module: module_name,
+        test: mt.test?.name ?? mt.tests_name,
+        serial: sr.step?.serial_no ?? 0,
+        action: sr.step?.action ?? "",
+        expected: sr.step?.expected_result ?? "",
+        remarks: sr.step?.remarks ?? "",
+        status: sr.status,
+        isdivider: sr.step?.is_divider ?? false,
+      }))
     );
 
-  // ── Loading / error states ────────────────────────────────────────────────
+  // ── Loading / error ───────────────────────────────────────────────────────
   if (loading)
     return (
       <div className="flex-1 flex flex-col">
@@ -486,12 +482,9 @@ const ModuleDashboard: React.FC<Props> = ({
             const failPct = total > 0 ? Math.round((fail / total) * 100) : 0;
 
             const lock = locks[mt.id];
-
-            // Compare against user_id (UUID) — matches test_locks.user_id
             const isMyLock = !!lock && lock.user_id === user?.id;
             const isOtherLock = !!lock && !isMyLock;
 
-            // ── Per-card style ────────────────────────────────────────────
             const cardStyle: React.CSSProperties = isMyLock
               ? {
                   border: "1.5px solid rgba(34,211,238,0.55)",
@@ -509,12 +502,9 @@ const ModuleDashboard: React.FC<Props> = ({
             return (
               <StaggerRow key={mt.id} index={idx}>
                 <div className={cardCls} style={cardStyle}>
-                  {/* ── MY lock badge ───────────────────────────────────── */}
+                  {/* ── MY lock badge ── */}
                   {isMyLock && (
-                    <div
-                      className="flex items-center gap-1.5 self-start px-2.5 py-1 rounded-lg w-fit
-                      bg-cyan-500/15 border border-cyan-400/40 text-cyan-300 text-xs font-semibold"
-                    >
+                    <div className="flex items-center gap-1.5 self-start px-2.5 py-1 rounded-lg w-fit bg-cyan-500/15 border border-cyan-400/40 text-cyan-300 text-xs font-semibold">
                       <Lock size={11} className="text-cyan-400" />
                       <span>Locked by me</span>
                       <span className="text-cyan-400/50">·</span>
@@ -527,12 +517,9 @@ const ModuleDashboard: React.FC<Props> = ({
                     </div>
                   )}
 
-                  {/* ── OTHER lock badge ─────────────────────────────────── */}
+                  {/* ── OTHER lock badge ── */}
                   {isOtherLock && (
-                    <div
-                      className="flex items-center gap-1.5 self-start px-2.5 py-1 rounded-lg w-fit
-                      bg-amber-500/15 border border-amber-500/35 text-amber-400 text-xs font-semibold"
-                    >
+                    <div className="flex items-center gap-1.5 self-start px-2.5 py-1 rounded-lg w-fit bg-amber-500/15 border border-amber-500/35 text-amber-400 text-xs font-semibold">
                       <Lock size={11} />
                       <span>In use by {lock.locked_by_name}</span>
                       <span className="text-amber-400/50">·</span>
@@ -542,8 +529,6 @@ const ModuleDashboard: React.FC<Props> = ({
                           minute: "2-digit",
                         })}
                       </span>
-
-                      {/* ── Admin force-release ────────────────────────── */}
                       {isAdmin && (
                         <>
                           <span className="text-amber-400/30 mx-0.5">|</span>
@@ -552,11 +537,7 @@ const ModuleDashboard: React.FC<Props> = ({
                               e.stopPropagation();
                               forceReleaseLock(mt.id, lock.locked_by_name);
                             }}
-                            className="flex items-center gap-1 text-[11px] font-bold
-                              text-red-400 hover:text-red-300
-                              bg-red-500/10 hover:bg-red-500/20
-                              border border-red-500/30 rounded-md px-1.5 py-0.5
-                              transition-colors"
+                            className="flex items-center gap-1 text-[11px] font-bold text-red-400 hover:text-red-300 bg-red-500/10 hover:bg-red-500/20 border border-red-500/30 rounded-md px-1.5 py-0.5 transition-colors"
                             title="Admin: force release this lock"
                           >
                             <Unlock size={10} />
@@ -567,7 +548,7 @@ const ModuleDashboard: React.FC<Props> = ({
                     </div>
                   )}
 
-                  {/* ── Header ──────────────────────────────────────────── */}
+                  {/* ── Header ── */}
                   <div className="flex items-start justify-between gap-2">
                     <div className="flex items-center gap-2 flex-wrap min-w-0">
                       <span
@@ -582,40 +563,29 @@ const ModuleDashboard: React.FC<Props> = ({
                       </h3>
                     </div>
 
-                    {/* ── Buttons ─────────────────────────────────────────── */}
                     <div className="flex items-center gap-1.5 shrink-0">
                       <button
                         onClick={() => onViewReport(mt.id)}
                         disabled={isOtherLock}
-                        className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-colors
-                          bg-bg-card hover:bg-bg-surface border border-[var(--border-color)]
-                          text-t-secondary hover:text-t-primary
-                          disabled:opacity-30 disabled:cursor-not-allowed"
+                        className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-colors bg-bg-card hover:bg-bg-surface border border-[var(--border-color)] text-t-secondary hover:text-t-primary disabled:opacity-30 disabled:cursor-not-allowed"
                       >
                         <ChevronRight size={12} />
                         Report
                       </button>
 
                       {isMyLock ? (
-                        /* Resume — cyan neon, same style as execution UI */
                         <button
                           onClick={() => onExecute(mt.id)}
-                          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all
-                            bg-cyan-500 hover:bg-cyan-400 text-gray-950
-                            shadow-[0_0_14px_3px_rgba(34,211,238,0.40)]
-                            hover:shadow-[0_0_20px_5px_rgba(34,211,238,0.55)]"
+                          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all bg-cyan-500 hover:bg-cyan-400 text-gray-950 shadow-[0_0_14px_3px_rgba(34,211,238,0.40)] hover:shadow-[0_0_20px_5px_rgba(34,211,238,0.55)]"
                         >
                           <RotateCcw size={12} />
                           Resume
                         </button>
                       ) : (
-                        /* Execute — normal brand */
                         <button
                           onClick={() => onExecute(mt.id)}
                           disabled={isOtherLock}
-                          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors
-                            bg-c-brand hover:bg-c-brand-hover text-white
-                            disabled:opacity-30 disabled:cursor-not-allowed"
+                          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors bg-c-brand hover:bg-c-brand-hover text-white disabled:opacity-30 disabled:cursor-not-allowed"
                         >
                           <Play size={12} />
                           Execute
@@ -624,7 +594,7 @@ const ModuleDashboard: React.FC<Props> = ({
                     </div>
                   </div>
 
-                  {/* ── Stats row ───────────────────────────────────────── */}
+                  {/* ── Stats row ── */}
                   <div className="flex items-center gap-3 flex-wrap text-xs">
                     <span className="badge-pass">
                       <span className="w-1.5 h-1.5 rounded-full bg-green-500 inline-block mr-1" />
@@ -640,7 +610,7 @@ const ModuleDashboard: React.FC<Props> = ({
                     </span>
                   </div>
 
-                  {/* ── Progress bar ─────────────────────────────────────── */}
+                  {/* ── Progress bar ── */}
                   <div>
                     <div className="flex justify-between text-xs text-t-muted mb-1">
                       <span>Progress</span>

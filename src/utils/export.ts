@@ -269,23 +269,25 @@ const buildDividerRow = (d: FlatData, colSpan: number) => {
 };
 
 // ─── Step Row ──────────────────────────────────────────────────────────────────
-const buildStepRow = (step: FlatData) => {
+const buildStepRow = (step: FlatData, fallbackIndex?: number) => {
   const sc = statusColor(step.status);
   return [
     {
-      content: String(step.serial),
+      content: String(
+        step.serial > 0 ? step.serial : fallbackIndex ?? step.serial
+      ),
       styles: { halign: "center" as const, textColor: DARK, fontSize: 8 },
     },
-    { content: step.action, styles: { textColor: DARK, fontSize: 8 } },
-    { content: step.expected, styles: { textColor: DARK, fontSize: 8 } },
-    { content: step.remarks, styles: { textColor: DARK, fontSize: 8 } },
+    { content: step.action ?? "", styles: { textColor: DARK, fontSize: 8 } },
+    { content: step.expected ?? "", styles: { textColor: DARK, fontSize: 8 } },
+    { content: step.remarks ?? "", styles: { textColor: DARK, fontSize: 8 } },
     {
       content: statusLabel(step.status),
       styles: {
         halign: "center" as const,
         textColor: sc,
         fontStyle: "bold" as const,
-        fontSize: 7.5,
+        fontSize: 8,
       },
     },
   ];
@@ -861,43 +863,6 @@ export const exportReportPDF = (_modules: Module[], data: FlatData[]) => {
 // 3. MODULE DETAIL EXPORTS
 // ═══════════════════════════════════════════════════════════════════════════════
 
-export const exportModuleDetailCSV = (data: FlatData[]) => {
-  const lines = ["Module,Test,#,Action,Expected Result,Remarks,Status"];
-  let lastModule = "",
-    lastTest = "",
-    testSerial = 0;
-  for (const d of data) {
-    if (d.isdivider) continue;
-    if (d.module !== lastModule) {
-      if (lastModule !== "") lines.push("");
-      lines.push(`${d.module},,,,,,`);
-      lastModule = d.module;
-      lastTest = "";
-      testSerial = 0;
-    }
-    if (d.test !== lastTest) {
-      testSerial++;
-      lines.push(`,${pad2(testSerial)}. ${d.test},,,,,`);
-      lastTest = d.test;
-    }
-    lines.push(
-      [
-        d.module,
-        d.test,
-        d.serial,
-        d.action.replace(/,/g, " "),
-        d.expected.replace(/,/g, " "),
-        d.remarks.replace(/,/g, " "),
-        d.status,
-      ].join(",")
-    );
-  }
-  download(
-    new Blob([lines.join("\n")], { type: "text/csv" }),
-    `TestPro-ModuleDetail-${today}.csv`
-  );
-};
-
 export const exportModuleDetailPDF = (data: FlatData[]) => {
   const doc = new jsPDF({ orientation: "landscape" });
 
@@ -933,7 +898,11 @@ export const exportModuleDetailPDF = (data: FlatData[]) => {
     mod.tests[tstIdx.get(tk)!].steps.push(d);
   }
 
+  // ── Build body + track which row indices are banners for bookmarks ─────────
   const body: any[] = [];
+  // Map: body row index → { label, isModule }
+  const bannerMap = new Map<number, { label: string; isModule: boolean }>();
+
   for (const mod of mods) {
     const allSteps = mod.tests
       .flatMap((t) => t.steps)
@@ -944,6 +913,7 @@ export const exportModuleDetailPDF = (data: FlatData[]) => {
     const mRate =
       allSteps.length > 0 ? Math.round((mPass / allSteps.length) * 100) : 0;
 
+    bannerMap.set(body.length, { label: mod.name, isModule: true });
     body.push(
       moduleBannerRow(
         `${mod.name}   ·   ${mod.tests.length} test${
@@ -963,46 +933,84 @@ export const exportModuleDetailPDF = (data: FlatData[]) => {
       const tRate =
         tSteps.length > 0 ? Math.round((tPass / tSteps.length) * 100) : 0;
 
+      bannerMap.set(body.length, {
+        label: `${pad2(test.serial)}. ${test.name}`,
+        isModule: false,
+      });
       body.push([
         {
-          content: `  ${pad2(test.serial)}. ${
-            test.name
-          }   —   Pass: ${tPass}   Fail: ${tFail}   Pending: ${tPending}   (${tRate}%)`,
+          content: `${pad2(test.serial)}. ${test.name}   —   Steps: ${
+            tSteps.length
+          }   Pass: ${tPass}   Fail: ${tFail}   Pending: ${tPending}   (${tRate}%)`,
           colSpan: 5,
           styles: {
             fillColor: TESTBG,
             textColor: TESTTXT,
-            fontStyle: "normal" as const,
-            fontSize: 8,
-            lineColor: FAINT as [number, number, number],
+            fontStyle: "bold" as const,
+            fontSize: 8.5,
+            lineColor: DARK as [number, number, number],
             lineWidth: 0.3,
-            cellPadding: { top: 4, bottom: 4, left: 18, right: 5 },
+            cellPadding: { top: 5, bottom: 5, left: 10, right: 5 },
           },
         },
       ]);
 
+      let stepIndex = 0;
       for (const row of test.steps) {
+        if (!row.isdivider) stepIndex++;
         body.push(
-          row.isdivider ? [buildDividerRow(row, 5)] : buildStepRow(row)
+          row.isdivider
+            ? [buildDividerRow(row, 5)]
+            : buildStepRow(row, stepIndex)
         );
       }
     }
   }
 
+  // ── Collect bookmarks during render ───────────────────────────────────────
+  const bookmarks: Array<{ label: string; isModule: boolean; page: number }> =
+    [];
+
   autoTable(doc, {
     ...baseTableStyles(),
     startY: y,
     margin: { top: 34, left: 14, right: 14, bottom: 18 },
-    head: [["S.NO", "ACTION", "EXPECTED RESULT", "REMARKS", "STATUS"]],
+    head: [["S/N", "ACTION", "EXPECTED RESULT", "REMARKS", "STATUS"]],
     body,
     columnStyles: {
-      0: { cellWidth: 14 },
-      1: { cellWidth: 80 },
+      0: { cellWidth: 16, halign: "center" },
+      1: { cellWidth: 82 },
       2: { cellWidth: 78 },
       3: { cellWidth: 60 },
-      4: { cellWidth: 36 },
+      4: { cellWidth: 30, halign: "center" },
+    },
+    didDrawRow: (hookData: any) => {
+      const idx = hookData.row.index;
+      if (bannerMap.has(idx)) {
+        const info = bannerMap.get(idx)!;
+        bookmarks.push({
+          label: info.label,
+          isModule: info.isModule,
+          page: (doc.internal as any).getCurrentPageInfo().pageNumber,
+        });
+      }
     },
   });
+
+  // ── Add PDF bookmarks (outline) ────────────────────────────────────────────
+  try {
+    const outline = (doc as any).outline;
+    let currentModNode: any = null;
+    for (const bm of bookmarks) {
+      if (bm.isModule) {
+        currentModNode = outline.add(null, bm.label, { pageNumber: bm.page });
+      } else {
+        outline.add(currentModNode ?? null, bm.label, { pageNumber: bm.page });
+      }
+    }
+  } catch (_) {
+    // outline API not available — skip silently
+  }
 
   drawFooter(doc);
   openPrintPreview(doc);
