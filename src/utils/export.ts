@@ -37,20 +37,12 @@ export interface ModuleSummary {
   tests?: TestSummary[];
 }
 
-// ─── Color Palette ─────────────────────────────────────────────────────────────
+// ─── Color Palette (WHITE + DARK only for fills) ────────────────────────────────
 const DARK = [20, 20, 20] as [number, number, number];
 const MID = [70, 70, 70] as [number, number, number];
 const MUTED = [130, 130, 130] as [number, number, number];
 const FAINT = [200, 200, 200] as [number, number, number];
 const WHITE = [255, 255, 255] as [number, number, number];
-const LIGHT = [242, 242, 242] as [number, number, number];
-const BANBDR = [160, 160, 160] as [number, number, number];
-
-const ROWALT = [246, 246, 246] as [number, number, number];
-const DIVBG = [225, 225, 225] as [number, number, number];
-const DIVTXT = [25, 25, 25] as [number, number, number];
-const TESTBG = [212, 212, 212] as [number, number, number];
-const TESTTXT = [25, 25, 25] as [number, number, number];
 
 const GREENINK = [16, 100, 45] as [number, number, number];
 const REDINK = [160, 22, 22] as [number, number, number];
@@ -59,10 +51,13 @@ const PENDINK = [60, 60, 60] as [number, number, number];
 // ─── Utilities ─────────────────────────────────────────────────────────────────
 const statusColor = (s: string): [number, number, number] =>
   s === "pass" ? GREENINK : s === "fail" ? REDINK : PENDINK;
+
 const statusLabel = (s: string) =>
   s === "pass" ? "PASS" : s === "fail" ? "FAIL" : "PENDING";
+
 const rateColor = (rate: number, total: number): [number, number, number] =>
   rate === 100 ? GREENINK : rate === 0 && total > 0 ? REDINK : DARK;
+
 const pad2 = (n: number) => String(n).padStart(2, "0");
 const today = new Date().toISOString().split("T")[0];
 
@@ -201,7 +196,7 @@ const drawFooter = (doc: jsPDF) => {
   }
 };
 
-// ─── Base Table Styles ─────────────────────────────────────────────────────────
+// ─── Base Table Styles — DARK header, WHITE data rows, no alternating ──────────
 const baseTableStyles = () => ({
   styles: {
     fontSize: 8,
@@ -213,8 +208,8 @@ const baseTableStyles = () => ({
     fontStyle: "normal" as const,
   } as any,
   headStyles: {
-    fillColor: LIGHT,
-    textColor: DARK,
+    fillColor: DARK, // ← was LIGHT (grey) — now pure black
+    textColor: WHITE, // ← was DARK — white text on black header
     fontStyle: "bold" as const,
     lineColor: DARK,
     lineWidth: 0.3,
@@ -223,51 +218,52 @@ const baseTableStyles = () => ({
     cellPadding: { top: 6, bottom: 6, left: 5, right: 5 },
     overflow: "hidden" as const,
   },
-  alternateRowStyles: { fillColor: false as any },
+  alternateRowStyles: { fillColor: false as any }, // ← no grey alternating rows
   margin: { top: 34, bottom: 18 },
 });
 
-// ─── Module Banner Row ─────────────────────────────────────────────────────────
+// ─── Module Banner Row — DARK bg, WHITE text ───────────────────────────────────
 const moduleBannerRow = (content: string, colSpan: number) => [
   {
     content,
     colSpan,
     styles: {
-      fillColor: WHITE,
-      textColor: DARK,
+      fillColor: DARK, // ← was WHITE
+      textColor: WHITE, // ← was DARK
       fontStyle: "bold" as const,
       fontSize: 9.5,
-      lineColor: BANBDR as [number, number, number],
+      lineColor: DARK as [number, number, number],
       lineWidth: 0.5,
       cellPadding: { top: 6, bottom: 6, left: 5, right: 5 },
     },
   },
 ];
 
-// ─── Divider Row ───────────────────────────────────────────────────────────────
+// ─── Divider Row — WHITE bg, indent via cellPadding, no ▸ symbols ──────────────
 const buildDividerRow = (d: FlatData, colSpan: number) => {
   const level = resolveDividerLevel(d);
-  const prefix = level === 1 ? "▸ " : level === 2 ? "    ▸▸ " : "        ▸▸▸ ";
-  const label = d.action.replace(/^#{1,3}\s*/, "").replace(/^%+,?\s*/, ""); // ← handles %, %,%, %, T001A etc.
+  // Strip ALL leading non-alphanumeric chars (%, ,, #, spaces, etc.)
+  const label = d.action.replace(/^[^a-zA-Z0-9]+/, "");
   return {
-    content: prefix + label,
+    content: label,
     colSpan,
     styles: {
-      fillColor: DIVBG,
-      textColor: DIVTXT,
-      fontStyle: "normal" as const,
-      fontSize: 7.5,
+      fillColor: WHITE, // ← was DIVBG (grey)
+      textColor: DARK,
+      fontStyle: "bold" as const,
+      fontSize: 8,
       lineColor: FAINT as [number, number, number],
       lineWidth: 0.3,
       cellPadding: {
         top: level === 1 ? 4 : 3,
         bottom: level === 1 ? 4 : 3,
-        left: level === 1 ? 10 : level === 2 ? 18 : 26,
+        left: level === 1 ? 10 : level === 2 ? 22 : 34, // indentation via padding
         right: 5,
       },
     },
   };
 };
+
 // ─── Step Row ──────────────────────────────────────────────────────────────────
 const buildStepRow = (step: FlatData, fallbackIndex?: number) => {
   const sc = statusColor(step.status);
@@ -493,99 +489,31 @@ export const exportDashboardPDF = (summaries: ModuleSummary[]) => {
     }
   }
 
+  // ── Fleet total row — WHITE bg, DARK bold text (no grey fill) ──────────────
   const fleetRate =
     fleetTotal > 0 ? Math.round((fleetPass / fleetTotal) * 100) : 0;
+  const ftCell = (content: string, tc: [number, number, number] = DARK) => ({
+    content,
+    styles: {
+      fillColor: WHITE,
+      textColor: tc,
+      fontStyle: "bold" as const,
+      fontSize: 10,
+      halign: "center" as const,
+      lineColor: DARK as [number, number, number],
+      lineWidth: 0.5,
+    },
+  });
   body.push([
-    {
-      content: "",
-      styles: {
-        fillColor: LIGHT,
-        textColor: DARK,
-        fontStyle: "bold" as const,
-        fontSize: 10,
-        halign: "center" as const,
-      },
-    },
-    {
-      content: "FLEET TOTAL",
-      styles: {
-        fillColor: LIGHT,
-        textColor: DARK,
-        fontStyle: "bold" as const,
-        fontSize: 10,
-        halign: "center" as const,
-      },
-    },
-    {
-      content: `${totalModules} modules`,
-      styles: {
-        fillColor: LIGHT,
-        textColor: DARK,
-        fontStyle: "bold" as const,
-        fontSize: 10,
-        halign: "center" as const,
-      },
-    },
-    {
-      content: `${totalTests} tests`,
-      styles: {
-        fillColor: LIGHT,
-        textColor: DARK,
-        fontStyle: "bold" as const,
-        fontSize: 10,
-        halign: "center" as const,
-      },
-    },
-    {
-      content: String(fleetTotal),
-      styles: {
-        fillColor: LIGHT,
-        textColor: DARK,
-        fontStyle: "bold" as const,
-        fontSize: 10,
-        halign: "center" as const,
-      },
-    },
-    {
-      content: String(fleetPass),
-      styles: {
-        fillColor: LIGHT,
-        textColor: GREENINK,
-        fontStyle: "bold" as const,
-        fontSize: 10,
-        halign: "center" as const,
-      },
-    },
-    {
-      content: String(fleetFail),
-      styles: {
-        fillColor: LIGHT,
-        textColor: REDINK,
-        fontStyle: "bold" as const,
-        fontSize: 10,
-        halign: "center" as const,
-      },
-    },
-    {
-      content: String(fleetPending),
-      styles: {
-        fillColor: LIGHT,
-        textColor: DARK,
-        fontStyle: "bold" as const,
-        fontSize: 10,
-        halign: "center" as const,
-      },
-    },
-    {
-      content: `${fleetRate}%`,
-      styles: {
-        fillColor: LIGHT,
-        textColor: rateColor(fleetRate, fleetTotal),
-        fontStyle: "bold" as const,
-        fontSize: 10,
-        halign: "center" as const,
-      },
-    },
+    ftCell(""),
+    ftCell("FLEET TOTAL"),
+    ftCell(`${totalModules} modules`),
+    ftCell(`${totalTests} tests`),
+    ftCell(String(fleetTotal)),
+    ftCell(String(fleetPass), GREENINK),
+    ftCell(String(fleetFail), REDINK),
+    ftCell(String(fleetPending)),
+    ftCell(`${fleetRate}%`, rateColor(fleetRate, fleetTotal)),
   ]);
 
   autoTable(doc, {
@@ -634,8 +562,11 @@ export const exportDashboardDocx = (summaries: ModuleSummary[]) => {
   const rows: string[] = [];
   summaries.forEach((s) => {
     const testCount = s.tests?.length ?? s.testCount ?? 0;
-    rows.push(`<tr style="background:#fff;border-top:2px solid #aaa;">
-      <td colspan="9" style="font-size:12px;font-weight:bold">${s.name}  ·  ${testCount} tests  ·  Pass: ${s.pass}  Fail: ${s.fail}  Pending: ${s.pending}  (${s.passRate}%)</td>
+    // ── Module banner — DARK bg, WHITE text ────────────────────────────────
+    rows.push(`<tr style="background:#141414;color:#fff;">
+      <td colspan="9" style="font-size:12px;font-weight:bold;padding:8px 10px;">
+        ${s.name}  ·  ${testCount} tests  ·  Pass: ${s.pass}  Fail: ${s.fail}  Pending: ${s.pending}  (${s.passRate}%)
+      </td>
     </tr>`);
     if (s.tests && s.tests.length > 0) {
       s.tests.forEach((t, ti) => {
@@ -663,7 +594,8 @@ export const exportDashboardDocx = (summaries: ModuleSummary[]) => {
       </tr>`);
     }
   });
-  rows.push(`<tr style="background:#f2f2f2;">
+  // ── Fleet total — DARK bg, WHITE text ──────────────────────────────────────
+  rows.push(`<tr style="background:#141414;color:#fff;">
     <td></td><td><b>FLEET TOTAL</b></td>
     <td><b>${summaries.length} modules</b></td>
     <td><b>${summaries.reduce(
@@ -671,8 +603,8 @@ export const exportDashboardDocx = (summaries: ModuleSummary[]) => {
       0
     )} tests</b></td>
     <td align="center"><b>${fleetTotal}</b></td>
-    <td align="center" style="color:#10642d"><b>${fleetPass}</b></td>
-    <td align="center" style="color:#a01616"><b>${fleetFail}</b></td>
+    <td align="center" style="color:#4ade80"><b>${fleetPass}</b></td>
+    <td align="center" style="color:#f87171"><b>${fleetFail}</b></td>
     <td align="center"><b>${fleetPending}</b></td>
     <td align="center"><b>${fleetRate}%</b></td>
   </tr>`);
@@ -687,7 +619,7 @@ export const exportDashboardDocx = (summaries: ModuleSummary[]) => {
       Pass Rate: <b>${fleetRate}%</b>
     </p>
     <table border="1" style="border-collapse:collapse;width:100%">
-      <thead><tr style="background:#f2f2f2;">
+      <thead><tr style="background:#141414;">
         <th>#</th><th>Module</th><th>Description</th><th>Test Name</th>
         <th>Steps</th><th>Pass</th><th>Fail</th><th>Pending</th><th>Pass Rate</th>
       </tr></thead>
@@ -831,7 +763,7 @@ export const exportReportPDF = (_modules: Module[], data: FlatData[]) => {
       ],
     ],
     body,
-    alternateRowStyles: { fillColor: ROWALT },
+    // ← no alternateRowStyles override (base already sets fillColor: false)
     columnStyles: {
       0: { cellWidth: 12, halign: "center" },
       1: { cellWidth: 34 },
@@ -944,6 +876,8 @@ export const exportModuleDetailPDF = (
         label: `${pad2(test.serial)}. ${test.name}`,
         isModule: false,
       });
+
+      // ── Test banner — DARK bg, WHITE text ────────────────────────────────
       body.push([
         {
           content: `${pad2(test.serial)}. ${test.name}   —   Steps: ${
@@ -951,8 +885,8 @@ export const exportModuleDetailPDF = (
           }   Pass: ${tPass}   Fail: ${tFail}   Pending: ${tPending}   (${tRate}%)`,
           colSpan: 5,
           styles: {
-            fillColor: TESTBG,
-            textColor: TESTTXT,
+            fillColor: DARK, // ← was TESTBG (grey)
+            textColor: WHITE, // ← was TESTTXT (dark)
             fontStyle: "bold" as const,
             fontSize: 8.5,
             lineColor: DARK as [number, number, number],
@@ -1079,7 +1013,7 @@ export const exportExecutionPDF = (
     margin: { top: 34, left: 14, right: 14, bottom: 18 },
     head: [["S.NO", "ACTION", "EXPECTED RESULT", "REMARKS", "STATUS"]],
     body,
-    alternateRowStyles: { fillColor: ROWALT },
+    // ← no alternateRowStyles override (base already sets fillColor: false)
     columnStyles: {
       0: { cellWidth: 14 },
       1: { cellWidth: 80 },
@@ -1115,7 +1049,7 @@ const docxWrapper = (title: string, body: string) => `
   h1   { border-bottom: 1px solid #ccc; padding-bottom: 8px; font-size: 18px; color: #141414 }
   p    { color: #555; font-size: 11px; margin: 4px 0 14px }
   table{ border-collapse: collapse; width: 100% }
-  th   { background: #f2f2f2; color: #141414; font-weight: bold; padding: 8px 10px; font-size: 11px; border: 1px solid #bbb }
+  th   { background: #141414; color: #ffffff; font-weight: bold; padding: 8px 10px; font-size: 11px; border: 1px solid #141414 }
   td   { padding: 7px 10px; border: 1px solid #ddd; font-size: 11px; color: #141414 }
 </style></head>
 <body><h1>${title}</h1><p>Generated: ${new Date().toLocaleString()}</p>${body}</body>

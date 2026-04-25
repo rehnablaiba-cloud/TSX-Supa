@@ -16,7 +16,7 @@ export interface Module {
 }
 
 export interface Test {
-  serial_no: number;
+  serial_no: string;
   name: string;
   description?: string;
   created_at: string;

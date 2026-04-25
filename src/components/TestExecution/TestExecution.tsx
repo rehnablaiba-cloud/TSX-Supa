@@ -170,7 +170,7 @@ const getDividerLevel = (expected_result: string): number =>
 
 // ── Strip raw prefixes from divider action text ────────────────────────────
 const cleanDividerLabel = (action: string): string =>
-  action.replace(/^#{1,3}\s*/, "").replace(/^[%,\s]+/, "");
+  action.replace(/^[^a-zA-Z0-9]+/, "");
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Sub-components

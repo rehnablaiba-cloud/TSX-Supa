@@ -469,7 +469,11 @@ const TestReport: React.FC<Props> = ({ module_test_id, onBack }) => {
     const flat: FlatData[] = [];
     mods.forEach((m) => {
       [...(m.module_tests ?? [])]
-        .sort((a, b) => (a.test?.serial_no ?? 0) - (b.test?.serial_no ?? 0))
+        .sort((a, b) =>
+          String(a.test?.serial_no ?? "").localeCompare(
+            String(b.test?.serial_no ?? "")
+          )
+        )
         .forEach((mt) => {
           (m.step_results ?? [])
             .filter(

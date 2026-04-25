@@ -10,7 +10,7 @@ import { supabase } from "../../supabase";
 export interface ReportMeta {
   module_name: string;
   tests_name: string;
-  test: { serial_no: number; name: string; description?: string } | null;
+  test: { serial_no: string; name: string; description?: string } | null;
 }
 
 export interface ReportStepResult {
@@ -43,7 +43,7 @@ export interface ModuleRow {
   module_tests: {
     id: string;
     tests_name: string;
-    test: { serial_no: number; name: string } | null;
+    test: { serial_no: string; name: string } | null;
   }[];
   step_results: ReportStepResult[];
 }
