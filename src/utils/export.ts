@@ -248,8 +248,7 @@ const moduleBannerRow = (content: string, colSpan: number) => [
 const buildDividerRow = (d: FlatData, colSpan: number) => {
   const level = resolveDividerLevel(d);
   const prefix = level === 1 ? "▸ " : level === 2 ? "    ▸▸ " : "        ▸▸▸ ";
-  // Strip both # prefix and %,%, prefix
-  const label = d.action.replace(/^#{1,3}\s*/, "").replace(/^%,%,?\s*/, "");
+  const label = d.action.replace(/^#{1,3}\s*/, "").replace(/^%+,?\s*/, ""); // ← handles %, %,%, %, T001A etc.
   return {
     content: prefix + label,
     colSpan,
@@ -269,7 +268,6 @@ const buildDividerRow = (d: FlatData, colSpan: number) => {
     },
   };
 };
-
 // ─── Step Row ──────────────────────────────────────────────────────────────────
 const buildStepRow = (step: FlatData, fallbackIndex?: number) => {
   const sc = statusColor(step.status);

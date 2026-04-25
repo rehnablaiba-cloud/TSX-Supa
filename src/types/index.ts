@@ -1,3 +1,4 @@
+// src/types/index.ts — canonical source of truth
 export type Role = "admin" | "tester";
 
 export interface AppUser {
@@ -9,60 +10,49 @@ export interface AppUser {
 }
 
 export interface Module {
-  name: string; // PK (text)
+  name: string;
   description?: string;
   created_at: string;
 }
 
-// ── Global test catalog ──────────────────────────────────────
-// PK is name (text). serial_no is float.
 export interface Test {
   serial_no: number;
-  name: string; // PK (text)
+  name: string;
   description?: string;
   created_at: string;
 }
 
-// ── Global step definitions ──────────────────────────────────
-// PK: id = tests_name || '_' || serial_no (text)
 export interface Step {
-  id: string; // text PK built by trigger
+  id: string;
   serial_no: number;
-  tests_name: string; // FK → tests.name
+  tests_name: string;
   action: string;
   expected_result: string;
   is_divider: boolean;
 }
 
-// ── Junction: module ↔ test ──────────────────────────────────
-// PK: id = module_name || '_' || tests_name (text)
 export interface ModuleTest {
   id: string;
-  module_name: string; // FK → modules.name
-  tests_name: string; // FK → tests.name
-  // joined relations (optional)
+  module_name: string;
+  tests_name: string;
   test?: Test;
   step_results?: StepResult[];
 }
 
-// ── Per-module execution results ─────────────────────────────
-// PK: id = module_name || '_' || test_steps_id (text)
 export interface StepResult {
   id: string;
-  module_name: string; // FK → modules.name
-  test_steps_id: string; // FK → test_steps.id
+  module_name: string;
+  test_steps_id: string;
   status: "pass" | "fail" | "pending";
   remarks: string;
   updated_at: string;
   display_name?: string;
-  // joined relations (optional)
   step?: Step;
 }
 
-// ── Locks are per module_test ────────────────────────────────
 export interface TestLock {
   id: string;
-  module_test_id: string; // FK → module_tests.id
+  module_test_id: string;
   user_id: string;
   locked_by_name: string;
   locked_at: string;
@@ -84,7 +74,6 @@ export interface Toast {
   variant: ToastVariant;
 }
 
-// ── Import types (used by CSV import flow) ───────────────────
 export interface ImportRow {
   test_number: number;
   test_name: string;
@@ -93,12 +82,14 @@ export interface ImportRow {
   expected_result: string;
   is_divider: boolean;
 }
+
 export interface ActiveLock {
   module_test_id: string;
   module_name: string;
   test_name: string;
   locked_at: string;
 }
+
 export interface ModuleOption {
   name: string;
 }

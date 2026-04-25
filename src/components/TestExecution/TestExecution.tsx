@@ -168,6 +168,10 @@ const MOBILE_DIVIDER_LEVELS: Record<
 const getDividerLevel = (expected_result: string): number =>
   Math.min(Math.max(parseInt(expected_result, 10) || 1, 1), 3);
 
+// ── Strip raw prefixes from divider action text ────────────────────────────
+const cleanDividerLabel = (action: string): string =>
+  action.replace(/^#{1,3}\s*/, "").replace(/^%+,?\s*/, "");
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Sub-components
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1040,7 +1044,7 @@ const TestExecution: React.FC<Props> = ({
     };
   }, [module_name, currentMtId, testsName, user?.id]);
 
-  // ── Acquire lock — context owns heartbeat, never release on unmount ───────
+  // ── Acquire lock ──────────────────────────────────────────────────────────
   useEffect(() => {
     if (!user) return;
     let cancelled = false;
@@ -1062,7 +1066,6 @@ const TestExecution: React.FC<Props> = ({
     })();
     return () => {
       cancelled = true;
-      // Navigate-away: heartbeat keeps running in context, lock stays
     };
   }, [currentMtId, user?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -1274,7 +1277,7 @@ const TestExecution: React.FC<Props> = ({
     }
   }, [isAdmin, currentMtId, addToast]);
 
-  // ── Finish — ONLY place lock is explicitly released ───────────────────────
+  // ── Finish ────────────────────────────────────────────────────────────────
   const handleFinish = async () => {
     if (user) await releaseLock(currentMtId, user.id).catch(() => {});
     clearActiveLock();
@@ -1330,6 +1333,7 @@ const TestExecution: React.FC<Props> = ({
     [steps, filter, search]
   );
 
+  // ── flatData — fixed isdivider key + cleanDividerLabel ────────────────────
   const flatData = useMemo<FlatData[]>(
     () =>
       steps.map((s) =>
@@ -1338,11 +1342,11 @@ const TestExecution: React.FC<Props> = ({
               module: module_name,
               test: currentTest?.name ?? "",
               serial: 0,
-              action: s.action,
+              action: cleanDividerLabel(s.action),
               expected: s.expected_result,
               remarks: "",
               status: "",
-              is_divider: true,
+              isdivider: true,
               dividerLevel: getDividerLevel(s.expected_result),
             }
           : {
@@ -1540,7 +1544,7 @@ const TestExecution: React.FC<Props> = ({
               style={{ width: `${passPct}%` }}
             />
             <div
-              className="h-full bg-red-500  transition-all duration-500"
+              className="h-full bg-red-500 transition-all duration-500"
               style={{ width: `${failPct}%` }}
             />
           </div>
@@ -1645,7 +1649,7 @@ const TestExecution: React.FC<Props> = ({
                                 }}
                               />
                               <span className={`${s.size} ${s.text}`}>
-                                {step.action}
+                                {cleanDividerLabel(step.action)}
                               </span>
                             </div>
                           </td>
@@ -1705,7 +1709,7 @@ const TestExecution: React.FC<Props> = ({
                             style={{ width: ms.dotSize, height: ms.dotSize }}
                           />
                           <span className={`${ms.fontSize} ${ms.textClass}`}>
-                            {step.action}
+                            {cleanDividerLabel(step.action)}
                           </span>
                         </div>
                       );

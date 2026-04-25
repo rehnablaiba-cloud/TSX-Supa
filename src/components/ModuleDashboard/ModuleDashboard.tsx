@@ -312,12 +312,19 @@ const ModuleDashboard: React.FC<Props> = ({
     module_tests.flatMap((mt) =>
       mt.step_results
         .slice()
-        .sort((a, b) => (a.step?.serial_no ?? 0) - (b.step?.serial_no ?? 0))
+        .sort((a, b) => {
+          const sa = a.step?.serial_no ?? 0;
+          const sb = b.step?.serial_no ?? 0;
+          if (sa !== sb) return sa - sb;
+          return (a.step?.is_divider ? 0 : 1) - (b.step?.is_divider ? 0 : 1);
+        })
         .map((sr) => ({
           module: module_name,
           test: mt.test?.name ?? mt.tests_name,
           serial: sr.step?.serial_no ?? 0,
-          action: sr.step?.action ?? "",
+          action: (sr.step?.action ?? "")
+            .replace(/^#{1,3}\s*/, "")
+            .replace(/^%+,?\s*/, ""),
           expected: sr.step?.expected_result ?? "",
           remarks: "",
           status: sr.status,
