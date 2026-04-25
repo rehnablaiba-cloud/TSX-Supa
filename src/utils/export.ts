@@ -77,9 +77,21 @@ const download = (blob: Blob, filename: string) => {
   URL.revokeObjectURL(a.href);
 };
 
-// ← CHANGED: accepts filename, uses it for fallback download
+// ← CHANGED: opens an HTML wrapper with proper <title> so the tab shows the filename
 const openPrintPreview = (doc: jsPDF, filename: string) => {
-  const blob = doc.output("blob");
+  const pdfData = doc.output("datauristring");
+  const html = `<!DOCTYPE html>
+<html>
+<head>
+  <title>${filename.replace(/</g, "&lt;")}</title>
+  <meta charset="utf-8" />
+  <style>body,html{margin:0;padding:0;height:100%;overflow:hidden}</style>
+</head>
+<body>
+  <iframe src="${pdfData}" width="100%" height="100%" style="border:none"></iframe>
+</body>
+</html>`;
+  const blob = new Blob([html], { type: "text/html" });
   const url = URL.createObjectURL(blob);
   const win = window.open(url, "_blank");
   if (!win) {
@@ -87,12 +99,8 @@ const openPrintPreview = (doc: jsPDF, filename: string) => {
     a.href = url;
     a.download = filename;
     a.click();
-  } else {
-    try {
-      win.document.title = filename;
-    } catch {}
   }
-  setTimeout(() => URL.revokeObjectURL(url), 60000);
+  setTimeout(() => URL.revokeObjectURL(url), 120000);
 };
 
 // ─── Page Header ───────────────────────────────────────────────────────────────
@@ -815,7 +823,7 @@ export const exportModuleDetailCSV = (data: FlatData[]) => {
   );
 };
 
-// ← CHANGED: test banners are now real table rows (colSpan) instead of doc.text()
+// ← CHANGED: single combined banner row {serial}. {testname}
 export const exportModuleDetailPDF = (
   data: FlatData[],
   moduleName?: string
@@ -835,7 +843,12 @@ export const exportModuleDetailPDF = (
   let y = drawHeader(doc, title, subtitle);
   y = drawStatsText(doc, nd.length, pass, fail, pending, y);
 
-  type TestBlock = { name: string; steps: FlatData[]; serial: number };
+  type TestBlock = {
+    name: string;
+    steps: FlatData[];
+    serial: number;
+    test_serial_no: string; // ← ADDED
+  };
   type ModuleBlock = { name: string; tests: TestBlock[] };
   const mods: ModuleBlock[] = [];
   const modIdx = new Map<string, number>();
@@ -850,7 +863,12 @@ export const exportModuleDetailPDF = (
     const tk = `${d.module}\x00${d.test}`;
     if (!tstIdx.has(tk)) {
       tstIdx.set(tk, mod.tests.length);
-      mod.tests.push({ name: d.test, steps: [], serial: mod.tests.length + 1 });
+      mod.tests.push({
+        name: d.test,
+        steps: [],
+        serial: mod.tests.length + 1,
+        test_serial_no: d.test_serial_no ?? "", // ← CAPTURE REAL SERIAL
+      });
     }
     mod.tests[tstIdx.get(tk)!].steps.push(d);
   }
@@ -873,15 +891,19 @@ export const exportModuleDetailPDF = (
       const tRate =
         tSteps.length > 0 ? Math.round((tPass / tSteps.length) * 100) : 0;
 
-      const testSerialNo = test.steps[0]?.test_serial_no ?? pad2(test.serial);
+      // ← CHANGED: use real tests.serial_no; fall back to local index only if empty
+      const realSerial = test.test_serial_no?.trim();
+      const displaySerial = realSerial || pad2(test.serial);
 
-      // ── Build table body: test banners + header + steps ───────────────────
+      const bannerPrefix = mods.length > 1 ? `${mod.name} › ` : "";
+
+      // ── Build table body: combined banner + header + steps ────────────────
       const body: any[] = [];
 
-      // Test serial banner — full width table row
+      // Combined serial + test name — single banner row
       body.push([
         {
-          content: `${testSerialNo}.`,
+          content: `${bannerPrefix}${displaySerial}. ${test.name}`,
           colSpan: 5,
           styles: {
             textColor: DARK,
@@ -895,25 +917,7 @@ export const exportModuleDetailPDF = (
         },
       ]);
 
-      // Test name banner — full width table row, centered
-      const bannerPrefix = mods.length > 1 ? `${mod.name} › ` : "";
-      body.push([
-        {
-          content: `${bannerPrefix}${test.name}`,
-          colSpan: 5,
-          styles: {
-            textColor: DARK,
-            fontStyle: "bold" as const,
-            fontSize: 9,
-            halign: "center" as const,
-            lineColor: DARK as [number, number, number],
-            lineWidth: 0.3,
-            cellPadding: { top: 4, bottom: 4, left: 10, right: 5 },
-          },
-        },
-      ]);
-
-      // Manual header row (since banners must come before it)
+      // Manual header row
       body.push([
         {
           content: "S/N",
@@ -967,7 +971,6 @@ export const exportModuleDetailPDF = (
   const safeModule = (moduleName || "Module").replace(/[^a-zA-Z0-9_-]/g, "_");
   openPrintPreview(doc, `TestPro-${safeModule}-${today}.pdf`);
 };
-
 // ═══════════════════════════════════════════════════════════════════════════════
 // 4. TEST EXECUTION EXPORTS
 // ═══════════════════════════════════════════════════════════════════════════════

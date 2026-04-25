@@ -372,10 +372,7 @@ const MobileNav: React.FC<Props> = ({ activePage, onNavigate }) => {
             </>
           )}
 
-          <div
-            className="h-px my-2 sheet-item"
-            className="border border-[var(--border-color)]"
-          />
+          <div className="h-px my-2 sheet-item border border-[var(--border-color)]" />
           <button
             onClick={handleSignOut}
             className="sheet-item w-full flex items-center gap-3 px-4 py-3 rounded-2xl text-left transition-colors hover:bg-red-500/10"

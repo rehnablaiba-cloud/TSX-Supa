@@ -320,6 +320,7 @@ const ModuleDashboard: React.FC<Props> = ({
   }, [chartData]);
 
   // ── Build export data — sorted + divider labels cleaned ──────────────────
+  // ── Build export data — sorted + divider labels cleaned ──────────────────
   const buildFlatData = (): FlatData[] =>
     module_tests.flatMap((mt) =>
       mt.step_results
@@ -333,6 +334,7 @@ const ModuleDashboard: React.FC<Props> = ({
         .map((sr) => ({
           module: module_name,
           test: mt.test?.name ?? mt.tests_name,
+          test_serial_no: mt.test?.serial_no ?? "", // ← ADD THIS LINE
           serial: sr.step?.serial_no ?? 0,
           action: cleanDividerLabel(sr.step?.action ?? ""),
           expected: sr.step?.expected_result ?? "",
