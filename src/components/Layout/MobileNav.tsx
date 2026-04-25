@@ -1,7 +1,7 @@
 // src/components/Layout/MobileNav.tsx
 // iOS 26 Liquid Glass design + GSAP animations
 
-import React, { useRef, useEffect, useState } from "react";
+import React, { useRef, useEffect, useState, useMemo } from "react";
 import { useAuth } from "../../context/AuthContext";
 import { useTheme } from "../../context/ThemeContext";
 import {
@@ -38,33 +38,62 @@ import ImportTestsModal from "../Modals/ImportTestsModal";
 import ImportStepsModal from "../Modals/ImportStepsModal";
 import ImportStepsManualModal from "../Modals/ImportStepsManualModal";
 import ExportTestDocxModal from "../Modals/ExportTestDocxModal";
+import type { AppTheme } from "../../context/ThemeContext";
 
-// ── Liquid Glass styles ───────────────────────────────────────────────────────
-// Using plain rgba() — color-mix(in srgb, var(--x) N%, transparent) is
-// unreliable when the first color is a CSS custom property.
-const glassNav: React.CSSProperties = {
-  background: "rgba(22, 22, 32, 0.72)",
-  backdropFilter: "blur(28px) saturate(180%) brightness(1.08)",
-  WebkitBackdropFilter: "blur(28px) saturate(180%) brightness(1.08)",
-  border: "1px solid rgba(255,255,255,0.10)",
-  boxShadow:
-    "0 8px 32px rgba(0,0,0,0.22), inset 0 1px 0 rgba(255,255,255,0.06)",
-};
+// ── Read --bg-surface from the live :root after applyTheme() has run ──────────
+// color-mix(in srgb, var(--x) N%, transparent) is unreliable when the first
+// arg is a CSS custom property. Instead we read the resolved hex value at
+// runtime and build a proper rgba(). rAF ensures ThemeContext's useEffect
+// (which calls applyTheme) has already committed the new vars to :root.
+function parseCssColor(raw: string): [number, number, number] | null {
+  const hex = raw.trim().match(/^#([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i);
+  if (hex)
+    return [parseInt(hex[1], 16), parseInt(hex[2], 16), parseInt(hex[3], 16)];
+  const rgb = raw.trim().match(/^rgb\(\s*(\d+),\s*(\d+),\s*(\d+)\s*\)$/);
+  if (rgb) return [+rgb[1], +rgb[2], +rgb[3]];
+  return null;
+}
 
-const glassSheet: React.CSSProperties = {
-  background: "rgba(22, 22, 32, 0.88)",
-  backdropFilter: "blur(40px) saturate(180%)",
-  WebkitBackdropFilter: "blur(40px) saturate(180%)",
-  borderTop: "1px solid rgba(255,255,255,0.10)",
-  borderLeft: "1px solid rgba(255,255,255,0.10)",
-  borderRight: "1px solid rgba(255,255,255,0.10)",
-  boxShadow: "0 -8px 32px rgba(0,0,0,0.14)",
-};
+function useThemeColor(cssVar: string, mode: AppTheme, alpha: number) {
+  const darkFallback = `rgba(15, 15, 22, ${alpha})`;
+  const lightFallback = `rgba(242, 242, 248, ${alpha})`;
+  const [color, setColor] = useState(
+    mode === "dark" ? darkFallback : lightFallback
+  );
 
-const glassItem: React.CSSProperties = {
-  background: "rgba(255,255,255,0.05)",
-  border: "1px solid rgba(255,255,255,0.08)",
-};
+  useEffect(() => {
+    const id = requestAnimationFrame(() => {
+      const raw = getComputedStyle(document.documentElement).getPropertyValue(
+        cssVar
+      );
+      const parsed = parseCssColor(raw);
+      if (parsed)
+        setColor(`rgba(${parsed[0]},${parsed[1]},${parsed[2]},${alpha})`);
+      else setColor(mode === "dark" ? darkFallback : lightFallback);
+    });
+    return () => cancelAnimationFrame(id);
+    // re-read whenever the theme mode changes (applyTheme re-sets :root vars)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mode, cssVar, alpha]);
+
+  return color;
+}
+
+// ── Border color helper ────────────────────────────────────────────────────────
+function useBorderColor(mode: AppTheme) {
+  const [color, setColor] = useState("rgba(255,255,255,0.10)");
+  useEffect(() => {
+    const id = requestAnimationFrame(() => {
+      const raw = getComputedStyle(document.documentElement).getPropertyValue(
+        "--border-color"
+      );
+      const parsed = parseCssColor(raw);
+      if (parsed) setColor(`rgba(${parsed[0]},${parsed[1]},${parsed[2]},0.55)`);
+    });
+    return () => cancelAnimationFrame(id);
+  }, [mode]);
+  return color;
+}
 
 // ══════════════════════════════════════════════════════════════════════════════
 interface Props {
@@ -94,6 +123,45 @@ const MobileNav: React.FC<Props> = ({ activePage, onNavigate }) => {
   const itemRefs = useRef<(HTMLButtonElement | null)[]>([]);
 
   const isAdmin = user?.role === "admin";
+
+  // ── Dynamic glass colors from live CSS variables ──────────────────────────
+  const navBg = useThemeColor("--bg-surface", theme, 0.72);
+  const sheetBg = useThemeColor("--bg-surface", theme, 0.9);
+  const itemBg = useThemeColor("--bg-card", theme, 0.55);
+  const border = useBorderColor(theme);
+
+  const glassNav = useMemo(
+    (): React.CSSProperties => ({
+      background: navBg,
+      backdropFilter: "blur(28px) saturate(180%) brightness(1.06)",
+      WebkitBackdropFilter: "blur(28px) saturate(180%) brightness(1.06)",
+      border: `1px solid ${border}`,
+      boxShadow:
+        "0 8px 32px rgba(0,0,0,0.20), inset 0 1px 0 rgba(255,255,255,0.06)",
+    }),
+    [navBg, border]
+  );
+
+  const glassSheet = useMemo(
+    (): React.CSSProperties => ({
+      background: sheetBg,
+      backdropFilter: "blur(40px) saturate(180%)",
+      WebkitBackdropFilter: "blur(40px) saturate(180%)",
+      borderTop: `1px solid ${border}`,
+      borderLeft: `1px solid ${border}`,
+      borderRight: `1px solid ${border}`,
+      boxShadow: "0 -8px 32px rgba(0,0,0,0.12)",
+    }),
+    [sheetBg, border]
+  );
+
+  const glassItem = useMemo(
+    (): React.CSSProperties => ({
+      background: itemBg,
+      border: `1px solid ${border}`,
+    }),
+    [itemBg, border]
+  );
 
   useEffect(() => {
     fetchModuleOptions()
@@ -205,18 +273,15 @@ const MobileNav: React.FC<Props> = ({ activePage, onNavigate }) => {
   return (
     <>
       {/* ── Overlay ──────────────────────────────────────────────────────────
-          KEY FIX: `bottom: 80` instead of inset-0.
-          The overlay stops 80px from the bottom so it never covers the nav.
-          This is the correct solution — `backdrop-filter` on the overlay
-          creates a new stacking context, which makes z-index comparisons
-          with the nav unreliable regardless of what value you set.
-          No backdropFilter on the overlay for the same reason. */}
+          bottom:80 — overlay stops before the nav so the nav is never covered.
+          No backdropFilter here — backdrop-filter creates a stacking context
+          which makes z-index comparisons with siblings unreliable. */}
       <div
         ref={overlayRef}
         className="fixed top-0 left-0 right-0 md:hidden"
         style={{
           bottom: 80,
-          background: "rgba(0,0,0,0.50)",
+          background: "rgba(0,0,0,0.48)",
           opacity: 0,
           display: menuOpen ? "block" : "none",
           pointerEvents: menuOpen ? "auto" : "none",
@@ -225,102 +290,17 @@ const MobileNav: React.FC<Props> = ({ activePage, onNavigate }) => {
         onClick={closeMenu}
       />
 
-      {/* ── Floating glass nav bar ────────────────────────────────────────────
-          Rendered AFTER overlay in DOM (later sibling = painted on top at
-          equal z-level). display is never set to none when menuOpen. */}
-      <nav
-        ref={navRef}
-        className="fixed bottom-5 left-1/2 -translate-x-1/2 z-[58] md:hidden
-          rounded-[26px] flex items-center px-2 py-2 gap-1"
-        style={{
-          ...glassNav,
-          width: "calc(100% - 32px)",
-          maxWidth: 420,
-          marginBottom: "env(safe-area-inset-bottom, 0px)",
-          display: activeModal !== null ? "none" : undefined,
-        }}
-      >
-        {allNavItems.map((item, i) => {
-          const isActive =
-            item.id === activePage ||
-            (item.id === "__module__" && activePage === "module");
-          const isMore = item.id === "__more__";
-          const isModule = item.id === "__module__";
-          const highlighted = isActive || (menuOpen && isMore);
-
-          return (
-            <button
-              key={item.id}
-              ref={(el) => {
-                itemRefs.current[i] = el;
-              }}
-              onClick={() => {
-                if (isMore) {
-                  setMenuOpen((p) => !p);
-                  return;
-                }
-                if (isModule && modules[0]) {
-                  handleNavPress(
-                    itemRefs.current[i],
-                    "module",
-                    modules[0].name
-                  );
-                  return;
-                }
-                handleNavPress(itemRefs.current[i], item.id);
-              }}
-              className="relative flex flex-col items-center justify-center gap-0.5 flex-1 py-2 px-1 rounded-[18px] transition-all duration-200"
-              style={
-                isActive
-                  ? {
-                      background: "rgba(99,102,241,0.18)",
-                      boxShadow: "0 0 14px rgba(99,102,241,0.22)",
-                    }
-                  : undefined
-              }
-            >
-              {isActive && (
-                <span
-                  className="absolute top-1.5 left-1/2 -translate-x-1/2 w-5 h-0.5 rounded-full"
-                  style={{
-                    background: "var(--c-brand)",
-                    boxShadow: "0 0 8px var(--c-brand)",
-                  }}
-                />
-              )}
-              <span
-                className="transition-colors duration-200"
-                style={{
-                  color: highlighted
-                    ? "var(--c-brand)"
-                    : "rgba(160,160,180,0.7)",
-                }}
-              >
-                {item.icon}
-              </span>
-              <span
-                className="text-[9.5px] font-semibold tracking-wide transition-colors duration-200"
-                style={{
-                  color: highlighted
-                    ? "var(--c-brand)"
-                    : "rgba(160,160,180,0.5)",
-                }}
-              >
-                {item.label}
-              </span>
-            </button>
-          );
-        })}
-      </nav>
-
-      {/* ── More sheet ───────────────────────────────────────────────────── */}
+      {/* ── Sheet  z-[60] ────────────────────────────────────────────────── */}
       <div
         ref={sheetRef}
         className="fixed bottom-0 inset-x-0 z-[60] md:hidden rounded-t-[28px] flex-col"
         style={{ ...glassSheet, display: "none", maxHeight: "80vh" }}
       >
         <div className="flex justify-center pt-3 pb-2 shrink-0">
-          <div className="w-9 h-1 rounded-full bg-white/20" />
+          <div
+            className="w-9 h-1 rounded-full"
+            style={{ background: border }}
+          />
         </div>
 
         <div className="flex items-center justify-between px-5 pb-3 shrink-0">
@@ -344,9 +324,10 @@ const MobileNav: React.FC<Props> = ({ activePage, onNavigate }) => {
         <div
           className="overflow-y-auto flex-1 px-3 flex flex-col gap-1"
           style={{
-            paddingBottom: "calc(88px + env(safe-area-inset-bottom, 0px))",
+            paddingBottom: "calc(96px + env(safe-area-inset-bottom, 0px))",
           }}
         >
+          {/* Theme row */}
           <div className="sheet-item flex gap-2 mb-1">
             <button
               onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
@@ -438,12 +419,12 @@ const MobileNav: React.FC<Props> = ({ activePage, onNavigate }) => {
 
           <div
             className="h-px my-2 sheet-item"
-            style={{ background: "rgba(255,255,255,0.10)" }}
+            style={{ background: border }}
           />
           <button
             onClick={handleSignOut}
             className="sheet-item w-full flex items-center gap-3 px-4 py-3 rounded-2xl text-left transition-colors hover:bg-red-500/10"
-            style={{ ...glassItem, borderColor: "rgba(239,68,68,0.2)" }}
+            style={{ ...glassItem, borderColor: "rgba(239,68,68,0.25)" }}
           >
             <LogOut size={15} className="text-red-400/70" />
             <span className="text-sm text-red-400/80 font-medium">
@@ -452,6 +433,94 @@ const MobileNav: React.FC<Props> = ({ activePage, onNavigate }) => {
           </button>
         </div>
       </div>
+
+      {/* ── Nav  z-[62] — above overlay(55) and sheet(60) ────────────────────
+          Rendered last in the DOM so it's the topmost painted sibling.
+          display is only hidden when a full-screen modal is open. */}
+      <nav
+        ref={navRef}
+        className="fixed bottom-5 left-1/2 -translate-x-1/2 z-[62] md:hidden
+          rounded-[26px] flex items-center px-2 py-2 gap-1"
+        style={{
+          ...glassNav,
+          width: "calc(100% - 32px)",
+          maxWidth: 420,
+          marginBottom: "env(safe-area-inset-bottom, 0px)",
+          display: activeModal !== null ? "none" : undefined,
+        }}
+      >
+        {allNavItems.map((item, i) => {
+          const isActive =
+            item.id === activePage ||
+            (item.id === "__module__" && activePage === "module");
+          const isMore = item.id === "__more__";
+          const isModule = item.id === "__module__";
+          const highlighted = isActive || (menuOpen && isMore);
+
+          return (
+            <button
+              key={item.id}
+              ref={(el) => {
+                itemRefs.current[i] = el;
+              }}
+              onClick={() => {
+                if (isMore) {
+                  setMenuOpen((p) => !p);
+                  return;
+                }
+                if (isModule && modules[0]) {
+                  handleNavPress(
+                    itemRefs.current[i],
+                    "module",
+                    modules[0].name
+                  );
+                  return;
+                }
+                handleNavPress(itemRefs.current[i], item.id);
+              }}
+              className="relative flex flex-col items-center justify-center gap-0.5 flex-1 py-2 px-1 rounded-[18px] transition-all duration-200"
+              style={
+                isActive
+                  ? {
+                      background:
+                        "color-mix(in srgb, var(--c-brand) 16%, transparent)",
+                      boxShadow:
+                        "0 0 14px color-mix(in srgb, var(--c-brand) 22%, transparent)",
+                    }
+                  : undefined
+              }
+            >
+              {isActive && (
+                <span
+                  className="absolute top-1.5 left-1/2 -translate-x-1/2 w-5 h-0.5 rounded-full"
+                  style={{
+                    background: "var(--c-brand)",
+                    boxShadow: "0 0 8px var(--c-brand)",
+                  }}
+                />
+              )}
+              <span
+                className="transition-colors duration-200"
+                style={{
+                  color: highlighted ? "var(--c-brand)" : "var(--t-secondary)",
+                  opacity: highlighted ? 1 : 0.6,
+                }}
+              >
+                {item.icon}
+              </span>
+              <span
+                className="text-[9.5px] font-semibold tracking-wide transition-colors duration-200"
+                style={{
+                  color: highlighted ? "var(--c-brand)" : "var(--t-secondary)",
+                  opacity: highlighted ? 1 : 0.45,
+                }}
+              >
+                {item.label}
+              </span>
+            </button>
+          );
+        })}
+      </nav>
 
       {/* ── Modals ────────────────────────────────────────────────────────── */}
       {activeModal === "export" && <ExportDataModal onClose={close} />}
