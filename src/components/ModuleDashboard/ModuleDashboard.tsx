@@ -82,7 +82,7 @@ const StaggerRow: React.FC<{ index: number; children: React.ReactNode }> = ({
 
 // ── Strip all leading %, , and whitespace from divider labels ─────────────
 const cleanDividerLabel = (action: string): string =>
-  action: (sr.step?.action ?? "").replace(/^[^a-zA-Z0-9]+/, ""),
+  action: (sr.step?.action ?? "").replace(/^[^a-zA-Z0-9]+/, "");
 
 type ChartType = "bar" | "area" | "line" | "pie" | "radar";
 const CHART_TYPES: { type: ChartType; label: string }[] = [
