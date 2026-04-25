@@ -254,7 +254,7 @@ const MobileNav: React.FC<Props> = ({ activePage, onNavigate }) => {
         <div className="flex justify-center pt-3 pb-2 shrink-0">
           <div
             className="w-9 h-1 rounded-full"
-            style={{ background: border }}
+            style={{ border: "1px solid var(--border-color)" }}
           />
         </div>
 
@@ -374,7 +374,7 @@ const MobileNav: React.FC<Props> = ({ activePage, onNavigate }) => {
 
           <div
             className="h-px my-2 sheet-item"
-            style={{ background: border }}
+            className="border border-[var(--border-color)]"
           />
           <button
             onClick={handleSignOut}
