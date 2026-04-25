@@ -434,7 +434,7 @@ const TableStepRow: React.FC<{
       ? "bg-red-500/5"
       : "";
   const focusStyle = isFocused
-    ? { outline: "2px solid #38bdf8", outlineOffset: "-2px" }
+    ? { outline: "2px solid var(--color-brand)", outlineOffset: "-2px" }
     : {};
 
   return (
@@ -634,11 +634,11 @@ const MobileStepCard: React.FC<{
       ? "bg-red-500/5"
       : "";
   const accentColor = isFocused
-    ? "#38bdf8"
+    ? "var(--color-brand)"
     : step.status === "pass"
-    ? "#22c55e"
+    ? "var(--color-pass)"
     : step.status === "fail"
-    ? "#ef4444"
+    ? "var(--color-fail)"
     : "#374151";
 
   return (

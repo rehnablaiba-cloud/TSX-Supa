@@ -781,9 +781,9 @@ const TestReport: React.FC<Props> = ({ module_test_id, onBack }) => {
                 style={{
                   color:
                     stats.passRate === 100
-                      ? "#22c55e"
+                      ? "var(--color-pass)"
                       : stats.failPct === 100
-                      ? "#ef4444"
+                      ? "var(--color-fail)"
                       : undefined,
                 }}
               >
@@ -885,7 +885,7 @@ const TestReport: React.FC<Props> = ({ module_test_id, onBack }) => {
                             className="h-full rounded-full"
                             style={{
                               width: `${stats.passRate}%`,
-                              backgroundColor: "#22c55e",
+                              backgroundColor: "var(--color-pass)",
                             }}
                           />
                         </div>
@@ -1056,7 +1056,7 @@ const TestReport: React.FC<Props> = ({ module_test_id, onBack }) => {
                                 className="h-full rounded-full"
                                 style={{
                                   width: `${rate}%`,
-                                  backgroundColor: "#22c55e",
+                                  backgroundColor: "var(--color-pass)",
                                 }}
                               />
                             </div>

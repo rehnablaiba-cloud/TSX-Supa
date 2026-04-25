@@ -374,12 +374,12 @@ const Dashboard: React.FC<Props> = ({ onNavigate }) => {
                   {
                     label: "Pass",
                     value: globalStats[1].value,
-                    color: "#22c55e",
+                    color: "var(--color-pass)",
                   },
                   {
                     label: "Fail",
                     value: globalStats[2].value,
-                    color: "#ef4444",
+                    color: "var(--color-fail)",
                   },
                   {
                     label: "Pending",
@@ -458,9 +458,9 @@ const Dashboard: React.FC<Props> = ({ onNavigate }) => {
               total === 0
                 ? "var(--text-muted)"
                 : passRate === 100
-                ? "#22c55e"
+                ? "var(--color-pass)"
                 : failPct === 100
-                ? "#ef4444"
+                ? "var(--color-fail)"
                 : "var(--text-primary)";
 
             const hasBoth = myLockCount > 0 && otherLockCount > 0;
@@ -513,10 +513,11 @@ const Dashboard: React.FC<Props> = ({ onNavigate }) => {
                       <span
                         className="flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full border whitespace-nowrap"
                         style={{
-                          color: "#f59e0b",
-                          borderColor: "#f59e0b88",
+                          color: "var(--color-pend)",
+                          borderColor:
+                            "color-mix(in srgb, var(--color-pend) 53%, transparent)",
                           background:
-                            "color-mix(in srgb, #f59e0b 10%, transparent)",
+                            "color-mix(in srgb, var(--color-pend) 10%, transparent)",
                         }}
                       >
                         <Lock size={9} /> {otherLockCount} Locked

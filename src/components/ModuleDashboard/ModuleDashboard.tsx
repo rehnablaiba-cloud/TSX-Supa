@@ -643,9 +643,9 @@ const ModuleDashboard: React.FC<Props> = ({
                         style={{
                           color:
                             passRate === 100
-                              ? "#22c55e"
+                              ? "var(--color-pass)"
                               : failPct === 100
-                              ? "#ef4444"
+                              ? "var(--color-fail)"
                               : undefined,
                         }}
                       >
