@@ -88,13 +88,21 @@ const LoginPage: React.FC = () => {
 
   return (
     <div className="grad-bg min-h-screen flex items-center justify-center p-4">
-      <div className="pointer-events-none fixed inset-0 shimmer opacity-30 transform-gpu" />
+      <div
+        className={`pointer-events-none fixed inset-0 shimmer transform-gpu ${
+          theme === "light" ? "opacity-50" : "opacity-30"
+        }`}
+      />
 
       <div
         ref={cardRef}
         className="glass-frost rounded-3xl p-8 w-full max-w-md shadow-2xl relative overflow-hidden"
       >
-        <div className="absolute inset-0 shimmer opacity-10 pointer-events-none transform-gpu" />
+        <div
+          className={`absolute inset-0 shimmer pointer-events-none transform-gpu ${
+            theme === "light" ? "opacity-20" : "opacity-10"
+          }`}
+        />
 
         {/* Header */}
         <div className="flex flex-col items-center mb-8">
@@ -102,11 +110,7 @@ const LoginPage: React.FC = () => {
             className="w-14 h-14 rounded-2xl flex items-center justify-center mb-3"
             style={{ backgroundColor: "var(--color-brand)" }}
           >
-            <TrainFront
-              size={28}
-              strokeWidth={2}
-              style={{ stroke: "#ffffff", fill: "none" }}
-            />
+            <TrainFront size={28} strokeWidth={2} color="#ffffff" />
           </div>
           <h1 className="text-2xl font-bold text-t-primary">TestPro</h1>
           <p className="text-t-muted text-sm mt-1">
@@ -163,10 +167,9 @@ const LoginPage: React.FC = () => {
           )}
 
           <div
-            className={`
-              overflow-hidden transition-all duration-300 ease-in-out
-              ${error ? "max-h-24 opacity-100" : "max-h-0 opacity-0"}
-            `}
+            className={`overflow-hidden transition-all duration-300 ease-in-out ${
+              error ? "max-h-24 opacity-100" : "max-h-0 opacity-0"
+            }`}
           >
             <div
               className="text-sm px-4 py-3 rounded-xl"
@@ -185,7 +188,7 @@ const LoginPage: React.FC = () => {
           <button
             type="submit"
             disabled={loading || isBlocked}
-            className="btn-primary flex items-center justify-center gap-2 mt-2 min-h-[48px] disabled:opacity-50 disabled:cursor-not-allowed"
+            className="btn-primary text-white flex items-center justify-center gap-2 mt-2 min-h-[48px] disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {loading ? (
               <>

@@ -84,11 +84,11 @@ const ExportModal: React.FC<Props> = ({
                 opt.onConfirm();
                 onClose();
               }}
-              className={`flex items-center gap-3 w-full px-4 py-3 rounded-xl text-white font-semibold text-sm transition-all ${opt.color} ${opt.hoverColor}`}
+              className={`flex items-center gap-3 w-full px-4 py-3 rounded-xl font-semibold text-sm transition-all ${opt.color} ${opt.hoverColor}`}
             >
-              <span className="text-lg">{opt.icon}</span>
+              <span className="text-base">{opt.icon}</span>
               <span>Download as {opt.label}</span>
-              <span className="ml-auto text-white/60 text-xs">↓</span>
+              <span className="ml-auto text-t-muted text-xs">↓</span>
             </button>
           ))}
         </div>
