@@ -1,8 +1,10 @@
+// src/context/ThemeContext.tsx
 import React, {
   createContext,
-  useContext,
   useCallback,
+  useContext,
   useEffect,
+  useMemo,
   useState,
 } from "react";
 import {
@@ -15,170 +17,174 @@ import {
   loadStoredTheme,
   saveStoredTheme,
   applyStoredTheme,
+  resetTheme,
   GLASS_DEFAULTS,
   tokens as defaultTokens,
   palette as defaultPalette,
 } from "../theme";
 
-// ═══════════════════════════════════════════════════════════════════════════════
-//  ThemeContext — React state layer over the unified applyStoredTheme()
-// ═══════════════════════════════════════════════════════════════════════════════
-
 interface ThemeContextValue {
-  // Current mode
   mode: AppTheme;
   setMode: (mode: AppTheme) => void;
 
-  // Aliases used by ThemeToggle, MobileNav, and other components
   theme: AppTheme;
   setTheme: (mode: AppTheme) => void;
   toggleTheme: () => void;
 
-  // Token overrides per mode (exposed for ThemeEditor)
   customTokens: Record<AppTheme, Partial<TokenMap>>;
   setTokenOverride: (mode: AppTheme, key: TokenKey, value: string) => void;
   resetTokenOverrides: () => void;
 
-  // Brand palette (exposed for ThemeEditor)
   brandPalette: Partial<Record<BrandShade, string>> | null;
-  setBrandPalette: (palette: Partial<Record<BrandShade, string>>) => void;
+  setBrandPalette: (
+    palette: Partial<Record<BrandShade, string>> | null
+  ) => void;
 
-  // Status colors
   statusColors: Record<string, string>;
   setStatusColor: (key: string, value: string) => void;
 
-  // Glass config
   glassConfig: GlassConfig;
   setGlassConfig: (config: GlassConfig) => void;
 
-  // Unified apply (for external callers / debug)
   reapplyTheme: () => void;
-
-  // Reset everything
   resetAll: () => void;
 }
 
 const ThemeContext = createContext<ThemeContextValue | undefined>(undefined);
 
-// ── Provider ─────────────────────────────────────────────────────────────────
+function normalizeGlassConfig(
+  glass?: Partial<GlassConfig> | null
+): GlassConfig {
+  return {
+    ...GLASS_DEFAULTS,
+    ...(glass ?? {}),
+  };
+}
+
+function buildDefaultStatusColors() {
+  return {
+    pass: defaultPalette.pass,
+    fail: defaultPalette.fail,
+    pend: defaultPalette.pend,
+    warn: defaultPalette.warn,
+  };
+}
+
 export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({
   children,
 }) => {
-  const [isReady, setIsReady] = useState(false);
+  const stored = useMemo(() => loadStoredTheme(), []);
 
-  const stored = loadStoredTheme();
   const [mode, setModeState] = useState<AppTheme>(stored?.mode ?? "light");
   const [customTokens, setCustomTokens] = useState<
     Record<AppTheme, Partial<TokenMap>>
   >(stored?.overrides ?? { light: {}, dark: {} });
+
   const [brandPalette, setBrandPaletteState] = useState<Partial<
     Record<BrandShade, string>
   > | null>(stored?.brandPalette ?? null);
+
   const [statusColors, setStatusColorsState] = useState<Record<string, string>>(
-    stored?.statusColors ?? {
-      pass: defaultPalette.pass,
-      fail: defaultPalette.fail,
-      pend: defaultPalette.pend,
-      warn: defaultPalette.warn,
-    }
+    stored?.statusColors ?? buildDefaultStatusColors()
   );
+
   const [glassConfig, setGlassConfigState] = useState<GlassConfig>(
-    stored?.glass ?? { ...GLASS_DEFAULTS }
+    normalizeGlassConfig(stored?.glass)
   );
 
-  // ── Apply theme on mount (prevents FOUC) ──────────────────────────────────
-  useEffect(() => {
-    applyStoredTheme();
-    setIsReady(true);
-  }, []);
+  const [isReady, setIsReady] = useState(false);
 
-  // ── Re-apply whenever core theme state changes ────────────────────────────
-  useEffect(() => {
-    if (!isReady) return;
-    const theme: StoredTheme = {
+  const currentTheme = useMemo<StoredTheme>(
+    () => ({
       mode,
-      brandPalette: brandPalette ?? undefined,
+      brandPalette:
+        brandPalette && Object.keys(brandPalette).length > 0
+          ? brandPalette
+          : undefined,
       statusColors,
       glass: glassConfig,
       overrides: customTokens,
-    };
-    saveStoredTheme(theme);
-    applyStoredTheme(theme);
-  }, [mode, brandPalette, statusColors, glassConfig, customTokens, isReady]);
+    }),
+    [mode, brandPalette, statusColors, glassConfig, customTokens]
+  );
 
-  // ── Mode ──────────────────────────────────────────────────────────────────
+  useEffect(() => {
+    if (!isReady) {
+      applyStoredTheme(currentTheme);
+      setIsReady(true);
+      return;
+    }
+
+    saveStoredTheme(currentTheme);
+    applyStoredTheme(currentTheme);
+  }, [currentTheme, isReady]);
+
   const setMode = useCallback((newMode: AppTheme) => {
     setModeState(newMode);
-    localStorage.setItem("themeMode", newMode);
   }, []);
 
   const toggleTheme = useCallback(() => {
-    setModeState((prev) => {
-      const next: AppTheme = prev === "dark" ? "light" : "dark";
-      localStorage.setItem("themeMode", next);
-      return next;
-    });
+    setModeState((prev) => (prev === "dark" ? "light" : "dark"));
   }, []);
 
-  // ── Token overrides ───────────────────────────────────────────────────────
   const setTokenOverride = useCallback(
     (targetMode: AppTheme, key: TokenKey, value: string) => {
-      setCustomTokens((prev) => ({
-        ...prev,
-        [targetMode]: { ...prev[targetMode], [key]: value },
-      }));
+      setCustomTokens((prev) => {
+        const nextModeTokens = { ...(prev[targetMode] ?? {}) };
+        const defaultValue = defaultTokens[targetMode][key];
+
+        if (value === defaultValue) {
+          delete nextModeTokens[key];
+        } else {
+          nextModeTokens[key] = value;
+        }
+
+        return {
+          ...prev,
+          [targetMode]: nextModeTokens,
+        };
+      });
     },
     []
   );
 
   const resetTokenOverrides = useCallback(() => {
     setCustomTokens({ light: {}, dark: {} });
-    localStorage.removeItem("themeEditorOverrides");
-    applyStoredTheme({ mode, glass: glassConfig });
-  }, [mode, glassConfig]);
+  }, []);
 
-  // ── Brand palette ─────────────────────────────────────────────────────────
   const setBrandPalette = useCallback(
-    (palette: Partial<Record<BrandShade, string>>) => {
-      setBrandPaletteState(palette);
+    (palette: Partial<Record<BrandShade, string>> | null) => {
+      if (!palette || Object.keys(palette).length === 0) {
+        setBrandPaletteState(null);
+      } else {
+        setBrandPaletteState(palette);
+      }
     },
     []
   );
 
-  // ── Status colors ─────────────────────────────────────────────────────────
   const setStatusColor = useCallback((key: string, value: string) => {
-    setStatusColorsState((prev) => ({ ...prev, [key]: value }));
+    setStatusColorsState((prev) => ({
+      ...prev,
+      [key]: value,
+    }));
   }, []);
 
-  // ── Glass ─────────────────────────────────────────────────────────────────
   const setGlassConfig = useCallback((config: GlassConfig) => {
-    setGlassConfigState(config);
+    setGlassConfigState(normalizeGlassConfig(config));
   }, []);
 
-  // ── Re-apply (for debug / external sync) ──────────────────────────────────
   const reapplyTheme = useCallback(() => {
-    applyStoredTheme();
-  }, []);
+    applyStoredTheme(currentTheme);
+  }, [currentTheme]);
 
-  // ── Reset all ─────────────────────────────────────────────────────────────
   const resetAll = useCallback(() => {
     setModeState("light");
     setCustomTokens({ light: {}, dark: {} });
     setBrandPaletteState(null);
-    setStatusColorsState({
-      pass: defaultPalette.pass,
-      fail: defaultPalette.fail,
-      pend: defaultPalette.pend,
-      warn: defaultPalette.warn,
-    });
+    setStatusColorsState(buildDefaultStatusColors());
     setGlassConfigState({ ...GLASS_DEFAULTS });
-    localStorage.removeItem("themeMode");
-    localStorage.removeItem("themeEditorOverrides");
-    localStorage.removeItem("themeEditorBrandPalette");
-    localStorage.removeItem("themeEditorStatusColors");
-    localStorage.removeItem("themeEditorGlass");
-    localStorage.removeItem("themeEditorBaseColor");
-    applyStoredTheme({ mode: "light" });
+    resetTheme();
   }, []);
 
   return (
@@ -186,7 +192,6 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({
       value={{
         mode,
         setMode,
-        // Aliases for components using the old API
         theme: mode,
         setTheme: setMode,
         toggleTheme,
@@ -210,6 +215,8 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({
 
 export const useTheme = () => {
   const ctx = useContext(ThemeContext);
-  if (!ctx) throw new Error("useTheme must be used within ThemeProvider");
+  if (!ctx) {
+    throw new Error("useTheme must be used within ThemeProvider");
+  }
   return ctx;
 };

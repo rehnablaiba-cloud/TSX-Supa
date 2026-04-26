@@ -11,32 +11,36 @@
       href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
       rel="stylesheet"
     />
-    <!--
-      ═══════════════════════════════════════════════════════════════
-      Anti-FOUC: Apply saved theme BEFORE React renders.
-      This prevents a dark flash when the user prefers light mode.
-      ═══════════════════════════════════════════════════════════════
-    -->
+
     <script>
       (function () {
-        const saved = localStorage.getItem("theme");
+        const root = document.documentElement;
+
+        const savedMode =
+          localStorage.getItem("themeMode") || localStorage.getItem("theme");
         const prefersDark = window.matchMedia(
           "(prefers-color-scheme: dark)"
         ).matches;
-        const mode = saved || (prefersDark ? "dark" : "light");
+        const mode =
+          savedMode === "dark"
+            ? "dark"
+            : savedMode === "light"
+            ? "light"
+            : prefersDark
+            ? "dark"
+            : "light";
 
-        // Light theme tokens (must match src/theme.ts exactly)
         const light = {
           "--bg-base": "#f8fafc",
           "--bg-surface": "#ffffff",
           "--bg-card": "#f1f5f9",
           "--bg-nav": "rgba(255,255,255,0.85)",
-          "--border-color": "rgba(0,0,0,0.08)",
+          "--border-color": "rgba(0,0,0,0.06)",
           "--text-primary": "#0f172a",
           "--text-secondary": "#334155",
           "--text-muted": "#64748b",
           "--input-bg": "#ffffff",
-          "--input-border": "rgba(0,0,0,0.12)",
+          "--input-border": "rgba(0,0,0,0.10)",
           "--input-text": "#0f172a",
           "--glass-bg": "rgba(0,0,0,0.03)",
           "--glass-border": "rgba(0,0,0,0.06)",
@@ -49,12 +53,13 @@
           "--color-pass": "#22c55e",
           "--color-fail": "#ef4444",
           "--color-pend": "#f59e0b",
+          "--color-warn": "#f59e0b",
           "--color-my-lock": "#22d3ee",
           "--color-other-lock": "#f59e0b",
           "--neon-cyan": "34, 211, 238",
           "--neon-amber": "245, 158, 11",
         };
-        // Dark theme tokens
+
         const dark = {
           "--bg-base": "#030712",
           "--bg-surface": "#111827",
@@ -78,29 +83,193 @@
           "--color-pass": "#22c55e",
           "--color-fail": "#ef4444",
           "--color-pend": "#f59e0b",
+          "--color-warn": "#f59e0b",
           "--color-my-lock": "#22d3ee",
           "--color-other-lock": "#f59e0b",
           "--neon-cyan": "34, 211, 238",
           "--neon-amber": "245, 158, 11",
         };
 
+        const brandDefaults = {
+          "--brand-50": "#eff6ff",
+          "--brand-100": "#dbeafe",
+          "--brand-200": "#bfdbfe",
+          "--brand-300": "#93c5fd",
+          "--brand-400": "#60a5fa",
+          "--brand-500": "#3b82f6",
+          "--brand-600": "#2563eb",
+          "--brand-700": "#1d4ed8",
+          "--brand-800": "#1e40af",
+          "--brand-900": "#1e3a8a",
+        };
+
+        const glassDefaults = {
+          "--glass-blur": "28px",
+          "--glass-saturation": "180%",
+          "--glass-brightness": "1.06",
+          "--glass-bg-opacity": "40%",
+          "--glass-border-opacity": "55%",
+          "--glass-nav-bg-opacity": "75%",
+          "--glass-popup-bg-opacity": "72%",
+          "--glass-card-bg-opacity": "86%",
+          "--glass-card-border-opacity": "80%",
+          "--backdrop-dim-opacity": "55%",
+        };
+
         const tokens = mode === "dark" ? dark : light;
-        const root = document.documentElement;
-        for (const [k, v] of Object.entries(tokens)) {
-          root.style.setProperty(k, v);
-        }
+
+        const applyObject = (obj) => {
+          for (const [k, v] of Object.entries(obj)) {
+            root.style.setProperty(k, v);
+          }
+        };
+
+        applyObject(tokens);
+        applyObject(brandDefaults);
+        applyObject(glassDefaults);
+
+        try {
+          const storedBrand = JSON.parse(
+            localStorage.getItem("themeEditorBrandPalette") || "null"
+          );
+          if (storedBrand && typeof storedBrand === "object") {
+            for (const [shade, value] of Object.entries(storedBrand)) {
+              if (value) root.style.setProperty(`--brand-${shade}`, value);
+            }
+          }
+        } catch {}
+
+        try {
+          const storedStatus = JSON.parse(
+            localStorage.getItem("themeEditorStatusColors") || "null"
+          );
+          if (storedStatus && typeof storedStatus === "object") {
+            for (const [key, value] of Object.entries(storedStatus)) {
+              if (value) root.style.setProperty(`--color-${key}`, value);
+            }
+          }
+        } catch {}
+
+        try {
+          const storedGlass = JSON.parse(
+            localStorage.getItem("themeEditorGlass") || "null"
+          );
+          if (storedGlass && typeof storedGlass === "object") {
+            if (storedGlass.blur != null) {
+              root.style.setProperty("--glass-blur", `${storedGlass.blur}px`);
+            }
+            if (storedGlass.saturation != null) {
+              root.style.setProperty(
+                "--glass-saturation",
+                `${storedGlass.saturation}%`
+              );
+            }
+            if (storedGlass.brightness != null) {
+              root.style.setProperty(
+                "--glass-brightness",
+                `${(storedGlass.brightness / 100).toFixed(2)}`
+              );
+            }
+            if (storedGlass.bgOpacity != null) {
+              root.style.setProperty(
+                "--glass-bg-opacity",
+                `${storedGlass.bgOpacity}%`
+              );
+            }
+            if (storedGlass.borderOpacity != null) {
+              root.style.setProperty(
+                "--glass-border-opacity",
+                `${storedGlass.borderOpacity}%`
+              );
+            }
+            if (storedGlass.navBgOpacity != null) {
+              root.style.setProperty(
+                "--glass-nav-bg-opacity",
+                `${storedGlass.navBgOpacity}%`
+              );
+            }
+            if (storedGlass.popupBgOpacity != null) {
+              root.style.setProperty(
+                "--glass-popup-bg-opacity",
+                `${storedGlass.popupBgOpacity}%`
+              );
+            }
+            if (storedGlass.cardBgOpacity != null) {
+              root.style.setProperty(
+                "--glass-card-bg-opacity",
+                `${storedGlass.cardBgOpacity}%`
+              );
+            }
+            if (storedGlass.cardBorderOpacity != null) {
+              root.style.setProperty(
+                "--glass-card-border-opacity",
+                `${storedGlass.cardBorderOpacity}%`
+              );
+            }
+            if (storedGlass.backdropDimOpacity != null) {
+              root.style.setProperty(
+                "--backdrop-dim-opacity",
+                `${storedGlass.backdropDimOpacity}%`
+              );
+            }
+          }
+        } catch {}
+
+        try {
+          const overrides = JSON.parse(
+            localStorage.getItem("themeEditorOverrides") || "null"
+          );
+          const activeOverrides = overrides && overrides[mode];
+          if (activeOverrides && typeof activeOverrides === "object") {
+            const cssVarMap = {
+              bgBase: "--bg-base",
+              bgSurface: "--bg-surface",
+              bgCard: "--bg-card",
+              bgNav: "--bg-nav",
+              borderColor: "--border-color",
+              textPrimary: "--text-primary",
+              textSecondary: "--text-secondary",
+              textMuted: "--text-muted",
+              inputBg: "--input-bg",
+              inputBorder: "--input-border",
+              inputText: "--input-text",
+              glassBg: "--glass-bg",
+              glassBorder: "--glass-border",
+              gradFrom: "--grad-from",
+              gradVia: "--grad-via",
+              gradTo: "--grad-to",
+              colorBrand: "--color-brand",
+              colorBrandHover: "--color-brand-hover",
+              colorBrandBg: "--color-brand-bg",
+              colorPass: "--color-pass",
+              colorFail: "--color-fail",
+              colorPend: "--color-pend",
+              colorWarn: "--color-warn",
+            };
+
+            for (const [key, value] of Object.entries(activeOverrides)) {
+              const cssVar = cssVarMap[key];
+              if (cssVar && value) root.style.setProperty(cssVar, value);
+            }
+          }
+        } catch {}
+
+        root.classList.remove("light", "dark");
+        root.classList.add(mode);
         root.setAttribute("data-theme", mode);
 
-        // Update theme-color meta for mobile browsers
         const meta = document.getElementById("theme-color-meta");
-        if (meta) meta.content = tokens["--bg-base"];
+        if (meta) {
+          meta.setAttribute("content", tokens["--bg-base"]);
+        }
       })();
     </script>
+
     <style>
-      /* Prevent FOUC: hide body until theme is applied */
       html {
         visibility: visible;
       }
+
       body {
         font-family: "Inter", system-ui, sans-serif;
         margin: 0;
@@ -108,6 +277,7 @@
         color: var(--text-primary);
       }
     </style>
+
     <base target="_blank" />
   </head>
   <body>
