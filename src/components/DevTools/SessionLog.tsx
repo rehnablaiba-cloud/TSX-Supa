@@ -296,6 +296,7 @@ const SessionLog: React.FC = () => {
   const pillDot = hasError
     ? "bg-[var(--color-fail)] animate-pulse"
     : hasWarn
+  : hasWarn
     ? "bg-[var(--color-warn)]"
     : "bg-[var(--color-pass)]";
 
