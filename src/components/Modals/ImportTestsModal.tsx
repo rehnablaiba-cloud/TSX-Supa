@@ -173,8 +173,11 @@ const ImportTestsModal: React.FC<Props> = ({ onClose, onBack }) => {
     // FIX: ModalShell.title is typed as string — passing JSX caused TS2322.
     // Use the icon prop for the FlaskConical icon instead.
     <ModalShell
-      title="Tests"
-      icon={<FlaskConical size={16} />}
+      title={
+        <span className="flex items-center gap-1.5">
+          <FlaskConical size={16} /> Tests
+        </span>
+      }
       onClose={onClose}
     >
       <div className="flex items-center justify-between -mt-1 mb-3">
