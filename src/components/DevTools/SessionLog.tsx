@@ -108,7 +108,7 @@ const EntryRow: React.FC<{
             ? "cursor-pointer hover:bg-black/5 dark:hover:bg-white/5"
             : ""
         }
-        ${entry.level === "error" ? "bg-[var(--color-fail)]/5" : ""`}
+        ${entry.level === "error" ? "bg-[var(--color-fail)]/5" : ""}
       style={{ borderColor: styles.border }}
       onClick={() => entry.detail && setOpen((p) => !p)}
     >
@@ -296,7 +296,6 @@ const SessionLog: React.FC = () => {
   const pillDot = hasError
     ? "bg-[var(--color-fail)] animate-pulse"
     : hasWarn
-  : hasWarn
     ? "bg-[var(--color-warn)]"
     : "bg-[var(--color-pass)]";
 
