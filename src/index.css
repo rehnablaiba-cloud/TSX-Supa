@@ -42,9 +42,6 @@
   The default border color has changed to `currentcolor` in Tailwind CSS v4,
   so we've added these compatibility styles to make sure everything still
   looks the same as it did with Tailwind CSS v3.
-
-  If we ever want to remove these styles, we need to add an explicit border
-  color utility to any element that depends on these defaults.
 */
 @layer base {
   *,
@@ -58,16 +55,23 @@
 
 @utility glass {
   /* ── Standard glass card ── */
-  background: color-mix(in srgb, var(--bg-surface) 86%, transparent);
-  border: 1px solid color-mix(in srgb, var(--border-color) 80%, transparent);
+  background: color-mix(
+    in srgb,
+    var(--bg-surface) var(--glass-card-bg-opacity),
+    transparent
+  );
+  border: 1px solid
+    color-mix(
+      in srgb,
+      var(--border-color) var(--glass-card-border-opacity),
+      transparent
+    );
   @apply backdrop-blur-md rounded-2xl;
   transition: background-color 0.3s ease, border-color 0.3s ease;
-
-  /* ── Neon pulse keyframes (theme-adaptive via CSS vars) ── */
 }
 
 @utility glass-frost {
-  /* ── Heavy frost (modals, floating nav, overlays) ── */
+  /* ── Heavy frost (modals, overlays that sit ON content) ── */
   background: color-mix(
     in srgb,
     var(--bg-surface) var(--glass-bg-opacity),
@@ -88,8 +92,62 @@
     saturate(var(--glass-saturation)) brightness(var(--glass-brightness));
   transition: background-color 0.3s ease, border-color 0.3s ease,
     box-shadow 0.3s ease;
+}
 
-  /* ── Neon pulse keyframes (theme-adaptive via CSS vars) ── */
+@utility glass-nav {
+  /*
+   * ── Bottom navbar glass ──
+   * Higher opacity than glass-frost because it sits on bare dark background,
+   * not over content cards. Controlled by --glass-nav-bg-opacity.
+   */
+  background: color-mix(
+    in srgb,
+    var(--bg-surface) var(--glass-nav-bg-opacity),
+    transparent
+  );
+  border: 1px solid
+    color-mix(
+      in srgb,
+      var(--border-color) var(--glass-border-opacity),
+      transparent
+    );
+  @apply rounded-2xl;
+  box-shadow: 0 8px 32px color-mix(in srgb, var(--bg-base) 40%, transparent),
+    inset 0 1px 0 color-mix(in srgb, var(--text-primary) 6%, transparent);
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturation))
+    brightness(var(--glass-brightness));
+  -webkit-backdrop-filter: blur(var(--glass-blur))
+    saturate(var(--glass-saturation)) brightness(var(--glass-brightness));
+  transition: background-color 0.3s ease, border-color 0.3s ease,
+    box-shadow 0.3s ease;
+}
+
+@utility glass-popup {
+  /*
+   * ── More popup glass ──
+   * Same rationale as glass-nav — floats on bare background.
+   * Controlled by --glass-popup-bg-opacity.
+   */
+  background: color-mix(
+    in srgb,
+    var(--bg-surface) var(--glass-popup-bg-opacity),
+    transparent
+  );
+  border: 1px solid
+    color-mix(
+      in srgb,
+      var(--border-color) var(--glass-border-opacity),
+      transparent
+    );
+  @apply rounded-2xl;
+  box-shadow: 0 8px 32px color-mix(in srgb, var(--bg-base) 40%, transparent),
+    inset 0 1px 0 color-mix(in srgb, var(--text-primary) 6%, transparent);
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturation))
+    brightness(var(--glass-brightness));
+  -webkit-backdrop-filter: blur(var(--glass-blur))
+    saturate(var(--glass-saturation)) brightness(var(--glass-brightness));
+  transition: background-color 0.3s ease, border-color 0.3s ease,
+    box-shadow 0.3s ease;
 }
 
 @utility glass-liquid {
@@ -114,28 +172,26 @@
     saturate(var(--glass-saturation)) brightness(var(--glass-brightness));
   transition: background-color 0.3s ease, border-color 0.3s ease,
     box-shadow 0.3s ease;
-
-  /* ── Neon pulse keyframes (theme-adaptive via CSS vars) ── */
 }
 
 @utility card {
   /* ── Card (uses glass internally) ── */
   @apply glass p-5;
-
-  /* ── Neon pulse keyframes (theme-adaptive via CSS vars) ── */
 }
 
 @utility backdrop-dim {
   /* ── Modal backdrop (theme-aware dimming, not hardcoded black) ── */
-  background: color-mix(in srgb, var(--bg-base) 55%, transparent);
+  background: color-mix(
+    in srgb,
+    var(--bg-base) var(--backdrop-dim-opacity),
+    transparent
+  );
   @apply backdrop-blur-xs;
   transition: background-color 0.3s ease;
-
-  /* ── Neon pulse keyframes (theme-adaptive via CSS vars) ── */
 }
 
 @utility btn-primary {
-  /* ── Primary button (auto-inverse text via color-mix) ── */
+  /* ── Primary button ── */
   @apply font-semibold px-4 py-2 rounded-xl transition-all duration-200
            disabled:opacity-50 disabled:cursor-not-allowed;
   background-color: var(--color-brand);
@@ -143,8 +199,6 @@
   &:hover:not(:disabled) {
     background-color: var(--color-brand-hover);
   }
-
-  /* ── Neon pulse keyframes (theme-adaptive via CSS vars) ── */
 }
 
 @utility btn-ghost {
@@ -155,8 +209,6 @@
   &:hover {
     background-color: var(--bg-card);
   }
-
-  /* ── Neon pulse keyframes (theme-adaptive via CSS vars) ── */
 }
 
 @utility input {
@@ -173,18 +225,13 @@
   &:focus {
     border-color: var(--color-brand);
   }
-
-  /* ── Neon pulse keyframes (theme-adaptive via CSS vars) ── */
 }
 
 @utility badge-pass {
-  /* ── Status badges ── */
   @apply inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold;
   background: color-mix(in srgb, var(--color-pass) 12%, transparent);
   color: var(--color-pass);
   border: 1px solid color-mix(in srgb, var(--color-pass) 25%, transparent);
-
-  /* ── Neon pulse keyframes (theme-adaptive via CSS vars) ── */
 }
 
 @utility badge-fail {
@@ -192,8 +239,6 @@
   background: color-mix(in srgb, var(--color-fail) 12%, transparent);
   color: var(--color-fail);
   border: 1px solid color-mix(in srgb, var(--color-fail) 25%, transparent);
-
-  /* ── Neon pulse keyframes (theme-adaptive via CSS vars) ── */
 }
 
 @utility badge-pend {
@@ -201,8 +246,6 @@
   background: color-mix(in srgb, var(--color-pend) 12%, transparent);
   color: var(--color-pend);
   border: 1px solid color-mix(in srgb, var(--color-pend) 25%, transparent);
-
-  /* ── Neon pulse keyframes (theme-adaptive via CSS vars) ── */
 }
 
 @utility badge-admin {
@@ -210,8 +253,6 @@
   background: color-mix(in srgb, var(--color-brand) 15%, transparent);
   color: var(--color-brand);
   border: 1px solid color-mix(in srgb, var(--color-brand) 30%, transparent);
-
-  /* ── Neon pulse keyframes (theme-adaptive via CSS vars) ── */
 }
 
 @utility badge-tester {
@@ -219,18 +260,13 @@
   background: var(--bg-card);
   color: var(--text-muted);
   border: 1px solid var(--border-color);
-
-  /* ── Neon pulse keyframes (theme-adaptive via CSS vars) ── */
 }
 
 @utility badge-log-auth {
-  /* ── Log category badges (theme-aware, no hardcoded colors) ── */
   @apply inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-medium;
   background: var(--log-auth-bg);
   color: var(--log-auth-text);
   border: 1px solid color-mix(in srgb, var(--log-auth-text) 20%, transparent);
-
-  /* ── Neon pulse keyframes (theme-adaptive via CSS vars) ── */
 }
 
 @utility badge-log-info {
@@ -238,8 +274,6 @@
   background: color-mix(in srgb, var(--log-level-info) 12%, transparent);
   color: var(--log-level-info);
   border: 1px solid color-mix(in srgb, var(--log-level-info) 25%, transparent);
-
-  /* ── Neon pulse keyframes (theme-adaptive via CSS vars) ── */
 }
 
 @utility badge-log-warn {
@@ -247,8 +281,6 @@
   background: color-mix(in srgb, var(--log-level-warn) 12%, transparent);
   color: var(--log-level-warn);
   border: 1px solid color-mix(in srgb, var(--log-level-warn) 25%, transparent);
-
-  /* ── Neon pulse keyframes (theme-adaptive via CSS vars) ── */
 }
 
 @utility badge-log-error {
@@ -256,34 +288,24 @@
   background: color-mix(in srgb, var(--log-level-error) 12%, transparent);
   color: var(--log-level-error);
   border: 1px solid color-mix(in srgb, var(--log-level-error) 25%, transparent);
-
-  /* ── Neon pulse keyframes (theme-adaptive via CSS vars) ── */
 }
 
 @utility dot-log-info {
-  /* ── Log level dots ── */
   @apply w-2 h-2 rounded-full;
   background: var(--log-level-info);
-
-  /* ── Neon pulse keyframes (theme-adaptive via CSS vars) ── */
 }
 
 @utility dot-log-warn {
   @apply w-2 h-2 rounded-full;
   background: var(--log-level-warn);
-
-  /* ── Neon pulse keyframes (theme-adaptive via CSS vars) ── */
 }
 
 @utility dot-log-error {
   @apply w-2 h-2 rounded-full;
   background: var(--log-level-error);
-
-  /* ── Neon pulse keyframes (theme-adaptive via CSS vars) ── */
 }
 
 @utility grad-bg {
-  /* ── Gradient background ── */
   background: linear-gradient(
     135deg,
     var(--grad-from) 0%,
@@ -291,12 +313,9 @@
     var(--grad-to) 100%
   );
   transition: background 0.5s ease;
-
-  /* ── Neon pulse keyframes (theme-adaptive via CSS vars) ── */
 }
 
 @utility shimmer {
-  /* ── Shimmer overlay ── */
   background: linear-gradient(
     105deg,
     transparent 40%,
@@ -307,17 +326,15 @@
   );
   background-size: 200% 200%;
   animation: shimmerMove 3s ease-in-out infinite;
-
-  /* ── Neon pulse keyframes (theme-adaptive via CSS vars) ── */
 }
 
 @layer utilities {
   /*
- * ═══════════════════════════════════════════════════════════════════════
- *  THEME TOKENS  —  Set at runtime by applyStoredTheme() in src/theme.ts
- *  :root holds NEUTRAL defaults only. Real values injected via JS.
- * ═══════════════════════════════════════════════════════════════════════
- */
+   * ═══════════════════════════════════════════════════════════════════════
+   *  THEME TOKENS  —  Set at runtime by applyStoredTheme() in src/theme.ts
+   *  :root holds NEUTRAL defaults only. Real values injected via JS.
+   * ═══════════════════════════════════════════════════════════════════════
+   */
   :root {
     /* Neutral fallbacks — overridden immediately by applyStoredTheme() */
     --bg-base: #f8fafc;
@@ -371,22 +388,41 @@
     --log-level-error: var(--color-fail);
 
     /*
-   * ── Glass effect vars ──────────────────────────────────────────────
-   *  Written at runtime by applyGlassCssVars() in src/theme.ts.
-   *  Fallbacks here match GLASS_DEFAULTS so the UI is correct before
-   *  any user customisation is loaded.
-   */
+     * ── Glass effect vars ────────────────────────────────────────────────
+     *  Written at runtime by applyGlassCssVars() in src/theme.ts.
+     *  Fallbacks here match GLASS_DEFAULTS so the UI is correct before
+     *  any user customisation is loaded.
+     *
+     *  Surface guide:
+     *    glass-frost     → modals/overlays that sit ON content  → --glass-bg-opacity (40%)
+     *    glass-nav       → bottom navbar on bare dark bg         → --glass-nav-bg-opacity (75%)
+     *    glass-popup     → more popup on bare dark bg            → --glass-popup-bg-opacity (72%)
+     *    glass (card)    → standard cards                        → --glass-card-bg-opacity (86%)
+     *    backdrop-dim    → modal scrim                           → --backdrop-dim-opacity (55%)
+     */
     --glass-blur: 28px;
     --glass-saturation: 180%;
     --glass-brightness: 1.06;
+
+    /* glass-frost (overlays on content) */
     --glass-bg-opacity: 40%;
     --glass-border-opacity: 55%;
-    --glass-nav-bg-opacity: 75%;    /* bottom navbar */
---glass-popup-bg-opacity: 72%;  /* more popup */
-  }
 
-  /* ── Base ── */
+    /* glass-nav (navbar on bare background) */
+    --glass-nav-bg-opacity: 75%;
+
+    /* glass-popup (more popup on bare background) */
+    --glass-popup-bg-opacity: 72%;
+
+    /* glass card utility */
+    --glass-card-bg-opacity: 86%;
+    --glass-card-border-opacity: 80%;
+
+    /* backdrop-dim scrim */
+    --backdrop-dim-opacity: 55%;
+  }
 }
+
 @layer base {
   * {
     box-sizing: border-box;
@@ -422,9 +458,7 @@
 }
 
 /* ═══════════════════════════════════════════════════════════════════
-   GLASS / FROST SYSTEM  —  theme-aware, no hardcoded colors.
-   Backdrop values are driven by --glass-* CSS vars so the
-   ThemeEditorPanel Glass tab has live effect on every glass surface.
+   ANIMATIONS
    ═══════════════════════════════════════════════════════════════════ */
 
 @layer utilities {
