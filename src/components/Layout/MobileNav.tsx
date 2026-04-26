@@ -488,14 +488,7 @@ const MobileNav: React.FC<Props> = ({ activePage, onNavigate }) => {
       {activeModal === "steps-manual" && (
         <ImportStepsManualModal onClose={close} onBack={close} />
       )}
-      {activeModal === "theme" && (
-        <div className="fixed inset-0 z-[70] md:hidden">
-          <div className="absolute inset-0 backdrop-dim" onClick={close} />
-          <div className="absolute inset-x-0 bottom-0 max-h-[90vh] overflow-y-auto glass-frost">
-            <ThemeEditor onClose={close} />
-          </div>
-        </div>
-      )}
+      {activeModal === "theme" && <ThemeEditor onClose={close} />}
     </>
   );
 };
