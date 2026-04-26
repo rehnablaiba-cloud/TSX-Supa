@@ -1,7 +1,7 @@
 // src/components/Layout/MobileNav.tsx
 // iOS 26 Liquid Glass design + GSAP animations
 
-import React, { useRef, useEffect, useState, useMemo } from "react";
+import React, { useLayoutEffect, useRef, useEffect, useState, useMemo } from "react";
 import { useAuth } from "../../context/AuthContext";
 import { useTheme } from "../../context/ThemeContext";
 import {
@@ -128,7 +128,7 @@ const MobileNav: React.FC<Props> = ({ activePage, onNavigate }) => {
             ease: "back.out(1.4)",
           }
         );
-        const items = moreRef.current.querySelectorAll(".more-item");
+        const items = moreRef.current!.querySelectorAll(".more-item");
         gsap.fromTo(
           items,
           { opacity: 0, scale: 0.85 },

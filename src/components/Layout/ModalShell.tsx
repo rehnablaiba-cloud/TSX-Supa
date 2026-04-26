@@ -1,5 +1,5 @@
 // src/components/Layout/ModalShell.tsx
-import React, { useRef, useEffect } from "react";
+import React, { useRef, useLayoutEffect } from "react";
 import { X } from "lucide-react";
 import gsap from "gsap";
 

@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from "react";
+import React, { useLayoutEffect, useRef } from "react";
 import gsap from "gsap";
 
 interface Segment {
@@ -37,15 +37,9 @@ const DonutChart: React.FC<Props> = ({
     const ctx = gsap.context(() => {
       refs.current.forEach((el, i) => {
         if (!el) return;
-        gsap.fromTo(
-          el,
+        gsap.fromTo(el,
           { strokeDasharray: `0 ${circ}` },
-          {
-            strokeDasharray: `${arcs[i].dash} ${arcs[i].gap}`,
-            duration: 1,
-            ease: "power2.out",
-            delay: i * 0.1,
-          }
+          { strokeDasharray: `${arcs[i].dash} ${arcs[i].gap}`, duration: 1, ease: "power2.out", delay: i * 0.1 }
         );
       });
     });
