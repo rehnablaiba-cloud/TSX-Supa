@@ -108,7 +108,7 @@ const EntryRow: React.FC<{
             ? "cursor-pointer hover:bg-black/5 dark:hover:bg-white/5"
             : ""
         }
-        ${entry.level === "error" ? "bg-[var(--color-fail)]/5" : ""}
+        ${entry.level === "error" ? "bg-[var(--color-fail)]/5" : ""}`}
       style={{ borderColor: styles.border }}
       onClick={() => entry.detail && setOpen((p) => !p)}
     >
@@ -488,9 +488,7 @@ const SessionLog: React.FC = () => {
           {entries.length}
         </span>
         {errorCount > 0 && (
-          <span
-          className="text-[9px] font-bold bg-[var(--color-fail)] text-white"
-          >
+          <span className="text-[9px] font-bold bg-[var(--color-fail)] text-white">
             {errorCount} err
           </span>
         )}
