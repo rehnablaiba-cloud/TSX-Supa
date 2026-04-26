@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from "react";
+import React, { useState, useRef, useEffect, useCallback } from "react";
 import {
   Terminal,
   X,
@@ -12,6 +12,7 @@ import {
   ShieldAlert,
   Key,
   Clock,
+  GripVertical,
 } from "lucide-react";
 import {
   useSessionLog,
@@ -85,14 +86,6 @@ function useLogGlassStyles() {
       backdropFilter: "blur(20px) saturate(180%)",
       WebkitBackdropFilter: "blur(20px) saturate(180%)",
       borderColor: isDark ? "rgba(255,255,255,0.08)" : "rgba(0,0,0,0.08)",
-    },
-    pill: {
-      background: isDark
-        ? "rgba(10, 10, 16, 0.88)"
-        : "rgba(248, 250, 252, 0.88)",
-      backdropFilter: "blur(16px) saturate(180%)",
-      WebkitBackdropFilter: "blur(16px) saturate(180%)",
-      borderColor: isDark ? "rgba(255,255,255,0.10)" : "rgba(0,0,0,0.10)",
     },
     logText: isDark ? "#e2e8f0" : "#1e293b",
     mutedText: isDark ? "#64748b" : "#94a3b8",
@@ -179,6 +172,103 @@ const EntryRow: React.FC<{
   );
 };
 
+// ── Draggable position hook ─────────────────────────────────────────────
+const STORAGE_KEY = "session-log-pos";
+
+function getDefaultPos() {
+  const isMd = typeof window !== "undefined" && window.innerWidth >= 768;
+  return { right: isMd ? 24 : 16, bottom: isMd ? 24 : 96 };
+}
+
+function useDraggablePosition() {
+  const [pos, setPos] = useState<{ right: number; bottom: number }>(() => {
+    if (typeof window === "undefined") return getDefaultPos();
+    try {
+      const saved = localStorage.getItem(STORAGE_KEY);
+      if (saved) return { ...getDefaultPos(), ...JSON.parse(saved) };
+    } catch {}
+    return getDefaultPos();
+  });
+
+  const pillRef = useRef<HTMLButtonElement>(null);
+  const dragRef = useRef<{
+    active: boolean;
+    moved: boolean;
+    startX: number;
+    startY: number;
+    startRight: number;
+    startBottom: number;
+  }>({
+    active: false,
+    moved: false,
+    startX: 0,
+    startY: 0,
+    startRight: 0,
+    startBottom: 0,
+  });
+
+  const clamp = useCallback((next: { right: number; bottom: number }) => {
+    const padding = 8;
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+    const rect = pillRef.current?.getBoundingClientRect();
+    const w = rect?.width ?? 140;
+    const h = rect?.height ?? 40;
+    return {
+      right: Math.max(padding, Math.min(vw - w - padding, next.right)),
+      bottom: Math.max(padding, Math.min(vh - h - padding, next.bottom)),
+    };
+  }, []);
+
+  const onPointerDown = useCallback(
+    (e: React.PointerEvent<HTMLButtonElement>) => {
+      (e.target as HTMLElement).setPointerCapture(e.pointerId);
+      dragRef.current = {
+        active: true,
+        moved: false,
+        startX: e.clientX,
+        startY: e.clientY,
+        startRight: pos.right,
+        startBottom: pos.bottom,
+      };
+    },
+    [pos]
+  );
+
+  const onPointerMove = useCallback(
+    (e: React.PointerEvent<HTMLButtonElement>) => {
+      if (!dragRef.current.active) return;
+      const dx = e.clientX - dragRef.current.startX;
+      const dy = e.clientY - dragRef.current.startY;
+      if (Math.abs(dx) > 2 || Math.abs(dy) > 2) dragRef.current.moved = true;
+      setPos(
+        clamp({
+          right: dragRef.current.startRight - dx,
+          bottom: dragRef.current.startBottom - dy,
+        })
+      );
+    },
+    [clamp]
+  );
+
+  const onPointerUp = useCallback(() => {
+    if (!dragRef.current.active) return;
+    dragRef.current.active = false;
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(pos));
+    // Return whether it was a click or a drag
+    return !dragRef.current.moved;
+  }, [pos]);
+
+  // Keep in bounds on resize
+  useEffect(() => {
+    const handle = () => setPos((p) => clamp(p));
+    window.addEventListener("resize", handle);
+    return () => window.removeEventListener("resize", handle);
+  }, [clamp]);
+
+  return { pos, pillRef, onPointerDown, onPointerMove, onPointerUp };
+}
+
 // ── Main component ──────────────────────────────────────────────────────
 const SessionLog: React.FC = () => {
   const { user } = useAuth();
@@ -189,6 +279,10 @@ const SessionLog: React.FC = () => {
   const [autoScroll, setAutoScroll] = useState(true);
   const listRef = useRef<HTMLDivElement>(null);
   const styles = useLogGlassStyles();
+  const suppressClick = useRef(false);
+
+  const { pos, pillRef, onPointerDown, onPointerMove, onPointerUp } =
+    useDraggablePosition();
 
   const isAdmin = user?.role === "admin";
   if (!isAdmin) return null;
@@ -225,9 +319,25 @@ const SessionLog: React.FC = () => {
       listRef.current.scrollTop = listRef.current.scrollHeight;
   };
 
+  const handlePillClick = () => {
+    if (suppressClick.current) {
+      suppressClick.current = false;
+      return;
+    }
+    setOpen((p) => !p);
+  };
+
+  const handlePillPointerUp = (e: React.PointerEvent<HTMLButtonElement>) => {
+    const wasClick = onPointerUp();
+    if (wasClick) handlePillClick();
+    else suppressClick.current = true;
+  };
+
   return (
-    // Sits above mobile nav (bottom-24), lower on desktop
-    <div className="fixed bottom-24 right-4 md:bottom-6 md:right-6 z-[90] flex flex-col items-end gap-2 pointer-events-none">
+    <div
+      className="fixed z-[90] flex flex-col items-end gap-2 pointer-events-none"
+      style={{ right: pos.right, bottom: pos.bottom }}
+    >
       {/* ── Expanded panel ─────────────────────────────────────────── */}
       {open && (
         <div
@@ -356,17 +466,19 @@ const SessionLog: React.FC = () => {
         </div>
       )}
 
-      {/* ── Floating pill ──────────────────────────────────────────── */}
+      {/* ── Floating pill (glass-frost, draggable) ─────────────────── */}
       <button
-        onClick={() => setOpen((p) => !p)}
+        ref={pillRef}
+        onPointerDown={onPointerDown}
+        onPointerMove={onPointerMove}
+        onPointerUp={handlePillPointerUp}
         className="pointer-events-auto flex items-center gap-2 px-3 py-2
-          rounded-full shadow-xl transition-all hover:scale-105 active:scale-95"
-        style={{
-          ...styles.pill,
-          border: `1px solid ${styles.pill.borderColor}`,
-        }}
-        title="Session Log"
+          shadow-xl transition-transform hover:scale-105 active:scale-95
+          glass-frost !rounded-full cursor-grab active:cursor-grabbing select-none"
+        style={{ touchAction: "none" }}
+        title="Drag to move • Click to open Session Log"
       >
+        <GripVertical size={12} className="opacity-40 -ml-1" />
         <span className={`w-2 h-2 rounded-full shrink-0 ${pillDot}`} />
         <Terminal size={13} style={{ color: styles.mutedText }} />
         <span

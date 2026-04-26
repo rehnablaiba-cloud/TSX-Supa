@@ -242,7 +242,16 @@ const Dashboard: React.FC<Props> = ({ onNavigate }) => {
   if (error)
     return (
       <div className="p-6">
-        <div className="bg-red-500/10 border border-red-500/30 rounded-xl p-4 text-red-500 text-sm">
+        <div
+          className="rounded-xl p-4 text-sm"
+          style={{
+            background:
+              "color-mix(in srgb, var(--color-fail) 10%, transparent)",
+            border:
+              "1px solid color-mix(in srgb, var(--color-fail) 30%, transparent)",
+            color: "var(--color-fail)",
+          }}
+        >
           Failed to load modules: {error}
         </div>
       </div>
@@ -260,7 +269,7 @@ const Dashboard: React.FC<Props> = ({ onNavigate }) => {
 
   return (
     <div className="p-6 flex flex-col gap-6 pb-24 md:pb-6">
-      {/* ── Export Modal — matches TestExecution design ────────────────────── */}
+      {/* ── Export Modal — uniform theme-aware buttons ─────────────────────── */}
       <ExportModal
         isOpen={showExportModal}
         onClose={() => setShowExportModal(false)}
@@ -271,22 +280,28 @@ const Dashboard: React.FC<Props> = ({ onNavigate }) => {
           {
             label: "CSV",
             icon: <FileSpreadsheet size={16} />,
-            color: "bg-[var(--color-primary)]",
-            hoverColor: "hover:bg-[var(--color-primary-hover)]",
+            color:
+              "bg-[var(--bg-card)] border border-[var(--border-color)] text-[var(--text-primary)]",
+            hoverColor:
+              "hover:bg-[var(--bg-surface)] hover:border-[var(--color-brand)]",
             onConfirm: () => exportDashboardCSV(summaries),
           },
           {
             label: "PDF",
             icon: <FileText size={16} />,
-            color: "bg-[var(--color-blue)]",
-            hoverColor: "hover:bg-[var(--color-blue-hover)]",
+            color:
+              "bg-[var(--bg-card)] border border-[var(--border-color)] text-[var(--text-primary)]",
+            hoverColor:
+              "hover:bg-[var(--bg-surface)] hover:border-[var(--color-brand)]",
             onConfirm: () => exportDashboardPDF(buildSummariesWithTests()),
           },
           {
             label: "DOCX",
             icon: <FileDown size={16} />,
-            color: "bg-[var(--color-violet)]",
-            hoverColor: "hover:bg-[var(--color-violet-hover)]",
+            color:
+              "bg-[var(--bg-card)] border border-[var(--border-color)] text-[var(--text-primary)]",
+            hoverColor:
+              "hover:bg-[var(--bg-surface)] hover:border-[var(--color-brand)]",
             onConfirm: () => exportDashboardDocx(buildSummariesWithTests()),
           },
         ]}
@@ -387,7 +402,7 @@ const Dashboard: React.FC<Props> = ({ onNavigate }) => {
                       globalStats[0].value -
                       globalStats[1].value -
                       globalStats[2].value,
-                    color: "#94a3b8",
+                    color: "var(--text-muted)",
                   },
                 ].map((stat) => (
                   <div
@@ -471,9 +486,9 @@ const Dashboard: React.FC<Props> = ({ onNavigate }) => {
               ? { animation: "dualPulse 2.6s ease-in-out infinite" }
               : myOnly
               ? {
-                  border: "1.5px solid rgba(34,211,238,0.55)",
+                  border: "1.5px solid rgba(var(--neon-cyan), 0.55)",
                   background:
-                    "linear-gradient(135deg, rgba(34,211,238,0.07) 0%, transparent 60%)",
+                    "linear-gradient(135deg, rgba(var(--neon-cyan), 0.07) 0%, transparent 60%)",
                   animation: "neonPulse 2.6s ease-in-out infinite",
                 }
               : otherOnly
@@ -504,7 +519,16 @@ const Dashboard: React.FC<Props> = ({ onNavigate }) => {
                   </div>
                   <div className="flex items-center gap-1.5 shrink-0 flex-wrap justify-end">
                     {myLockCount > 0 && (
-                      <span className="flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full border whitespace-nowrap text-cyan-300 border-cyan-400/40 bg-cyan-500/10">
+                      <span
+                        className="flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full border whitespace-nowrap"
+                        style={{
+                          color: "var(--color-my-lock)",
+                          borderColor:
+                            "color-mix(in srgb, var(--color-my-lock) 40%, transparent)",
+                          background:
+                            "color-mix(in srgb, var(--color-my-lock) 10%, transparent)",
+                        }}
+                      >
                         <Lock size={9} /> {myLockCount} My Lock
                         {myLockCount > 1 ? "s" : ""}
                       </span>
