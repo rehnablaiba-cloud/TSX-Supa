@@ -447,38 +447,38 @@
   @keyframes neonPulse {
     0%,
     100% {
-      box-shadow: 0 0 0 1.5px color-mix(in oklab, var(--neon-cyan) 45%, transparent),
-        0 0 12px 2px color-mix(in oklab, var(--neon-cyan) 18%, transparent);
+      box-shadow: 0 0 0 1.5px rgba(var(--neon-cyan), 0.45),
+        0 0 12px 2px rgba(var(--neon-cyan), 0.18);
     }
     50% {
-      box-shadow: 0 0 0 1.5px color-mix(in oklab, var(--neon-cyan) 45%, transparent),
-        0 0 22px 6px color-mix(in oklab, var(--neon-cyan) 32%, transparent);
+      box-shadow: 0 0 0 1.5px rgba(var(--neon-cyan), 0.45),
+        0 0 22px 6px rgba(var(--neon-cyan), 0.32);
     }
   }
   @keyframes amberPulse {
     0%,
     100% {
-      box-shadow: 0 0 0 1.5px color-mix(in oklab, var(--neon-amber) 45%, transparent),
-        0 0 12px 2px color-mix(in oklab, var(--neon-amber) 18%, transparent);
+      box-shadow: 0 0 0 1.5px rgba(var(--neon-amber), 0.45),
+        0 0 12px 2px rgba(var(--neon-amber), 0.18);
     }
     50% {
-      box-shadow: 0 0 0 1.5px color-mix(in oklab, var(--neon-amber) 45%, transparent),
-        0 0 22px 6px color-mix(in oklab, var(--neon-amber) 32%, transparent);
+      box-shadow: 0 0 0 1.5px rgba(var(--neon-amber), 0.45),
+        0 0 22px 6px rgba(var(--neon-amber), 0.32);
     }
   }
   @keyframes dualPulse {
     0%,
     100% {
-      box-shadow: 0 0 0 1.5px color-mix(in oklab, var(--neon-cyan) 50%, transparent),
-        0 0 0 3px color-mix(in oklab, var(--neon-amber) 35%, transparent),
-        0 0 14px 3px color-mix(in oklab, var(--neon-cyan) 20%, transparent),
-        0 0 22px 6px color-mix(in oklab, var(--neon-amber) 15%, transparent);
+      box-shadow: 0 0 0 1.5px rgba(var(--neon-cyan), 0.5),
+        0 0 0 3px rgba(var(--neon-amber), 0.35),
+        0 0 14px 3px rgba(var(--neon-cyan), 0.2),
+        0 0 22px 6px rgba(var(--neon-amber), 0.15);
     }
     50% {
-      box-shadow: 0 0 0 1.5px color-mix(in oklab, var(--neon-cyan) 60%, transparent),
-        0 0 0 3px color-mix(in oklab, var(--neon-amber) 45%, transparent),
-        0 0 22px 6px color-mix(in oklab, var(--neon-cyan) 32%, transparent),
-        0 0 32px 10px color-mix(in oklab, var(--neon-amber) 25%, transparent);
+      box-shadow: 0 0 0 1.5px rgba(var(--neon-cyan), 0.6),
+        0 0 0 3px rgba(var(--neon-amber), 0.45),
+        0 0 22px 6px rgba(var(--neon-cyan), 0.32),
+        0 0 32px 10px rgba(var(--neon-amber), 0.25);
     }
   }
 }
