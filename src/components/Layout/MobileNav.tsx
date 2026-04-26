@@ -56,20 +56,16 @@ type ActiveModal =
 const MobileNav: React.FC<Props> = ({ activePage, onNavigate }) => {
   const { user, signOut } = useAuth();
   const { theme, setTheme } = useTheme();
+
   const [activeModal, setModal] = useState<ActiveModal>(null);
   const [modules, setModules] = useState<ModuleOption[]>([]);
   const [moreOpen, setMoreOpen] = useState(false);
 
-  const navRef = useRef<HTMLDivElement>(null);
+  const navRef = useRef<HTMLElement>(null);
   const moreRef = useRef<HTMLDivElement>(null);
   const itemRefs = useRef<(HTMLButtonElement | null)[]>([]);
 
   const isAdmin = user?.role === "admin";
-
-  // ── glassNav useMemo removed ──
-  // Both nav and more popup now use glass-frost class exclusively,
-  // so all opacity/blur/saturation/brightness values are driven by
-  // --glass-* CSS vars and controlled globally via ThemeEditor.
 
   useEffect(() => {
     fetchModuleOptions()
@@ -79,6 +75,7 @@ const MobileNav: React.FC<Props> = ({ activePage, onNavigate }) => {
 
   useLayoutEffect(() => {
     if (!navRef.current) return;
+
     const ctx = gsap.context(() => {
       gsap.fromTo(
         navRef.current,
@@ -93,20 +90,22 @@ const MobileNav: React.FC<Props> = ({ activePage, onNavigate }) => {
         }
       );
     });
+
     return () => ctx.revert();
   }, []);
 
-  // Click outside to close more menu
   useEffect(() => {
     if (!moreOpen) return;
+
     const handleClick = () => setMoreOpen(false);
     document.addEventListener("click", handleClick);
+
     return () => document.removeEventListener("click", handleClick);
   }, [moreOpen]);
 
-  // Animate more popup
   useLayoutEffect(() => {
     if (!moreRef.current) return;
+
     const ctx = gsap.context(() => {
       if (moreOpen) {
         gsap.set(moreRef.current, { display: "flex" });
@@ -121,7 +120,8 @@ const MobileNav: React.FC<Props> = ({ activePage, onNavigate }) => {
             ease: "back.out(1.4)",
           }
         );
-        const items = moreRef.current!.querySelectorAll(".more-item");
+
+        const items = moreRef.current.querySelectorAll(".more-item");
         gsap.fromTo(
           items,
           { opacity: 0, scale: 0.85 },
@@ -147,6 +147,7 @@ const MobileNav: React.FC<Props> = ({ activePage, onNavigate }) => {
         });
       }
     });
+
     return () => ctx.revert();
   }, [moreOpen]);
 
@@ -161,11 +162,13 @@ const MobileNav: React.FC<Props> = ({ activePage, onNavigate }) => {
     moduleName?: string
   ) => {
     if (!el) return;
+
     gsap
       .timeline({ overwrite: true })
       .to(el, { scale: 0.82, duration: 0.1, ease: "power2.in" })
       .to(el, { scale: 1.08, duration: 0.18, ease: "back.out(2)" })
       .to(el, { scale: 1, duration: 0.14, ease: "power2.out" });
+
     onNavigate(id, moduleName);
   };
 
@@ -177,7 +180,7 @@ const MobileNav: React.FC<Props> = ({ activePage, onNavigate }) => {
     ...(isAdmin
       ? [
           { id: "users", label: "Users", icon: <Users size={19} /> },
-          { id: "audit_log", label: "Audit", icon: <ScrollText size={19} /> },
+          { id: "auditlog", label: "Audit", icon: <ScrollText size={19} /> },
         ]
       : []),
   ];
@@ -192,13 +195,6 @@ const MobileNav: React.FC<Props> = ({ activePage, onNavigate }) => {
 
   return (
     <>
-      {/*
-       * More Options Popup
-       * Uses glass-frost exclusively — no inline background/backdrop overrides.
-       * Opacity, blur, saturation, brightness all come from --glass-* CSS vars
-       * so ThemeEditor controls this surface globally.
-       */}
-      {/* More Options Popup */}
       <div
         ref={moreRef}
         className="fixed left-1/2 -translate-x-1/2 z-[70] md:hidden glass-popup p-3"
@@ -211,7 +207,6 @@ const MobileNav: React.FC<Props> = ({ activePage, onNavigate }) => {
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex flex-wrap justify-center gap-x-2 gap-y-3">
-          {/* Theme toggle */}
           <button
             onClick={() => {
               setTheme(theme === "dark" ? "light" : "dark");
@@ -408,7 +403,6 @@ const MobileNav: React.FC<Props> = ({ activePage, onNavigate }) => {
             </>
           )}
 
-          {/* Sign Out */}
           <button
             onClick={() => {
               handleSignOut();
@@ -435,12 +429,6 @@ const MobileNav: React.FC<Props> = ({ activePage, onNavigate }) => {
         </div>
       </div>
 
-      {/*
-       * Nav bar
-       * Uses glass-frost exclusively — glassNav useMemo removed.
-       * All glass values driven by --glass-* CSS vars globally.
-       */}
-      {/* Nav bar */}
       <nav
         ref={navRef}
         className="fixed bottom-2 left-1/2 -translate-x-1/2 z-[62] md:hidden glass-nav rounded-[26px] flex items-center px-2 py-2 gap-1"
@@ -471,6 +459,7 @@ const MobileNav: React.FC<Props> = ({ activePage, onNavigate }) => {
                   setMoreOpen((p) => !p);
                   return;
                 }
+
                 if (isModule && modules[0]) {
                   handleNavPress(
                     itemRefs.current[i],
@@ -479,6 +468,7 @@ const MobileNav: React.FC<Props> = ({ activePage, onNavigate }) => {
                   );
                   return;
                 }
+
                 handleNavPress(itemRefs.current[i], item.id);
               }}
               className="relative flex flex-col items-center justify-center gap-0.5 flex-1 py-2 px-1 rounded-[18px] transition-all duration-200"
@@ -486,9 +476,9 @@ const MobileNav: React.FC<Props> = ({ activePage, onNavigate }) => {
                 isActive
                   ? {
                       background:
-                        "color-mix(in srgb, var(--c-brand) 16%, transparent)",
+                        "color-mix(in srgb, var(--color-brand) 16%, transparent)",
                       boxShadow:
-                        "0 0 14px color-mix(in srgb, var(--c-brand) 22%, transparent)",
+                        "0 0 14px color-mix(in srgb, var(--color-brand) 22%, transparent)",
                     }
                   : undefined
               }
@@ -497,24 +487,30 @@ const MobileNav: React.FC<Props> = ({ activePage, onNavigate }) => {
                 <span
                   className="absolute top-1.5 left-1/2 -translate-x-1/2 w-5 h-0.5 rounded-full"
                   style={{
-                    background: "var(--c-brand)",
-                    boxShadow: "0 0 8px var(--c-brand)",
+                    background: "var(--color-brand)",
+                    boxShadow: "0 0 8px var(--color-brand)",
                   }}
                 />
               )}
+
               <span
                 className="transition-colors duration-200"
                 style={{
-                  color: highlighted ? "var(--c-brand)" : "var(--t-secondary)",
+                  color: highlighted
+                    ? "var(--color-brand)"
+                    : "var(--text-secondary)",
                   opacity: highlighted ? 1 : 0.75,
                 }}
               >
                 {item.icon}
               </span>
+
               <span
                 className="text-[9.5px] font-semibold tracking-wide transition-colors duration-200"
                 style={{
-                  color: highlighted ? "var(--c-brand)" : "var(--t-secondary)",
+                  color: highlighted
+                    ? "var(--color-brand)"
+                    : "var(--text-secondary)",
                   opacity: highlighted ? 1 : 0.65,
                 }}
               >
@@ -525,7 +521,6 @@ const MobileNav: React.FC<Props> = ({ activePage, onNavigate }) => {
         })}
       </nav>
 
-      {/* Modals */}
       {activeModal === "export" && <ExportDataModal onClose={close} />}
       {activeModal === "test-docx" && <ExportTestDocxModal onClose={close} />}
       {activeModal === "modules" && (

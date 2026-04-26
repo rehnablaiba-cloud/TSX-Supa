@@ -54,7 +54,6 @@
 }
 
 @utility glass {
-  /* ── Standard glass card ── */
   background: color-mix(
     in srgb,
     var(--bg-surface) var(--glass-card-bg-opacity),
@@ -71,7 +70,6 @@
 }
 
 @utility glass-frost {
-  /* ── Heavy frost (modals, overlays that sit ON content) ── */
   background: color-mix(
     in srgb,
     var(--bg-surface) var(--glass-bg-opacity),
@@ -84,22 +82,20 @@
       transparent
     );
   @apply rounded-2xl;
-  box-shadow: 0 8px 32px color-mix(in srgb, var(--bg-base) 40%, transparent),
+  box-shadow:
+    0 8px 32px color-mix(in srgb, var(--bg-base) 40%, transparent),
     inset 0 1px 0 color-mix(in srgb, var(--text-primary) 6%, transparent);
   backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturation))
     brightness(var(--glass-brightness));
   -webkit-backdrop-filter: blur(var(--glass-blur))
     saturate(var(--glass-saturation)) brightness(var(--glass-brightness));
-  transition: background-color 0.3s ease, border-color 0.3s ease,
+  transition:
+    background-color 0.3s ease,
+    border-color 0.3s ease,
     box-shadow 0.3s ease;
 }
 
 @utility glass-nav {
-  /*
-   * ── Bottom navbar glass ──
-   * Higher opacity than glass-frost because it sits on bare dark background,
-   * not over content cards. Controlled by --glass-nav-bg-opacity.
-   */
   background: color-mix(
     in srgb,
     var(--bg-surface) var(--glass-nav-bg-opacity),
@@ -112,22 +108,20 @@
       transparent
     );
   @apply rounded-2xl;
-  box-shadow: 0 8px 32px color-mix(in srgb, var(--bg-base) 40%, transparent),
+  box-shadow:
+    0 8px 32px color-mix(in srgb, var(--bg-base) 40%, transparent),
     inset 0 1px 0 color-mix(in srgb, var(--text-primary) 6%, transparent);
   backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturation))
     brightness(var(--glass-brightness));
   -webkit-backdrop-filter: blur(var(--glass-blur))
     saturate(var(--glass-saturation)) brightness(var(--glass-brightness));
-  transition: background-color 0.3s ease, border-color 0.3s ease,
+  transition:
+    background-color 0.3s ease,
+    border-color 0.3s ease,
     box-shadow 0.3s ease;
 }
 
 @utility glass-popup {
-  /*
-   * ── More popup glass ──
-   * Same rationale as glass-nav — floats on bare background.
-   * Controlled by --glass-popup-bg-opacity.
-   */
   background: color-mix(
     in srgb,
     var(--bg-surface) var(--glass-popup-bg-opacity),
@@ -140,18 +134,20 @@
       transparent
     );
   @apply rounded-2xl;
-  box-shadow: 0 8px 32px color-mix(in srgb, var(--bg-base) 40%, transparent),
+  box-shadow:
+    0 8px 32px color-mix(in srgb, var(--bg-base) 40%, transparent),
     inset 0 1px 0 color-mix(in srgb, var(--text-primary) 6%, transparent);
   backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturation))
     brightness(var(--glass-brightness));
   -webkit-backdrop-filter: blur(var(--glass-blur))
     saturate(var(--glass-saturation)) brightness(var(--glass-brightness));
-  transition: background-color 0.3s ease, border-color 0.3s ease,
+  transition:
+    background-color 0.3s ease,
+    border-color 0.3s ease,
     box-shadow 0.3s ease;
 }
 
 @utility glass-liquid {
-  /* ── Liquid glass (iOS-style, high saturation boost) ── */
   background: color-mix(
     in srgb,
     var(--bg-surface) var(--glass-bg-opacity),
@@ -164,23 +160,24 @@
       transparent
     );
   @apply rounded-3xl;
-  box-shadow: 0 8px 32px color-mix(in srgb, var(--bg-base) 35%, transparent),
+  box-shadow:
+    0 8px 32px color-mix(in srgb, var(--bg-base) 35%, transparent),
     inset 0 1px 0 color-mix(in srgb, var(--text-primary) 8%, transparent);
   backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturation))
     brightness(var(--glass-brightness));
   -webkit-backdrop-filter: blur(var(--glass-blur))
     saturate(var(--glass-saturation)) brightness(var(--glass-brightness));
-  transition: background-color 0.3s ease, border-color 0.3s ease,
+  transition:
+    background-color 0.3s ease,
+    border-color 0.3s ease,
     box-shadow 0.3s ease;
 }
 
 @utility card {
-  /* ── Card (uses glass internally) ── */
   @apply glass p-5;
 }
 
 @utility backdrop-dim {
-  /* ── Modal backdrop (theme-aware dimming, not hardcoded black) ── */
   background: color-mix(
     in srgb,
     var(--bg-base) var(--backdrop-dim-opacity),
@@ -191,37 +188,40 @@
 }
 
 @utility btn-primary {
-  /* ── Primary button ── */
   @apply font-semibold px-4 py-2 rounded-xl transition-all duration-200
-           disabled:opacity-50 disabled:cursor-not-allowed;
+    disabled:opacity-50 disabled:cursor-not-allowed;
   background-color: var(--color-brand);
   color: color-mix(in srgb, var(--text-primary) 99%, transparent);
+
   &:hover:not(:disabled) {
     background-color: var(--color-brand-hover);
   }
 }
 
 @utility btn-ghost {
-  /* ── Ghost button ── */
   background-color: var(--glass-bg);
   color: var(--text-secondary);
   @apply px-4 py-2 rounded-xl transition-all duration-200;
+
   &:hover {
     background-color: var(--bg-card);
   }
 }
 
 @utility input {
-  /* ── Input ── */
   @apply w-full rounded-xl px-4 py-2.5 focus:outline-hidden transition-colors;
   background-color: var(--input-bg);
   color: var(--input-text);
   border: 1px solid var(--input-border);
-  transition: background-color 0.2s ease, border-color 0.2s ease,
+  transition:
+    background-color 0.2s ease,
+    border-color 0.2s ease,
     color 0.2s ease;
+
   &::placeholder {
     color: var(--text-muted);
   }
+
   &:focus {
     border-color: var(--color-brand);
   }
@@ -329,14 +329,7 @@
 }
 
 @layer utilities {
-  /*
-   * ═══════════════════════════════════════════════════════════════════════
-   *  THEME TOKENS  —  Set at runtime by applyStoredTheme() in src/theme.ts
-   *  :root holds NEUTRAL defaults only. Real values injected via JS.
-   * ═══════════════════════════════════════════════════════════════════════
-   */
   :root {
-    /* Neutral fallbacks — overridden immediately by applyStoredTheme() */
     --bg-base: #f8fafc;
     --bg-surface: #ffffff;
     --bg-card: #f1f5f9;
@@ -375,50 +368,29 @@
     --brand-800: #1e40af;
     --brand-900: #1e3a8a;
 
-    /* Divider colors — consumed by TestExecution.tsx */
     --color-divider-1: #14b8a6;
     --color-divider-2: #f59e0b;
     --color-divider-3: #0ea5e9;
 
-    /* Log system colors — consumed by DevTools/SessionLog.tsx */
     --log-auth-bg: color-mix(in srgb, var(--color-brand) 15%, transparent);
     --log-auth-text: var(--color-brand);
     --log-level-info: var(--color-brand);
     --log-level-warn: var(--color-warn);
     --log-level-error: var(--color-fail);
 
-    /*
-     * ── Glass effect vars ────────────────────────────────────────────────
-     *  Written at runtime by applyGlassCssVars() in src/theme.ts.
-     *  Fallbacks here match GLASS_DEFAULTS so the UI is correct before
-     *  any user customisation is loaded.
-     *
-     *  Surface guide:
-     *    glass-frost     → modals/overlays that sit ON content  → --glass-bg-opacity (40%)
-     *    glass-nav       → bottom navbar on bare dark bg         → --glass-nav-bg-opacity (75%)
-     *    glass-popup     → more popup on bare dark bg            → --glass-popup-bg-opacity (72%)
-     *    glass (card)    → standard cards                        → --glass-card-bg-opacity (86%)
-     *    backdrop-dim    → modal scrim                           → --backdrop-dim-opacity (55%)
-     */
-    --glass-blur: 28px;
+    --glass-blur: 34px;
     --glass-saturation: 180%;
     --glass-brightness: 1.06;
 
-    /* glass-frost (overlays on content) */
     --glass-bg-opacity: 40%;
     --glass-border-opacity: 55%;
 
-    /* glass-nav (navbar on bare background) */
-    --glass-nav-bg-opacity: 75%;
+    --glass-nav-bg-opacity: 84%;
+    --glass-popup-bg-opacity: 80%;
 
-    /* glass-popup (more popup on bare background) */
-    --glass-popup-bg-opacity: 72%;
-
-    /* glass card utility */
     --glass-card-bg-opacity: 86%;
     --glass-card-border-opacity: 80%;
 
-    /* backdrop-dim scrim */
     --backdrop-dim-opacity: 55%;
   }
 }
@@ -426,91 +398,3 @@
 @layer base {
   * {
     box-sizing: border-box;
-  }
-
-  html,
-  body {
-    background-color: var(--bg-base);
-    color: var(--text-primary);
-    -webkit-font-smoothing: antialiased;
-    -moz-osx-font-smoothing: grayscale;
-    transition: background-color 0.35s ease, color 0.35s ease;
-  }
-
-  /* Scrollbar theming */
-  ::-webkit-scrollbar {
-    width: 6px;
-    height: 6px;
-  }
-  ::-webkit-scrollbar-track {
-    background: var(--bg-surface);
-  }
-  ::-webkit-scrollbar-thumb {
-    background: var(--bg-card);
-    border-radius: 9999px;
-  }
-
-  /* Selection color */
-  ::selection {
-    background: color-mix(in srgb, var(--color-brand) 30%, transparent);
-    color: var(--text-primary);
-  }
-}
-
-/* ═══════════════════════════════════════════════════════════════════
-   ANIMATIONS
-   ═══════════════════════════════════════════════════════════════════ */
-
-@layer utilities {
-  @keyframes shimmerMove {
-    0% {
-      background-position: 200% 0;
-    }
-    100% {
-      background-position: -200% 0;
-    }
-  }
-  @keyframes neonPulse {
-    0%,
-    100% {
-      box-shadow: 0 0 0 1.5px
-          color-mix(in oklab, var(--neon-cyan) 45%, transparent),
-        0 0 12px 2px color-mix(in oklab, var(--neon-cyan) 18%, transparent);
-    }
-    50% {
-      box-shadow: 0 0 0 1.5px
-          color-mix(in oklab, var(--neon-cyan) 45%, transparent),
-        0 0 22px 6px color-mix(in oklab, var(--neon-cyan) 32%, transparent);
-    }
-  }
-  @keyframes amberPulse {
-    0%,
-    100% {
-      box-shadow: 0 0 0 1.5px
-          color-mix(in oklab, var(--neon-amber) 45%, transparent),
-        0 0 12px 2px color-mix(in oklab, var(--neon-amber) 18%, transparent);
-    }
-    50% {
-      box-shadow: 0 0 0 1.5px
-          color-mix(in oklab, var(--neon-amber) 45%, transparent),
-        0 0 22px 6px color-mix(in oklab, var(--neon-amber) 32%, transparent);
-    }
-  }
-  @keyframes dualPulse {
-    0%,
-    100% {
-      box-shadow: 0 0 0 1.5px
-          color-mix(in oklab, var(--neon-cyan) 50%, transparent),
-        0 0 0 3px color-mix(in oklab, var(--neon-amber) 35%, transparent),
-        0 0 14px 3px color-mix(in oklab, var(--neon-cyan) 20%, transparent),
-        0 0 22px 6px color-mix(in oklab, var(--neon-amber) 15%, transparent);
-    }
-    50% {
-      box-shadow: 0 0 0 1.5px
-          color-mix(in oklab, var(--neon-cyan) 60%, transparent),
-        0 0 0 3px color-mix(in oklab, var(--neon-amber) 45%, transparent),
-        0 0 22px 6px color-mix(in oklab, var(--neon-cyan) 32%, transparent),
-        0 0 32px 10px color-mix(in oklab, var(--neon-amber) 25%, transparent);
-    }
-  }
-}
