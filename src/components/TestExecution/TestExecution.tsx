@@ -80,7 +80,7 @@ interface ImagePreviewState {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Divider configs
+// Divider configs  —  now driven by CSS custom properties
 // ─────────────────────────────────────────────────────────────────────────────
 
 const DIVIDER_LEVELS: Record<
@@ -88,7 +88,7 @@ const DIVIDER_LEVELS: Record<
   {
     dot: string;
     text: string;
-    bg: string;
+    bgStyle: React.CSSProperties;
     border: string;
     indent: string;
     size: string;
@@ -97,24 +97,30 @@ const DIVIDER_LEVELS: Record<
   1: {
     dot: "bg-c-brand",
     text: "text-c-brand",
-    bg: "bg-c-brand-bg",
+    bgStyle: { backgroundColor: "var(--color-brand-bg)" },
     border: "border-l-[3px] border-c-brand",
     indent: "px-4",
     size: "text-xs font-bold tracking-widest uppercase",
   },
   2: {
-    dot: "bg-amber-400",
-    text: "text-amber-400",
-    bg: "bg-amber-500/5",
-    border: "border-l-[2px] border-amber-400",
+    dot: "bg-[var(--color-divider-2)]",
+    text: "text-[var(--color-divider-2)]",
+    bgStyle: {
+      backgroundColor:
+        "color-mix(in srgb, var(--color-divider-2) 5%, transparent)",
+    },
+    border: "border-l-[2px] border-[var(--color-divider-2)]",
     indent: "px-8",
     size: "text-xs font-semibold tracking-wider uppercase",
   },
   3: {
-    dot: "bg-sky-400",
-    text: "text-sky-400",
-    bg: "bg-sky-500/5",
-    border: "border-l-[2px] border-sky-400",
+    dot: "bg-[var(--color-divider-3)]",
+    text: "text-[var(--color-divider-3)]",
+    bgStyle: {
+      backgroundColor:
+        "color-mix(in srgb, var(--color-divider-3) 5%, transparent)",
+    },
+    border: "border-l-[2px] border-[var(--color-divider-3)]",
     indent: "px-12",
     size: "text-[11px] font-medium tracking-wide",
   },
@@ -123,8 +129,8 @@ const DIVIDER_LEVELS: Record<
 const MOBILE_DIVIDER_LEVELS: Record<
   number,
   {
-    bg: string;
-    border: string;
+    bgStyle: React.CSSProperties;
+    borderStyle: React.CSSProperties;
     textClass: string;
     dotClass: string;
     dotSize: number;
@@ -134,30 +140,39 @@ const MOBILE_DIVIDER_LEVELS: Record<
   }
 > = {
   1: {
-    bg: "bg-teal-500/10",
-    border: "border-l-[3px] border-teal-500",
-    textClass: "text-teal-400",
-    dotClass: "bg-teal-500",
+    bgStyle: {
+      backgroundColor:
+        "color-mix(in srgb, var(--color-divider-1) 10%, transparent)",
+    },
+    borderStyle: { borderLeft: "3px solid var(--color-divider-1)" },
+    textClass: "text-[var(--color-divider-1)]",
+    dotClass: "bg-[var(--color-divider-1)]",
     dotSize: 7,
     fontSize: "text-[14px] font-bold tracking-widest uppercase",
     ml: "ml-0",
     py: "py-2.5",
   },
   2: {
-    bg: "bg-amber-500/10",
-    border: "border-l-[2px] border-amber-400",
-    textClass: "text-amber-400",
-    dotClass: "bg-amber-400",
+    bgStyle: {
+      backgroundColor:
+        "color-mix(in srgb, var(--color-divider-2) 10%, transparent)",
+    },
+    borderStyle: { borderLeft: "2px solid var(--color-divider-2)" },
+    textClass: "text-[var(--color-divider-2)]",
+    dotClass: "bg-[var(--color-divider-2)]",
     dotSize: 5,
     fontSize: "text-[12px] font-semibold tracking-wide uppercase",
     ml: "ml-4",
     py: "py-2",
   },
   3: {
-    bg: "bg-sky-500/10",
-    border: "border-l-[2px] border-sky-400",
-    textClass: "text-sky-400",
-    dotClass: "bg-sky-400",
+    bgStyle: {
+      backgroundColor:
+        "color-mix(in srgb, var(--color-divider-3) 10%, transparent)",
+    },
+    borderStyle: { borderLeft: "2px solid var(--color-divider-3)" },
+    textClass: "text-[var(--color-divider-3)]",
+    dotClass: "bg-[var(--color-divider-3)]",
     dotSize: 4,
     fontSize: "text-[11px] font-medium tracking-wide",
     ml: "ml-8",
@@ -1636,7 +1651,8 @@ const TestExecution: React.FC<Props> = ({
                       return (
                         <tr
                           key={step.stepId}
-                          className={`border-b border-[var(--border-color)] ${s.bg}`}
+                          className={`border-b border-[var(--border-color)]`}
+                          style={s.bgStyle}
                         >
                           <td
                             colSpan={6}
@@ -1704,7 +1720,8 @@ const TestExecution: React.FC<Props> = ({
                       return (
                         <div
                           key={step.stepId}
-                          className={`flex items-center gap-2 ${ms.py} pl-3 pr-3 rounded-r-lg ${ms.bg} ${ms.border} ${ms.ml}`}
+                          className={`flex items-center gap-2 ${ms.py} pl-3 pr-3 rounded-r-lg ${ms.ml}`}
+                          style={{ ...ms.bgStyle, ...ms.borderStyle }}
                         >
                           <span
                             className={`rounded-full shrink-0 ${ms.dotClass}`}
