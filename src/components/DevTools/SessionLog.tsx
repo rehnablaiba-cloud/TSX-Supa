@@ -294,9 +294,10 @@ const SessionLog: React.FC = () => {
   const hasError = errorCount > 0;
   const hasWarn = !hasError && entries.some((e) => e.level === "warn");
   const pillDot = hasError
-  ? "bg-[var(--color-fail)] animate-pulse"
-  : hasWarn ? "bg-[var(--color-warn)]"
-  : "bg-[var(--color-pass)]";
+    ? "bg-[var(--color-fail)] animate-pulse"
+    : hasWarn
+    ? "bg-[var(--color-warn)]"
+    : "bg-[var(--color-pass)]";
 
   // Auto-scroll to bottom
   useEffect(() => {
