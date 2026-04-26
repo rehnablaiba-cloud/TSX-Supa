@@ -1,49 +1,10 @@
-import React, { useEffect, useRef, useState, useCallback } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { useAuth } from "../../context/AuthContext";
 import { useTheme } from "../../context/ThemeContext";
+import { supabase } from "../../supabase";
 import gsap from "gsap";
 import Spinner from "../UI/Spinner";
 import { TrainFront, Eye, EyeOff } from "lucide-react";
-
-const RATE_LIMIT = { maxAttempts: 5, windowMs: 60000, blockMs: 300000 };
-
-function useRateLimiter() {
-  const [isBlocked, setIsBlocked] = useState(false);
-  const [remaining, setRemaining] = useState(RATE_LIMIT.maxAttempts);
-  const attemptsRef = useRef<{ count: number; firstAttempt: number } | null>(
-    null
-  );
-  const blockTimerRef = useRef<ReturnType<typeof setTimeout>>();
-
-  const recordAttempt = useCallback(() => {
-    const now = Date.now();
-    const record = attemptsRef.current;
-
-    if (!record || now - record.firstAttempt > RATE_LIMIT.windowMs) {
-      attemptsRef.current = { count: 1, firstAttempt: now };
-      setRemaining(RATE_LIMIT.maxAttempts - 1);
-      return true;
-    }
-
-    record.count++;
-    setRemaining(Math.max(0, RATE_LIMIT.maxAttempts - record.count));
-
-    if (record.count >= RATE_LIMIT.maxAttempts) {
-      setIsBlocked(true);
-      blockTimerRef.current = setTimeout(() => {
-        setIsBlocked(false);
-        attemptsRef.current = null;
-        setRemaining(RATE_LIMIT.maxAttempts);
-      }, RATE_LIMIT.blockMs);
-      return false;
-    }
-    return true;
-  }, []);
-
-  useEffect(() => () => clearTimeout(blockTimerRef.current), []);
-
-  return { isBlocked, remaining, recordAttempt };
-}
 
 const LoginPage: React.FC = () => {
   const [email, setEmail] = useState("");
@@ -51,10 +12,12 @@ const LoginPage: React.FC = () => {
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [remaining, setRemaining] = useState<number | null>(null);
+  const [blockedUntil, setBlockedUntil] = useState<Date | null>(null);
+
   const cardRef = useRef<HTMLDivElement>(null);
   const { signIn } = useAuth();
   const { theme } = useTheme();
-  const { isBlocked, remaining, recordAttempt } = useRateLimiter();
 
   useEffect(() => {
     gsap.fromTo(
@@ -64,25 +27,89 @@ const LoginPage: React.FC = () => {
     );
   }, []);
 
+  // Countdown display while blocked
+  useEffect(() => {
+    if (!blockedUntil) return;
+    const interval = setInterval(() => {
+      if (new Date() >= blockedUntil) {
+        setBlockedUntil(null);
+        setError("");
+        setRemaining(5);
+        clearInterval(interval);
+      }
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [blockedUntil]);
+
+  const isBlocked = blockedUntil !== null && new Date() < blockedUntil;
+
+  const getBlockedSecondsLeft = () => {
+    if (!blockedUntil) return 0;
+    return Math.max(0, Math.ceil((blockedUntil.getTime() - Date.now()) / 1000));
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
 
     if (isBlocked) {
-      setError("Too many attempts. Please try again later.");
-      return;
-    }
-
-    if (!recordAttempt()) {
-      setError("Too many attempts. Please try again in 5 minutes.");
+      setError(`Too many attempts. Try again in ${getBlockedSecondsLeft()}s.`);
       return;
     }
 
     setLoading(true);
-    const { error: err } = await signIn(email, password);
-    if (err) {
-      setError("Invalid email or password.");
+
+    try {
+      // Gate check — recorded server-side, persists across refreshes
+      const { data: gateData, error: gateError } = await supabase.rpc(
+        "record_login_attempt",
+        { p_email: email.toLowerCase().trim() }
+      );
+
+      if (gateError) throw gateError;
+
+      const gate = gateData as {
+        allowed: boolean;
+        remaining: number;
+        blocked_until: string | null;
+      };
+
+      if (!gate.allowed) {
+        const until = gate.blocked_until ? new Date(gate.blocked_until) : null;
+        setBlockedUntil(until);
+        setRemaining(0);
+        setError(
+          `Too many attempts. Try again in ${getBlockedSecondsLeft()}s.`
+        );
+        setLoading(false);
+        return;
+      }
+
+      setRemaining(gate.remaining);
+
+      // Attempt sign in
+      const { error: signInError } = await signIn(email, password);
+
+      if (signInError) {
+        setError(
+          gate.remaining <= 1
+            ? `Invalid credentials. You have ${gate.remaining} attempt left.`
+            : gate.remaining === 0
+            ? "Account temporarily blocked. Try again in 5 minutes."
+            : `Invalid email or password. ${gate.remaining} attempt${
+                gate.remaining !== 1 ? "s" : ""
+              } remaining.`
+        );
+      } else {
+        // Clear attempts on success
+        await supabase.rpc("clear_login_attempts", {
+          p_email: email.toLowerCase().trim(),
+        });
+      }
+    } catch {
+      setError("Something went wrong. Please try again.");
     }
+
     setLoading(false);
   };
 
@@ -160,11 +187,14 @@ const LoginPage: React.FC = () => {
             </div>
           </div>
 
-          {remaining < RATE_LIMIT.maxAttempts && remaining > 0 && (
-            <p className="text-[11px] text-t-muted">
-              {remaining} attempt{remaining !== 1 ? "s" : ""} remaining
-            </p>
-          )}
+          {remaining !== null &&
+            remaining < 5 &&
+            remaining > 0 &&
+            !isBlocked && (
+              <p className="text-[11px] text-t-muted">
+                {remaining} attempt{remaining !== 1 ? "s" : ""} remaining
+              </p>
+            )}
 
           <div
             className={`overflow-hidden transition-all duration-300 ease-in-out ${
@@ -195,7 +225,7 @@ const LoginPage: React.FC = () => {
                 <Spinner size={18} /> Signing in…
               </>
             ) : isBlocked ? (
-              "Blocked — try later"
+              `Blocked — ${getBlockedSecondsLeft()}s`
             ) : (
               "Sign In"
             )}
