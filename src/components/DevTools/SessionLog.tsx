@@ -83,8 +83,8 @@ function useLogGlassStyles() {
       background: isDark
         ? "rgba(10, 10, 16, 0.92)"
         : "rgba(248, 250, 252, 0.92)",
-      backdropFilter: "blur(20px) saturate(180%)",
-      WebkitBackdropFilter: "blur(20px) saturate(180%)",
+      backdropFilter: `blur(var(--glass-blur)) saturate(var(--glass-saturation)) brightness(var(--glass-brightness))`,
+      WebkitBackdropFilter: `blur(var(--glass-blur)) saturate(var(--glass-saturation)) brightness(var(--glass-brightness))`,
       borderColor: isDark ? "rgba(255,255,255,0.08)" : "rgba(0,0,0,0.08)",
     },
     logText: isDark ? "#e2e8f0" : "#1e293b",

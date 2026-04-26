@@ -58,8 +58,8 @@
 
 @utility glass {
   /* ── Standard glass card ── */
-  background: color-mix(in srgb, var(--bg-surface) 86%, transparent);
-  border: 1px solid color-mix(in srgb, var(--border-color) 80%, transparent);
+  background: color-mix(in srgb, var(--bg-surface) var(--glass-bg-opacity), transparent);
+  border: 1px solid color-mix(in srgb, var(--border-color) var(--glass-border-opacity), transparent);
   @apply backdrop-blur-md rounded-2xl;
   transition:
     background-color 0.3s ease,
@@ -135,7 +135,7 @@
 
 @utility backdrop-dim {
   /* ── Modal backdrop (theme-aware dimming, not hardcoded black) ── */
-  background: color-mix(in srgb, var(--bg-base) 55%, transparent);
+  background: color-mix(in srgb, var(--bg-base) var(--backdrop-dim-opacity), transparent);
   @apply backdrop-blur-xs;
   transition: background-color 0.3s ease;
 
@@ -391,6 +391,7 @@
     --glass-brightness: 1.06;
     --glass-bg-opacity: 40%;
     --glass-border-opacity: 55%;
+    --backdrop-dim-opacity: 55%;
   }
 
   /* ── Base ── */

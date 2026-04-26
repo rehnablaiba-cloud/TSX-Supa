@@ -622,7 +622,7 @@ const ModuleDashboard: React.FC<Props> = ({
                       </span>
                       {isAdmin && (
                         <>
-                          <span style={{ opacity: 0.3 }} className="mx-0.5">
+                          <span style={{ opacity: 0.65 }} className="mx-0.5">
                             |
                           </span>
                           <button

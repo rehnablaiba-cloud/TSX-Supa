@@ -561,7 +561,7 @@ const GlassTab: React.FC = () => {
       config.saturation
     }%) brightness(${(config.brightness / 100).toFixed(2)})`,
     border: `1px solid color-mix(in srgb, var(--border-color) ${config.borderOpacity}%, transparent)`,
-    boxShadow: "0 8px 32px rgba(0,0,0,0.20)",
+    boxShadow: "0 8px 32px color-mix(in srgb, var(--bg-base) 80%, transparent)",
   };
 
   return (

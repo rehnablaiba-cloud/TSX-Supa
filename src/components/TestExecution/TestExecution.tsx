@@ -198,7 +198,7 @@ const UndoAllModal: React.FC<{
 }> = ({ doneCount, totalCount, onConfirm, onCancel }) => (
   <div
     className="fixed inset-0 z-50 flex items-center justify-center p-4"
-    style={{ backgroundColor: "rgba(0,0,0,0.55)", backdropFilter: "blur(4px)" }}
+    style={{ backgroundColor: "color-mix(in srgb, var(--bg-base) 55%, transparent)", backdropFilter: `blur(var(--glass-blur))` }}
     onClick={onCancel}
   >
     <div
@@ -275,7 +275,7 @@ const ImagePreviewModal: React.FC<{
       className="fixed inset-0 z-100 flex items-center justify-center p-4"
       style={{
         background: "color-mix(in srgb, var(--bg-base) 92%, transparent)",
-        backdropFilter: "blur(12px)",
+        backdropFilter: `blur(var(--glass-blur))`,
       }}
       onClick={onClose}
     >
@@ -661,8 +661,7 @@ const MobileStepCard: React.FC<{
         <div
           className="fixed inset-0 z-200 flex items-end justify-center"
           style={{
-            backgroundColor: "rgba(0,0,0,0.55)",
-            backdropFilter: "blur(4px)",
+            backgroundColor: "color-mix(in srgb, var(--bg-base) 55%, transparent)", backdropFilter: `blur(var(--glass-blur))`,
           }}
           onClick={discardRemarks}
         >
