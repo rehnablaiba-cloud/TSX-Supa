@@ -74,11 +74,12 @@ const MobileNav: React.FC<Props> = ({ activePage, onNavigate }) => {
   }, []);
 
   useLayoutEffect(() => {
-    if (!navRef.current) return;
+    const navEl = navRef.current;
+    if (!navEl) return;
 
     const ctx = gsap.context(() => {
       gsap.fromTo(
-        navRef.current,
+        navEl,
         { y: 80, opacity: 0, scale: 0.92 },
         {
           y: 0,
@@ -104,13 +105,14 @@ const MobileNav: React.FC<Props> = ({ activePage, onNavigate }) => {
   }, [moreOpen]);
 
   useLayoutEffect(() => {
-    if (!moreRef.current) return;
+    const moreEl = moreRef.current;
+    if (!moreEl) return;
 
     const ctx = gsap.context(() => {
       if (moreOpen) {
-        gsap.set(moreRef.current, { display: "flex" });
+        gsap.set(moreEl, { display: "flex" });
         gsap.fromTo(
-          moreRef.current,
+          moreEl,
           { opacity: 0, scale: 0.92, y: 8 },
           {
             opacity: 1,
@@ -121,7 +123,7 @@ const MobileNav: React.FC<Props> = ({ activePage, onNavigate }) => {
           }
         );
 
-        const items = moreRef.current.querySelectorAll(".more-item");
+        const items = moreEl.querySelectorAll(".more-item");
         gsap.fromTo(
           items,
           { opacity: 0, scale: 0.85 },
@@ -135,14 +137,14 @@ const MobileNav: React.FC<Props> = ({ activePage, onNavigate }) => {
           }
         );
       } else {
-        gsap.to(moreRef.current, {
+        gsap.to(moreEl, {
           opacity: 0,
           scale: 0.95,
           y: 8,
           duration: 0.2,
           ease: "power2.in",
           onComplete: () => {
-            if (moreRef.current) gsap.set(moreRef.current, { display: "none" });
+            gsap.set(moreEl, { display: "none" });
           },
         });
       }
