@@ -1,20 +1,14 @@
 /**
  * ThemeEditorPanel.tsx
- * Tabs: Palette | Light | Dark | MUI
- * Admin-only. Rendered via createPortal to document.body.
- * Shell matches ExportAllModal exactly.
+ * Simplified: auto-generates full brand palette from one color.
+ * Admin-only · createPortal · matches ExportAllModal shell.
  */
 
-import React, { useState, useRef, useEffect } from "react";
+import React, { useState, useCallback } from "react";
 import { createPortal } from "react-dom";
 import { Palette } from "lucide-react";
-import {
-  useTheme,
-  MuiConfig,
-  MUI_CONFIG_DEFAULTS,
-} from "../../context/ThemeContext";
+import { useTheme, MuiConfig } from "../../context/ThemeContext";
 import { useAuth } from "../../context/AuthContext";
-import { verifyThemePassword } from "../../config/themeEditorConfig";
 import {
   tokens as defaultTokens,
   palette as defaultPalette,
@@ -24,105 +18,132 @@ import {
   brandShadeVar,
 } from "../../theme";
 
-type Mode = "light" | "dark";
+// ─── Color math ───────────────────────────────────────────────────────────────
 
-// ─── Token groups ─────────────────────────────────────────────────────────────
+function hexToHsl(hex: string): [number, number, number] {
+  const r = parseInt(hex.slice(1, 3), 16) / 255;
+  const g = parseInt(hex.slice(3, 5), 16) / 255;
+  const b = parseInt(hex.slice(5, 7), 16) / 255;
+  const max = Math.max(r, g, b),
+    min = Math.min(r, g, b);
+  let h = 0,
+    s = 0;
+  const l = (max + min) / 2;
+  if (max !== min) {
+    const d = max - min;
+    s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+    if (max === r) h = ((g - b) / d + (g < b ? 6 : 0)) / 6;
+    else if (max === g) h = ((b - r) / d + 2) / 6;
+    else h = ((r - g) / d + 4) / 6;
+  }
+  return [Math.round(h * 360), Math.round(s * 100), Math.round(l * 100)];
+}
 
-const TOKEN_GROUPS: { label: string; icon: string; keys: TokenKey[] }[] = [
-  {
-    label: "Brand",
-    icon: "🎨",
-    keys: ["colorBrand", "colorBrandHover", "colorBrandBg"],
-  },
-  {
-    label: "Backgrounds",
-    icon: "🖼",
-    keys: ["bgBase", "bgSurface", "bgCard", "bgNav"],
-  },
-  {
-    label: "Text",
-    icon: "🔤",
-    keys: ["textPrimary", "textSecondary", "textMuted"],
-  },
-  { label: "Borders", icon: "▭", keys: ["borderColor"] },
-  {
-    label: "Inputs",
-    icon: "📝",
-    keys: ["inputBg", "inputBorder", "inputText"],
-  },
-  { label: "Glass", icon: "✨", keys: ["glassBg", "glassBorder"] },
-  { label: "Gradient", icon: "🌈", keys: ["gradFrom", "gradVia", "gradTo"] },
-];
-
-const TOKEN_LABELS: Record<TokenKey, string> = {
-  bgBase: "Base Background",
-  bgSurface: "Surface",
-  bgCard: "Card",
-  bgNav: "Navigation",
-  borderColor: "Border",
-  textPrimary: "Primary Text",
-  textSecondary: "Secondary Text",
-  textMuted: "Muted Text",
-  inputBg: "Input Background",
-  inputBorder: "Input Border",
-  inputText: "Input Text",
-  glassBg: "Glass Background",
-  glassBorder: "Glass Border",
-  gradFrom: "Gradient From",
-  gradVia: "Gradient Via",
-  gradTo: "Gradient To",
-  colorBrand: "Brand Color",
-  colorBrandHover: "Brand Hover",
-  colorBrandBg: "Brand Background",
-  colorPass: "Pass Color",
-  colorFail: "Fail Color",
-  colorPend: "Pending Color",
-};
-
-const STATUS_KEYS = ["pass", "fail", "pend"] as const;
-type StatusKey = (typeof STATUS_KEYS)[number];
-const STATUS_LABELS: Record<StatusKey, string> = {
-  pass: "Pass ✅",
-  fail: "Fail ❌",
-  pend: "Pending ⏳",
-};
-const LS_BRAND_KEY = "themeEditorBrandPalette";
-const LS_STATUS_KEY = "themeEditorStatusColors";
-
-// ─── Helpers ──────────────────────────────────────────────────────────────────
-
-function toHexColor(v: string): string {
-  if (!v) return "#000000";
-  if (/^#[0-9a-fA-F]{3,8}$/.test(v))
-    return v.length === 4
-      ? "#" + v[1].repeat(2) + v[2].repeat(2) + v[3].repeat(2)
-      : v.slice(0, 7);
-  const m = v.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/);
-  if (m)
-    return `#${(+m[1]).toString(16).padStart(2, "0")}${(+m[2])
+function hslToHex(h: number, s: number, l: number): string {
+  const hh = h / 360,
+    ss = s / 100,
+    ll = l / 100;
+  const hue2rgb = (p: number, q: number, t: number) => {
+    if (t < 0) t += 1;
+    if (t > 1) t -= 1;
+    if (t < 1 / 6) return p + (q - p) * 6 * t;
+    if (t < 1 / 2) return q;
+    if (t < 2 / 3) return p + (q - p) * (2 / 3 - t) * 6;
+    return p;
+  };
+  let r, g, b;
+  if (ss === 0) {
+    r = g = b = ll;
+  } else {
+    const q = ll < 0.5 ? ll * (1 + ss) : ll + ss - ll * ss;
+    const p = 2 * ll - q;
+    r = hue2rgb(p, q, hh + 1 / 3);
+    g = hue2rgb(p, q, hh);
+    b = hue2rgb(p, q, hh - 1 / 3);
+  }
+  const toHex = (x: number) =>
+    Math.round(x * 255)
       .toString(16)
-      .padStart(2, "0")}${(+m[3]).toString(16).padStart(2, "0")}`;
+      .padStart(2, "0");
+  return `#${toHex(r)}${toHex(g)}${toHex(b)}`;
+}
+
+const SHADE_LIGHTNESS: Record<number, number> = {
+  50: 97,
+  100: 94,
+  200: 86,
+  300: 77,
+  400: 66,
+  500: 55,
+  600: 44,
+  700: 36,
+  800: 29,
+  900: 22,
+};
+const SHADE_SAT_MULT: Record<number, number> = {
+  50: 0.3,
+  100: 0.5,
+  200: 0.7,
+  300: 0.85,
+  400: 1.0,
+  500: 1.0,
+  600: 1.0,
+  700: 0.95,
+  800: 0.85,
+  900: 0.75,
+};
+
+function generatePalette(baseHex: string): Record<BrandShade, string> {
+  const [h, s] = hexToHsl(baseHex);
+  const result = {} as Record<BrandShade, string>;
+  for (const shade of BRAND_SHADES) {
+    const l = SHADE_LIGHTNESS[shade] ?? 50;
+    const adjS = Math.min(100, Math.round(s * (SHADE_SAT_MULT[shade] ?? 1)));
+    result[shade] = hslToHex(h, adjS, l);
+  }
+  return result;
+}
+
+function toHex(v: string): string {
+  if (!v) return "#000000";
+  if (/^#[0-9a-fA-F]{6}$/.test(v)) return v;
+  if (/^#[0-9a-fA-F]{3}$/.test(v))
+    return "#" + v[1].repeat(2) + v[2].repeat(2) + v[3].repeat(2);
   return "#888888";
 }
 
+// ─── Presets ──────────────────────────────────────────────────────────────────
+
+const PRESETS = [
+  { name: "Indigo", color: "#6366f1" },
+  { name: "Blue", color: "#3b82f6" },
+  { name: "Teal", color: "#14b8a6" },
+  { name: "Rose", color: "#f43f5e" },
+  { name: "Amber", color: "#f59e0b" },
+  { name: "Slate", color: "#64748b" },
+];
+
+const LS_BRAND = "themeEditorBrandPalette";
+const LS_STATUS = "themeEditorStatusColors";
+const LS_BASE = "themeEditorBaseColor";
+
 // ─── Shared UI ────────────────────────────────────────────────────────────────
 
-const ColorRow: React.FC<{
+const Swatch: React.FC<{
+  color: string;
   label: string;
-  value: string;
-  defaultValue: string;
   onChange: (v: string) => void;
-  isOverridden: boolean;
-  onReset: () => void;
-}> = ({ label, value, defaultValue, onChange, isOverridden, onReset }) => (
-  <div className="flex items-center gap-2 py-1.5">
+  onReset?: () => void;
+  isOverridden?: boolean;
+}> = ({ color, label, onChange, onReset, isOverridden }) => (
+  <div className="flex items-center gap-3 py-2">
     <label
-      className="relative w-8 h-8 rounded-lg border border-[var(--border-color)] cursor-pointer shrink-0 overflow-hidden shadow-sm"
-      style={{ backgroundColor: value || "#888" }}
+      className="relative w-9 h-9 rounded-xl border border-[var(--border-color)] cursor-pointer shrink-0 overflow-hidden shadow-sm"
+      style={{ backgroundColor: color }}
     >
       <input
         type="color"
-        value={toHexColor(value)}
+        value={toHex(color)}
         onChange={(e) => onChange(e.target.value)}
         className="absolute inset-0 opacity-0 w-full h-full cursor-pointer"
       />
@@ -130,18 +151,11 @@ const ColorRow: React.FC<{
     <span className="text-xs text-t-secondary flex-1 min-w-0 truncate">
       {label}
     </span>
-    <input
-      type="text"
-      value={value}
-      onChange={(e) => onChange(e.target.value)}
-      spellCheck={false}
-      className="w-28 text-xs font-mono px-2 py-1 rounded-lg bg-[var(--input-bg)] border border-[var(--input-border)] text-[var(--input-text)] focus:outline-none focus:border-c-brand transition-colors"
-    />
-    {isOverridden && (
+    <code className="text-[10px] font-mono text-t-muted shrink-0">{color}</code>
+    {isOverridden && onReset && (
       <button
         onClick={onReset}
-        title={`Reset to: ${defaultValue}`}
-        className="text-xs text-t-muted hover:text-fail transition-colors shrink-0"
+        className="text-xs text-t-muted hover:text-fail shrink-0 ml-1"
       >
         ↺
       </button>
@@ -167,165 +181,43 @@ const Toggle: React.FC<{ value: boolean; onChange: (v: boolean) => void }> = ({
   </button>
 );
 
-const Row: React.FC<{
-  label: string;
-  sub?: string;
+const Section: React.FC<{
+  title: string;
+  action?: React.ReactNode;
   children: React.ReactNode;
-}> = ({ label, sub, children }) => (
-  <div className="flex items-center justify-between py-2.5 gap-3">
-    <div className="flex-1 min-w-0">
-      <p className="text-xs text-t-primary">{label}</p>
-      {sub && <p className="text-[10px] text-t-muted">{sub}</p>}
+}> = ({ title, action, children }) => (
+  <div>
+    <div className="flex items-center justify-between mb-2">
+      <p className="text-[10px] font-bold uppercase tracking-wider text-t-muted">
+        {title}
+      </p>
+      {action}
     </div>
-    <div className="shrink-0">{children}</div>
+    <div className="bg-bg-card rounded-xl border border-[var(--border-color)] px-3 divide-y divide-[var(--border-color)]">
+      {children}
+    </div>
   </div>
 );
 
-const NumInput: React.FC<{
-  value: number;
-  onChange: (n: number) => void;
-  min?: number;
-  max?: number;
-  step?: number;
-}> = ({ value, onChange, min = 0, max = 100, step = 1 }) => (
-  <input
-    type="number"
-    value={value}
-    min={min}
-    max={max}
-    step={step}
-    onChange={(e) => onChange(Number(e.target.value))}
-    className="w-16 text-xs font-mono text-center px-2 py-1 rounded-lg
-      bg-[var(--input-bg)] border border-[var(--input-border)] text-[var(--input-text)]
-      focus:outline-none focus:border-c-brand transition-colors"
-  />
-);
+// ─── Tab: Brand ───────────────────────────────────────────────────────────────
 
-// ─── Password Gate ────────────────────────────────────────────────────────────
+const BrandTab: React.FC = () => {
+  const { setTokenOverride } = useTheme();
 
-const PasswordGate: React.FC<{
-  onUnlock: () => void;
-  onCancel: () => void;
-}> = ({ onUnlock, onCancel }) => {
-  const [pw, setPw] = useState("");
-  const [error, setError] = useState("");
-  const [checking, setChecking] = useState(false);
-  const ref = useRef<HTMLInputElement>(null);
-
-  useEffect(() => {
-    ref.current?.focus();
-  }, []);
-
-  const submit = async () => {
-    if (!pw.trim()) return;
-    setChecking(true);
-    setError("");
-    const ok = await verifyThemePassword(pw);
-    setChecking(false);
-    if (ok) onUnlock();
-    else {
-      setError("Incorrect password.");
-      setPw("");
-      ref.current?.focus();
-    }
-  };
-
-  return (
-    <div className="flex flex-col items-center justify-center gap-6 px-8 py-10">
-      <div className="text-4xl">🔒</div>
-      <div className="text-center">
-        <p className="font-semibold text-t-primary text-base">Theme Editor</p>
-        <p className="text-xs text-t-muted mt-1">
-          Enter admin password to continue
-        </p>
-      </div>
-      <div className="w-full max-w-xs flex flex-col gap-3">
-        <input
-          ref={ref}
-          type="password"
-          value={pw}
-          onChange={(e) => setPw(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && submit()}
-          placeholder="Password"
-          className="w-full px-4 py-3 rounded-xl text-sm bg-[var(--input-bg)] border border-[var(--input-border)] text-[var(--input-text)] placeholder:text-t-muted focus:outline-none focus:border-c-brand transition-colors"
-        />
-        {error && <p className="text-fail text-xs text-center">{error}</p>}
-        <button
-          onClick={submit}
-          disabled={checking || !pw.trim()}
-          className="w-full py-3 rounded-xl text-sm font-semibold bg-c-brand text-white hover:bg-c-brand-hover disabled:opacity-50 transition-colors"
-        >
-          {checking ? "Checking…" : "Unlock"}
-        </button>
-        <button
-          onClick={onCancel}
-          className="py-2 text-xs text-t-muted hover:text-t-secondary transition-colors"
-        >
-          Cancel
-        </button>
-      </div>
-    </div>
+  const [baseColor, setBaseColor] = useState<string>(
+    () => localStorage.getItem(LS_BASE) ?? "#6366f1"
   );
-};
-
-// ─── Token Editor tab ─────────────────────────────────────────────────────────
-
-const TokenEditor: React.FC<{ mode: Mode }> = ({ mode }) => {
-  const { customTokens, setTokenOverride } = useTheme();
-  return (
-    <div className="flex flex-col gap-5 pb-6">
-      {TOKEN_GROUPS.map((group) => (
-        <div key={group.label}>
-          <p className="text-[10px] font-bold uppercase tracking-wider text-t-muted mb-2">
-            {group.icon} {group.label}
-          </p>
-          <div className="bg-bg-card rounded-xl border border-[var(--border-color)] px-3">
-            {group.keys.map((key, i) => {
-              const value = customTokens[mode][key] ?? defaultTokens[mode][key];
-              const defValue = defaultTokens[mode][key];
-              const isOverridden =
-                customTokens[mode][key] !== undefined &&
-                customTokens[mode][key] !== defValue;
-              return (
-                <div key={key}>
-                  <ColorRow
-                    label={TOKEN_LABELS[key]}
-                    value={value}
-                    defaultValue={defValue}
-                    onChange={(v) => setTokenOverride(mode, key, v)}
-                    isOverridden={isOverridden}
-                    onReset={() => setTokenOverride(mode, key, defValue)}
-                  />
-                  {i < group.keys.length - 1 && (
-                    <div className="border-t border-[var(--border-color)]" />
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      ))}
-    </div>
-  );
-};
-
-// ─── Palette & Status tab ─────────────────────────────────────────────────────
-
-const BrandStatusEditor: React.FC = () => {
-  const { theme, setTokenOverride } = useTheme();
-  const [brandColors, setBrandColors] = useState<Record<BrandShade, string>>(
+  const [palette, setPalette] = useState<Record<BrandShade, string>>(() => {
+    try {
+      const r = localStorage.getItem(LS_BRAND);
+      if (r) return JSON.parse(r);
+    } catch {}
+    return generatePalette(localStorage.getItem(LS_BASE) ?? "#6366f1");
+  });
+  const [statusColors, setStatusColors] = useState<Record<string, string>>(
     () => {
       try {
-        const r = localStorage.getItem(LS_BRAND_KEY);
-        if (r) return JSON.parse(r);
-      } catch {}
-      return { ...defaultPalette.brand } as Record<BrandShade, string>;
-    }
-  );
-  const [statusColors, setStatusColors] = useState<Record<StatusKey, string>>(
-    () => {
-      try {
-        const r = localStorage.getItem(LS_STATUS_KEY);
+        const r = localStorage.getItem(LS_STATUS);
         if (r) return JSON.parse(r);
       } catch {}
       return {
@@ -336,217 +228,258 @@ const BrandStatusEditor: React.FC = () => {
     }
   );
 
-  useEffect(() => {
-    BRAND_SHADES.forEach((shade) => {
-      const saved = brandColors[shade];
-      const def = (defaultPalette.brand as Record<number, string>)[shade];
-      if (saved && saved !== def) {
-        document.documentElement.style.setProperty(brandShadeVar(shade), saved);
-      }
-    });
-  }, []);
+  const applyPalette = useCallback(
+    (pal: Record<BrandShade, string>) => {
+      BRAND_SHADES.forEach((shade) => {
+        document.documentElement.style.setProperty(
+          brandShadeVar(shade),
+          pal[shade]
+        );
+      });
+      const lm: Partial<Record<BrandShade, TokenKey>> = {
+        50: "colorBrandBg",
+        600: "colorBrand",
+        700: "colorBrandHover",
+      };
+      const dm: Partial<Record<BrandShade, TokenKey>> = {
+        400: "colorBrandHover",
+        500: "colorBrand",
+      };
+      BRAND_SHADES.forEach((shade) => {
+        if (lm[shade]) setTokenOverride("light", lm[shade]!, pal[shade]);
+        if (dm[shade]) setTokenOverride("dark", dm[shade]!, pal[shade]);
+      });
+    },
+    [setTokenOverride]
+  );
 
-  const handleBrandChange = (shade: BrandShade, value: string) => {
-    const next = { ...brandColors, [shade]: value };
-    setBrandColors(next);
-    localStorage.setItem(LS_BRAND_KEY, JSON.stringify(next));
-    document.documentElement.style.setProperty(brandShadeVar(shade), value);
-    const lightMap: Partial<Record<BrandShade, TokenKey>> = {
-      50: "colorBrandBg",
-      600: "colorBrand",
-      700: "colorBrandHover",
-    };
-    const darkMap: Partial<Record<BrandShade, TokenKey>> = {
-      400: "colorBrandHover",
-      500: "colorBrand",
-    };
-    const lightKey = lightMap[shade];
-    const darkKey = darkMap[shade];
-    if (lightKey) setTokenOverride("light", lightKey, value);
-    if (darkKey) setTokenOverride("dark", darkKey, value);
+  const handleBaseChange = (hex: string) => {
+    setBaseColor(hex);
+    localStorage.setItem(LS_BASE, hex);
+    const pal = generatePalette(hex);
+    setPalette(pal);
+    localStorage.setItem(LS_BRAND, JSON.stringify(pal));
+    applyPalette(pal);
   };
 
-  const handleStatusChange = (key: StatusKey, value: string) => {
+  const handleStatusChange = (key: string, value: string) => {
     const next = { ...statusColors, [key]: value };
     setStatusColors(next);
-    localStorage.setItem(LS_STATUS_KEY, JSON.stringify(next));
+    localStorage.setItem(LS_STATUS, JSON.stringify(next));
     document.documentElement.style.setProperty(`--color-${key}`, value);
   };
 
   return (
     <div className="flex flex-col gap-5 pb-6">
+      {/* Brand picker */}
       <div>
-        <div className="flex items-center justify-between mb-2">
+        <div className="flex items-center justify-between mb-3">
           <p className="text-[10px] font-bold uppercase tracking-wider text-t-muted">
-            🎨 Brand Palette
+            🎨 Brand Color
           </p>
           <button
-            onClick={() => {
-              const def = { ...defaultPalette.brand } as Record<
-                BrandShade,
-                string
-              >;
-              setBrandColors(def);
-              localStorage.removeItem(LS_BRAND_KEY);
-              BRAND_SHADES.forEach((shade) => {
-                document.documentElement.style.setProperty(
-                  brandShadeVar(shade),
-                  def[shade]
-                );
-              });
-            }}
+            onClick={() => handleBaseChange("#6366f1")}
             className="text-[10px] text-t-muted hover:text-fail"
           >
             Reset
           </button>
         </div>
-        <div className="flex gap-1 mb-3">
-          {BRAND_SHADES.map((shade) => (
-            <label
-              key={shade}
-              className="relative flex-1 h-8 rounded cursor-pointer overflow-hidden"
-              style={{ backgroundColor: brandColors[shade] }}
+
+        {/* Big picker tile */}
+        <label
+          className="flex items-center gap-4 p-4 rounded-2xl border cursor-pointer mb-3 bg-bg-card transition-colors"
+          style={{ borderColor: baseColor + "88" }}
+        >
+          <div
+            className="w-14 h-14 rounded-2xl shadow-lg shrink-0 relative overflow-hidden border-2"
+            style={{ backgroundColor: baseColor, borderColor: baseColor }}
+          >
+            <input
+              type="color"
+              value={toHex(baseColor)}
+              onChange={(e) => handleBaseChange(e.target.value)}
+              className="absolute inset-0 opacity-0 w-full h-full cursor-pointer"
+            />
+          </div>
+          <div>
+            <p className="text-sm font-semibold text-t-primary">
+              Pick base color
+            </p>
+            <p className="text-xs text-t-muted mt-0.5">
+              Full palette auto-generated from this
+            </p>
+            <code className="text-xs font-mono text-c-brand mt-1 block">
+              {baseColor}
+            </code>
+          </div>
+        </label>
+
+        {/* Preset chips */}
+        <div className="flex gap-2 flex-wrap mb-3">
+          {PRESETS.map((p) => (
+            <button
+              key={p.name}
+              onClick={() => handleBaseChange(p.color)}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-xs font-medium transition-all"
+              style={{
+                backgroundColor:
+                  baseColor === p.color ? p.color + "22" : undefined,
+                borderColor:
+                  baseColor === p.color ? p.color : "var(--border-color)",
+                color: baseColor === p.color ? p.color : "var(--t-secondary)",
+              }}
             >
-              <input
-                type="color"
-                value={toHexColor(brandColors[shade])}
-                onChange={(e) => handleBrandChange(shade, e.target.value)}
-                className="absolute inset-0 opacity-0 w-full h-full cursor-pointer"
+              <span
+                className="w-3 h-3 rounded-full"
+                style={{ backgroundColor: p.color }}
               />
-            </label>
+              {p.name}
+            </button>
           ))}
         </div>
-        <div className="bg-bg-card rounded-xl border border-[var(--border-color)] px-3">
-          {BRAND_SHADES.map((shade, i) => (
-            <div key={shade}>
-              <ColorRow
-                label={`brand-${shade}${
-                  shade === 500
-                    ? " · dark primary"
-                    : shade === 600
-                    ? " · light primary"
-                    : ""
-                }`}
-                value={brandColors[shade]}
-                defaultValue={String(defaultPalette.brand[shade])}
-                onChange={(v) => handleBrandChange(shade, v)}
-                isOverridden={
-                  brandColors[shade] !== String(defaultPalette.brand[shade])
-                }
-                onReset={() =>
-                  handleBrandChange(shade, String(defaultPalette.brand[shade]))
-                }
-              />
-              {i < BRAND_SHADES.length - 1 && (
-                <div className="border-t border-[var(--border-color)]" />
-              )}
-            </div>
+
+        {/* Generated shade strip */}
+        <div className="flex rounded-xl overflow-hidden border border-[var(--border-color)] h-8">
+          {BRAND_SHADES.map((shade) => (
+            <div
+              key={shade}
+              className="flex-1"
+              style={{ backgroundColor: palette[shade] }}
+              title={`${shade}: ${palette[shade]}`}
+            />
+          ))}
+        </div>
+        <div className="flex mt-1">
+          {BRAND_SHADES.map((shade) => (
+            <p
+              key={shade}
+              className="flex-1 text-center text-[8px] text-t-muted"
+            >
+              {shade}
+            </p>
           ))}
         </div>
       </div>
 
-      <div>
-        <div className="flex items-center justify-between mb-2">
-          <p className="text-[10px] font-bold uppercase tracking-wider text-t-muted">
-            ⚡ Status Colors
-          </p>
+      {/* Status colors */}
+      <Section
+        title="⚡ Status Colors"
+        action={
           <button
             onClick={() => {
-              setStatusColors({
+              const def = {
                 pass: defaultPalette.pass,
                 fail: defaultPalette.fail,
                 pend: defaultPalette.pend,
-              });
-              localStorage.removeItem(LS_STATUS_KEY);
+              };
+              setStatusColors(def);
+              localStorage.removeItem(LS_STATUS);
+              Object.entries(def).forEach(([k, v]) =>
+                document.documentElement.style.setProperty(`--color-${k}`, v)
+              );
             }}
             className="text-[10px] text-t-muted hover:text-fail"
           >
             Reset
           </button>
-        </div>
-        <div className="bg-bg-card rounded-xl border border-[var(--border-color)] px-3">
-          {STATUS_KEYS.map((key, i) => (
-            <div key={key}>
-              <ColorRow
-                label={STATUS_LABELS[key]}
-                value={statusColors[key]}
-                defaultValue={defaultPalette[key]}
-                onChange={(v) => handleStatusChange(key, v)}
-                isOverridden={statusColors[key] !== defaultPalette[key]}
-                onReset={() => handleStatusChange(key, defaultPalette[key])}
-              />
-              {i < STATUS_KEYS.length - 1 && (
-                <div className="border-t border-[var(--border-color)]" />
-              )}
-            </div>
-          ))}
-        </div>
-      </div>
+        }
+      >
+        {(["pass", "fail", "pend"] as const).map((key) => (
+          <Swatch
+            key={key}
+            color={statusColors[key]}
+            label={
+              { pass: "Pass ✅", fail: "Fail ❌", pend: "Pending ⏳" }[key]
+            }
+            onChange={(v) => handleStatusChange(key, v)}
+            isOverridden={statusColors[key] !== (defaultPalette as any)[key]}
+            onReset={() =>
+              handleStatusChange(key, (defaultPalette as any)[key])
+            }
+          />
+        ))}
+      </Section>
+    </div>
+  );
+};
 
+// ─── Tab: Mode overrides ──────────────────────────────────────────────────────
+
+const KEY_TOKENS: { key: TokenKey; label: string }[] = [
+  { key: "bgBase", label: "Page background" },
+  { key: "bgSurface", label: "Surface" },
+  { key: "bgCard", label: "Card" },
+  { key: "bgNav", label: "Navigation" },
+  { key: "textPrimary", label: "Primary text" },
+  { key: "textSecondary", label: "Secondary text" },
+  { key: "textMuted", label: "Muted text" },
+  { key: "borderColor", label: "Border" },
+];
+
+const ModeTab: React.FC<{ mode: "light" | "dark" }> = ({ mode }) => {
+  const { customTokens, setTokenOverride } = useTheme();
+  const count = Object.keys(customTokens[mode]).length;
+
+  return (
+    <div className="flex flex-col gap-5 pb-6">
+      <Section
+        title={`${mode === "light" ? "☀️ Light" : "🌙 Dark"} Mode`}
+        action={
+          count > 0 ? (
+            <span className="text-[10px] text-c-brand font-semibold">
+              {count} override{count !== 1 ? "s" : ""}
+            </span>
+          ) : null
+        }
+      >
+        {KEY_TOKENS.map(({ key, label }) => {
+          const value = customTokens[mode][key] ?? defaultTokens[mode][key];
+          const defVal = defaultTokens[mode][key];
+          const isOverridden =
+            customTokens[mode][key] !== undefined &&
+            customTokens[mode][key] !== defVal;
+          return (
+            <Swatch
+              key={key}
+              color={value}
+              label={label}
+              onChange={(v) => setTokenOverride(mode, key, v)}
+              isOverridden={isOverridden}
+              onReset={() => setTokenOverride(mode, key, defVal)}
+            />
+          );
+        })}
+      </Section>
       <p className="text-[10px] text-t-muted px-1">
-        Active mode: <span className="font-semibold text-c-brand">{theme}</span>{" "}
-        — Light and Dark tabs edit each mode independently.
+        These override the auto-generated values from the Brand tab.
       </p>
     </div>
   );
 };
 
-// ─── MUI tab ──────────────────────────────────────────────────────────────────
+// ─── Tab: MUI ────────────────────────────────────────────────────────────────
 
-function buildMuiCode(cfg: MuiConfig): string {
-  return `// 1. Install (if not done):
-//    npm i @mui/material @emotion/react @emotion/styled
-//
-// 2. App.tsx already wraps with <MuiActivator> — done ✅
-//    Toggle "Activate MUI ThemeProvider" above to turn it on.
-//
-// 3. Use MUI components anywhere alongside Tailwind:
-//    <Button variant="contained">Save</Button>
-//    <TextField label="Name" />
-//
-// Generated config (live-synced from your settings):
-shape:      { borderRadius: ${cfg.borderRadius} }
-typography: {
-  fontFamily:        "${cfg.fontFamily}"
-  fontSize:          ${cfg.fontSize}
-  fontWeightRegular: ${cfg.fontWeightRegular}
-  fontWeightMedium:  ${cfg.fontWeightMedium}
-  fontWeightBold:    ${cfg.fontWeightBold}
-  button.textTransform: "${cfg.buttonTextTransform}"
-}
-components:
-  MuiButton    borderRadius: ${cfg.buttonBorderRadius}
-  MuiTextField borderRadius: ${cfg.textFieldBorderRadius}
-  MuiPaper     backgroundImage: ${cfg.disablePaperBgImage ? '"none"' : "unset"}
-
-// Colors are read live from CSS vars (--color-brand, --bg-base etc.)
-// so they always match your Tailwind tokens automatically.`;
-}
-
-const MuiEditor: React.FC = () => {
+const MuiTab: React.FC = () => {
   const { muiConfig, setMuiConfig, resetMuiConfig } = useTheme();
-  const [copied, setCopied] = useState(false);
-  const [showCode, setShowCode] = useState(false);
+  const update = <K extends keyof MuiConfig>(k: K, v: MuiConfig[K]) =>
+    setMuiConfig({ [k]: v });
 
-  const update = <K extends keyof MuiConfig>(key: K, value: MuiConfig[K]) =>
-    setMuiConfig({ [key]: value });
-
-  const handleCopy = () => {
-    navigator.clipboard.writeText(buildMuiCode(muiConfig)).then(() => {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    });
-  };
+  const sliders: { key: keyof MuiConfig; label: string; max: number }[] = [
+    { key: "borderRadius", label: "Global radius", max: 32 },
+    { key: "buttonBorderRadius", label: "Button radius", max: 32 },
+    { key: "textFieldBorderRadius", label: "Field radius", max: 32 },
+    { key: "fontSize", label: "Font size", max: 20 },
+  ];
 
   return (
     <div className="flex flex-col gap-4 pb-6">
       <div
         className={`rounded-2xl border-2 p-4 transition-colors
-        ${
-          muiConfig.active
-            ? "border-c-brand bg-c-brand-bg"
-            : "border-[var(--border-color)] bg-bg-card"
-        }`}
+          ${
+            muiConfig.active
+              ? "border-c-brand bg-c-brand-bg"
+              : "border-[var(--border-color)] bg-bg-card"
+          }`}
       >
         <div className="flex items-center justify-between gap-4">
           <div>
@@ -557,8 +490,8 @@ const MuiEditor: React.FC = () => {
             </p>
             <p className="text-[11px] text-t-muted mt-0.5">
               {muiConfig.active
-                ? "MUI components use this theme. Tailwind still works side-by-side."
-                : "Off — app uses Tailwind only. Turn on to activate MUI globally."}
+                ? "MUI + Tailwind side-by-side. Colors sync via CSS vars."
+                : "Off — app uses Tailwind only."}
             </p>
           </div>
           <Toggle
@@ -566,219 +499,73 @@ const MuiEditor: React.FC = () => {
             onChange={(v) => setMuiConfig({ active: v })}
           />
         </div>
-        {muiConfig.active && (
-          <div className="mt-3 pt-3 border-t border-c-brand/20 text-[11px] text-t-secondary space-y-1">
-            <p>
-              • MUI reads colors from{" "}
-              <code className="font-mono text-c-brand">var(--color-brand)</code>
-              , <code className="font-mono text-c-brand">var(--bg-base)</code>{" "}
-              etc.
-            </p>
-            <p>
-              • Changing tokens in the Light/Dark tabs updates MUI
-              automatically.
-            </p>
-            <p>
-              • Needs{" "}
-              <code className="font-mono bg-black/10 px-1 rounded">
-                @mui/material
-              </code>{" "}
-              installed — see banner below if not.
-            </p>
-          </div>
-        )}
       </div>
 
-      <div className="rounded-xl px-4 py-3 border bg-bg-card border-[var(--border-color)]">
-        <p className="text-xs font-semibold text-t-primary mb-0.5">
-          Install status
-        </p>
-        <code className="text-[11px] font-mono text-t-muted block">
-          npm i @mui/material @emotion/react @emotion/styled
-        </code>
-        <p className="text-[10px] text-t-muted mt-1">
-          If already installed, activating the toggle above applies the theme
-          immediately.
-        </p>
-      </div>
-
-      <div className="rounded-xl px-4 py-3 border bg-bg-card border-[var(--border-color)]">
-        <p className="text-xs font-semibold text-t-primary mb-1">
-          🔗 How Tailwind ↔ MUI stay in sync
-        </p>
-        <p className="text-[11px] text-t-muted leading-relaxed">
-          Both systems read from the same CSS custom properties.{" "}
-          <code className="font-mono text-c-brand">bg-bg-surface</code>{" "}
-          (Tailwind) and MUI's{" "}
-          <code className="font-mono text-c-brand">background.paper</code> both
-          resolve to{" "}
-          <code className="font-mono text-c-brand">var(--bg-surface)</code>.
-          Change a token → both update instantly.
-        </p>
-      </div>
-
-      <div>
-        <div className="flex items-center justify-between mb-2">
-          <p className="text-[10px] font-bold uppercase tracking-wider text-t-muted">
-            🔤 Typography
-          </p>
+      <Section
+        title="📐 Shape"
+        action={
           <button
             onClick={resetMuiConfig}
             className="text-[10px] text-t-muted hover:text-fail"
           >
-            Reset all
+            Reset
           </button>
-        </div>
-        <div className="bg-bg-card rounded-xl border border-[var(--border-color)] px-3 divide-y divide-[var(--border-color)]">
-          <Row label="Font family" sub="CSS font-family string">
-            <input
-              type="text"
-              value={muiConfig.fontFamily}
-              onChange={(e) => update("fontFamily", e.target.value)}
-              className="w-40 text-xs font-mono px-2 py-1 rounded-lg bg-[var(--input-bg)] border border-[var(--input-border)] text-[var(--input-text)] focus:outline-none focus:border-c-brand transition-colors"
-            />
-          </Row>
-          <Row label="Base font size" sub="px — MUI default 14">
-            <NumInput
-              value={muiConfig.fontSize}
-              onChange={(v) => update("fontSize", v)}
-              min={10}
-              max={20}
-            />
-          </Row>
-          <Row label="Weight regular" sub="Body text">
-            <NumInput
-              value={muiConfig.fontWeightRegular}
-              onChange={(v) => update("fontWeightRegular", v)}
-              min={100}
-              max={900}
-              step={100}
-            />
-          </Row>
-          <Row label="Weight medium" sub="Buttons, labels">
-            <NumInput
-              value={muiConfig.fontWeightMedium}
-              onChange={(v) => update("fontWeightMedium", v)}
-              min={100}
-              max={900}
-              step={100}
-            />
-          </Row>
-          <Row label="Weight bold" sub="Headings">
-            <NumInput
-              value={muiConfig.fontWeightBold}
-              onChange={(v) => update("fontWeightBold", v)}
-              min={100}
-              max={900}
-              step={100}
-            />
-          </Row>
-          <Row label="Button text transform">
-            <select
-              value={muiConfig.buttonTextTransform}
-              onChange={(e) =>
-                update("buttonTextTransform", e.target.value as any)
-              }
-              className="text-xs px-2 py-1 rounded-lg bg-[var(--input-bg)] border border-[var(--input-border)] text-[var(--input-text)] focus:outline-none focus:border-c-brand"
-            >
-              <option value="none">none</option>
-              <option value="uppercase">UPPERCASE</option>
-              <option value="capitalize">Capitalize</option>
-            </select>
-          </Row>
-        </div>
-      </div>
-
-      <div>
-        <p className="text-[10px] font-bold uppercase tracking-wider text-t-muted mb-2">
-          📐 Shape & Components
-        </p>
-        <div className="bg-bg-card rounded-xl border border-[var(--border-color)] px-3 divide-y divide-[var(--border-color)]">
-          <Row label="Global border radius" sub="shape.borderRadius px">
-            <NumInput
-              value={muiConfig.borderRadius}
-              onChange={(v) => update("borderRadius", v)}
-              min={0}
-              max={32}
-            />
-          </Row>
-          <Row label="Button radius" sub="MuiButton override px">
-            <NumInput
-              value={muiConfig.buttonBorderRadius}
-              onChange={(v) => update("buttonBorderRadius", v)}
-              min={0}
-              max={32}
-            />
-          </Row>
-          <Row label="TextField radius" sub="MuiOutlinedInput override px">
-            <NumInput
-              value={muiConfig.textFieldBorderRadius}
-              onChange={(v) => update("textFieldBorderRadius", v)}
-              min={0}
-              max={32}
-            />
-          </Row>
-          <Row
-            label="Disable Paper background image"
-            sub="Removes MUI gradient (recommended for dark mode)"
-          >
-            <Toggle
-              value={muiConfig.disablePaperBgImage}
-              onChange={(v) => update("disablePaperBgImage", v)}
-            />
-          </Row>
-        </div>
-        <div className="flex gap-2 mt-2 px-1">
+        }
+      >
+        {sliders.map(({ key, label, max }) => (
           <div
-            className="flex-1 h-9 bg-c-brand flex items-center justify-center text-white text-xs font-semibold shadow"
-            style={{ borderRadius: muiConfig.buttonBorderRadius }}
+            key={key as string}
+            className="flex items-center justify-between py-2.5 gap-3"
           >
-            Button
+            <p className="text-xs text-t-primary flex-1">{label}</p>
+            <div className="flex items-center gap-2 shrink-0">
+              <input
+                type="range"
+                min={0}
+                max={max}
+                value={muiConfig[key] as number}
+                onChange={(e) => update(key, Number(e.target.value) as any)}
+                className="w-24 accent-[var(--c-brand)]"
+              />
+              <code className="text-[10px] font-mono text-t-muted w-7 text-right">
+                {muiConfig[key] as number}
+              </code>
+            </div>
           </div>
-          <div
-            className="flex-1 h-9 bg-bg-card border border-[var(--border-color)] flex items-center justify-center text-t-muted text-xs"
-            style={{ borderRadius: muiConfig.textFieldBorderRadius }}
-          >
-            TextField
-          </div>
-          <div
-            className="flex-1 h-9 bg-bg-surface border border-[var(--border-color)] flex items-center justify-center text-t-muted text-xs"
-            style={{ borderRadius: muiConfig.borderRadius }}
-          >
-            Paper
-          </div>
-        </div>
-        <p className="text-[10px] text-t-muted px-1 mt-1">
-          Live preview of border radii ↑
-        </p>
-      </div>
-
-      <div>
-        <div className="flex items-center justify-between mb-2">
-          <p className="text-[10px] font-bold uppercase tracking-wider text-t-muted">
-            📋 Config reference
+        ))}
+        <div className="flex items-center justify-between py-2.5 gap-3">
+          <p className="text-xs text-t-primary flex-1">
+            Disable Paper bg image
           </p>
-          <div className="flex gap-2">
-            <button
-              onClick={() => setShowCode((v) => !v)}
-              className="text-[10px] text-t-muted hover:text-t-secondary"
-            >
-              {showCode ? "Hide" : "Show"}
-            </button>
-            <button
-              onClick={handleCopy}
-              className="text-[10px] px-2 py-1 rounded-lg bg-c-brand-bg text-c-brand border border-c-brand/20 hover:bg-c-brand hover:text-white transition-colors"
-            >
-              {copied ? "Copied ✓" : "Copy"}
-            </button>
-          </div>
+          <Toggle
+            value={muiConfig.disablePaperBgImage}
+            onChange={(v) => update("disablePaperBgImage", v)}
+          />
         </div>
-        {showCode && (
-          <pre className="text-[10px] font-mono leading-relaxed bg-bg-card border border-[var(--border-color)] rounded-xl p-3 overflow-x-auto whitespace-pre-wrap text-t-secondary">
-            {buildMuiCode(muiConfig)}
-          </pre>
-        )}
+      </Section>
+
+      {/* Live preview */}
+      <div className="flex gap-2">
+        <div
+          className="flex-1 h-9 bg-c-brand flex items-center justify-center text-white text-xs font-semibold shadow"
+          style={{ borderRadius: muiConfig.buttonBorderRadius }}
+        >
+          Button
+        </div>
+        <div
+          className="flex-1 h-9 bg-bg-card border border-[var(--border-color)] flex items-center justify-center text-t-muted text-xs"
+          style={{ borderRadius: muiConfig.textFieldBorderRadius }}
+        >
+          TextField
+        </div>
+        <div
+          className="flex-1 h-9 bg-bg-surface border border-[var(--border-color)] flex items-center justify-center text-t-muted text-xs"
+          style={{ borderRadius: muiConfig.borderRadius }}
+        >
+          Paper
+        </div>
       </div>
+      <p className="text-[10px] text-t-muted -mt-2">Live radius preview ↑</p>
     </div>
   );
 };
@@ -794,19 +581,16 @@ const ThemeEditorPanel: React.FC<{ onClose: () => void }> = ({ onClose }) => {
   const dc = Object.keys(customTokens.dark).length;
   const total = lc + dc;
 
-  const TABS: { id: Tab; label: string; badge?: number | string }[] = [
-    { id: "brand", label: "Palette" },
-    { id: "light", label: "Light", badge: lc || undefined },
-    { id: "dark", label: "Dark", badge: dc || undefined },
+  const TABS: { id: Tab; label: string; badge?: string }[] = [
+    { id: "brand", label: "Brand" },
+    { id: "light", label: "Light", badge: lc ? `${lc}` : undefined },
+    { id: "dark", label: "Dark", badge: dc ? `${dc}` : undefined },
     { id: "mui", label: "MUI", badge: muiConfig.active ? "ON" : undefined },
   ];
 
   return (
     <>
-      {/* Backdrop */}
       <div className="absolute inset-0 backdrop-dim" onClick={onClose} />
-
-      {/* Sheet panel — mirrors ExportAllModal exactly */}
       <div
         className="relative w-full md:max-w-md mx-auto z-10
           border-t md:border border-[var(--border-color)]
@@ -816,10 +600,8 @@ const ThemeEditorPanel: React.FC<{ onClose: () => void }> = ({ onClose }) => {
           paddingBottom: "calc(96px + env(safe-area-inset-bottom, 0px))",
         }}
       >
-        {/* Drag pill */}
         <div className="w-10 h-1 bg-bg-card rounded-full mx-auto md:hidden shrink-0" />
 
-        {/* Header */}
         <div className="flex items-center justify-between shrink-0">
           <div>
             <h2 className="text-base font-bold text-t-primary flex items-center gap-1.5">
@@ -827,18 +609,19 @@ const ThemeEditorPanel: React.FC<{ onClose: () => void }> = ({ onClose }) => {
             </h2>
             <p className="text-xs text-t-muted mt-0.5">
               {total > 0
-                ? `${total} token override${total !== 1 ? "s" : ""} active`
-                : "Customise colors and MUI config"}
+                ? `${total} override${total !== 1 ? "s" : ""} active`
+                : "Admin only"}
             </p>
           </div>
           <div className="flex items-center gap-2 shrink-0">
             {total > 0 && (
               <button
                 onClick={() => {
-                  if (confirm("Reset ALL token overrides?")) {
+                  if (confirm("Reset ALL overrides?")) {
                     resetTokenOverrides();
-                    localStorage.removeItem(LS_BRAND_KEY);
-                    localStorage.removeItem(LS_STATUS_KEY);
+                    [LS_BRAND, LS_STATUS, LS_BASE].forEach((k) =>
+                      localStorage.removeItem(k)
+                    );
                   }
                 }}
                 className="text-xs px-3 py-1.5 rounded-lg bg-red-500/10 text-red-400 hover:bg-red-500/20 transition-colors"
@@ -855,7 +638,6 @@ const ThemeEditorPanel: React.FC<{ onClose: () => void }> = ({ onClose }) => {
           </div>
         </div>
 
-        {/* Tabs */}
         <div className="flex gap-1 shrink-0">
           {TABS.map((t) => (
             <button
@@ -869,9 +651,10 @@ const ThemeEditorPanel: React.FC<{ onClose: () => void }> = ({ onClose }) => {
                 }`}
             >
               {t.label}
-              {t.badge !== undefined && (
+              {t.badge && (
                 <span
-                  className={`ml-1 text-[10px] font-bold ${
+                  className={`ml-1 text-[10px] font-bold
+                  ${
                     tab === t.id
                       ? "text-white/70"
                       : t.badge === "ON"
@@ -886,19 +669,18 @@ const ThemeEditorPanel: React.FC<{ onClose: () => void }> = ({ onClose }) => {
           ))}
         </div>
 
-        {/* Content */}
         <div className="flex-1 pt-1">
-          {tab === "brand" && <BrandStatusEditor />}
-          {tab === "light" && <TokenEditor mode="light" />}
-          {tab === "dark" && <TokenEditor mode="dark" />}
-          {tab === "mui" && <MuiEditor />}
+          {tab === "brand" && <BrandTab />}
+          {tab === "light" && <ModeTab mode="light" />}
+          {tab === "dark" && <ModeTab mode="dark" />}
+          {tab === "mui" && <MuiTab />}
         </div>
       </div>
     </>
   );
 };
 
-// ─── Exported wrapper — admin-only, portal, password gate ─────────────────────
+// ─── Exported wrapper ─────────────────────────────────────────────────────────
 
 interface Props {
   onClose: () => void;
@@ -906,43 +688,17 @@ interface Props {
 
 const ThemeEditor: React.FC<Props> = ({ onClose }) => {
   const { user } = useAuth();
-  const [state, setState] = useState<"password" | "open">(() =>
-    sessionStorage.getItem("themeEditorUnlocked") === "1" ? "open" : "password"
-  );
-
-  // Non-admins get nothing
   if (user?.role !== "admin") return null;
 
-  const unlock = () => {
-    sessionStorage.setItem("themeEditorUnlocked", "1");
-    setState("open");
-  };
-
-  const portal = (
+  return createPortal(
     <div
       className="fixed inset-0 flex items-end md:items-center justify-center"
       style={{ zIndex: 9999 }}
     >
-      {state === "password" ? (
-        <>
-          <div className="absolute inset-0 backdrop-dim" onClick={onClose} />
-          <div
-            className="relative w-full md:max-w-md mx-auto z-10
-              border-t md:border border-[var(--border-color)]
-              rounded-t-2xl md:rounded-2xl
-              glass-frost"
-          >
-            <div className="w-10 h-1 bg-bg-card rounded-full mx-auto mt-3 md:hidden" />
-            <PasswordGate onUnlock={unlock} onCancel={onClose} />
-          </div>
-        </>
-      ) : (
-        <ThemeEditorPanel onClose={onClose} />
-      )}
-    </div>
+      <ThemeEditorPanel onClose={onClose} />
+    </div>,
+    document.body
   );
-
-  return createPortal(portal, document.body);
 };
 
 export default ThemeEditor;
