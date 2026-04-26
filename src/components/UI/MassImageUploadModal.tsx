@@ -44,8 +44,10 @@ const MassImageUploadModal: React.FC<Props> = ({ isOpen, onClose }) => {
 
     for (const file of fileArray) {
       try {
-        const match = file.name.match(/^(.+)_([0-9]+)\.(jpg|jpeg|png|webp|gif)$/i);
-
+        // CORRECT: anchor on the _false/_true suffix so digits after it are unambiguously the image number
+        const match = file.name.match(
+          /^(.+_(true|false))(\d+)\.(jpg|jpeg|png|webp|gif)$/i
+        );
         if (!match) {
           updateRow(file.name, {
             status: "skipped",
@@ -54,9 +56,9 @@ const MassImageUploadModal: React.FC<Props> = ({ isOpen, onClose }) => {
           continue;
         }
 
-        const stepId = match[1];
-        const imageNumber = Number(match[2]);
-        const ext = match[3].toLowerCase();
+        const stepId = match[1]; // e.g. "Water Tightness Test_106_false"
+        const imageNumber = Number(match[3]); // e.g. 1, 2, 3...
+        const ext = match[4].toLowerCase();
         const path = `${stepId}_${imageNumber}.${ext}`;
 
         const { error: uploadError } = await supabase.storage
@@ -102,7 +104,10 @@ const MassImageUploadModal: React.FC<Props> = ({ isOpen, onClose }) => {
 
         updateRow(file.name, {
           status: "done",
-          message: columnName === "action_image_urls" ? "Saved to Action" : "Saved to Expected",
+          message:
+            columnName === "action_image_urls"
+              ? "Saved to Action"
+              : "Saved to Expected",
         });
       } catch (err: any) {
         updateRow(file.name, {
@@ -118,17 +123,25 @@ const MassImageUploadModal: React.FC<Props> = ({ isOpen, onClose }) => {
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center p-4"
-      style={{ backgroundColor: "rgba(0,0,0,0.55)", backdropFilter: "blur(4px)" }}
+      style={{
+        backgroundColor: "rgba(0,0,0,0.55)",
+        backdropFilter: "blur(4px)",
+      }}
       onClick={onClose}
     >
       <div
         className="relative w-full max-w-2xl rounded-2xl border shadow-2xl p-6 flex flex-col gap-4"
-        style={{ backgroundColor: "var(--bg-surface)", borderColor: "var(--border-color)" }}
+        style={{
+          backgroundColor: "var(--bg-surface)",
+          borderColor: "var(--border-color)",
+        }}
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-start justify-between gap-4">
           <div>
-            <h2 className="text-base font-bold text-t-primary">Mass Upload Images</h2>
+            <h2 className="text-base font-bold text-t-primary">
+              Mass Upload Images
+            </h2>
             <p className="text-sm text-t-muted mt-1">
               File name must be: stepId_number.jpg
             </p>
@@ -148,7 +161,10 @@ const MassImageUploadModal: React.FC<Props> = ({ isOpen, onClose }) => {
 
         <div
           className="rounded-xl border border-dashed p-6 text-center"
-          style={{ borderColor: "var(--border-color)", backgroundColor: "var(--bg-card)" }}
+          style={{
+            borderColor: "var(--border-color)",
+            backgroundColor: "var(--bg-card)",
+          }}
         >
           <input
             type="file"
@@ -163,20 +179,34 @@ const MassImageUploadModal: React.FC<Props> = ({ isOpen, onClose }) => {
           </p>
         </div>
 
-        <div className="max-h-80 overflow-auto rounded-xl border"
-          style={{ borderColor: "var(--border-color)" }}>
+        <div
+          className="max-h-80 overflow-auto rounded-xl border"
+          style={{ borderColor: "var(--border-color)" }}
+        >
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b" style={{ borderColor: "var(--border-color)" }}>
-                <th className="text-left px-3 py-2 text-xs text-t-muted">File</th>
-                <th className="text-left px-3 py-2 text-xs text-t-muted">Status</th>
-                <th className="text-left px-3 py-2 text-xs text-t-muted">Message</th>
+              <tr
+                className="border-b"
+                style={{ borderColor: "var(--border-color)" }}
+              >
+                <th className="text-left px-3 py-2 text-xs text-t-muted">
+                  File
+                </th>
+                <th className="text-left px-3 py-2 text-xs text-t-muted">
+                  Status
+                </th>
+                <th className="text-left px-3 py-2 text-xs text-t-muted">
+                  Message
+                </th>
               </tr>
             </thead>
             <tbody>
               {rows.length === 0 ? (
                 <tr>
-                  <td colSpan={3} className="px-3 py-6 text-center text-t-muted text-sm">
+                  <td
+                    colSpan={3}
+                    className="px-3 py-6 text-center text-t-muted text-sm"
+                  >
                     No files selected yet
                   </td>
                 </tr>
@@ -187,7 +217,9 @@ const MassImageUploadModal: React.FC<Props> = ({ isOpen, onClose }) => {
                     className="border-b last:border-b-0"
                     style={{ borderColor: "var(--border-color)" }}
                   >
-                    <td className="px-3 py-2 text-t-primary break-all">{row.fileName}</td>
+                    <td className="px-3 py-2 text-t-primary break-all">
+                      {row.fileName}
+                    </td>
                     <td className="px-3 py-2">
                       <span
                         className={`text-xs font-semibold px-2 py-1 rounded-full ${
@@ -203,7 +235,9 @@ const MassImageUploadModal: React.FC<Props> = ({ isOpen, onClose }) => {
                         {row.status}
                       </span>
                     </td>
-                    <td className="px-3 py-2 text-t-muted text-xs">{row.message || "-"}</td>
+                    <td className="px-3 py-2 text-t-muted text-xs">
+                      {row.message || "-"}
+                    </td>
                   </tr>
                 ))
               )}

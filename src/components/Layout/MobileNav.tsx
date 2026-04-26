@@ -9,7 +9,6 @@ import {
   FlaskConical,
   Hash,
   FolderOpen,
-  X,
   Download,
   Upload,
   Palette,
@@ -59,11 +58,10 @@ const MobileNav: React.FC<Props> = ({ activePage, onNavigate }) => {
   const { theme, setTheme } = useTheme();
   const [activeModal, setModal] = useState<ActiveModal>(null);
   const [modules, setModules] = useState<ModuleOption[]>([]);
-  const [menuOpen, setMenuOpen] = useState(false);
+  const [moreOpen, setMoreOpen] = useState(false);
 
   const navRef = useRef<HTMLDivElement>(null);
-  const sheetRef = useRef<HTMLDivElement>(null);
-  const overlayRef = useRef<HTMLDivElement>(null);
+  const moreRef = useRef<HTMLDivElement>(null);
   const itemRefs = useRef<(HTMLButtonElement | null)[]>([]);
 
   const isAdmin = user?.role === "admin";
@@ -79,29 +77,6 @@ const MobileNav: React.FC<Props> = ({ activePage, onNavigate }) => {
     }),
     []
   );
-
-  const glassSheet = useMemo(
-    (): React.CSSProperties => ({
-      background: `color-mix(in srgb, var(--bg-surface) 55%, transparent)`,
-      backdropFilter: "blur(40px) saturate(180%)",
-      WebkitBackdropFilter: "blur(40px) saturate(180%)",
-      borderTop: `1px solid color-mix(in srgb, var(--border-color) 55%, transparent)`,
-      borderLeft: `1px solid color-mix(in srgb, var(--border-color) 55%, transparent)`,
-      borderRight: `1px solid color-mix(in srgb, var(--border-color) 55%, transparent)`,
-      boxShadow: "0 -8px 32px rgba(0,0,0,0.12)",
-    }),
-    []
-  );
-
-  const glassItem = useMemo(
-    (): React.CSSProperties => ({
-      background: `color-mix(in srgb, var(--bg-card) 28%, transparent)`,
-      border: `1px solid color-mix(in srgb, var(--border-color) 55%, transparent)`,
-    }),
-    []
-  );
-
-  const dragHandleColor = `color-mix(in srgb, var(--border-color) 55%, transparent)`;
 
   useEffect(() => {
     fetchModuleOptions()
@@ -125,48 +100,56 @@ const MobileNav: React.FC<Props> = ({ activePage, onNavigate }) => {
     );
   }, []);
 
+  // Click outside to close more menu
   useEffect(() => {
-    if (!sheetRef.current || !overlayRef.current) return;
-    if (menuOpen) {
-      gsap.set(sheetRef.current, { display: "flex" });
+    if (!moreOpen) return;
+    const handleClick = () => setMoreOpen(false);
+    document.addEventListener("click", handleClick);
+    return () => document.removeEventListener("click", handleClick);
+  }, [moreOpen]);
+
+  // Animate more popup
+  useEffect(() => {
+    if (!moreRef.current) return;
+    if (moreOpen) {
+      gsap.set(moreRef.current, { display: "flex" });
       gsap.fromTo(
-        sheetRef.current,
-        { y: "100%", opacity: 0 },
-        { y: "0%", opacity: 1, duration: 0.42, ease: "expo.out" }
+        moreRef.current,
+        { opacity: 0, scale: 0.92, y: 8 },
+        {
+          opacity: 1,
+          scale: 1,
+          y: 0,
+          duration: 0.3,
+          ease: "back.out(1.4)",
+        }
       );
-      gsap.fromTo(
-        overlayRef.current,
-        { opacity: 0 },
-        { opacity: 1, duration: 0.28, ease: "power2.out" }
-      );
-      const items = sheetRef.current.querySelectorAll(".sheet-item");
+      const items = moreRef.current.querySelectorAll(".more-item");
       gsap.fromTo(
         items,
-        { x: -16, opacity: 0 },
+        { opacity: 0, scale: 0.85 },
         {
-          x: 0,
           opacity: 1,
-          duration: 0.3,
-          stagger: 0.04,
-          ease: "power3.out",
-          delay: 0.12,
+          scale: 1,
+          duration: 0.25,
+          stagger: 0.02,
+          ease: "back.out(1.4)",
+          delay: 0.08,
         }
       );
     } else {
-      gsap.to(sheetRef.current, {
-        y: "100%",
+      gsap.to(moreRef.current, {
         opacity: 0,
-        duration: 0.28,
-        ease: "power3.in",
+        scale: 0.95,
+        y: 8,
+        duration: 0.2,
+        ease: "power2.in",
         onComplete: () => {
-          if (sheetRef.current) gsap.set(sheetRef.current, { display: "none" });
+          if (moreRef.current) gsap.set(moreRef.current, { display: "none" });
         },
       });
-      gsap.to(overlayRef.current, { opacity: 0, duration: 0.2 });
     }
-  }, [menuOpen]);
-
-  const closeMenu = () => setMenuOpen(false);
+  }, [moreOpen]);
 
   const handleSignOut = async () => {
     if (user?.id) await releaseLocksAndSignOut(user.id, signOut);
@@ -210,151 +193,229 @@ const MobileNav: React.FC<Props> = ({ activePage, onNavigate }) => {
 
   return (
     <>
-      {/* Overlay */}
+      {/* More Options Popup — icon grid, sits above navbar, same width */}
       <div
-        ref={overlayRef}
-        className="fixed top-0 left-0 right-0 md:hidden backdrop-dim"
+        ref={moreRef}
+        className="fixed left-1/2 -translate-x-1/2 z-[70] md:hidden glass-frost p-3"
         style={{
-          bottom: 60,
-          opacity: 0,
-          display: menuOpen ? "block" : "none",
-          pointerEvents: menuOpen ? "auto" : "none",
-          zIndex: 55,
+          bottom: "calc(72px + env(safe-area-inset-bottom, 0px))",
+          width: "calc(100% - 32px)",
+          maxWidth: 420,
+          display: "none",
         }}
-        onClick={closeMenu}
-      />
-
-      {/* Sheet */}
-      <div
-        ref={sheetRef}
-        className="fixed bottom-0 inset-x-0 z-[60] md:hidden rounded-t-[28px] flex-col"
-        style={{ ...glassSheet, display: "none", maxHeight: "80vh" }}
+        onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex justify-center pt-3 pb-2 shrink-0">
-          <div
-            className="w-9 h-1 rounded-full"
-            style={{ background: dragHandleColor }}
-          />
-        </div>
-
-        <div className="flex items-center justify-between px-5 pb-3 shrink-0">
-          <div>
-            <p className="text-sm font-bold text-t-primary tracking-tight">
-              Options
-            </p>
-            <p className="text-[11px] text-t-muted font-medium">
-              {user?.email}
-            </p>
-          </div>
-          <button
-            onClick={closeMenu}
-            className="w-8 h-8 rounded-full flex items-center justify-center text-t-muted hover:text-t-primary transition"
-            style={glassItem}
-          >
-            <X size={14} />
-          </button>
-        </div>
-
-        <div
-          className="overflow-y-auto flex-1 px-3 flex flex-col gap-1"
-          style={{
-            paddingBottom: "calc(96px + env(safe-area-inset-bottom, 0px))",
-          }}
-        >
+        <div className="grid grid-cols-4 gap-2">
           {/* Theme toggle */}
-          <div className="sheet-item flex gap-2 mb-1">
-            <button
-              onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
-              className="flex-1 flex items-center gap-2.5 px-4 py-3 rounded-2xl transition-colors"
-              style={glassItem}
+          <button
+            onClick={() => {
+              setTheme(theme === "dark" ? "light" : "dark");
+              setMoreOpen(false);
+            }}
+            className="more-item flex flex-col items-center justify-center gap-1 p-2 rounded-xl transition-all duration-200 hover:bg-white/5 active:scale-90"
+          >
+            <div
+              className="w-10 h-10 rounded-xl flex items-center justify-center"
+              style={{
+                background:
+                  "color-mix(in srgb, var(--bg-card) 50%, transparent)",
+              }}
             >
-              <span className="text-t-muted">
+              <span className="text-t-secondary">
                 {theme === "dark" ? <Sun size={16} /> : <Moon size={16} />}
               </span>
-              <span className="text-sm text-t-secondary font-medium">
-                {theme === "dark" ? "Light Mode" : "Dark Mode"}
-              </span>
-            </button>
-          </div>
+            </div>
+            <span className="text-[9px] font-medium text-t-muted leading-tight text-center">
+              {theme === "dark" ? "Light" : "Dark"}
+            </span>
+          </button>
 
           {isAdmin && (
             <>
-              <p className="sheet-item text-[10px] font-bold text-t-muted uppercase tracking-widest px-2 mt-1 mb-0.5">
-                Data Management
-              </p>
-              {(
-                [
-                  {
-                    icon: <Download size={15} />,
-                    label: "Export All Data",
-                    modal: "export" as ActiveModal,
-                  },
-                  {
-                    icon: <FileText size={15} />,
-                    label: "Export Test (DOCX)",
-                    modal: "test-docx" as ActiveModal,
-                  },
-                  {
-                    icon: <Package size={15} />,
-                    label: "Manage Modules",
-                    modal: "modules" as ActiveModal,
-                  },
-                  {
-                    icon: <FlaskConical size={15} />,
-                    label: "Manage Tests",
-                    modal: "tests" as ActiveModal,
-                  },
-                  {
-                    icon: <Upload size={15} />,
-                    label: "Import Steps (CSV)",
-                    modal: "steps-csv" as ActiveModal,
-                  },
-                  {
-                    icon: <Hash size={15} />,
-                    label: "Manage Steps",
-                    modal: "steps-manual" as ActiveModal,
-                  },
-                  {
-                    icon: <Palette size={15} />,
-                    label: "Theme Editor",
-                    modal: "theme" as ActiveModal,
-                  },
-                ] as {
-                  icon: React.ReactNode;
-                  label: string;
-                  modal: ActiveModal;
-                }[]
-              ).map((item) => (
-                <button
-                  key={item.label}
-                  onClick={() => {
-                    setModal(item.modal);
-                    closeMenu();
+              <button
+                onClick={() => {
+                  setModal("export");
+                  setMoreOpen(false);
+                }}
+                className="more-item flex flex-col items-center justify-center gap-1 p-2 rounded-xl transition-all duration-200 hover:bg-white/5 active:scale-90"
+              >
+                <div
+                  className="w-10 h-10 rounded-xl flex items-center justify-center"
+                  style={{
+                    background:
+                      "color-mix(in srgb, var(--bg-card) 50%, transparent)",
                   }}
-                  className="sheet-item w-full flex items-center gap-3 px-4 py-3 rounded-2xl text-left transition-colors"
-                  style={glassItem}
                 >
-                  <span className="text-c-brand/70">{item.icon}</span>
-                  <span className="text-sm text-t-secondary font-medium">
-                    {item.label}
+                  <span className="text-t-secondary">
+                    <Download size={16} />
                   </span>
-                </button>
-              ))}
+                </div>
+                <span className="text-[9px] font-medium text-t-muted leading-tight text-center">
+                  Export
+                </span>
+              </button>
+
+              <button
+                onClick={() => {
+                  setModal("test-docx");
+                  setMoreOpen(false);
+                }}
+                className="more-item flex flex-col items-center justify-center gap-1 p-2 rounded-xl transition-all duration-200 hover:bg-white/5 active:scale-90"
+              >
+                <div
+                  className="w-10 h-10 rounded-xl flex items-center justify-center"
+                  style={{
+                    background:
+                      "color-mix(in srgb, var(--bg-card) 50%, transparent)",
+                  }}
+                >
+                  <span className="text-t-secondary">
+                    <FileText size={16} />
+                  </span>
+                </div>
+                <span className="text-[9px] font-medium text-t-muted leading-tight text-center">
+                  DOCX
+                </span>
+              </button>
+
+              <button
+                onClick={() => {
+                  setModal("modules");
+                  setMoreOpen(false);
+                }}
+                className="more-item flex flex-col items-center justify-center gap-1 p-2 rounded-xl transition-all duration-200 hover:bg-white/5 active:scale-90"
+              >
+                <div
+                  className="w-10 h-10 rounded-xl flex items-center justify-center"
+                  style={{
+                    background:
+                      "color-mix(in srgb, var(--bg-card) 50%, transparent)",
+                  }}
+                >
+                  <span className="text-t-secondary">
+                    <Package size={16} />
+                  </span>
+                </div>
+                <span className="text-[9px] font-medium text-t-muted leading-tight text-center">
+                  Modules
+                </span>
+              </button>
+
+              <button
+                onClick={() => {
+                  setModal("tests");
+                  setMoreOpen(false);
+                }}
+                className="more-item flex flex-col items-center justify-center gap-1 p-2 rounded-xl transition-all duration-200 hover:bg-white/5 active:scale-90"
+              >
+                <div
+                  className="w-10 h-10 rounded-xl flex items-center justify-center"
+                  style={{
+                    background:
+                      "color-mix(in srgb, var(--bg-card) 50%, transparent)",
+                  }}
+                >
+                  <span className="text-t-secondary">
+                    <FlaskConical size={16} />
+                  </span>
+                </div>
+                <span className="text-[9px] font-medium text-t-muted leading-tight text-center">
+                  Tests
+                </span>
+              </button>
+
+              <button
+                onClick={() => {
+                  setModal("steps-csv");
+                  setMoreOpen(false);
+                }}
+                className="more-item flex flex-col items-center justify-center gap-1 p-2 rounded-xl transition-all duration-200 hover:bg-white/5 active:scale-90"
+              >
+                <div
+                  className="w-10 h-10 rounded-xl flex items-center justify-center"
+                  style={{
+                    background:
+                      "color-mix(in srgb, var(--bg-card) 50%, transparent)",
+                  }}
+                >
+                  <span className="text-t-secondary">
+                    <Upload size={16} />
+                  </span>
+                </div>
+                <span className="text-[9px] font-medium text-t-muted leading-tight text-center">
+                  Import
+                </span>
+              </button>
+
+              <button
+                onClick={() => {
+                  setModal("steps-manual");
+                  setMoreOpen(false);
+                }}
+                className="more-item flex flex-col items-center justify-center gap-1 p-2 rounded-xl transition-all duration-200 hover:bg-white/5 active:scale-90"
+              >
+                <div
+                  className="w-10 h-10 rounded-xl flex items-center justify-center"
+                  style={{
+                    background:
+                      "color-mix(in srgb, var(--bg-card) 50%, transparent)",
+                  }}
+                >
+                  <span className="text-t-secondary">
+                    <Hash size={16} />
+                  </span>
+                </div>
+                <span className="text-[9px] font-medium text-t-muted leading-tight text-center">
+                  Steps
+                </span>
+              </button>
+
+              <button
+                onClick={() => {
+                  setModal("theme");
+                  setMoreOpen(false);
+                }}
+                className="more-item flex flex-col items-center justify-center gap-1 p-2 rounded-xl transition-all duration-200 hover:bg-white/5 active:scale-90"
+              >
+                <div
+                  className="w-10 h-10 rounded-xl flex items-center justify-center"
+                  style={{
+                    background:
+                      "color-mix(in srgb, var(--bg-card) 50%, transparent)",
+                  }}
+                >
+                  <span className="text-t-secondary">
+                    <Palette size={16} />
+                  </span>
+                </div>
+                <span className="text-[9px] font-medium text-t-muted leading-tight text-center">
+                  Theme
+                </span>
+              </button>
             </>
           )}
 
-          <div
-            className="h-px my-2 sheet-item"
-            style={{ background: dragHandleColor }}
-          />
+          {/* Sign Out */}
           <button
-            onClick={handleSignOut}
-            className="sheet-item w-full flex items-center gap-3 px-4 py-3 rounded-2xl text-left transition-colors hover:bg-red-500/10"
-            style={{ ...glassItem, borderColor: "rgba(239,68,68,0.25)" }}
+            onClick={() => {
+              handleSignOut();
+              setMoreOpen(false);
+            }}
+            className="more-item flex flex-col items-center justify-center gap-1 p-2 rounded-xl transition-all duration-200 hover:bg-red-500/10 active:scale-90"
           >
-            <LogOut size={15} className="text-red-400/70" />
-            <span className="text-sm text-red-400/80 font-medium">
-              Sign Out
+            <div
+              className="w-10 h-10 rounded-xl flex items-center justify-center"
+              style={{
+                background:
+                  "color-mix(in srgb, var(--color-fail) 12%, transparent)",
+              }}
+            >
+              <span className="text-red-400/80">
+                <LogOut size={16} />
+              </span>
+            </div>
+            <span className="text-[9px] font-medium text-red-400/70 leading-tight text-center">
+              Exit
             </span>
           </button>
         </div>
@@ -379,7 +440,7 @@ const MobileNav: React.FC<Props> = ({ activePage, onNavigate }) => {
             (item.id === "__module__" && activePage === "module");
           const isMore = item.id === "__more__";
           const isModule = item.id === "__module__";
-          const highlighted = isActive || (menuOpen && isMore);
+          const highlighted = isActive || (moreOpen && isMore);
 
           return (
             <button
@@ -387,9 +448,10 @@ const MobileNav: React.FC<Props> = ({ activePage, onNavigate }) => {
               ref={(el) => {
                 itemRefs.current[i] = el;
               }}
-              onClick={() => {
+              onClick={(e: React.MouseEvent<HTMLButtonElement>) => {
                 if (isMore) {
-                  setMenuOpen((p) => !p);
+                  e.stopPropagation();
+                  setMoreOpen((p) => !p);
                   return;
                 }
                 if (isModule && modules[0]) {
