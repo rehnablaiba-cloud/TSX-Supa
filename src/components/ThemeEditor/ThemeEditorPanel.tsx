@@ -808,10 +808,11 @@ const ThemeEditorPanel: React.FC<{ onClose: () => void }> = ({ onClose }) => {
     <div className="fixed fixed inset-0 z-[60] flex items-end">
       <div className="absolute inset-0 backdrop-dim" onClick={onClose} />
       <div
-        className="relative w-full rounded-t-2xl z-10 flex flex-col glass-frost"
+        className="relative w-full rounded-t-2xl z-10 glass-frost"
         style={{
           borderTop: "1px solid var(--border-color)",
           maxHeight: "92dvh",
+          background: "red",
         }}
       >
         <div className="w-10 h-1 bg-bg-card rounded-full mx-auto mt-3 mb-1 shrink-0" />
