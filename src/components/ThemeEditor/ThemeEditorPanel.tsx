@@ -487,7 +487,7 @@ const GLASS_SLIDERS: {
   unit: string;
 }[] = [
   {
-    key: "blur-sm",
+    key: "blur",
     label: "Blur",
     sub: "backdrop-filter blur-sm",
     min: 0,
