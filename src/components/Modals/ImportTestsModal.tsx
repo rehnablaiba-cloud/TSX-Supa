@@ -9,7 +9,6 @@ import {
   ArrowLeft,
 } from "lucide-react";
 import ModalShell from "../Layout/ModalShell";
-
 import { supabase } from "../../supabase";
 import { Row, DiffRow } from "../UI/ReviewRow";
 import type { TestOption } from "../../types";
@@ -99,21 +98,57 @@ const ImportTestsModal: React.FC<Props> = ({ onClose, onBack }) => {
         const { error: e } = await supabase
           .from("tests")
           .insert({ serial_no: sn.trim(), name: name.trim() });
-
         if (e) throw new Error(e.message);
       } else if (op === "update" && selectedTest) {
+        const newName = name.trim();
+        const newSn = sn.trim();
+        const oldName = selectedTest.name;
+
+        // FIX: tests.name is the PK. Postgres blocks renaming it while
+        // teststeps.testsname still references the old value (no ON UPDATE
+        // CASCADE on the FK). Rename child rows first, then the parent.
+        if (newName !== oldName) {
+          const { error: stepErr } = await supabase
+            .from("teststeps")
+            .update({ testsname: newName })
+            .eq("testsname", oldName);
+          if (stepErr)
+            throw new Error(`Step ref update failed: ${stepErr.message}`);
+        }
+
         const { error: e } = await supabase
           .from("tests")
-          .update({ serial_no: sn.trim(), name: name.trim() })
-          .eq("name", selectedTest.name);
-        if (e) throw new Error(e.message);
+          .update({ serial_no: newSn, name: newName })
+          .eq("name", oldName);
+
+        if (e) {
+          // Rollback: revert teststeps so DB stays consistent
+          if (newName !== oldName) {
+            await supabase
+              .from("teststeps")
+              .update({ testsname: oldName })
+              .eq("testsname", newName);
+          }
+          throw new Error(e.message);
+        }
       } else if (op === "delete" && selectedTest) {
+        const targetName = selectedTest.name;
+
+        // FIX: FK also blocks deleting a test that has steps.
+        // Delete teststeps first, then the parent test row.
+        const { error: stepErr } = await supabase
+          .from("teststeps")
+          .delete()
+          .eq("testsname", targetName);
+        if (stepErr) throw new Error(`Step cleanup failed: ${stepErr.message}`);
+
         const { error: e } = await supabase
           .from("tests")
           .delete()
-          .eq("name", selectedTest.name);
+          .eq("name", targetName);
         if (e) throw new Error(e.message);
       }
+
       setStage("done");
     } catch (e: any) {
       setError(e.message);
@@ -135,12 +170,11 @@ const ImportTestsModal: React.FC<Props> = ({ onClose, onBack }) => {
       : "…";
 
   return (
+    // FIX: ModalShell.title is typed as string — passing JSX caused TS2322.
+    // Use the icon prop for the FlaskConical icon instead.
     <ModalShell
-      title={
-        <span className="flex items-center gap-1.5">
-          <FlaskConical size={16} /> Tests
-        </span>
-      }
+      title="Tests"
+      icon={<FlaskConical size={16} />}
       onClose={onClose}
     >
       <div className="flex items-center justify-between -mt-1 mb-3">

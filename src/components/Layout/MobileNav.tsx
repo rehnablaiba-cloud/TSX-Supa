@@ -198,7 +198,7 @@ const MobileNav: React.FC<Props> = ({ activePage, onNavigate }) => {
         ref={moreRef}
         className="fixed left-1/2 -translate-x-1/2 z-[70] md:hidden glass-frost p-3"
         style={{
-          bottom: "calc(72px + env(safe-area-inset-bottom, 0px))",
+          bottom: "calc(76px + env(safe-area-inset-bottom, 0px))",
           width: "calc(100% - 32px)",
           maxWidth: 420,
           display: "none",
