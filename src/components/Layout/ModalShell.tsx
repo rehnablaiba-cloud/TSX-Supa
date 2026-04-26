@@ -4,7 +4,7 @@ import { X } from "lucide-react";
 import gsap from "gsap";
 
 interface ModalShellProps {
-  title: string;
+  title: React.ReactNode;
   onClose: () => void;
   children: React.ReactNode;
   maxWidth?: number;
@@ -84,7 +84,8 @@ const ModalShell: React.FC<ModalShellProps> = ({
         <div
           className="flex items-center justify-between px-5 py-4 shrink-0 border-b"
           style={{
-            borderColor: "color-mix(in srgb, var(--border-color) 50%, transparent)",
+            borderColor:
+              "color-mix(in srgb, var(--border-color) 50%, transparent)",
           }}
         >
           <h2 className="text-base font-bold text-t-primary tracking-tight">
