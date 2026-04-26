@@ -1482,7 +1482,7 @@ const TestExecution: React.FC<Props> = ({
       />
 
       {/* ── Fixed header ─────────────────────────────────────────────────── */}
-      <div className="flex-shrink-0">
+      <div className="shrink-0">
         <Topbar
           title={
             currentTest
