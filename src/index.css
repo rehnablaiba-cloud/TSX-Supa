@@ -1,4 +1,4 @@
-@import 'tailwindcss';
+@import "tailwindcss";
 
 @custom-variant dark (&:is(.dark *));
 
@@ -58,12 +58,10 @@
 
 @utility glass {
   /* ── Standard glass card ── */
-  background: color-mix(in srgb, var(--bg-surface) var(--glass-bg-opacity), transparent);
-  border: 1px solid color-mix(in srgb, var(--border-color) var(--glass-border-opacity), transparent);
+  background: color-mix(in srgb, var(--bg-surface) 86%, transparent);
+  border: 1px solid color-mix(in srgb, var(--border-color) 80%, transparent);
   @apply backdrop-blur-md rounded-2xl;
-  transition:
-    background-color 0.3s ease,
-    border-color 0.3s ease;
+  transition: background-color 0.3s ease, border-color 0.3s ease;
 
   /* ── Neon pulse keyframes (theme-adaptive via CSS vars) ── */
 }
@@ -82,16 +80,13 @@
       transparent
     );
   @apply rounded-2xl;
-  box-shadow:
-    0 8px 32px color-mix(in srgb, var(--bg-base) 40%, transparent),
+  box-shadow: 0 8px 32px color-mix(in srgb, var(--bg-base) 40%, transparent),
     inset 0 1px 0 color-mix(in srgb, var(--text-primary) 6%, transparent);
   backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturation))
     brightness(var(--glass-brightness));
   -webkit-backdrop-filter: blur(var(--glass-blur))
     saturate(var(--glass-saturation)) brightness(var(--glass-brightness));
-  transition:
-    background-color 0.3s ease,
-    border-color 0.3s ease,
+  transition: background-color 0.3s ease, border-color 0.3s ease,
     box-shadow 0.3s ease;
 
   /* ── Neon pulse keyframes (theme-adaptive via CSS vars) ── */
@@ -111,16 +106,13 @@
       transparent
     );
   @apply rounded-3xl;
-  box-shadow:
-    0 8px 32px color-mix(in srgb, var(--bg-base) 35%, transparent),
+  box-shadow: 0 8px 32px color-mix(in srgb, var(--bg-base) 35%, transparent),
     inset 0 1px 0 color-mix(in srgb, var(--text-primary) 8%, transparent);
   backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturation))
     brightness(var(--glass-brightness));
   -webkit-backdrop-filter: blur(var(--glass-blur))
     saturate(var(--glass-saturation)) brightness(var(--glass-brightness));
-  transition:
-    background-color 0.3s ease,
-    border-color 0.3s ease,
+  transition: background-color 0.3s ease, border-color 0.3s ease,
     box-shadow 0.3s ease;
 
   /* ── Neon pulse keyframes (theme-adaptive via CSS vars) ── */
@@ -135,7 +127,7 @@
 
 @utility backdrop-dim {
   /* ── Modal backdrop (theme-aware dimming, not hardcoded black) ── */
-  background: color-mix(in srgb, var(--bg-base) var(--backdrop-dim-opacity), transparent);
+  background: color-mix(in srgb, var(--bg-base) 55%, transparent);
   @apply backdrop-blur-xs;
   transition: background-color 0.3s ease;
 
@@ -173,9 +165,7 @@
   background-color: var(--input-bg);
   color: var(--input-text);
   border: 1px solid var(--input-border);
-  transition:
-    background-color 0.2s ease,
-    border-color 0.2s ease,
+  transition: background-color 0.2s ease, border-color 0.2s ease,
     color 0.2s ease;
   &::placeholder {
     color: var(--text-muted);
@@ -391,7 +381,7 @@
     --glass-brightness: 1.06;
     --glass-bg-opacity: 40%;
     --glass-border-opacity: 55%;
-    --backdrop-dim-opacity: 55%;
+    --glass-nav-bg-opacity: 72%;
   }
 
   /* ── Base ── */
@@ -448,35 +438,41 @@
   @keyframes neonPulse {
     0%,
     100% {
-      box-shadow: 0 0 0 1.5px color-mix(in oklab, var(--neon-cyan) 45%, transparent),
+      box-shadow: 0 0 0 1.5px
+          color-mix(in oklab, var(--neon-cyan) 45%, transparent),
         0 0 12px 2px color-mix(in oklab, var(--neon-cyan) 18%, transparent);
     }
     50% {
-      box-shadow: 0 0 0 1.5px color-mix(in oklab, var(--neon-cyan) 45%, transparent),
+      box-shadow: 0 0 0 1.5px
+          color-mix(in oklab, var(--neon-cyan) 45%, transparent),
         0 0 22px 6px color-mix(in oklab, var(--neon-cyan) 32%, transparent);
     }
   }
   @keyframes amberPulse {
     0%,
     100% {
-      box-shadow: 0 0 0 1.5px color-mix(in oklab, var(--neon-amber) 45%, transparent),
+      box-shadow: 0 0 0 1.5px
+          color-mix(in oklab, var(--neon-amber) 45%, transparent),
         0 0 12px 2px color-mix(in oklab, var(--neon-amber) 18%, transparent);
     }
     50% {
-      box-shadow: 0 0 0 1.5px color-mix(in oklab, var(--neon-amber) 45%, transparent),
+      box-shadow: 0 0 0 1.5px
+          color-mix(in oklab, var(--neon-amber) 45%, transparent),
         0 0 22px 6px color-mix(in oklab, var(--neon-amber) 32%, transparent);
     }
   }
   @keyframes dualPulse {
     0%,
     100% {
-      box-shadow: 0 0 0 1.5px color-mix(in oklab, var(--neon-cyan) 50%, transparent),
+      box-shadow: 0 0 0 1.5px
+          color-mix(in oklab, var(--neon-cyan) 50%, transparent),
         0 0 0 3px color-mix(in oklab, var(--neon-amber) 35%, transparent),
         0 0 14px 3px color-mix(in oklab, var(--neon-cyan) 20%, transparent),
         0 0 22px 6px color-mix(in oklab, var(--neon-amber) 15%, transparent);
     }
     50% {
-      box-shadow: 0 0 0 1.5px color-mix(in oklab, var(--neon-cyan) 60%, transparent),
+      box-shadow: 0 0 0 1.5px
+          color-mix(in oklab, var(--neon-cyan) 60%, transparent),
         0 0 0 3px color-mix(in oklab, var(--neon-amber) 45%, transparent),
         0 0 22px 6px color-mix(in oklab, var(--neon-cyan) 32%, transparent),
         0 0 32px 10px color-mix(in oklab, var(--neon-amber) 25%, transparent);

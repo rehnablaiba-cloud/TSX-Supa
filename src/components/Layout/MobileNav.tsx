@@ -1,7 +1,13 @@
 // src/components/Layout/MobileNav.tsx
 // iOS 26 Liquid Glass design + GSAP animations
 
-import React, { useLayoutEffect, useRef, useEffect, useState } from "react";
+import React, {
+  useLayoutEffect,
+  useRef,
+  useEffect,
+  useState,
+  useMemo,
+} from "react";
 import { useAuth } from "../../context/AuthContext";
 import { useTheme } from "../../context/ThemeContext";
 import {
@@ -66,10 +72,17 @@ const MobileNav: React.FC<Props> = ({ activePage, onNavigate }) => {
 
   const isAdmin = user?.role === "admin";
 
-  // ── glassNav useMemo removed ──
-  // Both nav and more popup now use glass-frost class exclusively,
-  // so all opacity/blur/saturation/brightness values are driven by
-  // --glass-* CSS vars and controlled globally via ThemeEditor.
+  const glassNav = useMemo(
+    (): React.CSSProperties => ({
+      background: `color-mix(in srgb, var(--bg-surface) 40%, transparent)`,
+      backdropFilter: "blur(28px) saturate(180%) brightness(1.06)",
+      WebkitBackdropFilter: "blur(28px) saturate(180%) brightness(1.06)",
+      border: `1px solid color-mix(in srgb, var(--border-color) 55%, transparent)`,
+      boxShadow:
+        "0 8px 32px rgba(0,0,0,0.20), inset 0 1px 0 rgba(255,255,255,0.06)",
+    }),
+    []
+  );
 
   useEffect(() => {
     fetchModuleOptions()
@@ -192,12 +205,6 @@ const MobileNav: React.FC<Props> = ({ activePage, onNavigate }) => {
 
   return (
     <>
-      {/*
-       * More Options Popup
-       * Uses glass-frost exclusively — no inline background/backdrop overrides.
-       * Opacity, blur, saturation, brightness all come from --glass-* CSS vars
-       * so ThemeEditor controls this surface globally.
-       */}
       <div
         ref={moreRef}
         className="fixed left-1/2 -translate-x-1/2 z-70 md:hidden glass-frost p-3"
@@ -434,16 +441,15 @@ const MobileNav: React.FC<Props> = ({ activePage, onNavigate }) => {
         </div>
       </div>
 
-      {/*
-       * Nav bar
-       * Uses glass-frost exclusively — glassNav useMemo removed.
-       * All glass values driven by --glass-* CSS vars globally.
-       */}
+      {/* Nav */}
       <nav
         ref={navRef}
         className="fixed bottom-2 left-1/2 -translate-x-1/2 z-62 md:hidden
-          glass-frost rounded-[26px] flex items-center px-2 py-2 gap-1"
+    glass-frost rounded-[26px] flex items-center px-2 py-2 gap-1"
         style={{
+          // glass-frost handles blur/saturation/brightness globally ✓
+          // but navbar needs its own bg opacity — it sits on bare dark bg
+          background: `color-mix(in srgb, var(--bg-surface) var(--glass-nav-bg-opacity), transparent)`,
           width: "calc(100% - 32px)",
           maxWidth: 420,
           marginBottom: "env(safe-area-inset-bottom, 0px)",
@@ -505,7 +511,7 @@ const MobileNav: React.FC<Props> = ({ activePage, onNavigate }) => {
                 className="transition-colors duration-200"
                 style={{
                   color: highlighted ? "var(--c-brand)" : "var(--t-secondary)",
-                  opacity: highlighted ? 1 : 0.75,
+                  opacity: highlighted ? 1 : 0.6,
                 }}
               >
                 {item.icon}
@@ -514,7 +520,7 @@ const MobileNav: React.FC<Props> = ({ activePage, onNavigate }) => {
                 className="text-[9.5px] font-semibold tracking-wide transition-colors duration-200"
                 style={{
                   color: highlighted ? "var(--c-brand)" : "var(--t-secondary)",
-                  opacity: highlighted ? 1 : 0.65,
+                  opacity: highlighted ? 1 : 0.45,
                 }}
               >
                 {item.label}
