@@ -126,6 +126,25 @@ const PRESETS = [
 const LS_BRAND = "themeEditorBrandPalette";
 const LS_STATUS = "themeEditorStatusColors";
 const LS_BASE = "themeEditorBaseColor";
+const LS_GLASS = "themeEditorGlass";
+
+const GLASS_DEFAULTS = {
+  blur: 28, // px
+  saturation: 180, // %
+  brightness: 106, // % stored as integer (1.06 → 106)
+  bgOpacity: 40, // %
+  borderOpacity: 55, // %
+};
+type GlassConfig = typeof GLASS_DEFAULTS;
+
+function applyGlassCssVars(g: GlassConfig) {
+  const s = document.documentElement.style;
+  s.setProperty("--glass-blur", `${g.blur}px`);
+  s.setProperty("--glass-saturation", `${g.saturation}%`);
+  s.setProperty("--glass-brightness", `${(g.brightness / 100).toFixed(2)}`);
+  s.setProperty("--glass-bg-opacity", `${g.bgOpacity}%`);
+  s.setProperty("--glass-border-opacity", `${g.borderOpacity}%`);
+}
 
 // ─── Shared UI ────────────────────────────────────────────────────────────────
 
@@ -570,9 +589,175 @@ const MuiTab: React.FC = () => {
   );
 };
 
+// ─── Tab: Glass ───────────────────────────────────────────────────────────────
+
+const GLASS_SLIDERS: {
+  key: keyof GlassConfig;
+  label: string;
+  sub: string;
+  min: number;
+  max: number;
+  unit: string;
+}[] = [
+  {
+    key: "blur",
+    label: "Blur",
+    sub: "backdrop-filter blur",
+    min: 0,
+    max: 60,
+    unit: "px",
+  },
+  {
+    key: "saturation",
+    label: "Saturation",
+    sub: "backdrop-filter saturate",
+    min: 80,
+    max: 300,
+    unit: "%",
+  },
+  {
+    key: "brightness",
+    label: "Brightness",
+    sub: "backdrop-filter brightness",
+    min: 80,
+    max: 140,
+    unit: "%",
+  },
+  {
+    key: "bgOpacity",
+    label: "Background opacity",
+    sub: "surface color-mix amount",
+    min: 0,
+    max: 100,
+    unit: "%",
+  },
+  {
+    key: "borderOpacity",
+    label: "Border opacity",
+    sub: "border color-mix amount",
+    min: 0,
+    max: 100,
+    unit: "%",
+  },
+];
+
+const GlassTab: React.FC = () => {
+  const [config, setConfig] = useState<GlassConfig>(() => {
+    try {
+      const r = localStorage.getItem(LS_GLASS);
+      if (r) return { ...GLASS_DEFAULTS, ...JSON.parse(r) };
+    } catch {}
+    return { ...GLASS_DEFAULTS };
+  });
+
+  const handleChange = (key: keyof GlassConfig, value: number) => {
+    const next = { ...config, [key]: value };
+    setConfig(next);
+    localStorage.setItem(LS_GLASS, JSON.stringify(next));
+    applyGlassCssVars(next);
+  };
+
+  const handleReset = () => {
+    setConfig({ ...GLASS_DEFAULTS });
+    localStorage.removeItem(LS_GLASS);
+    applyGlassCssVars(GLASS_DEFAULTS);
+  };
+
+  // Live preview style
+  const previewStyle: React.CSSProperties = {
+    background: `color-mix(in srgb, var(--bg-surface) ${config.bgOpacity}%, transparent)`,
+    backdropFilter: `blur(${config.blur}px) saturate(${
+      config.saturation
+    }%) brightness(${(config.brightness / 100).toFixed(2)})`,
+    WebkitBackdropFilter: `blur(${config.blur}px) saturate(${
+      config.saturation
+    }%) brightness(${(config.brightness / 100).toFixed(2)})`,
+    border: `1px solid color-mix(in srgb, var(--border-color) ${config.borderOpacity}%, transparent)`,
+    boxShadow: "0 8px 32px rgba(0,0,0,0.20)",
+  };
+
+  return (
+    <div className="flex flex-col gap-5 pb-6">
+      {/* Live preview card */}
+      <div className="relative rounded-2xl overflow-hidden h-28">
+        {/* Colourful bg to make glass visible */}
+        <div
+          className="absolute inset-0"
+          style={{
+            background:
+              "linear-gradient(135deg, var(--c-brand) 0%, color-mix(in srgb, var(--c-brand) 40%, var(--bg-surface)) 100%)",
+          }}
+        />
+        <div className="absolute inset-0 flex items-center justify-center px-6">
+          <div className="w-full rounded-xl px-4 py-3" style={previewStyle}>
+            <p className="text-xs font-semibold text-t-primary">
+              Glass preview
+            </p>
+            <p className="text-[10px] text-t-muted mt-0.5">
+              Blur {config.blur}px · Sat {config.saturation}% · Brightness{" "}
+              {config.brightness}% · BG {config.bgOpacity}%
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <Section
+        title="✨ Glass Effect"
+        action={
+          <button
+            onClick={handleReset}
+            className="text-[10px] text-t-muted hover:text-fail"
+          >
+            Reset
+          </button>
+        }
+      >
+        {GLASS_SLIDERS.map(({ key, label, sub, min, max, unit }) => (
+          <div key={key} className="py-2.5">
+            <div className="flex items-center justify-between mb-1.5">
+              <div>
+                <p className="text-xs text-t-primary">{label}</p>
+                <p className="text-[10px] text-t-muted">{sub}</p>
+              </div>
+              <code className="text-xs font-mono text-c-brand shrink-0">
+                {config[key]}
+                {unit}
+              </code>
+            </div>
+            <input
+              type="range"
+              min={min}
+              max={max}
+              value={config[key]}
+              onChange={(e) => handleChange(key, Number(e.target.value))}
+              className="w-full accent-[var(--c-brand)]"
+            />
+            <div className="flex justify-between mt-0.5">
+              <span className="text-[9px] text-t-muted">
+                {min}
+                {unit}
+              </span>
+              <span className="text-[9px] text-t-muted">
+                {max}
+                {unit}
+              </span>
+            </div>
+          </div>
+        ))}
+      </Section>
+
+      <p className="text-[10px] text-t-muted px-1">
+        These set CSS vars (<code className="font-mono">--glass-blur</code>{" "}
+        etc.) used by <code className="font-mono">glass-frost</code> and nav
+        components. Changes apply live.
+      </p>
+    </div>
+  );
+};
+
 // ─── Panel shell ──────────────────────────────────────────────────────────────
 
-type Tab = "brand" | "light" | "dark" | "mui";
+type Tab = "brand" | "light" | "dark" | "glass" | "mui";
 
 const ThemeEditorPanel: React.FC<{ onClose: () => void }> = ({ onClose }) => {
   const { resetTokenOverrides, customTokens, muiConfig } = useTheme();
@@ -585,6 +770,7 @@ const ThemeEditorPanel: React.FC<{ onClose: () => void }> = ({ onClose }) => {
     { id: "brand", label: "Brand" },
     { id: "light", label: "Light", badge: lc ? `${lc}` : undefined },
     { id: "dark", label: "Dark", badge: dc ? `${dc}` : undefined },
+    { id: "glass", label: "Glass" },
     { id: "mui", label: "MUI", badge: muiConfig.active ? "ON" : undefined },
   ];
 
