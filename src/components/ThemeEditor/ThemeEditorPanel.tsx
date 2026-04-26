@@ -113,13 +113,30 @@ function toHex(v: string): string {
 }
 
 // ─── Presets ──────────────────────────────────────────────────────────────────
+// 16 presets covering the full hue wheel — grouped by hue family
 
 const PRESETS = [
-  { name: "Indigo", color: "#6366f1" },
+  // ── Cool blues & cyans ──
   { name: "Blue", color: "#3b82f6" },
-  { name: "Teal", color: "#14b8a6" },
+  { name: "Sky", color: "#0ea5e9" },
+  { name: "Cyan", color: "#06b6d4" },
+  // ── Purples & violets ──
+  { name: "Indigo", color: "#6366f1" },
+  { name: "Violet", color: "#8b5cf6" },
+  { name: "Purple", color: "#a855f7" },
+  // ── Pinks & reds ──
+  { name: "Pink", color: "#ec4899" },
   { name: "Rose", color: "#f43f5e" },
+  { name: "Red", color: "#ef4444" },
+  // ── Warm tones ──
+  { name: "Orange", color: "#f97316" },
   { name: "Amber", color: "#f59e0b" },
+  { name: "Yellow", color: "#eab308" },
+  // ── Greens & teals ──
+  { name: "Lime", color: "#84cc16" },
+  { name: "Emerald", color: "#10b981" },
+  { name: "Teal", color: "#14b8a6" },
+  // ── Neutrals ──
   { name: "Slate", color: "#64748b" },
 ];
 
@@ -137,10 +154,26 @@ const GLASS_DEFAULTS = {
 };
 type GlassConfig = typeof GLASS_DEFAULTS;
 
+/**
+ * Writes glass effect values to CSS custom properties on :root.
+ *
+ * Contract (must match :root fallbacks in index.css):
+ *   --glass-blur           → "<n>px"       e.g. "28px"
+ *   --glass-saturation     → "<n>%"        e.g. "180%"
+ *   --glass-brightness     → "<decimal>"   e.g. "1.06"  ← NO % suffix
+ *   --glass-bg-opacity     → "<n>%"        e.g. "40%"
+ *   --glass-border-opacity → "<n>%"        e.g. "55%"
+ *
+ * NOTE: brightness is stored as an integer (106) for slider convenience
+ * but written as a decimal (1.06) because CSS brightness() takes a
+ * multiplier, not a percentage. saturation is stored & written as a
+ * percentage (180%) because CSS saturate() accepts both forms.
+ */
 function applyGlassCssVars(g: GlassConfig) {
   const s = document.documentElement.style;
   s.setProperty("--glass-blur", `${g.blur}px`);
   s.setProperty("--glass-saturation", `${g.saturation}%`);
+  // brightness stored as integer e.g. 106 → write as decimal 1.06 (no % suffix)
   s.setProperty("--glass-brightness", `${(g.brightness / 100).toFixed(2)}`);
   s.setProperty("--glass-bg-opacity", `${g.bgOpacity}%`);
   s.setProperty("--glass-border-opacity", `${g.borderOpacity}%`);
@@ -333,23 +366,24 @@ const BrandTab: React.FC = () => {
           </div>
         </label>
 
-        {/* Preset chips */}
-        <div className="flex gap-2 flex-wrap mb-3">
+        {/* Preset chips — 16 presets, 4 columns */}
+        <div className="grid grid-cols-4 gap-1.5 mb-3">
           {PRESETS.map((p) => (
             <button
               key={p.name}
               onClick={() => handleBaseChange(p.color)}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-xs font-medium transition-all"
+              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border text-xs font-medium transition-all"
               style={{
                 backgroundColor:
                   baseColor === p.color ? p.color + "22" : undefined,
                 borderColor:
                   baseColor === p.color ? p.color : "var(--border-color)",
-                color: baseColor === p.color ? p.color : "var(--t-secondary)",
+                color:
+                  baseColor === p.color ? p.color : "var(--text-secondary)",
               }}
             >
               <span
-                className="w-3 h-3 rounded-full"
+                className="w-2.5 h-2.5 rounded-full shrink-0"
                 style={{ backgroundColor: p.color }}
               />
               {p.name}
@@ -663,7 +697,7 @@ const GlassTab: React.FC = () => {
     applyGlassCssVars(GLASS_DEFAULTS);
   };
 
-  // Live preview style
+  // Live preview style — mirrors what glass-frost / glass-liquid render
   const previewStyle: React.CSSProperties = {
     background: `color-mix(in srgb, var(--bg-surface) ${config.bgOpacity}%, transparent)`,
     backdropFilter: `blur(${config.blur}px) saturate(${
@@ -685,7 +719,7 @@ const GlassTab: React.FC = () => {
           className="absolute inset-0"
           style={{
             background:
-              "linear-gradient(135deg, var(--c-brand) 0%, color-mix(in srgb, var(--c-brand) 40%, var(--bg-surface)) 100%)",
+              "linear-gradient(135deg, var(--color-brand) 0%, color-mix(in srgb, var(--color-brand) 40%, var(--bg-surface)) 100%)",
           }}
         />
         <div className="absolute inset-0 flex items-center justify-center px-6">
@@ -747,9 +781,15 @@ const GlassTab: React.FC = () => {
       </Section>
 
       <p className="text-[10px] text-t-muted px-1">
-        These set CSS vars (<code className="font-mono">--glass-blur</code>{" "}
-        etc.) used by <code className="font-mono">glass-frost</code> and nav
-        components. Changes apply live.
+        Sliders write <code className="font-mono">--glass-blur</code>,{" "}
+        <code className="font-mono">--glass-saturation</code>,{" "}
+        <code className="font-mono">--glass-brightness</code>,{" "}
+        <code className="font-mono">--glass-bg-opacity</code>, and{" "}
+        <code className="font-mono">--glass-border-opacity</code> to{" "}
+        <code className="font-mono">:root</code>. Both{" "}
+        <code className="font-mono">.glass-frost</code> and{" "}
+        <code className="font-mono">.glass-liquid</code> consume these vars, so
+        changes apply live to the entire app.
       </p>
     </div>
   );
@@ -859,6 +899,7 @@ const ThemeEditorPanel: React.FC<{ onClose: () => void }> = ({ onClose }) => {
           {tab === "brand" && <BrandTab />}
           {tab === "light" && <ModeTab mode="light" />}
           {tab === "dark" && <ModeTab mode="dark" />}
+          {tab === "glass" && <GlassTab />} {/* ← was missing */}
           {tab === "mui" && <MuiTab />}
         </div>
       </div>

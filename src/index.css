@@ -46,6 +46,25 @@
   --brand-700: #1d4ed8;
   --brand-800: #1e40af;
   --brand-900: #1e3a8a;
+
+  /*
+   * ── Glass effect vars ──────────────────────────────────────────────
+   *  Written at runtime by applyGlassCssVars() in ThemeEditorPanel.
+   *  Fallbacks here match GLASS_DEFAULTS so the UI is correct before
+   *  any user customisation is loaded.
+   *
+   *  Contract (must match applyGlassCssVars output format):
+   *    --glass-blur           → <number>px          e.g. 28px
+   *    --glass-saturation     → <number>%            e.g. 180%
+   *    --glass-brightness     → <decimal>            e.g. 1.06   ← no %
+   *    --glass-bg-opacity     → <number>%            e.g. 40%
+   *    --glass-border-opacity → <number>%            e.g. 55%
+   */
+  --glass-blur: 28px;
+  --glass-saturation: 180%;
+  --glass-brightness: 1.06;
+  --glass-bg-opacity: 40%;
+  --glass-border-opacity: 55%;
 }
 
 /* ── Base ── */
@@ -84,7 +103,9 @@
 }
 
 /* ═══════════════════════════════════════════════════════════════════
-   GLASS / FROST SYSTEM  —  theme-aware, no hardcoded colors
+   GLASS / FROST SYSTEM  —  theme-aware, no hardcoded colors.
+   Backdrop values are driven by --glass-* CSS vars so the
+   ThemeEditorPanel Glass tab has live effect on every glass surface.
    ═══════════════════════════════════════════════════════════════════ */
 
 @layer utilities {
@@ -97,25 +118,59 @@
   }
 
   /* ── Heavy frost (modals, floating nav, overlays) ── */
+  /*
+   * Uses --glass-* vars for backdrop-filter and color-mix amounts.
+   * The @apply backdrop-blur-xl is intentionally REMOVED here so the
+   * blur is driven exclusively by --glass-blur (avoids double-apply
+   * fighting with the CSS var value).
+   */
   .glass-frost {
-    background: color-mix(in srgb, var(--bg-surface) 72%, transparent);
-    border: 1px solid color-mix(in srgb, var(--border-color) 60%, transparent);
-    @apply backdrop-blur-xl rounded-2xl;
+    background: color-mix(
+      in srgb,
+      var(--bg-surface) var(--glass-bg-opacity),
+      transparent
+    );
+    border: 1px solid
+      color-mix(
+        in srgb,
+        var(--border-color) var(--glass-border-opacity),
+        transparent
+      );
+    @apply rounded-2xl;
     box-shadow: 0 8px 32px color-mix(in srgb, var(--bg-base) 40%, transparent),
       inset 0 1px 0 color-mix(in srgb, var(--text-primary) 6%, transparent);
+    backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturation))
+      brightness(var(--glass-brightness));
+    -webkit-backdrop-filter: blur(var(--glass-blur))
+      saturate(var(--glass-saturation)) brightness(var(--glass-brightness));
     transition: background-color 0.3s ease, border-color 0.3s ease,
       box-shadow 0.3s ease;
   }
 
   /* ── Liquid glass (iOS-style, high saturation boost) ── */
+  /*
+   * Same var-driven approach. Hardcoded values replaced with CSS vars.
+   * Default values on :root reproduce the original look exactly.
+   */
   .glass-liquid {
-    background: color-mix(in srgb, var(--bg-surface) 55%, transparent);
-    border: 1px solid color-mix(in srgb, var(--border-color) 50%, transparent);
-    @apply backdrop-blur-2xl rounded-3xl;
+    background: color-mix(
+      in srgb,
+      var(--bg-surface) var(--glass-bg-opacity),
+      transparent
+    );
+    border: 1px solid
+      color-mix(
+        in srgb,
+        var(--border-color) var(--glass-border-opacity),
+        transparent
+      );
+    @apply rounded-3xl;
     box-shadow: 0 8px 32px color-mix(in srgb, var(--bg-base) 35%, transparent),
       inset 0 1px 0 color-mix(in srgb, var(--text-primary) 8%, transparent);
-    backdrop-filter: blur(28px) saturate(180%) brightness(1.06);
-    -webkit-backdrop-filter: blur(28px) saturate(180%) brightness(1.06);
+    backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturation))
+      brightness(var(--glass-brightness));
+    -webkit-backdrop-filter: blur(var(--glass-blur))
+      saturate(var(--glass-saturation)) brightness(var(--glass-brightness));
     transition: background-color 0.3s ease, border-color 0.3s ease,
       box-shadow 0.3s ease;
   }
