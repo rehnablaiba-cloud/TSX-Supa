@@ -53,7 +53,7 @@ const LoginPage: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const cardRef = useRef<HTMLDivElement>(null);
   const { signIn } = useAuth();
-  const { theme } = useTheme(); // ← FIX: capture theme value
+  const { theme } = useTheme();
   const { isBlocked, remaining, recordAttempt } = useRateLimiter();
 
   useEffect(() => {
@@ -81,7 +81,6 @@ const LoginPage: React.FC = () => {
     setLoading(true);
     const { error: err } = await signIn(email, password);
     if (err) {
-      // Generic message — prevents user enumeration attacks
       setError("Invalid email or password.");
     }
     setLoading(false);
@@ -103,7 +102,11 @@ const LoginPage: React.FC = () => {
             className="w-14 h-14 rounded-2xl flex items-center justify-center mb-3"
             style={{ backgroundColor: "var(--color-brand)" }}
           >
-            <TrainFront size={28} style={{ color: "var(--text-primary)" }} />
+            <TrainFront
+              size={28}
+              strokeWidth={2}
+              style={{ stroke: "#ffffff", fill: "none" }}
+            />
           </div>
           <h1 className="text-2xl font-bold text-t-primary">TestPro</h1>
           <p className="text-t-muted text-sm mt-1">
@@ -153,7 +156,6 @@ const LoginPage: React.FC = () => {
             </div>
           </div>
 
-          {/* Rate limit warning */}
           {remaining < RATE_LIMIT.maxAttempts && remaining > 0 && (
             <p className="text-[11px] text-t-muted">
               {remaining} attempt{remaining !== 1 ? "s" : ""} remaining
