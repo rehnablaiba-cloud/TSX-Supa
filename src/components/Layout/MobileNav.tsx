@@ -213,6 +213,7 @@ const MobileNav: React.FC<Props> = ({ activePage, onNavigate }) => {
           width: "calc(100% - 32px)",
           maxWidth: 420,
           display: "none",
+          background: `color-mix(in srgb, var(--bg-surface) var(--glass-popup-bg-opacity), transparent)`,
         }}
         onClick={(e) => e.stopPropagation()}
       >
@@ -447,8 +448,6 @@ const MobileNav: React.FC<Props> = ({ activePage, onNavigate }) => {
         className="fixed bottom-2 left-1/2 -translate-x-1/2 z-62 md:hidden
     glass-frost rounded-[26px] flex items-center px-2 py-2 gap-1"
         style={{
-          // glass-frost handles blur/saturation/brightness globally ✓
-          // but navbar needs its own bg opacity — it sits on bare dark bg
           background: `color-mix(in srgb, var(--bg-surface) var(--glass-nav-bg-opacity), transparent)`,
           width: "calc(100% - 32px)",
           maxWidth: 420,
