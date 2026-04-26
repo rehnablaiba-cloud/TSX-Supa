@@ -1,262 +1,153 @@
-import React, {
-  createContext,
-  useContext,
-  useCallback,
-  useEffect,
-  useState,
-} from "react";
-import {
-  type AppTheme,
-  type TokenKey,
-  type TokenMap,
-  type BrandShade,
-  type GlassConfig,
-  type MuiConfig,
-  type StoredTheme,
-  loadStoredTheme,
-  saveStoredTheme,
-  applyStoredTheme,
-  GLASS_DEFAULTS,
-  tokens as defaultTokens,
-  palette as defaultPalette,
-} from "../theme";
+import React, { createContext, useContext, useEffect, useState } from "react";
+import { supabase } from "../supabase";
 
-// ═══════════════════════════════════════════════════════════════════════════════
-//  ThemeContext — React state layer over the unified applyStoredTheme()
-//
-//  Responsibilities:
-//    1. Mirror localStorage theme state in React state (for UI binding)
-//    2. Provide setters that persist AND apply via applyStoredTheme()
-//    3. Expose MUI config (separate from CSS vars, but persisted together)
-// ═══════════════════════════════════════════════════════════════════════════════
-
-export interface MuiConfig {
-  active: boolean;
-  borderRadius: number;
-  buttonBorderRadius: number;
-  textFieldBorderRadius: number;
-  fontSize: number;
-  disablePaperBgImage: boolean;
+export interface AuthUser {
+  id: string;
+  email: string;
+  display_name: string;
+  role?: "admin" | "user" | string;
 }
 
-const DEFAULT_MUI: MuiConfig = {
-  active: false,
-  borderRadius: 12,
-  buttonBorderRadius: 10,
-  textFieldBorderRadius: 10,
-  fontSize: 14,
-  disablePaperBgImage: false,
+interface AuthCtx {
+  isLoading: boolean;
+  isAuthenticated: boolean;
+  user: AuthUser | null;
+  signIn: (email: string, password: string) => Promise<{ error?: string }>;
+  signOut: () => Promise<void>;
+}
+
+const Ctx = createContext<AuthCtx>({} as AuthCtx);
+
+// ── Profile loader ─────────────────────────────────────────────────────────────
+const loadProfile = async (
+  user_id: string,
+  email: string
+): Promise<AuthUser | null> => {
+  const { data } = await supabase
+    .from("profiles")
+    .select("display_name, role, disabled")
+    .eq("id", user_id)
+    .single();
+
+  if (data?.disabled) return null;
+
+  return {
+    id: user_id,
+    email,
+    display_name: data?.display_name ?? email,
+    role: data?.role ?? "tester",
+  };
 };
 
-const LS_MUI = "themeEditorMuiConfig";
+// ── Update logged_in ───────────────────────────────────────────────────────────
+// Exported so ActiveLockContext can call it during heartbeat
+// Fires the Postgres trigger that cleans stale test_locks
+export const updateLoggedIn = async (user_id: string) => {
+  const { error } = await supabase
+    .from("profiles")
+    .update({ logged_in: new Date().toISOString() })
+    .eq("id", user_id);
 
-interface ThemeContextValue {
-  // Current mode
-  mode: AppTheme;
-  setMode: (mode: AppTheme) => void;
+  if (error) {
+    console.warn("[AuthContext] Failed to update logged_in:", error.message);
+  } else {
+    console.log("[AuthContext] logged_in updated → stale lock trigger fired");
+  }
+};
 
-  // Token overrides per mode (exposed for ThemeEditor)
-  customTokens: Record<AppTheme, Partial<TokenMap>>;
-  setTokenOverride: (mode: AppTheme, key: TokenKey, value: string) => void;
-  resetTokenOverrides: () => void;
-
-  // Brand palette (exposed for ThemeEditor)
-  brandPalette: Partial<Record<BrandShade, string>> | null;
-  setBrandPalette: (palette: Partial<Record<BrandShade, string>>) => void;
-
-  // Status colors
-  statusColors: Record<string, string>;
-  setStatusColor: (key: string, value: string) => void;
-
-  // Glass config
-  glassConfig: GlassConfig;
-  setGlassConfig: (config: GlassConfig) => void;
-
-  // MUI config
-  muiConfig: MuiConfig;
-  setMuiConfig: (config: Partial<MuiConfig>) => void;
-  resetMuiConfig: () => void;
-
-  // Unified apply (for external callers / debug)
-  reapplyTheme: () => void;
-
-  // Reset everything
-  resetAll: () => void;
-}
-
-const ThemeContext = createContext<ThemeContextValue | undefined>(undefined);
-
-// ── Helper: load MUI config from localStorage ────────────────────────────────
-function loadMuiConfig(): MuiConfig {
-  try {
-    const raw = localStorage.getItem(LS_MUI);
-    if (raw) return { ...DEFAULT_MUI, ...JSON.parse(raw) };
-  } catch {}
-  return { ...DEFAULT_MUI };
-}
-
-function saveMuiConfig(config: MuiConfig) {
-  localStorage.setItem(LS_MUI, JSON.stringify(config));
-}
-
-// ── Provider ─────────────────────────────────────────────────────────────────
-export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({
+export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
   children,
 }) => {
-  const [isReady, setIsReady] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
+  const [user, setUser] = useState<AuthUser | null>(null);
 
-  // Load persisted state
-  const stored = loadStoredTheme();
-  const [mode, setModeState] = useState<AppTheme>(stored?.mode ?? "light");
-  const [customTokens, setCustomTokens] = useState<
-    Record<AppTheme, Partial<TokenMap>>
-  >(stored?.overrides ?? { light: {}, dark: {} });
-  const [brandPalette, setBrandPaletteState] = useState<Partial<
-    Record<BrandShade, string>
-  > | null>(stored?.brandPalette ?? null);
-  const [statusColors, setStatusColorsState] = useState<Record<string, string>>(
-    stored?.statusColors ?? {
-      pass: defaultPalette.pass,
-      fail: defaultPalette.fail,
-      pend: defaultPalette.pend,
+  // FIX: Do NOT set a temporary user with a guessed role before the profile
+  // loads. The previous code set defaultRole:"tester" immediately, causing a
+  // brief window where admins were treated as testers by any component that
+  // rendered during the background fetch (could hide admin UI or let
+  // role-gated checks pass incorrectly).
+  //
+  // isLoading stays true until loadProfile resolves — the spinner covers the
+  // gap so there is no visible flash.
+  const handleSession = async (sessionUser: {
+    id: string;
+    email?: string | null;
+  }) => {
+    const profile = await loadProfile(sessionUser.id, sessionUser.email ?? "");
+
+    if (!profile) {
+      await supabase.auth.signOut();
+      setUser(null);
+      return;
     }
-  );
-  const [glassConfig, setGlassConfigState] = useState<GlassConfig>(
-    stored?.glass ?? { ...GLASS_DEFAULTS }
-  );
-  const [muiConfig, setMuiConfigState] = useState<MuiConfig>(loadMuiConfig);
 
-  // ── Apply theme on mount (prevents FOUC) ──────────────────────────────────
+    // Immediate update on login → fires stale lock trigger
+    await updateLoggedIn(sessionUser.id);
+
+    setUser(profile);
+  };
+
+  // ── Periodic logged_in refresh while user is active ────────────────────────
+  // Keeps the stale lock trigger firing every 2min even if user stays on
+  // dashboard and never enters a test — covers force-close scenarios
   useEffect(() => {
-    applyStoredTheme();
-    setIsReady(true);
-  }, []);
+    if (!user) return;
 
-  // ── Re-apply whenever core theme state changes ────────────────────────────
+    const interval = setInterval(() => {
+      updateLoggedIn(user.id);
+    }, 2 * 60 * 1000);
+
+    return () => clearInterval(interval); // stops on logout / user change
+  }, [user?.id]);
+
   useEffect(() => {
-    if (!isReady) return;
-    const theme: StoredTheme = {
-      mode,
-      brandPalette: brandPalette ?? undefined,
-      statusColors,
-      glass: glassConfig,
-      overrides: customTokens,
-    };
-    saveStoredTheme(theme);
-    applyStoredTheme(theme);
-  }, [mode, brandPalette, statusColors, glassConfig, customTokens, isReady]);
-
-  // ── Mode ──────────────────────────────────────────────────────────────────
-  const setMode = useCallback((newMode: AppTheme) => {
-    setModeState(newMode);
-    localStorage.setItem("themeMode", newMode);
-  }, []);
-
-  // ── Token overrides ───────────────────────────────────────────────────────
-  const setTokenOverride = useCallback(
-    (targetMode: AppTheme, key: TokenKey, value: string) => {
-      setCustomTokens((prev) => ({
-        ...prev,
-        [targetMode]: { ...prev[targetMode], [key]: value },
-      }));
-    },
-    []
-  );
-
-  const resetTokenOverrides = useCallback(() => {
-    setCustomTokens({ light: {}, dark: {} });
-    localStorage.removeItem("themeEditorOverrides");
-    // Re-apply base theme to clear override CSS vars
-    applyStoredTheme({ mode, glass: glassConfig });
-  }, [mode, glassConfig]);
-
-  // ── Brand palette ─────────────────────────────────────────────────────────
-  const setBrandPalette = useCallback(
-    (palette: Partial<Record<BrandShade, string>>) => {
-      setBrandPaletteState(palette);
-    },
-    []
-  );
-
-  // ── Status colors ─────────────────────────────────────────────────────────
-  const setStatusColor = useCallback((key: string, value: string) => {
-    setStatusColorsState((prev) => ({ ...prev, [key]: value }));
-  }, []);
-
-  // ── Glass ─────────────────────────────────────────────────────────────────
-  const setGlassConfig = useCallback((config: GlassConfig) => {
-    setGlassConfigState(config);
-  }, []);
-
-  // ── MUI ───────────────────────────────────────────────────────────────────
-  const setMuiConfig = useCallback((patch: Partial<MuiConfig>) => {
-    setMuiConfigState((prev) => {
-      const next = { ...prev, ...patch };
-      saveMuiConfig(next);
-      return next;
+    // getSession is local (reads from storage) — no network call
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session?.user) {
+        handleSession(session.user).finally(() => setIsLoading(false));
+      } else {
+        setIsLoading(false);
+      }
     });
-  }, []);
 
-  const resetMuiConfig = useCallback(() => {
-    setMuiConfigState({ ...DEFAULT_MUI });
-    saveMuiConfig({ ...DEFAULT_MUI });
-  }, []);
-
-  // ── Re-apply (for debug / external sync) ──────────────────────────────────
-  const reapplyTheme = useCallback(() => {
-    applyStoredTheme();
-  }, []);
-
-  // ── Reset all ─────────────────────────────────────────────────────────────
-  const resetAll = useCallback(() => {
-    setModeState("light");
-    setCustomTokens({ light: {}, dark: {} });
-    setBrandPaletteState(null);
-    setStatusColorsState({
-      pass: defaultPalette.pass,
-      fail: defaultPalette.fail,
-      pend: defaultPalette.pend,
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (session?.user) {
+        handleSession(session.user).finally(() => setIsLoading(false));
+      } else {
+        setUser(null);
+        setIsLoading(false);
+      }
     });
-    setGlassConfigState({ ...GLASS_DEFAULTS });
-    setMuiConfigState({ ...DEFAULT_MUI });
-    localStorage.removeItem("themeMode");
-    localStorage.removeItem("themeEditorOverrides");
-    localStorage.removeItem("themeEditorBrandPalette");
-    localStorage.removeItem("themeEditorStatusColors");
-    localStorage.removeItem("themeEditorGlass");
-    localStorage.removeItem("themeEditorBaseColor");
-    localStorage.removeItem(LS_MUI);
-    applyStoredTheme({ mode: "light" });
+
+    return () => subscription.unsubscribe();
   }, []);
+
+  const signIn = async (
+    email: string,
+    password: string
+  ): Promise<{ error?: string }> => {
+    const { error } = await supabase.auth.signInWithPassword({
+      email,
+      password,
+    });
+    if (error) return { error: error.message };
+    return {};
+  };
+
+  const signOut = async () => {
+    await supabase.auth.signOut();
+    setUser(null);
+  };
 
   return (
-    <ThemeContext.Provider
-      value={{
-        mode,
-        setMode,
-        customTokens,
-        setTokenOverride,
-        resetTokenOverrides,
-        brandPalette,
-        setBrandPalette,
-        statusColors,
-        setStatusColor,
-        glassConfig,
-        setGlassConfig,
-        muiConfig,
-        setMuiConfig,
-        resetMuiConfig,
-        reapplyTheme,
-        resetAll,
-      }}
+    <Ctx.Provider
+      value={{ isLoading, isAuthenticated: !!user, user, signIn, signOut }}
     >
       {children}
-    </ThemeContext.Provider>
+    </Ctx.Provider>
   );
 };
 
-export const useTheme = () => {
-  const ctx = useContext(ThemeContext);
-  if (!ctx) throw new Error("useTheme must be used within ThemeProvider");
-  return ctx;
-};
+export const useAuth = () => useContext(Ctx);

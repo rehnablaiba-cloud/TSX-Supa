@@ -11,6 +11,7 @@ import {
   type TokenMap,
   type BrandShade,
   type GlassConfig,
+  type MuiConfig,
   type StoredTheme,
   loadStoredTheme,
   saveStoredTheme,
