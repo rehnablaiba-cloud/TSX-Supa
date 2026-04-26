@@ -369,19 +369,3 @@ export function initTheme(): void {
     applyStoredTheme({ mode: prefersDark ? "dark" : "light" });
   }
 }
-
-/**
- * Reset theme to defaults (clears all localStorage keys).
- */
-export function resetTheme(): void {
-  [
-    LS_MODE,
-    LS_BRAND,
-    LS_STATUS,
-    LS_BASE,
-    LS_GLASS,
-    LS_OVERRIDES,
-    LS_MUI,
-  ].forEach((k) => localStorage.removeItem(k));
-  applyStoredTheme({ mode: "light" });
-}

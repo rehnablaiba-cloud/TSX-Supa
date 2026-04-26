@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from "react";
 import { useAuth } from "./context/AuthContext";
-import { ThemeProvider, useTheme } from "./context/ThemeContext";
+import { ThemeProvider } from "./context/ThemeContext";
 import { SessionLogProvider, useSessionLog } from "./context/SessionLogContext";
 import { ActiveLockProvider } from "./context/ActiveLockContext";
 import SessionLog from "./components/DevTools/SessionLog";
@@ -17,7 +17,6 @@ import AuditLog from "./components/AuditLog/AuditLog";
 import Spinner from "./components/UI/Spinner";
 import { supabase } from "./supabase";
 import { Module } from "./types";
-import { tokens, palette, TokenKey } from "./theme";
 
 type Page =
   | "dashboard"
@@ -26,150 +25,6 @@ type Page =
   | "report"
   | "users"
   | "audit_log";
-type MuiProviderComponent = React.ComponentType<{
-  theme: unknown;
-  children: React.ReactNode;
-}>;
-
-// ─── MuiActivator ─────────────────────────────────────────────────────────────
-
-const MuiActivator: React.FC<{ children: React.ReactNode }> = ({
-  children,
-}) => {
-  const { theme, muiConfig, customTokens } = useTheme();
-  const [Provider, setProvider] = useState<MuiProviderComponent | null>(null);
-  const [muiTheme, setMuiTheme] = useState<unknown>(null);
-  const [muiError, setMuiError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
-
-  const buildMuiTheme = useCallback(async () => {
-    console.group("🔧 MuiActivator.buildMuiTheme()");
-    console.log("muiConfig.active:", muiConfig.active);
-    console.log("theme:", theme);
-    console.log("customTokens:", customTokens);
-
-    if (!muiConfig.active) {
-      console.log("⏹️ MUI inactive — clearing provider");
-      setProvider(null);
-      setMuiTheme(null);
-      setMuiError(null);
-      console.groupEnd();
-      return;
-    }
-
-    setLoading(true);
-    console.log("⏳ Starting dynamic import...");
-
-    try {
-      const mod = await import("@mui/material/styles");
-      console.log("✅ @mui/material/styles loaded:", mod);
-
-      const { ThemeProvider: TP, createTheme } = mod;
-      const base = tokens[theme];
-      const over = customTokens[theme];
-      const tv = (key: TokenKey): string => (over[key] ?? base[key]) || "";
-
-      console.log("Building theme with:");
-      console.log("  primary.main:", tv("colorBrand") || palette.brand[500]);
-      console.log("  bg.default:", tv("bgBase"));
-      console.log("  bg.paper:", tv("bgSurface"));
-
-      const muiT = createTheme({
-        palette: {
-          mode: theme,
-          primary: { main: tv("colorBrand") || palette.brand[500] },
-          error: { main: palette.fail },
-          warning: { main: palette.pend },
-          success: { main: palette.pass },
-          background: { default: tv("bgBase"), paper: tv("bgSurface") },
-          text: { primary: tv("textPrimary"), secondary: tv("textSecondary") },
-          divider: tv("borderColor"),
-        },
-        shape: { borderRadius: muiConfig.borderRadius },
-        typography: {
-          fontFamily: muiConfig.fontFamily,
-          fontSize: muiConfig.fontSize,
-          fontWeightRegular: muiConfig.fontWeightRegular,
-          fontWeightMedium: muiConfig.fontWeightMedium,
-          fontWeightBold: muiConfig.fontWeightBold,
-          button: {
-            textTransform: muiConfig.buttonTextTransform as any,
-            fontWeight: muiConfig.fontWeightMedium,
-          },
-        },
-        components: {
-          MuiButton: {
-            styleOverrides: {
-              root: { borderRadius: muiConfig.buttonBorderRadius },
-            },
-          },
-          MuiTextField: {
-            styleOverrides: {
-              root: {
-                "& .MuiOutlinedInput-root": {
-                  borderRadius: muiConfig.textFieldBorderRadius,
-                },
-              },
-            },
-          },
-          MuiPaper: {
-            styleOverrides: {
-              root: {
-                backgroundImage: muiConfig.disablePaperBgImage
-                  ? "none"
-                  : undefined,
-              },
-            },
-          },
-        },
-      });
-
-      console.log("✅ MUI theme object created:", muiT);
-      setMuiTheme(muiT);
-      setProvider(() => TP as unknown as MuiProviderComponent);
-      setMuiError(null);
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
-      console.error("❌ MUI import/build failed:", msg);
-      setMuiError(msg);
-      setProvider(null);
-      setMuiTheme(null);
-    } finally {
-      setLoading(false);
-      console.groupEnd();
-    }
-  }, [theme, muiConfig, customTokens]);
-
-  useEffect(() => {
-    console.log("⚡ MuiActivator useEffect triggered");
-    buildMuiTheme();
-  }, [buildMuiTheme]);
-
-  if (muiConfig.active && muiError) {
-    const isMissing =
-      muiError.includes("Cannot find module") ||
-      muiError.includes("Failed to fetch") ||
-      muiError.includes("not found");
-    return (
-      <>
-        <div className="fixed top-0 left-0 right-0 z-[9999] bg-pend/90 text-t-primary text-xs py-1.5 px-4 text-center">
-          {isMissing ? (
-            <>
-              <code>@mui/material</code> not installed.
-            </>
-          ) : (
-            <>MUI theme error — check console.</>
-          )}
-        </div>
-        {children}
-      </>
-    );
-  }
-  if (muiConfig.active && loading) return <>{children}</>;
-  if (Provider && muiTheme)
-    return <Provider theme={muiTheme}>{children}</Provider>;
-  return <>{children}</>;
-};
 
 // ─── AppInner ─────────────────────────────────────────────────────────────────
 
@@ -361,38 +216,36 @@ const AppInner: React.FC = () => {
   };
 
   return (
-    <MuiActivator>
-      <SessionManager>
-        <div className="flex min-h-screen bg-bg-base">
-          <Sidebar activePage={page} onNavigate={navigate} modules={modules} />
-          <main className="flex-1 flex flex-col overflow-hidden min-w-0">
-            {renderPage()}
-          </main>
-          <MobileNav
-            activePage={page}
-            onNavigate={(p) => {
-              if (p === "report") setSelectedTestId(null);
-              if (p === "audit_log") setSelectedTestId(null);
-              navigate(p);
-            }}
-          />
-          {showInstall && (
-            <button
-              onClick={handleInstall}
-              title="Install TestPro as an app"
-              className="fixed bottom-20 right-4 z-50 flex items-center gap-1.5
-                px-2.5 py-1.5 rounded-lg text-[11px] font-semibold
-                bg-bg-surface border border-[var(--border-color)]
-                text-t-secondary hover:text-t-primary hover:border-[var(--color-brand)]
-                shadow-lg transition-colors"
-            >
-              📲 Install
-            </button>
-          )}
-        </div>
-        <SessionLog />
-      </SessionManager>
-    </MuiActivator>
+    <SessionManager>
+      <div className="flex min-h-screen bg-bg-base">
+        <Sidebar activePage={page} onNavigate={navigate} modules={modules} />
+        <main className="flex-1 flex flex-col overflow-hidden min-w-0">
+          {renderPage()}
+        </main>
+        <MobileNav
+          activePage={page}
+          onNavigate={(p) => {
+            if (p === "report") setSelectedTestId(null);
+            if (p === "audit_log") setSelectedTestId(null);
+            navigate(p);
+          }}
+        />
+        {showInstall && (
+          <button
+            onClick={handleInstall}
+            title="Install TestPro as an app"
+            className="fixed bottom-20 right-4 z-50 flex items-center gap-1.5
+              px-2.5 py-1.5 rounded-lg text-[11px] font-semibold
+              bg-bg-surface border border-[var(--border-color)]
+              text-t-secondary hover:text-t-primary hover:border-[var(--color-brand)]
+              shadow-lg transition-colors"
+          >
+            📲 Install
+          </button>
+        )}
+      </div>
+      <SessionLog />
+    </SessionManager>
   );
 };
 

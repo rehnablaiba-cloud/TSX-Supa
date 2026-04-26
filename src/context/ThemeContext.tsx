@@ -24,26 +24,6 @@ import {
 //  ThemeContext — React state layer over the unified applyStoredTheme()
 // ═══════════════════════════════════════════════════════════════════════════════
 
-export interface MuiConfig {
-  active: boolean;
-  borderRadius: number;
-  buttonBorderRadius: number;
-  textFieldBorderRadius: number;
-  fontSize: number;
-  disablePaperBgImage: boolean;
-}
-
-const DEFAULT_MUI: MuiConfig = {
-  active: false,
-  borderRadius: 12,
-  buttonBorderRadius: 10,
-  textFieldBorderRadius: 10,
-  fontSize: 14,
-  disablePaperBgImage: false,
-};
-
-const LS_MUI = "themeEditorMuiConfig";
-
 interface ThemeContextValue {
   // Current mode
   mode: AppTheme;
@@ -71,11 +51,6 @@ interface ThemeContextValue {
   glassConfig: GlassConfig;
   setGlassConfig: (config: GlassConfig) => void;
 
-  // MUI config
-  muiConfig: MuiConfig;
-  setMuiConfig: (config: Partial<MuiConfig>) => void;
-  resetMuiConfig: () => void;
-
   // Unified apply (for external callers / debug)
   reapplyTheme: () => void;
 
@@ -84,19 +59,6 @@ interface ThemeContextValue {
 }
 
 const ThemeContext = createContext<ThemeContextValue | undefined>(undefined);
-
-// ── Helper: load MUI config from localStorage ────────────────────────────────
-function loadMuiConfig(): MuiConfig {
-  try {
-    const raw = localStorage.getItem(LS_MUI);
-    if (raw) return { ...DEFAULT_MUI, ...JSON.parse(raw) };
-  } catch {}
-  return { ...DEFAULT_MUI };
-}
-
-function saveMuiConfig(config: MuiConfig) {
-  localStorage.setItem(LS_MUI, JSON.stringify(config));
-}
 
 // ── Provider ─────────────────────────────────────────────────────────────────
 export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({
@@ -122,7 +84,6 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({
   const [glassConfig, setGlassConfigState] = useState<GlassConfig>(
     stored?.glass ?? { ...GLASS_DEFAULTS }
   );
-  const [muiConfig, setMuiConfigState] = useState<MuiConfig>(loadMuiConfig);
 
   // ── Apply theme on mount (prevents FOUC) ──────────────────────────────────
   useEffect(() => {
@@ -193,20 +154,6 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({
     setGlassConfigState(config);
   }, []);
 
-  // ── MUI ───────────────────────────────────────────────────────────────────
-  const setMuiConfig = useCallback((patch: Partial<MuiConfig>) => {
-    setMuiConfigState((prev: MuiConfig) => {
-      const next = { ...prev, ...patch };
-      saveMuiConfig(next);
-      return next;
-    });
-  }, []);
-
-  const resetMuiConfig = useCallback(() => {
-    setMuiConfigState({ ...DEFAULT_MUI });
-    saveMuiConfig({ ...DEFAULT_MUI });
-  }, []);
-
   // ── Re-apply (for debug / external sync) ──────────────────────────────────
   const reapplyTheme = useCallback(() => {
     applyStoredTheme();
@@ -223,14 +170,12 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({
       pend: defaultPalette.pend,
     });
     setGlassConfigState({ ...GLASS_DEFAULTS });
-    setMuiConfigState({ ...DEFAULT_MUI });
     localStorage.removeItem("themeMode");
     localStorage.removeItem("themeEditorOverrides");
     localStorage.removeItem("themeEditorBrandPalette");
     localStorage.removeItem("themeEditorStatusColors");
     localStorage.removeItem("themeEditorGlass");
     localStorage.removeItem("themeEditorBaseColor");
-    localStorage.removeItem(LS_MUI);
     applyStoredTheme({ mode: "light" });
   }, []);
 
@@ -252,9 +197,6 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({
         setStatusColor,
         glassConfig,
         setGlassConfig,
-        muiConfig,
-        setMuiConfig,
-        resetMuiConfig,
         reapplyTheme,
         resetAll,
       }}

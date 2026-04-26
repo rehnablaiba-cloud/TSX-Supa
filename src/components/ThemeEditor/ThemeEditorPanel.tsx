@@ -13,7 +13,7 @@ import React, { useState, useCallback } from "react";
 import { Palette } from "lucide-react";
 import ModalShell from "../Layout/ModalShell";
 import { useAuth } from "../../context/AuthContext";
-import { useTheme, type MuiConfig } from "../../context/ThemeContext";
+import { useTheme } from "../../context/ThemeContext";
 import {
   tokens as defaultTokens,
   palette as defaultPalette,
@@ -180,24 +180,6 @@ const Swatch: React.FC<{
       </button>
     )}
   </div>
-);
-
-const Toggle: React.FC<{ value: boolean; onChange: (v: boolean) => void }> = ({
-  value,
-  onChange,
-}) => (
-  <button
-    onClick={() => onChange(!value)}
-    className={`w-12 h-6 rounded-full transition-colors relative shrink-0
-      ${
-        value ? "bg-c-brand" : "bg-bg-base border border-[var(--border-color)]"
-      }`}
-  >
-    <span
-      className={`absolute top-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform
-      ${value ? "translate-x-6" : "translate-x-0.5"}`}
-    />
-  </button>
 );
 
 const Section: React.FC<{
@@ -487,125 +469,6 @@ const ModeTab: React.FC<{ mode: "light" | "dark" }> = ({ mode }) => {
   );
 };
 
-// ─── Tab: MUI ────────────────────────────────────────────────────────────────
-
-const MuiTab: React.FC = () => {
-  const { muiConfig, setMuiConfig, resetMuiConfig } = useTheme();
-  const update = <K extends keyof MuiConfig>(k: K, v: MuiConfig[K]) =>
-    setMuiConfig({ [k]: v });
-
-  const sliders: { key: keyof MuiConfig; label: string; max: number }[] = [
-    { key: "borderRadius", label: "Global radius", max: 32 },
-    { key: "buttonBorderRadius", label: "Button radius", max: 32 },
-    { key: "textFieldBorderRadius", label: "Field radius", max: 32 },
-    { key: "fontSize", label: "Font size", max: 20 },
-  ];
-
-  return (
-    <div className="flex flex-col gap-4 pb-6">
-      <div
-        className={`rounded-2xl border-2 p-4 transition-colors
-          ${
-            muiConfig.active
-              ? "border-c-brand bg-c-brand-bg"
-              : "border-[var(--border-color)] bg-bg-card"
-          }`}
-      >
-        <div className="flex items-center justify-between gap-4">
-          <div>
-            <p className="font-semibold text-t-primary text-sm">
-              {muiConfig.active
-                ? "✅ MUI ThemeProvider ON"
-                : "MUI ThemeProvider"}
-            </p>
-            <p className="text-[11px] text-t-muted mt-0.5">
-              {muiConfig.active
-                ? "MUI + Tailwind side-by-side. Colors sync via CSS vars."
-                : "Off — app uses Tailwind only."}
-            </p>
-          </div>
-          <Toggle
-            value={muiConfig.active}
-            onChange={(v) => {
-              console.group("🖱️ ThemeEditor MUI Toggle");
-              console.log("User clicked. New value:", v);
-              console.log("Current muiConfig:", muiConfig);
-              setMuiConfig({ active: v });
-              console.log("Called setMuiConfig({ active:", v, "})");
-              console.groupEnd();
-            }}
-          />
-        </div>
-      </div>
-
-      <Section
-        title="📐 Shape"
-        action={
-          <button
-            onClick={resetMuiConfig}
-            className="text-[10px] text-t-muted hover:text-fail"
-          >
-            Reset
-          </button>
-        }
-      >
-        {sliders.map(({ key, label, max }) => (
-          <div
-            key={key as string}
-            className="flex items-center justify-between py-2.5 gap-3"
-          >
-            <p className="text-xs text-t-primary flex-1">{label}</p>
-            <div className="flex items-center gap-2 shrink-0">
-              <input
-                type="range"
-                min={0}
-                max={max}
-                value={muiConfig[key] as number}
-                onChange={(e) => update(key, Number(e.target.value) as any)}
-                className="w-24 accent-[var(--c-brand)]"
-              />
-              <code className="text-[10px] font-mono text-t-muted w-7 text-right">
-                {muiConfig[key] as number}
-              </code>
-            </div>
-          </div>
-        ))}
-        <div className="flex items-center justify-between py-2.5 gap-3">
-          <p className="text-xs text-t-primary flex-1">
-            Disable Paper bg image
-          </p>
-          <Toggle
-            value={muiConfig.disablePaperBgImage}
-            onChange={(v) => update("disablePaperBgImage", v)}
-          />
-        </div>
-      </Section>
-
-      <div className="flex gap-2">
-        <div
-          className="flex-1 h-9 bg-c-brand flex items-center justify-center text-white text-xs font-semibold shadow"
-          style={{ borderRadius: muiConfig.buttonBorderRadius }}
-        >
-          Button
-        </div>
-        <div
-          className="flex-1 h-9 bg-bg-card border border-[var(--border-color)] flex items-center justify-center text-t-muted text-xs"
-          style={{ borderRadius: muiConfig.textFieldBorderRadius }}
-        >
-          TextField
-        </div>
-        <div
-          className="flex-1 h-9 bg-bg-surface border border-[var(--border-color)] flex items-center justify-center text-t-muted text-xs"
-          style={{ borderRadius: muiConfig.borderRadius }}
-        >
-          Paper
-        </div>
-      </div>
-      <p className="text-[10px] text-t-muted -mt-2">Live radius preview ↑</p>
-    </div>
-  );
-};
-
 // ─── Tab: Glass ───────────────────────────────────────────────────────────────
 
 const GLASS_SLIDERS: {
@@ -779,10 +642,10 @@ const GlassTab: React.FC = () => {
 
 // ─── Panel ────────────────────────────────────────────────────────────────────
 
-type Tab = "brand" | "light" | "dark" | "glass" | "mui";
+type Tab = "brand" | "light" | "dark" | "glass";
 
 const ThemeEditorPanel: React.FC<{ onClose: () => void }> = ({ onClose }) => {
-  const { resetTokenOverrides, customTokens, muiConfig, resetAll } = useTheme();
+  const { resetTokenOverrides, customTokens, resetAll } = useTheme();
   const [tab, setTab] = useState<Tab>("brand");
   const lc = Object.keys(customTokens.light).length;
   const dc = Object.keys(customTokens.dark).length;
@@ -793,7 +656,6 @@ const ThemeEditorPanel: React.FC<{ onClose: () => void }> = ({ onClose }) => {
     { id: "light", label: "Light", badge: lc ? `${lc}` : undefined },
     { id: "dark", label: "Dark", badge: dc ? `${dc}` : undefined },
     { id: "glass", label: "Glass" },
-    { id: "mui", label: "MUI", badge: muiConfig.active ? "ON" : undefined },
   ];
 
   return (
@@ -841,13 +703,7 @@ const ThemeEditorPanel: React.FC<{ onClose: () => void }> = ({ onClose }) => {
             {t.badge && (
               <span
                 className={`ml-1 text-[10px] font-bold
-                ${
-                  tab === t.id
-                    ? "text-white/70"
-                    : t.badge === "ON"
-                    ? "text-pass"
-                    : "text-c-brand"
-                }`}
+                ${tab === t.id ? "text-white/70" : "text-c-brand"}`}
               >
                 {t.badge}
               </span>
@@ -861,7 +717,6 @@ const ThemeEditorPanel: React.FC<{ onClose: () => void }> = ({ onClose }) => {
         {tab === "light" && <ModeTab mode="light" />}
         {tab === "dark" && <ModeTab mode="dark" />}
         {tab === "glass" && <GlassTab />}
-        {tab === "mui" && <MuiTab />}
       </div>
 
       {/* ── DEBUG: SessionLog-style console dump ── */}
@@ -874,10 +729,6 @@ const ThemeEditorPanel: React.FC<{ onClose: () => void }> = ({ onClose }) => {
             onClick={() => {
               console.group("📋 THEME STATE DUMP");
               console.log("localStorage.theme:", localStorage.getItem("theme"));
-              console.log(
-                "localStorage.themeEditorMuiConfig:",
-                localStorage.getItem("themeEditorMuiConfig")
-              );
               console.log(
                 "localStorage.themeEditorGlass:",
                 localStorage.getItem("themeEditorGlass")
