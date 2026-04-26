@@ -1,22 +1,54 @@
-// src/components/Modals/ImportStepsModal.tsx
-import React, { useEffect, useRef, useState } from "react";
-import { Hash, Upload, CheckCircle, ArrowLeft } from "lucide-react";
+// src/components/Modals/ImportTestsModal.tsx
+import React, { useEffect, useState } from "react";
+import {
+  FlaskConical,
+  Plus,
+  Pencil,
+  Trash2,
+  CheckCircle,
+  ArrowLeft,
+} from "lucide-react";
 import ModalShell from "../Layout/ModalShell";
-
 import { supabase } from "../../supabase";
-import { parseStepsCsv } from "../../utils/csvParser";
-import type { StepInput } from "../../types";
+import { Row, DiffRow } from "../UI/ReviewRow";
+import type { TestOption } from "../../types";
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
+type TestOp = "create" | "update" | "delete";
 type Stage =
+  | "selectop"
   | "selecttest"
-  | "upload"
-  | "preview"
+  | "fillform"
   | "confirm"
   | "submitting"
-  | "done"
-  | "error";
+  | "done";
+
+const OP_META: {
+  id: TestOp;
+  label: string;
+  icon: React.ReactNode;
+  desc: string;
+}[] = [
+  {
+    id: "create",
+    label: "Create",
+    icon: <Plus size={20} />,
+    desc: "Add a new test",
+  },
+  {
+    id: "update",
+    label: "Update",
+    icon: <Pencil size={20} />,
+    desc: "Edit test details",
+  },
+  {
+    id: "delete",
+    label: "Delete",
+    icon: <Trash2 size={20} />,
+    desc: "Remove a test",
+  },
+];
 
 interface Props {
   onClose: () => void;
@@ -25,75 +57,111 @@ interface Props {
 
 // ── Component ──────────────────────────────────────────────────────────────
 
-const ImportStepsModal: React.FC<Props> = ({ onClose, onBack }) => {
-  const [stage, setStage] = useState<Stage>("selecttest");
-  const [tests, setTests] = useState<{ name: string }[]>([]);
-  const [selTest, setSelTest] = useState("");
-  const [parsed, setParsed] = useState<StepInput[]>([]);
-  const [parseErrors, setParseErrors] = useState<string[]>([]);
-  const [submitError, setSubmitError] = useState<string | null>(null);
-  const fileRef = useRef<HTMLInputElement>(null);
+const ImportTestsModal: React.FC<Props> = ({ onClose, onBack }) => {
+  const [stage, setStage] = useState<Stage>("selectop");
+  const [op, setOp] = useState<TestOp>("create");
+  const [tests, setTests] = useState<TestOption[]>([]);
+  const [selectedTest, setSelected] = useState<TestOption | null>(null);
+  const [sn, setSn] = useState("");
+  const [name, setName] = useState("");
+  const [error, setError] = useState<string | null>(null);
 
-  // Fetch all tests directly — no module filter needed
   useEffect(() => {
     supabase
       .from("tests")
-      .select("name")
-      .order("name")
-      .then(({ data }) => setTests((data ?? []) as { name: string }[]));
+      .select("serial_no, name")
+      .order("serial_no")
+      .then(({ data }: { data: any }) =>
+        setTests((data ?? []) as TestOption[])
+      );
   }, []);
 
-  const handleFile = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (ev) => {
-      const text = ev.target?.result as string;
-      const { rows, errors } = parseStepsCsv(text);
-      setParsed(rows);
-      setParseErrors(errors);
-      setStage(errors.length > 0 && rows.length === 0 ? "error" : "preview");
-    };
-    reader.readAsText(file);
+  const handleOpSelect = (o: TestOp) => {
+    setOp(o);
+    setStage(o === "create" ? "fillform" : "selecttest");
+  };
+
+  const handleTestSelect = (t: TestOption) => {
+    setSelected(t);
+    if (op === "update") {
+      setSn(String(t.serial_no));
+      setName(t.name);
+    }
+    setStage(op === "delete" ? "confirm" : "fillform");
   };
 
   const handleSubmit = async () => {
     setStage("submitting");
-    setSubmitError(null);
+    setError(null);
     try {
-      // Delete existing steps for this test, then re-insert clean
-      const { error: delErr } = await supabase
-        .from("test_steps")
-        .delete()
-        .eq("tests_name", selTest);
-      if (delErr) throw new Error(delErr.message);
+      if (op === "create") {
+        const { error: e } = await supabase
+          .from("tests")
+          .insert({ serial_no: sn.trim(), name: name.trim() });
+        if (e) throw new Error(e.message);
+      } else if (op === "update" && selectedTest) {
+        const newName = name.trim();
+        const newSn = sn.trim();
+        const oldName = selectedTest.name;
 
-      const payload = parsed.map((r) => ({
-        serial_no: r.serial_no,
-        action: r.action,
-        expected_result: r.expected_result,
-        is_divider: r.is_divider,
-        tests_name: selTest,
-      }));
-      const { error: insErr } = await supabase
-        .from("test_steps")
-        .insert(payload);
-      if (insErr) throw new Error(insErr.message);
+        // tests.name is the PK — update child rows first to avoid FK violation,
+        // then update the parent.
+        if (newName !== oldName) {
+          const { error: stepErr } = await supabase
+            .from("test_steps")
+            .update({ tests_name: newName })
+            .eq("tests_name", oldName);
+          if (stepErr)
+            throw new Error(`Step ref update failed: ${stepErr.message}`);
+        }
+
+        const { error: e } = await supabase
+          .from("tests")
+          .update({ serial_no: newSn, name: newName })
+          .eq("name", oldName);
+
+        if (e) {
+          // Rollback: revert test_steps so DB stays consistent
+          if (newName !== oldName) {
+            await supabase
+              .from("test_steps")
+              .update({ tests_name: oldName })
+              .eq("tests_name", newName);
+          }
+          throw new Error(e.message);
+        }
+      } else if (op === "delete" && selectedTest) {
+        const targetName = selectedTest.name;
+
+        // FK blocks deleting a test that still has steps.
+        // Delete test_steps first, then the parent test row.
+        const { error: stepErr } = await supabase
+          .from("test_steps")
+          .delete()
+          .eq("tests_name", targetName);
+        if (stepErr) throw new Error(`Step cleanup failed: ${stepErr.message}`);
+
+        const { error: e } = await supabase
+          .from("tests")
+          .delete()
+          .eq("name", targetName);
+        if (e) throw new Error(e.message);
+      }
 
       setStage("done");
     } catch (e: any) {
-      setSubmitError(e.message);
+      setError(e.message);
       setStage("confirm");
     }
   };
 
   const subtitle =
-    stage === "selecttest"
+    stage === "selectop"
+      ? "Choose operation"
+      : stage === "selecttest"
       ? "Pick a test"
-      : stage === "upload"
-      ? "Upload CSV"
-      : stage === "preview"
-      ? `${parsed.length} steps parsed`
+      : stage === "fillform"
+      ? "Enter details"
       : stage === "confirm"
       ? "Review & confirm"
       : stage === "done"
@@ -104,7 +172,7 @@ const ImportStepsModal: React.FC<Props> = ({ onClose, onBack }) => {
     <ModalShell
       title={
         <span className="flex items-center gap-1.5">
-          <Hash size={16} /> Import Steps (CSV)
+          <FlaskConical size={16} /> Tests
         </span>
       }
       onClose={onClose}
@@ -119,6 +187,27 @@ const ImportStepsModal: React.FC<Props> = ({ onClose, onBack }) => {
         </button>
       </div>
 
+      {/* ── selectop ── */}
+      {stage === "selectop" && (
+        <div className="flex flex-col gap-2">
+          {OP_META.map((m) => (
+            <button
+              key={m.id}
+              onClick={() => handleOpSelect(m.id)}
+              className="flex items-center gap-3 px-4 py-3 rounded-xl border border-[var(--border-color)] bg-bg-card hover:bg-bg-base text-left transition-all"
+            >
+              <span className="text-t-muted">{m.icon}</span>
+              <div>
+                <p className="text-sm font-semibold text-t-primary">
+                  {m.label}
+                </p>
+                <p className="text-xs text-t-muted">{m.desc}</p>
+              </div>
+            </button>
+          ))}
+        </div>
+      )}
+
       {/* ── selecttest ── */}
       {stage === "selecttest" && (
         <div className="flex flex-col gap-1.5 max-h-60 overflow-y-auto">
@@ -130,107 +219,89 @@ const ImportStepsModal: React.FC<Props> = ({ onClose, onBack }) => {
           {tests.map((t) => (
             <button
               key={t.name}
-              onClick={() => {
-                setSelTest(t.name);
-                setStage("upload");
-              }}
+              onClick={() => handleTestSelect(t)}
               className="text-left px-3 py-2 rounded-xl border border-[var(--border-color)] bg-bg-card hover:bg-bg-base text-sm text-t-primary"
             >
+              <span className="font-mono text-c-brand mr-2">{t.serial_no}</span>
               {t.name}
             </button>
           ))}
         </div>
       )}
 
-      {/* ── upload ── */}
-      {stage === "upload" && (
+      {/* ── fillform ── */}
+      {stage === "fillform" && (
         <div className="flex flex-col gap-3">
-          <p className="text-xs text-t-muted">
-            Target test:{" "}
-            <span className="font-medium text-t-primary">{selTest}</span>
-          </p>
-          <p className="text-xs text-t-muted">
-            CSV columns:{" "}
-            <span className="font-mono text-t-primary">
-              serial_no, action, expected_result, is_divider
-            </span>
-          </p>
-          <input
-            ref={fileRef}
-            type="file"
-            accept=".csv"
-            onChange={handleFile}
-            className="hidden"
-          />
+          <div>
+            <label className="block text-xs text-t-muted mb-1">Serial No</label>
+            <input
+              value={sn}
+              onChange={(e) => setSn(e.target.value)}
+              className="input text-sm"
+              placeholder="e.g. TXXX"
+            />
+          </div>
+          <div>
+            <label className="block text-xs text-t-muted mb-1">Test Name</label>
+            <input
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              className="input text-sm"
+              placeholder="e.g. Pantograph Test"
+            />
+          </div>
           <button
-            onClick={() => fileRef.current?.click()}
-            className="btn-primary text-sm flex items-center justify-center gap-2"
+            onClick={() => setStage("confirm")}
+            disabled={!name.trim() || !sn.trim()}
+            className="btn-primary text-sm disabled:opacity-50"
           >
-            <Upload size={14} /> Choose CSV file
-          </button>
-          <button
-            onClick={() => setStage("selecttest")}
-            className="px-4 py-2.5 rounded-xl border border-[var(--border-color)] text-t-secondary text-sm"
-          >
-            Back
+            Review
           </button>
         </div>
       )}
 
-      {/* ── preview / confirm ── */}
-      {(stage === "preview" || stage === "confirm") && (
+      {/* ── confirm ── */}
+      {stage === "confirm" && (
         <div className="flex flex-col gap-3">
-          {parseErrors.length > 0 && (
-            <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-400">
-              {parseErrors.map((e, i) => (
-                <p key={i}>{e}</p>
-              ))}
-            </div>
-          )}
-          <div className="rounded-xl border border-[var(--border-color)] overflow-hidden max-h-48 overflow-y-auto">
-            <div className="bg-bg-card px-3 py-2 border-b border-[var(--border-color)]">
-              <p className="text-xs font-semibold text-t-muted uppercase tracking-wider">
-                {parsed.length} Steps → {selTest}
-              </p>
-            </div>
-            {parsed.slice(0, 20).map((r) => (
-              <div
-                key={r.serial_no}
-                className="flex items-start gap-2 px-3 py-2 border-b border-[var(--border-color)] last:border-b-0 text-xs"
-              >
-                <span className="font-mono text-c-brand w-6 shrink-0">
-                  {r.serial_no}
-                </span>
-                <span className="text-t-primary flex-1 break-all">
-                  {r.is_divider ? (
-                    <em className="text-t-muted">divider</em>
-                  ) : (
-                    r.action
-                  )}
-                </span>
-              </div>
-            ))}
-            {parsed.length > 20 && (
-              <div className="px-3 py-2 text-xs text-t-muted">
-                …and {parsed.length - 20} more
-              </div>
+          <div className="rounded-xl border border-[var(--border-color)] bg-bg-card p-3 flex flex-col gap-1.5 text-xs">
+            <Row label="Operation" value={op.toUpperCase()} brand />
+            {op === "create" && (
+              <>
+                <Row label="S/N" value={sn} mono />
+                <Row label="Name" value={name} />
+              </>
+            )}
+            {op === "update" && selectedTest && (
+              <>
+                <DiffRow
+                  label="Serial No"
+                  before={String(selectedTest.serial_no)}
+                  after={sn}
+                />
+                <DiffRow label="Name" before={selectedTest.name} after={name} />
+              </>
+            )}
+            {op === "delete" && selectedTest && (
+              <Row label="Delete" value={selectedTest.name} mono />
             )}
           </div>
-          {submitError && (
-            <p className="text-xs text-red-400">{submitError}</p>
-          )}
+          {error && <p className="text-xs text-red-400">{error}</p>}
           <div className="flex gap-2">
             <button
-              onClick={() => setStage("upload")}
+              onClick={() =>
+                setStage(op === "create" ? "fillform" : "selecttest")
+              }
               className="flex-1 px-4 py-2.5 rounded-xl border border-[var(--border-color)] text-t-secondary text-sm"
             >
               Back
             </button>
             <button
               onClick={handleSubmit}
-              className="flex-1 btn-primary text-sm"
+              className={`flex-1 px-4 py-2.5 rounded-xl text-sm font-semibold text-white ${
+                op === "delete" ? "bg-red-500 hover:bg-red-600" : "btn-primary"
+              }`}
             >
-              Upsert {parsed.length} steps
+              Confirm {op}
             </button>
           </div>
         </div>
@@ -243,30 +314,11 @@ const ImportStepsModal: React.FC<Props> = ({ onClose, onBack }) => {
         </div>
       )}
 
-      {/* ── error ── */}
-      {stage === "error" && (
-        <div className="flex flex-col gap-3">
-          <div className="rounded-xl border border-red-500/30 bg-red-500/10 p-3 text-xs text-red-400">
-            {parseErrors.map((e, i) => (
-              <p key={i}>{e}</p>
-            ))}
-          </div>
-          <button
-            onClick={() => setStage("upload")}
-            className="btn-primary text-sm"
-          >
-            Try again
-          </button>
-        </div>
-      )}
-
       {/* ── done ── */}
       {stage === "done" && (
         <div className="flex flex-col items-center gap-3 py-6">
           <CheckCircle size={32} className="text-green-400" />
-          <p className="text-sm font-semibold text-t-primary">
-            Steps imported!
-          </p>
+          <p className="text-sm font-semibold text-t-primary">Done!</p>
           <button onClick={onClose} className="btn-primary text-sm px-6">
             Close
           </button>
@@ -276,4 +328,4 @@ const ImportStepsModal: React.FC<Props> = ({ onClose, onBack }) => {
   );
 };
 
-export default ImportStepsModal;
+export default ImportTestsModal;
