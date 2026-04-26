@@ -12,10 +12,10 @@ import {
 } from "../../lib/supabase/queries.auditlog";
 
 const DOT: Record<string, string> = {
-  pass: "bg-green-500",
-  fail: "bg-red-500",
-  warn: "bg-amber-500",
-  info: "bg-blue-500",
+  pass: "bg-[var(--color-pass)]",
+  fail: "bg-[var(--color-fail)]",
+  warn: "bg-[var(--color-warn)]",
+  info: "bg-[var(--color-brand)]",
 };
 
 const AuditLog: React.FC = () => {
@@ -41,8 +41,8 @@ const AuditLog: React.FC = () => {
       <div className="flex-1 flex flex-col">
         <Topbar title="Audit Log" subtitle="Admin only" />
         <div className="flex flex-col items-center justify-center flex-1 gap-4 p-8 text-center">
-          <div className="w-14 h-14 rounded-full bg-red-500/10 border border-red-500/20 flex items-center justify-center">
-            <Lock size={24} className="text-red-400" />
+          <div className="w-14 h-14 rounded-full bg-[var(--color-fail)]/10 border border-[var(--color-fail)]/20 flex items-center justify-center">
+            <Lock size={24} className="text-[var(--color-fail)]" />
           </div>
           <div>
             <p className="font-semibold text-t-primary">Access Restricted</p>

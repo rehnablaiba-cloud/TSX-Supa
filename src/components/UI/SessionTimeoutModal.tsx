@@ -25,12 +25,12 @@ const SessionTimeoutModal: React.FC<Props> = ({
         <div className="flex flex-col items-center gap-3 text-center">
           <div
             className={`w-14 h-14 rounded-full flex items-center justify-center transition-colors
-            ${urgent ? "bg-red-500/20" : "bg-amber-500/20"}`}
+            ${urgent ? "bg-[var(--color-fail)]/20" : "bg-amber-500/20"}`}
           >
             <Clock
               size={28}
               className={`transition-colors ${
-                urgent ? "text-red-400" : "text-amber-400"
+                urgent ? "text-[var(--color-fail)]" : "text-amber-400"
               }`}
             />
           </div>
@@ -47,13 +47,13 @@ const SessionTimeoutModal: React.FC<Props> = ({
           {/* Countdown */}
           <div
             className={`text-5xl font-mono font-bold tabular-nums transition-colors
-            ${urgent ? "text-red-400" : "text-amber-400"}`}
+            ${urgent ? "text-[var(--color-fail)]" : "text-amber-400"}`}
           >
             {display}
           </div>
 
           {urgent && (
-            <p className="text-xs text-red-400 font-medium animate-pulse">
+            <p className="text-xs text-[var(--color-fail)] font-medium animate-pulse">
               Your test lock will also be released.
             </p>
           )}
@@ -63,7 +63,7 @@ const SessionTimeoutModal: React.FC<Props> = ({
         <div className="w-full h-1.5 rounded-full bg-bg-card overflow-hidden">
           <div
             className={`h-full rounded-full transition-all duration-1000
-              ${urgent ? "bg-red-500" : "bg-amber-500"}`}
+              ${urgent ? "bg-[var(--color-fail)]" : "bg-amber-500"}`}
             style={{ width: `${(secondsLeft / (5 * 60)) * 100}%` }}
           />
         </div>
@@ -80,7 +80,7 @@ const SessionTimeoutModal: React.FC<Props> = ({
           <button
             onClick={onSignOut}
             className="w-full px-4 py-2.5 rounded-xl border border-[var(--border-color)]
-              text-t-secondary hover:text-red-400 hover:border-red-400/40
+              text-t-secondary hover:text-[var(--color-fail)] hover:border-red-400/40
               text-sm font-medium transition-colors flex items-center justify-center gap-2"
           >
             <LogOut size={15} />

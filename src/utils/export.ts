@@ -1063,11 +1063,10 @@ const docxWrapper = (title: string, body: string) => `
       xmlns='http://www.w3.org/TR/REC-html40'>
 <head><meta charset='utf-8'><style>
   body { font-family: Calibri, Arial, sans-serif; margin: 24px }
-  h1   { border-bottom: 1px solid #ccc; padding-bottom: 8px; font-size: 18px; color: #141414 }
-  p    { color: #555; font-size: 11px; margin: 4px 0 14px }
-  table{ border-collapse: collapse; width: 100% }
-  th   { background: #141414; color: #ffffff; font-weight: bold; padding: 8px 10px; font-size: 11px; border: 1px solid #141414 }
-  td   { padding: 7px 10px; border: 1px solid #ddd; font-size: 11px; color: #141414 }
+  h1   { border-bottom: 1px solid var(--border-color); padding-bottom: 8px; font-size: 18px; color: var(--text-primary) }
+  p    { color: var(--text-secondary); font-size: 11px; margin: 4px 0 14px }
+  th   { background: var(--text-primary); color: var(--bg-surface); font-weight: bold; padding: 8px 10px; font-size: 11px; border: 1px solid var(--text-primary) }
+  td   { padding: 7px 10px; border: 1px solid var(--border-color); font-size: 11px; color: var(--text-primary) }
 </style></head>
 <body><h1>${title}</h1><p>Generated: ${new Date().toLocaleString()}</p>${body}</body>
 </html>`;

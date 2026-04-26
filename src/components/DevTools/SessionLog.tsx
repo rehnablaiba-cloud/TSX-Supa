@@ -25,26 +25,26 @@ import { useTheme } from "../../context/ThemeContext";
 
 // ── Styling maps ────────────────────────────────────────────────────────
 const LEVEL_DOT: Record<LogLevel, string> = {
-  info: "bg-blue-400",
-  success: "bg-green-400",
-  warn: "bg-amber-400",
-  error: "bg-red-400",
+  info: "bg-[var(--log-level-info)]",
+  success: "bg-[var(--color-pass)]",
+  warn: "bg-[var(--log-level-warn)]",
+  error: "bg-[var(--log-level-error)]",
 };
 
 const LEVEL_TEXT: Record<LogLevel, string> = {
-  info: "text-blue-400",
-  success: "text-green-400",
-  warn: "text-amber-400",
-  error: "text-red-400",
+  info: "bg-[var(--log-level-info)]",
+  success: "bg-[var(--color-pass)]",
+  warn: "bg-[var(--log-level-warn)]",
+  error: "bg-[var(--log-level-error)]",
 };
 
 const CAT_STYLE: Record<LogCategory, string> = {
-  auth: "bg-purple-500/15 text-purple-400",
-  query: "bg-blue-500/15   text-blue-400",
-  realtime: "bg-teal-500/15   text-teal-400",
-  nav: "bg-gray-500/15   text-gray-400",
-  session: "bg-amber-500/15  text-amber-400",
-  error: "bg-red-500/15    text-red-400",
+  auth: "badge-log-auth",
+  query: "badge-log-info",
+  realtime: "badge-log-info", // or create badge-log-success if you want teal
+  nav: "badge-log-warn", // or use text-t-muted bg-bg-card
+  session: "badge-log-warn",
+  error: "badge-log-error",
 };
 
 const CAT_ICON: Record<LogCategory, React.ReactNode> = {
@@ -108,7 +108,7 @@ const EntryRow: React.FC<{
             ? "cursor-pointer hover:bg-black/5 dark:hover:bg-white/5"
             : ""
         }
-        ${entry.level === "error" ? "bg-red-500/5 dark:bg-red-500/5" : ""}`}
+        ${entry.level === "error" ? "bg-[var(--color-fail)]/5" : ""}
       style={{ borderColor: styles.border }}
       onClick={() => entry.detail && setOpen((p) => !p)}
     >
@@ -294,10 +294,9 @@ const SessionLog: React.FC = () => {
   const hasError = errorCount > 0;
   const hasWarn = !hasError && entries.some((e) => e.level === "warn");
   const pillDot = hasError
-    ? "bg-red-500 animate-pulse"
-    : hasWarn
-    ? "bg-amber-500"
-    : "bg-green-500";
+  ? "bg-[var(--color-fail)] animate-pulse"
+  ? "bg-[var(--color-warn)]"
+  : "bg-[var(--color-pass)]";
 
   // Auto-scroll to bottom
   useEffect(() => {
@@ -489,8 +488,7 @@ const SessionLog: React.FC = () => {
         </span>
         {errorCount > 0 && (
           <span
-            className="text-[9px] font-bold bg-red-500 text-white
-            px-1.5 py-0.5 rounded-full leading-none"
+          className="text-[9px] font-bold bg-[var(--color-fail)] text-white"
           >
             {errorCount} err
           </span>

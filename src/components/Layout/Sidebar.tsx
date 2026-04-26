@@ -187,7 +187,7 @@ const Sidebar: React.FC<Props> = ({ activePage, onNavigate, modules }) => {
               <button
                 onClick={handleSignOut}
                 aria-label="Sign out"
-                className="p-1.5 text-t-muted hover:text-red-500 hover:bg-bg-card rounded-lg transition-colors"
+                className="p-1.5 text-t-muted hover:text-[var(--color-fail)] hover:bg-bg-card rounded-lg transition-colors"
               >
                 <LogOut size={15} />
               </button>
@@ -197,7 +197,7 @@ const Sidebar: React.FC<Props> = ({ activePage, onNavigate, modules }) => {
               onClick={handleSignOut}
               aria-label="Sign out"
               title="Sign out"
-              className="w-full flex justify-center p-1.5 rounded-lg text-t-muted hover:text-red-500 hover:bg-bg-card transition-colors"
+              className="w-full flex justify-center p-1.5 rounded-lg text-t-muted hover:text-[var(--color-fail)] hover:bg-bg-card transition-colors"
             >
               <LogOut size={15} />
             </button>

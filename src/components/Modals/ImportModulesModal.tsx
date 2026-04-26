@@ -240,7 +240,7 @@ const ImportModulesModal: React.FC<Props> = ({ onClose, onBack }) => {
               </>
             )}
           </div>
-          {error && <p className="text-xs text-red-400">{error}</p>}
+          {error && <p className="text-xs text-[var(--color-fail)]">{error}</p>}
           <div className="flex gap-2">
             <button
               onClick={() =>
@@ -260,7 +260,7 @@ const ImportModulesModal: React.FC<Props> = ({ onClose, onBack }) => {
               onClick={handleSubmit}
               className={`flex-1 px-4 py-2.5 rounded-xl text-sm font-semibold text-white ${
                 op === "delete"
-                  ? "bg-red-500 hover:bg-red-600"
+                  ? "bg-[var(--color-fail)] hover:bg-red-600"
                   : "btn-primary"
               }`}
             >

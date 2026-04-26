@@ -210,7 +210,7 @@ const UndoAllModal: React.FC<{
       onClick={(e) => e.stopPropagation()}
     >
       <div className="flex flex-col items-center gap-3 text-center">
-        <div className="w-14 h-14 rounded-full bg-amber-500/10 border-2 border-amber-500/30 flex items-center justify-center">
+        <div className="w-14 h-14 rounded-full bg-[var(--color-warn)]-500/10 border-2 border-amber-500/30 flex items-center justify-center">
           <AlertTriangle size={26} className="text-amber-500" />
         </div>
         <div>
@@ -227,7 +227,7 @@ const UndoAllModal: React.FC<{
           </p>
         </div>
       </div>
-      <div className="flex items-start gap-2 px-3 py-2.5 rounded-lg bg-amber-500/8 border border-amber-500/25 text-xs text-amber-600 dark:text-amber-400">
+      <div className="flex items-start gap-2 px-3 py-2.5 rounded-lg bg-[var(--color-warn)]-500/8 border border-amber-500/25 text-xs text-amber-600 dark:text-amber-400">
         <AlertTriangle size={13} className="shrink-0 mt-0.5" />
         <span>
           All remarks and results will be cleared.{" "}
@@ -243,7 +243,7 @@ const UndoAllModal: React.FC<{
         </button>
         <button
           onClick={onConfirm}
-          className="flex-1 px-4 py-2.5 rounded-xl text-sm font-bold text-white bg-amber-500 hover:bg-amber-600 active:bg-amber-700 transition-colors flex items-center justify-center gap-1.5"
+          className="flex-1 px-4 py-2.5 rounded-xl text-sm font-bold text-white bg-[var(--color-warn)]-500 hover:bg-[var(--color-warn)]-600 active:bg-[var(--color-warn)]-700 transition-colors flex items-center justify-center gap-1.5"
         >
           <RotateCcw size={14} /> Yes, Reset All
         </button>
@@ -357,7 +357,7 @@ const LockedScreen: React.FC<{
   onBack: () => void;
 }> = ({ locked_by_name, test_name, onBack }) => (
   <div className="flex flex-col flex-1 items-center justify-center gap-6 p-8 text-center">
-    <div className="w-16 h-16 rounded-full bg-amber-500/10 border-2 border-amber-500/30 flex items-center justify-center">
+    <div className="w-16 h-16 rounded-full bg-[var(--color-warn)]-500/10 border-2 border-amber-500/30 flex items-center justify-center">
       <Lock size={28} className="text-amber-500" />
     </div>
     <div>
@@ -373,8 +373,8 @@ const LockedScreen: React.FC<{
         cannot enter until they finish.
       </p>
     </div>
-    <div className="flex items-center gap-2 px-4 py-2 bg-amber-500/10 border border-amber-500/20 rounded-full">
-      <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse inline-block" />
+    <div className="flex items-center gap-2 px-4 py-2 bg-[var(--color-warn)]-500/10 border border-amber-500/20 rounded-full">
+      <span className="w-2 h-2 rounded-full bg-[var(--color-warn)] animate-pulse inline-block" />
       <span className="text-xs text-amber-600 dark:text-amber-400 font-medium">
         You'll be unblocked instantly when they finish.
       </span>
@@ -397,7 +397,7 @@ const TesterBadge: React.FC<{
     status === "pass"
       ? "text-green-400"
       : status === "fail"
-      ? "text-red-400"
+      ? "text-[var(--color-fail)]"
       : "text-t-muted";
   return (
     <span
@@ -445,7 +445,7 @@ const TableStepRow: React.FC<{
     step.status === "pass"
       ? "bg-green-500/5"
       : step.status === "fail"
-      ? "bg-red-500/5"
+      ? "bg-[var(--color-fail)]/5"
       : "";
   const focusStyle = isFocused
     ? { outline: "2px solid var(--color-brand)", outlineOffset: "-2px" }
@@ -533,7 +533,7 @@ const TableStepRow: React.FC<{
               step.status === "pass"
                 ? "bg-green-500/15 text-green-400"
                 : step.status === "fail"
-                ? "bg-red-500/15 text-red-400"
+                ? "bg-[var(--color-fail)]/15 text-[var(--color-fail)]"
                 : "bg-[var(--border-color)] text-t-muted"
             }`}
           >
@@ -565,8 +565,8 @@ const TableStepRow: React.FC<{
               }}
               className={`flex-1 h-7 rounded-md text-xs font-bold transition-colors flex items-center justify-center ${
                 step.status === "fail"
-                  ? "bg-red-500 text-white"
-                  : "bg-red-500/10 hover:bg-red-500/25 text-red-400 border border-red-500/20"
+                  ? "bg-[var(--color-fail)] text-white"
+                  : "bg-[var(--color-fail)]/10 hover:bg-[var(--color-fail)]/25 text-[var(--color-fail)] border border-[var(--color-fail)]/20"
               }`}
             >
               <X size={13} />
@@ -645,7 +645,7 @@ const MobileStepCard: React.FC<{
     step.status === "pass"
       ? "bg-green-500/5"
       : step.status === "fail"
-      ? "bg-red-500/5"
+      ? "bg-[var(--color-fail)]/5"
       : "";
   const accentColor = isFocused
     ? "var(--color-brand)"
@@ -735,10 +735,10 @@ const MobileStepCard: React.FC<{
                 </kbd>
                 <span className="text-green-400">pass</span>
                 <span className="text-t-muted opacity-40">·</span>
-                <kbd className="px-1 py-0.5 rounded bg-red-500/10 text-red-400 border border-red-500/20 font-mono text-[9px]">
+                <kbd className="px-1 py-0.5 rounded bg-[var(--color-fail)]/10 text-[var(--color-fail)] border border-[var(--color-fail)]/20 font-mono text-[9px]">
                   F
                 </kbd>
-                <span className="text-red-400">fail</span>
+                <span className="text-[var(--color-fail)]">fail</span>
               </span>
             )}
             <span
@@ -746,7 +746,7 @@ const MobileStepCard: React.FC<{
                 step.status === "pass"
                   ? "bg-green-500/15 text-green-400"
                   : step.status === "fail"
-                  ? "bg-red-500/15 text-red-400"
+                  ? "bg-[var(--color-fail)]/15 text-[var(--color-fail)]"
                   : "bg-[var(--border-color)] text-t-muted"
               }`}
             >
@@ -863,8 +863,8 @@ const MobileStepCard: React.FC<{
             }}
             className={`shrink-0 w-8 h-8 rounded-md text-xs font-bold transition-colors flex items-center justify-center ${
               step.status === "fail"
-                ? "bg-red-500 text-white"
-                : "bg-red-500/10 hover:bg-red-500/25 text-red-400 border border-red-500/20"
+                ? "bg-[var(--color-fail)] text-white"
+                : "bg-[var(--color-fail)]/10 hover:bg-[var(--color-fail)]/25 text-[var(--color-fail)] border border-[var(--color-fail)]/20"
             }`}
           >
             <X size={14} />
@@ -1417,7 +1417,7 @@ const TestExecution: React.FC<Props> = ({
           <div className="p-4 flex justify-center">
             <button
               onClick={handleForceRelease}
-              className="text-xs text-red-400 hover:text-red-300 underline underline-offset-2 transition-colors"
+              className="text-xs text-[var(--color-fail)] hover:text-red-300 underline underline-offset-2 transition-colors"
             >
               Force-release lock (admin)
             </button>
@@ -1528,7 +1528,7 @@ const TestExecution: React.FC<Props> = ({
                 pass
               </span>
               <span>
-                <span className="text-red-400 font-semibold">{failCount}</span>{" "}
+                <span className="text-[var(--color-fail)] font-semibold">{failCount}</span>{" "}
                 fail
               </span>
               <span>
@@ -1553,10 +1553,10 @@ const TestExecution: React.FC<Props> = ({
                   </span>
                   <span className="text-[var(--border-color)]">·</span>
                   <span className="flex items-center gap-1">
-                    <kbd className="px-1.5 py-0.5 rounded bg-red-500/10 text-red-400 font-mono text-[10px] border border-red-500/20">
+                    <kbd className="px-1.5 py-0.5 rounded bg-[var(--color-fail)]/10 text-[var(--color-fail)] font-mono text-[10px] border border-[var(--color-fail)]/20">
                       F
                     </kbd>
-                    <span className="text-red-400 ml-1">fail</span>
+                    <span className="text-[var(--color-fail)] ml-1">fail</span>
                   </span>
                 </span>
               )}
@@ -1571,7 +1571,7 @@ const TestExecution: React.FC<Props> = ({
               style={{ width: `${passPct}%` }}
             />
             <div
-              className="h-full bg-red-500 transition-all duration-500"
+              className="h-full bg-[var(--color-fail)] transition-all duration-500"
               style={{ width: `${failPct}%` }}
             />
           </div>
@@ -1757,7 +1757,7 @@ const TestExecution: React.FC<Props> = ({
             {/* Undo All — admin only */}
             {isAdmin && doneCount > 0 && (
               <div className="flex items-center justify-center py-6 px-4">
-                <div className="flex items-center gap-3 px-4 py-3 rounded-xl border border-dashed border-amber-500/30 bg-amber-500/5">
+                <div className="flex items-center gap-3 px-4 py-3 rounded-xl border border-dashed border-amber-500/30 bg-[var(--color-warn)]-500/5">
                   <AlertTriangle
                     size={14}
                     className="text-amber-500 shrink-0"
@@ -1767,7 +1767,7 @@ const TestExecution: React.FC<Props> = ({
                   </span>
                   <button
                     onClick={() => setShowUndoModal(true)}
-                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold text-amber-600 dark:text-amber-400 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 hover:border-amber-500/60 transition-colors whitespace-nowrap"
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold text-amber-600 dark:text-amber-400 bg-[var(--color-warn)]-500/10 hover:bg-[var(--color-warn)]-500/20 border border-amber-500/30 hover:border-amber-500/60 transition-colors whitespace-nowrap"
                   >
                     <RotateCcw size={12} /> Undo All
                   </button>

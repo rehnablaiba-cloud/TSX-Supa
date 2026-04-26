@@ -570,11 +570,11 @@ const Dashboard: React.FC<Props> = ({ onNavigate }) => {
 
                 <div className="flex gap-2 mb-3">
                   <span className="badge-pass">
-                    <span className="w-1.5 h-1.5 rounded-full bg-green-500 inline-block mr-1" />
+                    <span className="w-1.5 h-1.5 rounded-full bg-[var(--color-pass)] inline-block mr-1" />
                     {pass} Pass
                   </span>
                   <span className="badge-fail">
-                    <span className="w-1.5 h-1.5 rounded-full bg-red-500 inline-block mr-1" />
+                    <span className="w-1.5 h-1.5 rounded-full bg-[var(--color-fail)] inline-block mr-1" />
                     {fail} Fail
                   </span>
                   <span className="flex items-center gap-1 text-xs font-semibold text-t-muted bg-bg-card border border-[var(--border-color)] rounded-full px-2.5 py-0.5">

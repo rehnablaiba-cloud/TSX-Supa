@@ -49,7 +49,7 @@ interface SessionLog {
 // ─── Styling maps ─────────────────────────────────────────────────────────────
 const CAT_STYLE: Record<SessionLog["category"], string> = {
   heartbeat: "bg-blue-500/15 text-blue-400",
-  rehydrate: "bg-amber-500/15 text-amber-400",
+  rehydrate: "bg-[var(--color-warn)]-500/15 text-amber-400",
   lock: "bg-green-500/15 text-green-400",
   system: "bg-gray-500/15  text-gray-400",
 };
@@ -64,14 +64,14 @@ const CAT_ICON: Record<SessionLog["category"], React.ReactNode> = {
 const LEVEL_DOT: Record<SessionLog["status"], string> = {
   ok: "bg-green-400",
   error: "bg-red-400",
-  warn: "bg-amber-400",
+  warn: "bg-[var(--color-warn)]",
   pending: "bg-blue-400",
   info: "bg-gray-400",
 };
 
 const LEVEL_TEXT: Record<SessionLog["status"], string> = {
   ok: "text-green-400",
-  error: "text-red-400",
+  error: "text-[var(--color-fail)]",
   warn: "text-amber-400",
   pending: "text-blue-400",
   info: "text-gray-400",
@@ -261,9 +261,9 @@ const SessionDebugWidget = ({
   const hasError = logs.some((l) => l.status === "error");
   const hasWarn = !hasError && logs.some((l) => l.status === "warn");
   const pillDot = hasError
-    ? "bg-red-500 animate-pulse"
+    ? "bg-[var(--color-fail)] animate-pulse"
     : hasWarn
-    ? "bg-amber-500"
+    ? "bg-[var(--color-warn)]-500"
     : "bg-green-500";
 
   useEffect(() => {
@@ -457,7 +457,7 @@ const SessionDebugWidget = ({
           </span>
         )}
         {hasError && (
-          <span className="text-[9px] font-bold bg-red-500 text-white px-1.5 py-0.5 rounded-full leading-none">
+          <span className="text-[9px] font-bold bg-[var(--color-fail)] text-white px-1.5 py-0.5 rounded-full leading-none">
             err
           </span>
         )}

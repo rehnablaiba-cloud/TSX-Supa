@@ -198,8 +198,7 @@ const ExportDataModal: React.FC<Props> = ({ onClose }) => {
       {/* Status line */}
       <p className="text-xs text-t-muted -mt-1 mb-2">
         {stage === "fetching" && "Fetching from Supabase…"}
-        {stage === "ready" &&
-          `${ALL_TABLES.length} tables · ${totalRows} rows`}
+        {stage === "ready" && `${ALL_TABLES.length} tables · ${totalRows} rows`}
         {stage === "exporting" && "Building file…"}
         {stage === "done" && "Download started ✓"}
         {stage === "error" && "Something went wrong"}
@@ -215,7 +214,7 @@ const ExportDataModal: React.FC<Props> = ({ onClose }) => {
 
       {/* Hard error */}
       {stage === "error" && errMsg && (
-        <div className="rounded-xl border border-red-500/30 bg-red-500/10 p-4 text-sm text-red-400">
+        <div className="rounded-xl border border-[var(--color-fail)]/30 bg-[var(--color-fail)]/10 p-4 text-sm text-[var(--color-fail)]">
           {errMsg}
         </div>
       )}
@@ -226,7 +225,7 @@ const ExportDataModal: React.FC<Props> = ({ onClose }) => {
           <div className="flex flex-col gap-4">
             {/* Partial fetch warnings */}
             {fetchErrors.length > 0 && (
-              <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-400 flex flex-col gap-1">
+              <div className="rounded-xl border border-[var(--color-pend)]/30 bg-[var(--color-pend)]/10 p-3 text-xs text-[var(--color-pend)] flex flex-col gap-1">
                 <p className="font-semibold">Some tables failed to load</p>
                 {fetchErrors.map((e, i) => (
                   <p key={i}>{e}</p>

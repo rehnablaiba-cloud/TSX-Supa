@@ -32,6 +32,7 @@
   --color-pass: #22c55e;
   --color-fail: #ef4444;
   --color-pend: #f59e0b;
+  --color-warn: #f59e0b;
   --color-my-lock: #22d3ee;
   --color-other-lock: #f59e0b;
   --neon-cyan: 34, 211, 238;
@@ -56,7 +57,7 @@
   --log-auth-bg: color-mix(in srgb, var(--color-brand) 15%, transparent);
   --log-auth-text: var(--color-brand);
   --log-level-info: var(--color-brand);
-  --log-level-warn: var(--color-pend);
+  --log-level-warn: var(--color-warn);
   --log-level-error: var(--color-fail);
 
   /*

@@ -226,7 +226,7 @@ const MassImageUploadModal: React.FC<Props> = ({ isOpen, onClose }) => {
                           row.status === "done"
                             ? "bg-green-500/15 text-green-400"
                             : row.status === "error"
-                            ? "bg-red-500/15 text-red-400"
+                            ? "bg-[var(--color-fail)]/15 text-[var(--color-fail)]"
                             : row.status === "skipped"
                             ? "bg-amber-500/15 text-amber-400"
                             : "bg-[var(--border-color)] text-t-muted"

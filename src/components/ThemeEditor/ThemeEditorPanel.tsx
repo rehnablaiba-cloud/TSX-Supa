@@ -225,6 +225,7 @@ const BrandTab: React.FC = () => {
         pass: defaultPalette.pass,
         fail: defaultPalette.fail,
         pend: defaultPalette.pend,
+        warn: defaultPalette.warn,
       };
     }
   );
@@ -375,6 +376,7 @@ const BrandTab: React.FC = () => {
                 pass: defaultPalette.pass,
                 fail: defaultPalette.fail,
                 pend: defaultPalette.pend,
+                warn: defaultPalette.warn,
               };
               setStatusColors(def);
               localStorage.removeItem(LS_STATUS);
@@ -394,7 +396,12 @@ const BrandTab: React.FC = () => {
             key={key}
             color={statusColors[key]}
             label={
-              { pass: "Pass ✅", fail: "Fail ❌", pend: "Pending ⏳" }[key]
+              {
+                pass: "Pass ✅",
+                fail: "Fail ❌",
+                pend: "Pending ⏳",
+                warn: "Warn ⚠️",
+              }[key]
             }
             onChange={(v) => handleStatusChange(key, v)}
             isOverridden={statusColors[key] !== (defaultPalette as any)[key]}
@@ -680,7 +687,7 @@ const ThemeEditorPanel: React.FC<{ onClose: () => void }> = ({ onClose }) => {
                 resetAll();
               }
             }}
-            className="text-xs px-3 py-1.5 rounded-lg bg-red-500/10 text-red-400 hover:bg-red-500/20 transition-colors"
+            className="text-xs px-3 py-1.5 rounded-lg bg-[var(--color-fail)]/10 text-[var(--color-fail)] hover:bg-[var(--color-fail)]/20 transition-colors"
           >
             Reset All
           </button>

@@ -38,7 +38,7 @@ const UsersPanel: React.FC = () => {
       <div className="flex-1 flex flex-col">
         <Topbar title="Users" subtitle="Admin only" />
         <div className="flex flex-col items-center justify-center flex-1 gap-4 p-8 text-center">
-          <div className="w-14 h-14 rounded-full bg-red-500/10 border border-red-500/20
+          <div className="w-14 h-14 rounded-full bg-[var(--color-fail)]/10 border border-[var(--color-fail)]/20
             flex items-center justify-center text-2xl">
             🔒
           </div>
@@ -197,7 +197,7 @@ const UsersPanel: React.FC = () => {
                   {/* FIX: show disabled status so admins can see locked-out accounts */}
                   <td className="py-3 pr-4">
                     {u.disabled
-                      ? <span className="text-xs px-2 py-0.5 rounded-full bg-red-500/15 text-red-400">Disabled</span>
+                      ? <span className="text-xs px-2 py-0.5 rounded-full bg-[var(--color-fail)]/15 text-[var(--color-fail)]">Disabled</span>
                       : <span className="text-xs px-2 py-0.5 rounded-full bg-green-500/15 text-green-400">Active</span>
                     }
                   </td>
@@ -208,7 +208,7 @@ const UsersPanel: React.FC = () => {
                       <button
                         disabled={u.id === currentUser?.id}
                         onClick={() => setDeleteTarget(u)}
-                        className="text-xs px-3 py-1 rounded-lg bg-red-500/10 text-red-500 dark:text-red-400 hover:bg-red-500/20 disabled:opacity-30 transition-colors">
+                        className="text-xs px-3 py-1 rounded-lg bg-[var(--color-fail)]/10 text-red-500 dark:text-[var(--color-fail)] hover:bg-[var(--color-fail)]/20 disabled:opacity-30 transition-colors">
                         Delete
                       </button>
                     </div>

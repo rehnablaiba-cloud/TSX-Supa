@@ -50,9 +50,9 @@ const ToastContainer: React.FC = () => {
   const { toasts, removeToast } = useContext(Ctx);
   const colors: Record<ToastVariant, string> = {
     success: "border-green-500 bg-green-500/10 text-green-300",
-    error: "border-red-500  bg-red-500/10  text-red-300",
+    error: "border-red-500  bg-[var(--color-fail)]/10  text-red-300",
     info: "border-blue-500 bg-blue-500/10 text-blue-300",
-    warning: "border-amber-500 bg-amber-500/10 text-amber-300",
+    warning: "border-amber-500 bg-[var(--color-warn)]-500/10 text-amber-300",
   };
   return (
     <div className="fixed top-4 right-4 z-[9999] flex flex-col gap-2 max-w-sm w-full">

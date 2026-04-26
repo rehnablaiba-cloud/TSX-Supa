@@ -79,6 +79,7 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({
       pass: defaultPalette.pass,
       fail: defaultPalette.fail,
       pend: defaultPalette.pend,
+      warn: defaultPalette.warn,
     }
   );
   const [glassConfig, setGlassConfigState] = useState<GlassConfig>(
@@ -168,6 +169,7 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({
       pass: defaultPalette.pass,
       fail: defaultPalette.fail,
       pend: defaultPalette.pend,
+      warn: defaultPalette.warn,
     });
     setGlassConfigState({ ...GLASS_DEFAULTS });
     localStorage.removeItem("themeMode");

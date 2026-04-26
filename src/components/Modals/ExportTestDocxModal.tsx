@@ -56,9 +56,7 @@ async function fetchStepsForTest(
     action: s.action,
     expected_result: s.expected_result,
     serial_no: s.serial_no,
-    is_divider: s.is_divider
-      ? parseInt(s.expected_result, 10) || 1
-      : null,
+    is_divider: s.is_divider ? parseInt(s.expected_result, 10) || 1 : null,
     status: statusMap.get(s.id) ?? null,
   }));
 }
@@ -145,7 +143,7 @@ const ExportTestDocxModal: React.FC<Props> = ({ onClose }) => {
 
       {/* Error banner */}
       {error && (
-        <div className="flex items-start gap-2 px-3 py-2.5 rounded-xl bg-red-500/10 border border-red-500/20 text-red-400 mb-3">
+        <div className="flex items-start gap-2 px-3 py-2.5 rounded-xl bg-[var(--color-fail)]/10 border border-[var(--color-fail)]/20 text-[var(--color-fail)] mb-3">
           <AlertCircle size={14} className="shrink-0 mt-0.5" />
           <p className="text-xs font-medium">{error}</p>
         </div>
@@ -227,7 +225,10 @@ const ExportTestDocxModal: React.FC<Props> = ({ onClose }) => {
                         {t.tests_name}
                       </span>
                       {active && (
-                        <ChevronRight size={14} className="opacity-60 shrink-0" />
+                        <ChevronRight
+                          size={14}
+                          className="opacity-60 shrink-0"
+                        />
                       )}
                     </button>
                   );

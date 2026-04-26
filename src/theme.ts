@@ -35,7 +35,8 @@ export type TokenKey =
   | "colorBrandBg"
   | "colorPass"
   | "colorFail"
-  | "colorPend";
+  | "colorPend"
+  | "colorWarn";
 
 export type TokenMap = Record<TokenKey, string>;
 
@@ -63,6 +64,7 @@ export const cssVarMap: Record<TokenKey, string> = {
   colorPass: "--color-pass",
   colorFail: "--color-fail",
   colorPend: "--color-pend",
+  colorWarn: "--color-warn",
 };
 
 // ── Brand shade helpers ──────────────────────────────────────────────────────
@@ -100,6 +102,7 @@ export const palette = {
   pass: "#22c55e",
   fail: "#ef4444",
   pend: "#f59e0b",
+  warn: "#f59e0b",
 } as const;
 
 // ── Default tokens per mode ──────────────────────────────────────────────────
@@ -127,6 +130,7 @@ export const tokens: Record<AppTheme, TokenMap> = {
     colorPass: palette.pass,
     colorFail: palette.fail,
     colorPend: palette.pend,
+    colorWarn: palette.warn,
   },
   light: {
     bgBase: "#f8fafc",
@@ -151,6 +155,7 @@ export const tokens: Record<AppTheme, TokenMap> = {
     colorPass: palette.pass,
     colorFail: palette.fail,
     colorPend: palette.pend,
+    colorWarn: palette.warn,
   },
 };
 
@@ -181,7 +186,6 @@ const LS_STATUS = "themeEditorStatusColors";
 const LS_BASE = "themeEditorBaseColor";
 const LS_GLASS = "themeEditorGlass";
 const LS_OVERRIDES = "themeEditorOverrides";
-const LS_MUI = "themeEditorMuiConfig";
 
 // ── applyTheme() ── base mode application ────────────────────────────────────
 export function applyTheme(mode: AppTheme) {
@@ -308,7 +312,7 @@ export function applyStoredTheme(theme?: StoredTheme): void {
     applyBrandShadeOverrides(t.brandPalette);
   }
 
-  // 3. Status color overrides (pass/fail/pend)
+  // 3. Status color overrides (pass/fail/pend/warn)
   if (t.statusColors) {
     Object.entries(t.statusColors).forEach(([key, value]) => {
       document.documentElement.style.setProperty(`--color-${key}`, value);
@@ -368,4 +372,14 @@ export function initTheme(): void {
     ).matches;
     applyStoredTheme({ mode: prefersDark ? "dark" : "light" });
   }
+}
+
+/**
+ * Reset theme to defaults (clears all localStorage keys).
+ */
+export function resetTheme(): void {
+  [LS_MODE, LS_BRAND, LS_STATUS, LS_BASE, LS_GLASS, LS_OVERRIDES].forEach((k) =>
+    localStorage.removeItem(k)
+  );
+  applyStoredTheme({ mode: "light" });
 }
