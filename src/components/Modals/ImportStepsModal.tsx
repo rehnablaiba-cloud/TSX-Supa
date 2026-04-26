@@ -1,14 +1,13 @@
+// src/components/Modals/ImportStepsModal.tsx
 import React, { useEffect, useRef, useState } from "react";
-import { createPortal } from "react-dom";
-import { Hash, Upload, CheckCircle } from "lucide-react";
+import { Hash, Upload, CheckCircle, ArrowLeft } from "lucide-react";
+import ModalShell from "../Layout/ModalShell";
 
 import { supabase } from "../../supabase";
 import { parseStepsCsv } from "../../utils/csvParser";
 import type { StepInput } from "../../types";
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Types
-// ─────────────────────────────────────────────────────────────────────────────
+// ── Types ──────────────────────────────────────────────────────────────────
 
 type Stage =
   | "selecttest"
@@ -24,9 +23,7 @@ interface Props {
   onBack: () => void;
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Component
-// ─────────────────────────────────────────────────────────────────────────────
+// ── Component ──────────────────────────────────────────────────────────────
 
 const ImportStepsModal: React.FC<Props> = ({ onClose, onBack }) => {
   const [stage, setStage] = useState<Stage>("selecttest");
@@ -103,209 +100,179 @@ const ImportStepsModal: React.FC<Props> = ({ onClose, onBack }) => {
       ? "Done!"
       : "…";
 
-  return createPortal(
-    <div
-      className="fixed inset-0 flex items-end md:items-center justify-center"
-      style={{ zIndex: 9999 }}
+  return (
+    <ModalShell
+      title={
+        <span className="flex items-center gap-1.5">
+          <Hash size={16} /> Import Steps (CSV)
+        </span>
+      }
+      onClose={onClose}
     >
-      {/* Backdrop */}
-      <div className="absolute inset-0 backdrop-dim" onClick={onClose} />
+      <div className="flex items-center justify-between -mt-1 mb-3">
+        <p className="text-xs text-t-muted">{subtitle}</p>
+        <button
+          onClick={onBack}
+          className="flex items-center gap-1 text-xs text-t-muted hover:text-t-primary transition-colors"
+        >
+          <ArrowLeft size={14} /> Back
+        </button>
+      </div>
 
-      {/* Panel */}
-      <div
-        className="relative w-full md:max-w-md mx-auto z-10
-          border-t md:border border-[var(--border-color)]
-          rounded-t-2xl md:rounded-2xl
-          px-6 pt-5 overflow-y-auto flex flex-col gap-4 max-h-[90vh] glass-frost"
-        style={{
-          paddingBottom: "calc(96px + env(safe-area-inset-bottom, 0px))",
-        }}
-      >
-        {/* Drag pill */}
-        <div className="w-10 h-1 bg-bg-card rounded-full mx-auto md:hidden shrink-0" />
-
-        {/* Header */}
-        <div className="flex items-center justify-between shrink-0">
-          <div>
-            <h2 className="text-base font-bold text-t-primary flex items-center gap-1.5">
-              <Hash size={16} /> Import Steps (CSV)
-            </h2>
-            <p className="text-xs text-t-muted mt-0.5">{subtitle}</p>
-          </div>
-          <div className="flex items-center gap-1">
+      {/* ── selecttest ── */}
+      {stage === "selecttest" && (
+        <div className="flex flex-col gap-1.5 max-h-60 overflow-y-auto">
+          {tests.length === 0 && (
+            <p className="text-sm text-t-muted text-center py-4">
+              No tests found.
+            </p>
+          )}
+          {tests.map((t) => (
             <button
-              onClick={onBack}
-              className="w-8 h-8 flex items-center justify-center rounded-full text-t-muted hover:text-t-primary hover:bg-bg-card transition-colors"
-              title="Back"
+              key={t.name}
+              onClick={() => {
+                setSelTest(t.name);
+                setStage("upload");
+              }}
+              className="text-left px-3 py-2 rounded-xl border border-[var(--border-color)] bg-bg-card hover:bg-bg-base text-sm text-t-primary"
             >
-              ←
+              {t.name}
             </button>
-            <button
-              onClick={onClose}
-              className="w-8 h-8 flex items-center justify-center rounded-full text-t-muted hover:text-t-primary hover:bg-bg-card transition-colors"
-            >
-              ✕
-            </button>
-          </div>
+          ))}
         </div>
+      )}
 
-        {/* ── selecttest ── */}
-        {stage === "selecttest" && (
-          <div className="flex flex-col gap-1.5 max-h-60 overflow-y-auto">
-            {tests.length === 0 && (
-              <p className="text-sm text-t-muted text-center py-4">
-                No tests found.
-              </p>
-            )}
-            {tests.map((t) => (
-              <button
-                key={t.name}
-                onClick={() => {
-                  setSelTest(t.name);
-                  setStage("upload");
-                }}
-                className="text-left px-3 py-2 rounded-xl border border-[var(--border-color)]
-                  bg-bg-card hover:bg-bg-base text-sm text-t-primary"
-              >
-                {t.name}
-              </button>
-            ))}
-          </div>
-        )}
+      {/* ── upload ── */}
+      {stage === "upload" && (
+        <div className="flex flex-col gap-3">
+          <p className="text-xs text-t-muted">
+            Target test:{" "}
+            <span className="font-medium text-t-primary">{selTest}</span>
+          </p>
+          <p className="text-xs text-t-muted">
+            CSV columns:{" "}
+            <span className="font-mono text-t-primary">
+              serial_no, action, expected_result, is_divider
+            </span>
+          </p>
+          <input
+            ref={fileRef}
+            type="file"
+            accept=".csv"
+            onChange={handleFile}
+            className="hidden"
+          />
+          <button
+            onClick={() => fileRef.current?.click()}
+            className="btn-primary text-sm flex items-center justify-center gap-2"
+          >
+            <Upload size={14} /> Choose CSV file
+          </button>
+          <button
+            onClick={() => setStage("selecttest")}
+            className="px-4 py-2.5 rounded-xl border border-[var(--border-color)] text-t-secondary text-sm"
+          >
+            Back
+          </button>
+        </div>
+      )}
 
-        {/* ── upload ── */}
-        {stage === "upload" && (
-          <div className="flex flex-col gap-3">
-            <p className="text-xs text-t-muted">
-              Target test:{" "}
-              <span className="font-medium text-t-primary">{selTest}</span>
-            </p>
-            <p className="text-xs text-t-muted">
-              CSV columns:{" "}
-              <span className="font-mono text-t-primary">
-                serial_no, action, expected_result, is_divider
-              </span>
-            </p>
-            <input
-              ref={fileRef}
-              type="file"
-              accept=".csv"
-              onChange={handleFile}
-              className="hidden"
-            />
-            <button
-              onClick={() => fileRef.current?.click()}
-              className="btn-primary text-sm flex items-center justify-center gap-2"
-            >
-              <Upload size={14} /> Choose CSV file
-            </button>
-            <button
-              onClick={() => setStage("selecttest")}
-              className="px-4 py-2.5 rounded-xl border border-[var(--border-color)] text-t-secondary text-sm"
-            >
-              Back
-            </button>
-          </div>
-        )}
-
-        {/* ── preview / confirm ── */}
-        {(stage === "preview" || stage === "confirm") && (
-          <div className="flex flex-col gap-3">
-            {parseErrors.length > 0 && (
-              <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-400">
-                {parseErrors.map((e, i) => (
-                  <p key={i}>{e}</p>
-                ))}
-              </div>
-            )}
-            <div className="rounded-xl border border-[var(--border-color)] overflow-hidden max-h-48 overflow-y-auto">
-              <div className="bg-bg-card px-3 py-2 border-b border-[var(--border-color)]">
-                <p className="text-xs font-semibold text-t-muted uppercase tracking-wider">
-                  {parsed.length} Steps → {selTest}
-                </p>
-              </div>
-              {parsed.slice(0, 20).map((r) => (
-                <div
-                  key={r.serial_no}
-                  className="flex items-start gap-2 px-3 py-2 border-b border-[var(--border-color)] last:border-b-0 text-xs"
-                >
-                  <span className="font-mono text-c-brand w-6 shrink-0">
-                    {r.serial_no}
-                  </span>
-                  <span className="text-t-primary flex-1 break-all">
-                    {r.is_divider ? (
-                      <em className="text-t-muted">divider</em>
-                    ) : (
-                      r.action
-                    )}
-                  </span>
-                </div>
-              ))}
-              {parsed.length > 20 && (
-                <div className="px-3 py-2 text-xs text-t-muted">
-                  …and {parsed.length - 20} more
-                </div>
-              )}
-            </div>
-            {submitError && (
-              <p className="text-xs text-red-400">{submitError}</p>
-            )}
-            <div className="flex gap-2">
-              <button
-                onClick={() => setStage("upload")}
-                className="flex-1 px-4 py-2.5 rounded-xl border border-[var(--border-color)] text-t-secondary text-sm"
-              >
-                Back
-              </button>
-              <button
-                onClick={handleSubmit}
-                className="flex-1 btn-primary text-sm"
-              >
-                Upsert {parsed.length} steps
-              </button>
-            </div>
-          </div>
-        )}
-
-        {/* ── submitting ── */}
-        {stage === "submitting" && (
-          <div className="flex items-center justify-center py-8">
-            <div className="w-8 h-8 border-4 border-c-brand border-t-transparent rounded-full animate-spin" />
-          </div>
-        )}
-
-        {/* ── error ── */}
-        {stage === "error" && (
-          <div className="flex flex-col gap-3">
-            <div className="rounded-xl border border-red-500/30 bg-red-500/10 p-3 text-xs text-red-400">
+      {/* ── preview / confirm ── */}
+      {(stage === "preview" || stage === "confirm") && (
+        <div className="flex flex-col gap-3">
+          {parseErrors.length > 0 && (
+            <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-400">
               {parseErrors.map((e, i) => (
                 <p key={i}>{e}</p>
               ))}
             </div>
+          )}
+          <div className="rounded-xl border border-[var(--border-color)] overflow-hidden max-h-48 overflow-y-auto">
+            <div className="bg-bg-card px-3 py-2 border-b border-[var(--border-color)]">
+              <p className="text-xs font-semibold text-t-muted uppercase tracking-wider">
+                {parsed.length} Steps → {selTest}
+              </p>
+            </div>
+            {parsed.slice(0, 20).map((r) => (
+              <div
+                key={r.serial_no}
+                className="flex items-start gap-2 px-3 py-2 border-b border-[var(--border-color)] last:border-b-0 text-xs"
+              >
+                <span className="font-mono text-c-brand w-6 shrink-0">
+                  {r.serial_no}
+                </span>
+                <span className="text-t-primary flex-1 break-all">
+                  {r.is_divider ? (
+                    <em className="text-t-muted">divider</em>
+                  ) : (
+                    r.action
+                  )}
+                </span>
+              </div>
+            ))}
+            {parsed.length > 20 && (
+              <div className="px-3 py-2 text-xs text-t-muted">
+                …and {parsed.length - 20} more
+              </div>
+            )}
+          </div>
+          {submitError && (
+            <p className="text-xs text-red-400">{submitError}</p>
+          )}
+          <div className="flex gap-2">
             <button
               onClick={() => setStage("upload")}
-              className="btn-primary text-sm"
+              className="flex-1 px-4 py-2.5 rounded-xl border border-[var(--border-color)] text-t-secondary text-sm"
             >
-              Try again
+              Back
+            </button>
+            <button
+              onClick={handleSubmit}
+              className="flex-1 btn-primary text-sm"
+            >
+              Upsert {parsed.length} steps
             </button>
           </div>
-        )}
+        </div>
+      )}
 
-        {/* ── done ── */}
-        {stage === "done" && (
-          <div className="flex flex-col items-center gap-3 py-6">
-            <CheckCircle size={32} className="text-green-400" />
-            <p className="text-sm font-semibold text-t-primary">
-              Steps imported!
-            </p>
-            <button onClick={onClose} className="btn-primary text-sm px-6">
-              Close
-            </button>
+      {/* ── submitting ── */}
+      {stage === "submitting" && (
+        <div className="flex items-center justify-center py-8">
+          <div className="w-8 h-8 border-4 border-c-brand border-t-transparent rounded-full animate-spin" />
+        </div>
+      )}
+
+      {/* ── error ── */}
+      {stage === "error" && (
+        <div className="flex flex-col gap-3">
+          <div className="rounded-xl border border-red-500/30 bg-red-500/10 p-3 text-xs text-red-400">
+            {parseErrors.map((e, i) => (
+              <p key={i}>{e}</p>
+            ))}
           </div>
-        )}
-      </div>
-    </div>,
-    document.body
+          <button
+            onClick={() => setStage("upload")}
+            className="btn-primary text-sm"
+          >
+            Try again
+          </button>
+        </div>
+      )}
+
+      {/* ── done ── */}
+      {stage === "done" && (
+        <div className="flex flex-col items-center gap-3 py-6">
+          <CheckCircle size={32} className="text-green-400" />
+          <p className="text-sm font-semibold text-t-primary">
+            Steps imported!
+          </p>
+          <button onClick={onClose} className="btn-primary text-sm px-6">
+            Close
+          </button>
+        </div>
+      )}
+    </ModalShell>
   );
 };
 

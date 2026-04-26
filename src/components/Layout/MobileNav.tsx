@@ -193,7 +193,7 @@ const MobileNav: React.FC<Props> = ({ activePage, onNavigate }) => {
 
   return (
     <>
-      {/* More Options Popup — icon grid, sits above navbar, same width */}
+      {/* More Options Popup — centered above navbar, same width, flex-wrap centered */}
       <div
         ref={moreRef}
         className="fixed left-1/2 -translate-x-1/2 z-[70] md:hidden glass-frost p-3"
@@ -205,7 +205,7 @@ const MobileNav: React.FC<Props> = ({ activePage, onNavigate }) => {
         }}
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="grid grid-cols-4 gap-2">
+        <div className="flex flex-wrap justify-center gap-x-2 gap-y-3">
           {/* Theme toggle */}
           <button
             onClick={() => {
@@ -213,6 +213,7 @@ const MobileNav: React.FC<Props> = ({ activePage, onNavigate }) => {
               setMoreOpen(false);
             }}
             className="more-item flex flex-col items-center justify-center gap-1 p-2 rounded-xl transition-all duration-200 hover:bg-white/5 active:scale-90"
+            style={{ width: 72 }}
           >
             <div
               className="w-10 h-10 rounded-xl flex items-center justify-center"
@@ -238,6 +239,7 @@ const MobileNav: React.FC<Props> = ({ activePage, onNavigate }) => {
                   setMoreOpen(false);
                 }}
                 className="more-item flex flex-col items-center justify-center gap-1 p-2 rounded-xl transition-all duration-200 hover:bg-white/5 active:scale-90"
+                style={{ width: 72 }}
               >
                 <div
                   className="w-10 h-10 rounded-xl flex items-center justify-center"
@@ -261,6 +263,7 @@ const MobileNav: React.FC<Props> = ({ activePage, onNavigate }) => {
                   setMoreOpen(false);
                 }}
                 className="more-item flex flex-col items-center justify-center gap-1 p-2 rounded-xl transition-all duration-200 hover:bg-white/5 active:scale-90"
+                style={{ width: 72 }}
               >
                 <div
                   className="w-10 h-10 rounded-xl flex items-center justify-center"
@@ -284,6 +287,7 @@ const MobileNav: React.FC<Props> = ({ activePage, onNavigate }) => {
                   setMoreOpen(false);
                 }}
                 className="more-item flex flex-col items-center justify-center gap-1 p-2 rounded-xl transition-all duration-200 hover:bg-white/5 active:scale-90"
+                style={{ width: 72 }}
               >
                 <div
                   className="w-10 h-10 rounded-xl flex items-center justify-center"
@@ -307,6 +311,7 @@ const MobileNav: React.FC<Props> = ({ activePage, onNavigate }) => {
                   setMoreOpen(false);
                 }}
                 className="more-item flex flex-col items-center justify-center gap-1 p-2 rounded-xl transition-all duration-200 hover:bg-white/5 active:scale-90"
+                style={{ width: 72 }}
               >
                 <div
                   className="w-10 h-10 rounded-xl flex items-center justify-center"
@@ -330,6 +335,7 @@ const MobileNav: React.FC<Props> = ({ activePage, onNavigate }) => {
                   setMoreOpen(false);
                 }}
                 className="more-item flex flex-col items-center justify-center gap-1 p-2 rounded-xl transition-all duration-200 hover:bg-white/5 active:scale-90"
+                style={{ width: 72 }}
               >
                 <div
                   className="w-10 h-10 rounded-xl flex items-center justify-center"
@@ -353,6 +359,7 @@ const MobileNav: React.FC<Props> = ({ activePage, onNavigate }) => {
                   setMoreOpen(false);
                 }}
                 className="more-item flex flex-col items-center justify-center gap-1 p-2 rounded-xl transition-all duration-200 hover:bg-white/5 active:scale-90"
+                style={{ width: 72 }}
               >
                 <div
                   className="w-10 h-10 rounded-xl flex items-center justify-center"
@@ -376,6 +383,7 @@ const MobileNav: React.FC<Props> = ({ activePage, onNavigate }) => {
                   setMoreOpen(false);
                 }}
                 className="more-item flex flex-col items-center justify-center gap-1 p-2 rounded-xl transition-all duration-200 hover:bg-white/5 active:scale-90"
+                style={{ width: 72 }}
               >
                 <div
                   className="w-10 h-10 rounded-xl flex items-center justify-center"
@@ -402,6 +410,7 @@ const MobileNav: React.FC<Props> = ({ activePage, onNavigate }) => {
               setMoreOpen(false);
             }}
             className="more-item flex flex-col items-center justify-center gap-1 p-2 rounded-xl transition-all duration-200 hover:bg-red-500/10 active:scale-90"
+            style={{ width: 72 }}
           >
             <div
               className="w-10 h-10 rounded-xl flex items-center justify-center"

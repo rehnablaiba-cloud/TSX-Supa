@@ -2,7 +2,8 @@
 // Admin-only modal: pick a module → pick a test → export DOCX
 
 import React, { useEffect, useState, useCallback } from "react";
-import { X, FileText, ChevronRight, Loader2, AlertCircle } from "lucide-react";
+import { FileText, ChevronRight, Loader2, AlertCircle } from "lucide-react";
+import ModalShell from "../Layout/ModalShell";
 import { supabase } from "../../supabase";
 import {
   fetchModuleOptions,
@@ -129,92 +130,104 @@ const ExportTestDocxModal: React.FC<Props> = ({ onClose }) => {
   const canExport = !!selectedModule && !!selectedTest && !exporting;
 
   return (
-    <div className="fixed inset-0 z-[70] flex items-end justify-center md:hidden">
-      <div
-        className="absolute inset-0 backdrop-dim"
-        style={{ backdropFilter: "blur(2px)" }}
-        onClick={onClose}
-      />
+    <ModalShell
+      title={
+        <span className="flex items-center gap-2">
+          <FileText size={17} className="text-c-brand" />
+          Export Test as DOCX
+        </span>
+      }
+      onClose={onClose}
+    >
+      <p className="text-xs text-t-muted -mt-1 mb-3">
+        Select a module and test
+      </p>
 
-      {/* Sheet */}
-      <div
-        className="relative w-full rounded-t-[28px] glass-frost border-t border-l border-r border-[var(--border-color)]"
-        style={{ maxHeight: "85vh", overflowY: "auto" }}
-      >
-        {/* Handle */}
-        <div className="flex justify-center pt-3 pb-2">
-          <div className="w-9 h-1 rounded-full bg-[var(--border-color)]" />
+      {/* Error banner */}
+      {error && (
+        <div className="flex items-start gap-2 px-3 py-2.5 rounded-xl bg-red-500/10 border border-red-500/20 text-red-400 mb-3">
+          <AlertCircle size={14} className="shrink-0 mt-0.5" />
+          <p className="text-xs font-medium">{error}</p>
         </div>
+      )}
 
-        {/* Header */}
-        <div className="flex items-center justify-between px-5 pb-4">
-          <div className="flex items-center gap-2.5">
-            <FileText size={17} className="text-c-brand" />
-            <div>
-              <p className="text-sm font-bold text-t-primary tracking-tight">
-                Export Test as DOCX
-              </p>
-              <p className="text-[11px] text-t-muted font-medium">
-                Select a module and test
-              </p>
+      <div className="flex flex-col gap-4">
+        {/* Step 1 — Module */}
+        <div className="flex flex-col gap-2">
+          <p className="text-[10px] font-bold text-t-muted uppercase tracking-widest px-1">
+            1 · Module
+          </p>
+
+          {loadingModules ? (
+            <div className="flex items-center gap-2 px-3 py-3 text-t-muted">
+              <Loader2 size={14} className="animate-spin" />
+              <span className="text-xs">Loading modules…</span>
             </div>
-          </div>
-          <button
-            onClick={onClose}
-            className="w-8 h-8 rounded-full flex items-center justify-center
-              bg-bg-card border border-[var(--border-color)] text-t-muted hover:text-t-primary transition"
-          >
-            <X size={14} />
-          </button>
-        </div>
-
-        <div className="px-4 pb-8 flex flex-col gap-4">
-          {/* Error banner */}
-          {error && (
-            <div
-              className="flex items-start gap-2 px-3 py-2.5 rounded-xl
-              bg-red-500/10 border border-red-500/20 text-red-400"
-            >
-              <AlertCircle size={14} className="shrink-0 mt-0.5" />
-              <p className="text-xs font-medium">{error}</p>
+          ) : modules.length === 0 ? (
+            <p className="text-xs text-t-muted px-1">No modules found.</p>
+          ) : (
+            <div className="flex flex-col gap-1.5">
+              {modules.map((m) => {
+                const active = selectedModule === m.name;
+                return (
+                  <button
+                    key={m.name}
+                    onClick={() => handleSelectModule(m.name)}
+                    className={`flex items-center justify-between px-4 py-3 rounded-2xl border text-left transition-all duration-150 ${
+                      active
+                        ? "border-c-brand/50 bg-c-brand/10 text-c-brand"
+                        : "border-[var(--border-color)] bg-bg-card text-t-secondary hover:bg-bg-surface"
+                    }`}
+                  >
+                    <span className="text-sm font-medium">{m.name}</span>
+                    {active && (
+                      <ChevronRight size={14} className="opacity-60 shrink-0" />
+                    )}
+                  </button>
+                );
+              })}
             </div>
           )}
+        </div>
 
-          {/* Step 1 — Module */}
+        {/* Step 2 — Test */}
+        {selectedModule && (
           <div className="flex flex-col gap-2">
             <p className="text-[10px] font-bold text-t-muted uppercase tracking-widest px-1">
-              1 · Module
+              2 · Test
             </p>
 
-            {loadingModules ? (
+            {loadingTests ? (
               <div className="flex items-center gap-2 px-3 py-3 text-t-muted">
                 <Loader2 size={14} className="animate-spin" />
-                <span className="text-xs">Loading modules…</span>
+                <span className="text-xs">Loading tests…</span>
               </div>
-            ) : modules.length === 0 ? (
-              <p className="text-xs text-t-muted px-1">No modules found.</p>
+            ) : tests.length === 0 ? (
+              <p className="text-xs text-t-muted px-1">
+                No tests found for this module.
+              </p>
             ) : (
               <div className="flex flex-col gap-1.5">
-                {modules.map((m) => {
-                  const active = selectedModule === m.name;
+                {tests.map((t) => {
+                  const active = selectedTest?.id === t.id;
                   return (
                     <button
-                      key={m.name}
-                      onClick={() => handleSelectModule(m.name)}
-                      className={`flex items-center justify-between px-4 py-3 rounded-2xl
-                        border text-left transition-all duration-150
-                        ${
-                          active
-                            ? "border-c-brand/50 bg-c-brand/10 text-c-brand"
-                            : "border-[var(--border-color)] bg-bg-card text-t-secondary hover:bg-bg-surface"
-                        }`}
+                      key={t.id}
+                      onClick={() => {
+                        setSelectedTest(t);
+                        setError(null);
+                      }}
+                      className={`flex items-center justify-between px-4 py-3 rounded-2xl border text-left transition-all duration-150 ${
+                        active
+                          ? "border-c-brand/50 bg-c-brand/10 text-c-brand"
+                          : "border-[var(--border-color)] bg-bg-card text-t-secondary hover:bg-bg-surface"
+                      }`}
                     >
-                      <span className="text-sm font-medium">{m.name}</span>
+                      <span className="text-sm font-medium">
+                        {t.tests_name}
+                      </span>
                       {active && (
-                        <ChevronRight
-                          size={14}
-                          className="opacity-60 shrink-0"
-                        />
+                        <ChevronRight size={14} className="opacity-60 shrink-0" />
                       )}
                     </button>
                   );
@@ -222,86 +235,32 @@ const ExportTestDocxModal: React.FC<Props> = ({ onClose }) => {
               </div>
             )}
           </div>
+        )}
 
-          {/* Step 2 — Test */}
-          {selectedModule && (
-            <div className="flex flex-col gap-2">
-              <p className="text-[10px] font-bold text-t-muted uppercase tracking-widest px-1">
-                2 · Test
-              </p>
-
-              {loadingTests ? (
-                <div className="flex items-center gap-2 px-3 py-3 text-t-muted">
-                  <Loader2 size={14} className="animate-spin" />
-                  <span className="text-xs">Loading tests…</span>
-                </div>
-              ) : tests.length === 0 ? (
-                <p className="text-xs text-t-muted px-1">
-                  No tests found for this module.
-                </p>
-              ) : (
-                <div className="flex flex-col gap-1.5">
-                  {tests.map((t) => {
-                    const active = selectedTest?.id === t.id;
-                    return (
-                      <button
-                        key={t.id}
-                        onClick={() => {
-                          setSelectedTest(t);
-                          setError(null);
-                        }}
-                        className={`flex items-center justify-between px-4 py-3 rounded-2xl
-                          border text-left transition-all duration-150
-                          ${
-                            active
-                              ? "border-c-brand/50 bg-c-brand/10 text-c-brand"
-                              : "border-[var(--border-color)] bg-bg-card text-t-secondary hover:bg-bg-surface"
-                          }`}
-                      >
-                        <span className="text-sm font-medium">
-                          {t.tests_name}
-                        </span>
-                        {active && (
-                          <ChevronRight
-                            size={14}
-                            className="opacity-60 shrink-0"
-                          />
-                        )}
-                      </button>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
+        {/* Export button */}
+        <button
+          onClick={handleExport}
+          disabled={!canExport}
+          className={`mt-2 w-full flex items-center justify-center gap-2 px-4 py-3.5 rounded-2xl text-sm font-semibold transition-all duration-150 ${
+            canExport
+              ? "bg-c-brand text-white active:scale-[0.97]"
+              : "bg-bg-card text-t-muted border border-[var(--border-color)] opacity-50 cursor-not-allowed"
+          }`}
+        >
+          {exporting ? (
+            <>
+              <Loader2 size={15} className="animate-spin" />
+              <span>Building DOCX…</span>
+            </>
+          ) : (
+            <>
+              <FileText size={15} />
+              <span>Export DOCX</span>
+            </>
           )}
-
-          {/* Export button */}
-          <button
-            onClick={handleExport}
-            disabled={!canExport}
-            className={`mt-2 w-full flex items-center justify-center gap-2 px-4 py-3.5
-              rounded-2xl text-sm font-semibold transition-all duration-150
-              ${
-                canExport
-                  ? "bg-c-brand text-white active:scale-[0.97]"
-                  : "bg-bg-card text-t-muted border border-[var(--border-color)] opacity-50 cursor-not-allowed"
-              }`}
-          >
-            {exporting ? (
-              <>
-                <Loader2 size={15} className="animate-spin" />
-                <span>Building DOCX…</span>
-              </>
-            ) : (
-              <>
-                <FileText size={15} />
-                <span>Export DOCX</span>
-              </>
-            )}
-          </button>
-        </div>
+        </button>
       </div>
-    </div>
+    </ModalShell>
   );
 };
 

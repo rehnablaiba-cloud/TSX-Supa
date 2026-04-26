@@ -1,5 +1,5 @@
+// src/components/Modals/ExportAllModal.tsx
 import React, { useCallback, useEffect, useState } from "react";
-import { createPortal } from "react-dom";
 import {
   BarChart2,
   FileJson,
@@ -9,13 +9,12 @@ import {
   Download,
   Check,
 } from "lucide-react";
+import ModalShell from "../Layout/ModalShell";
 
 import { fetchAllTables, ALL_TABLES } from "../../lib/supabase/queries";
 import type { AllData } from "../../lib/supabase/queries";
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Helpers
-// ─────────────────────────────────────────────────────────────────────────────
+// ── Helpers ─────────────────────────────────────────────────────────────────
 
 function downloadBlob(blob: Blob, filename: string) {
   const a = document.createElement("a");
@@ -63,9 +62,7 @@ function toSql(table: string, rows: Record<string, unknown>[]): string {
     .join("\n");
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Types
-// ─────────────────────────────────────────────────────────────────────────────
+// ── Types ───────────────────────────────────────────────────────────────────
 
 type ExportFormat = "csv+zip" | "json" | "tsv+zip" | "sql";
 type ExportStage =
@@ -112,11 +109,9 @@ interface Props {
   onClose: () => void;
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Component
-// ─────────────────────────────────────────────────────────────────────────────
+// ── Component ───────────────────────────────────────────────────────────────
 
-const ExportAllModal: React.FC<Props> = ({ onClose }) => {
+const ExportDataModal: React.FC<Props> = ({ onClose }) => {
   const [stage, setStage] = useState<ExportStage>("idle");
   const [allData, setAllData] = useState<AllData | null>(null);
   const [fetchErrors, setFetchErrors] = useState<string[]>([]);
@@ -191,188 +186,161 @@ const ExportAllModal: React.FC<Props> = ({ onClose }) => {
     }
   }, [allData, format]);
 
-  return createPortal(
-    <div
-      className="fixed inset-0 flex items-end md:items-center justify-center"
-      style={{ zIndex: 9999 }}
+  return (
+    <ModalShell
+      title={
+        <span className="flex items-center gap-1.5">
+          <Upload size={16} /> Export All Data
+        </span>
+      }
+      onClose={onClose}
     >
-      {/* Backdrop */}
-      <div className="absolute inset-0 backdrop-dim" onClick={onClose} />
+      {/* Status line */}
+      <p className="text-xs text-t-muted -mt-1 mb-2">
+        {stage === "fetching" && "Fetching from Supabase…"}
+        {stage === "ready" &&
+          `${ALL_TABLES.length} tables · ${totalRows} rows`}
+        {stage === "exporting" && "Building file…"}
+        {stage === "done" && "Download started ✓"}
+        {stage === "error" && "Something went wrong"}
+      </p>
 
-      {/* Sheet panel */}
-      <div
-        className="relative w-full md:max-w-md mx-auto z-10
-          border-t md:border border-[var(--border-color)]
-          rounded-t-2xl md:rounded-2xl
-          px-6 pt-5 overflow-y-auto flex flex-col gap-4 max-h-[90vh] glass-frost"
-        style={{
-          paddingBottom: "calc(96px + env(safe-area-inset-bottom, 0px))",
-        }}
-      >
-        {/* Drag pill (mobile) */}
-        <div className="w-10 h-1 bg-bg-card rounded-full mx-auto md:hidden shrink-0" />
-
-        {/* Header */}
-        <div className="flex items-center justify-between shrink-0">
-          <div>
-            <h2 className="text-base font-bold text-t-primary flex items-center gap-1.5">
-              <Upload size={16} /> Export All Data
-            </h2>
-            <p className="text-xs text-t-muted mt-0.5">
-              {stage === "fetching" && "Fetching from Supabase…"}
-              {stage === "ready" &&
-                `${ALL_TABLES.length} tables · ${totalRows} rows`}
-              {stage === "exporting" && "Building file…"}
-              {stage === "done" && "Download started ✓"}
-              {stage === "error" && "Something went wrong"}
-            </p>
-          </div>
-          <button
-            onClick={onClose}
-            className="w-8 h-8 flex items-center justify-center rounded-full text-t-muted hover:text-t-primary hover:bg-bg-card transition-colors shrink-0"
-          >
-            ✕
-          </button>
+      {/* Fetching spinner */}
+      {stage === "fetching" && (
+        <div className="flex flex-col items-center gap-3 py-8">
+          <div className="w-10 h-10 border-4 border-c-brand border-t-transparent rounded-full animate-spin" />
+          <p className="text-sm text-t-muted">Loading all tables…</p>
         </div>
+      )}
 
-        {/* Fetching spinner */}
-        {stage === "fetching" && (
-          <div className="flex flex-col items-center gap-3 py-8">
-            <div className="w-10 h-10 border-4 border-c-brand border-t-transparent rounded-full animate-spin" />
-            <p className="text-sm text-t-muted">Loading all tables…</p>
-          </div>
-        )}
+      {/* Hard error */}
+      {stage === "error" && errMsg && (
+        <div className="rounded-xl border border-red-500/30 bg-red-500/10 p-4 text-sm text-red-400">
+          {errMsg}
+        </div>
+      )}
 
-        {/* Hard error */}
-        {stage === "error" && errMsg && (
-          <div className="rounded-xl border border-red-500/30 bg-red-500/10 p-4 text-sm text-red-400">
-            {errMsg}
-          </div>
-        )}
-
-        {/* Main body */}
-        {(stage === "ready" || stage === "exporting" || stage === "done") &&
-          counts && (
-            <>
-              {/* Partial fetch warnings */}
-              {fetchErrors.length > 0 && (
-                <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-400 flex flex-col gap-1">
-                  <p className="font-semibold">Some tables failed to load</p>
-                  {fetchErrors.map((e, i) => (
-                    <p key={i}>{e}</p>
-                  ))}
-                </div>
-              )}
-
-              {/* Table row counts */}
-              <div className="rounded-xl border border-[var(--border-color)] overflow-hidden">
-                <div className="bg-bg-card px-3 py-2 border-b border-[var(--border-color)]">
-                  <p className="text-xs font-semibold text-t-muted uppercase tracking-wider">
-                    Tables
-                  </p>
-                </div>
-                <div className="divide-y divide-[var(--border-color)]">
-                  {counts.map(({ table, count }) => (
-                    <div
-                      key={table}
-                      className="flex items-center justify-between px-3 py-2.5"
-                    >
-                      <span className="text-sm font-mono text-t-secondary">
-                        {table}
-                      </span>
-                      <span
-                        className={`text-xs font-bold px-2 py-0.5 rounded-full ${
-                          count > 0
-                            ? "bg-c-brand-bg text-c-brand"
-                            : "bg-bg-card text-t-muted"
-                        }`}
-                      >
-                        {count} rows
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              {/* Format picker */}
-              <div className="flex flex-col gap-2">
-                <p className="text-xs text-t-muted font-semibold uppercase tracking-wider">
-                  Format
-                </p>
-                {FORMAT_META.map((f) => (
-                  <button
-                    key={f.id}
-                    onClick={() => setFormat(f.id)}
-                    className={`flex items-center gap-3 px-4 py-3 rounded-xl border transition-all text-left ${
-                      format === f.id
-                        ? "border-c-brand bg-c-brand-bg"
-                        : "border-[var(--border-color)] bg-bg-card hover:bg-bg-base"
-                    }`}
-                  >
-                    <span
-                      className={
-                        format === f.id ? "text-c-brand" : "text-t-muted"
-                      }
-                    >
-                      {f.icon}
-                    </span>
-                    <div className="flex-1">
-                      <p
-                        className={`text-sm font-semibold ${
-                          format === f.id ? "text-c-brand" : "text-t-primary"
-                        }`}
-                      >
-                        {f.label}
-                      </p>
-                      <p className="text-xs text-t-muted">{f.desc}</p>
-                    </div>
-                    {format === f.id && (
-                      <span className="w-4 h-4 rounded-full bg-c-brand flex items-center justify-center text-white shrink-0">
-                        <Check size={10} />
-                      </span>
-                    )}
-                  </button>
+      {/* Main body */}
+      {(stage === "ready" || stage === "exporting" || stage === "done") &&
+        counts && (
+          <div className="flex flex-col gap-4">
+            {/* Partial fetch warnings */}
+            {fetchErrors.length > 0 && (
+              <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-400 flex flex-col gap-1">
+                <p className="font-semibold">Some tables failed to load</p>
+                {fetchErrors.map((e, i) => (
+                  <p key={i}>{e}</p>
                 ))}
               </div>
+            )}
 
-              {/* Download button */}
-              <button
-                onClick={handleExport}
-                disabled={stage === "exporting" || stage === "done"}
-                className="btn-primary text-sm w-full flex items-center justify-center gap-2 disabled:opacity-60 disabled:cursor-not-allowed"
-              >
-                {stage === "exporting" ? (
-                  <>
-                    <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                    Building…
-                  </>
-                ) : stage === "done" ? (
-                  <>
-                    <Check size={14} />
-                    Downloaded!
-                  </>
-                ) : (
-                  <>
-                    <Download size={14} />
-                    Download {FORMAT_META.find((f) => f.id === format)?.label}
-                  </>
-                )}
-              </button>
+            {/* Table row counts */}
+            <div className="rounded-xl border border-[var(--border-color)] overflow-hidden">
+              <div className="bg-bg-card px-3 py-2 border-b border-[var(--border-color)]">
+                <p className="text-xs font-semibold text-t-muted uppercase tracking-wider">
+                  Tables
+                </p>
+              </div>
+              <div className="divide-y divide-[var(--border-color)]">
+                {counts.map(({ table, count }) => (
+                  <div
+                    key={table}
+                    className="flex items-center justify-between px-3 py-2.5"
+                  >
+                    <span className="text-sm font-mono text-t-secondary">
+                      {table}
+                    </span>
+                    <span
+                      className={`text-xs font-bold px-2 py-0.5 rounded-full ${
+                        count > 0
+                          ? "bg-c-brand-bg text-c-brand"
+                          : "bg-bg-card text-t-muted"
+                      }`}
+                    >
+                      {count} rows
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
 
-              {stage === "done" && (
+            {/* Format picker */}
+            <div className="flex flex-col gap-2">
+              <p className="text-xs text-t-muted font-semibold uppercase tracking-wider">
+                Format
+              </p>
+              {FORMAT_META.map((f) => (
                 <button
-                  onClick={onClose}
-                  className="w-full px-4 py-2.5 rounded-xl border border-[var(--border-color)] text-t-secondary hover:text-t-primary text-sm font-medium transition-colors"
+                  key={f.id}
+                  onClick={() => setFormat(f.id)}
+                  className={`flex items-center gap-3 px-4 py-3 rounded-xl border transition-all text-left ${
+                    format === f.id
+                      ? "border-c-brand bg-c-brand-bg"
+                      : "border-[var(--border-color)] bg-bg-card hover:bg-bg-base"
+                  }`}
                 >
-                  Close
+                  <span
+                    className={
+                      format === f.id ? "text-c-brand" : "text-t-muted"
+                    }
+                  >
+                    {f.icon}
+                  </span>
+                  <div className="flex-1">
+                    <p
+                      className={`text-sm font-semibold ${
+                        format === f.id ? "text-c-brand" : "text-t-primary"
+                      }`}
+                    >
+                      {f.label}
+                    </p>
+                    <p className="text-xs text-t-muted">{f.desc}</p>
+                  </div>
+                  {format === f.id && (
+                    <span className="w-4 h-4 rounded-full bg-c-brand flex items-center justify-center text-white shrink-0">
+                      <Check size={10} />
+                    </span>
+                  )}
                 </button>
+              ))}
+            </div>
+
+            {/* Download button */}
+            <button
+              onClick={handleExport}
+              disabled={stage === "exporting" || stage === "done"}
+              className="btn-primary text-sm w-full flex items-center justify-center gap-2 disabled:opacity-60 disabled:cursor-not-allowed"
+            >
+              {stage === "exporting" ? (
+                <>
+                  <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                  Building…
+                </>
+              ) : stage === "done" ? (
+                <>
+                  <Check size={14} />
+                  Downloaded!
+                </>
+              ) : (
+                <>
+                  <Download size={14} />
+                  Download {FORMAT_META.find((f) => f.id === format)?.label}
+                </>
               )}
-            </>
-          )}
-      </div>
-    </div>,
-    document.body
+            </button>
+
+            {stage === "done" && (
+              <button
+                onClick={onClose}
+                className="w-full px-4 py-2.5 rounded-xl border border-[var(--border-color)] text-t-secondary hover:text-t-primary text-sm font-medium transition-colors"
+              >
+                Close
+              </button>
+            )}
+          </div>
+        )}
+    </ModalShell>
   );
 };
 
-export default ExportAllModal;
+export default ExportDataModal;

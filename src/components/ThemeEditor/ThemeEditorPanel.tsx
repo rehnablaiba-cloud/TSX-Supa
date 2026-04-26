@@ -1,12 +1,13 @@
+// src/components/ThemeEditor/ThemeEditorPanel.tsx
 /**
  * ThemeEditorPanel.tsx
  * Simplified: auto-generates full brand palette from one color.
- * Admin-only · createPortal · matches ExportAllModal shell.
+ * Admin-only · wrapped in ModalShell · matches all other modals.
  */
 
 import React, { useState, useCallback } from "react";
-import { createPortal } from "react-dom";
 import { Palette } from "lucide-react";
+import ModalShell from "../Layout/ModalShell";
 import { useTheme, MuiConfig } from "../../context/ThemeContext";
 import { useAuth } from "../../context/AuthContext";
 import {
@@ -113,30 +114,23 @@ function toHex(v: string): string {
 }
 
 // ─── Presets ──────────────────────────────────────────────────────────────────
-// 16 presets covering the full hue wheel — grouped by hue family
 
 const PRESETS = [
-  // ── Cool blues & cyans ──
   { name: "Blue", color: "#3b82f6" },
   { name: "Sky", color: "#0ea5e9" },
   { name: "Cyan", color: "#06b6d4" },
-  // ── Purples & violets ──
   { name: "Indigo", color: "#6366f1" },
   { name: "Violet", color: "#8b5cf6" },
   { name: "Purple", color: "#a855f7" },
-  // ── Pinks & reds ──
   { name: "Pink", color: "#ec4899" },
   { name: "Rose", color: "#f43f5e" },
   { name: "Red", color: "#ef4444" },
-  // ── Warm tones ──
   { name: "Orange", color: "#f97316" },
   { name: "Amber", color: "#f59e0b" },
   { name: "Yellow", color: "#eab308" },
-  // ── Greens & teals ──
   { name: "Lime", color: "#84cc16" },
   { name: "Emerald", color: "#10b981" },
   { name: "Teal", color: "#14b8a6" },
-  // ── Neutrals ──
   { name: "Slate", color: "#64748b" },
 ];
 
@@ -146,34 +140,18 @@ const LS_BASE = "themeEditorBaseColor";
 const LS_GLASS = "themeEditorGlass";
 
 const GLASS_DEFAULTS = {
-  blur: 28, // px
-  saturation: 180, // %
-  brightness: 106, // % stored as integer (1.06 → 106)
-  bgOpacity: 40, // %
-  borderOpacity: 55, // %
+  blur: 28,
+  saturation: 180,
+  brightness: 106,
+  bgOpacity: 40,
+  borderOpacity: 55,
 };
 type GlassConfig = typeof GLASS_DEFAULTS;
 
-/**
- * Writes glass effect values to CSS custom properties on :root.
- *
- * Contract (must match :root fallbacks in index.css):
- *   --glass-blur           → "<n>px"       e.g. "28px"
- *   --glass-saturation     → "<n>%"        e.g. "180%"
- *   --glass-brightness     → "<decimal>"   e.g. "1.06"  ← NO % suffix
- *   --glass-bg-opacity     → "<n>%"        e.g. "40%"
- *   --glass-border-opacity → "<n>%"        e.g. "55%"
- *
- * NOTE: brightness is stored as an integer (106) for slider convenience
- * but written as a decimal (1.06) because CSS brightness() takes a
- * multiplier, not a percentage. saturation is stored & written as a
- * percentage (180%) because CSS saturate() accepts both forms.
- */
 function applyGlassCssVars(g: GlassConfig) {
   const s = document.documentElement.style;
   s.setProperty("--glass-blur", `${g.blur}px`);
   s.setProperty("--glass-saturation", `${g.saturation}%`);
-  // brightness stored as integer e.g. 106 → write as decimal 1.06 (no % suffix)
   s.setProperty("--glass-brightness", `${(g.brightness / 100).toFixed(2)}`);
   s.setProperty("--glass-bg-opacity", `${g.bgOpacity}%`);
   s.setProperty("--glass-border-opacity", `${g.borderOpacity}%`);
@@ -323,7 +301,6 @@ const BrandTab: React.FC = () => {
 
   return (
     <div className="flex flex-col gap-5 pb-6">
-      {/* Brand picker */}
       <div>
         <div className="flex items-center justify-between mb-3">
           <p className="text-[10px] font-bold uppercase tracking-wider text-t-muted">
@@ -337,7 +314,6 @@ const BrandTab: React.FC = () => {
           </button>
         </div>
 
-        {/* Big picker tile */}
         <label
           className="flex items-center gap-4 p-4 rounded-2xl border cursor-pointer mb-3 bg-bg-card transition-colors"
           style={{ borderColor: baseColor + "88" }}
@@ -366,7 +342,6 @@ const BrandTab: React.FC = () => {
           </div>
         </label>
 
-        {/* Preset chips — 16 presets, 4 columns */}
         <div className="grid grid-cols-4 gap-1.5 mb-3">
           {PRESETS.map((p) => (
             <button
@@ -391,7 +366,6 @@ const BrandTab: React.FC = () => {
           ))}
         </div>
 
-        {/* Generated shade strip */}
         <div className="flex rounded-xl overflow-hidden border border-[var(--border-color)] h-8">
           {BRAND_SHADES.map((shade) => (
             <div
@@ -414,7 +388,6 @@ const BrandTab: React.FC = () => {
         </div>
       </div>
 
-      {/* Status colors */}
       <Section
         title="⚡ Status Colors"
         action={
@@ -597,7 +570,6 @@ const MuiTab: React.FC = () => {
         </div>
       </Section>
 
-      {/* Live preview */}
       <div className="flex gap-2">
         <div
           className="flex-1 h-9 bg-c-brand flex items-center justify-center text-white text-xs font-semibold shadow"
@@ -697,7 +669,6 @@ const GlassTab: React.FC = () => {
     applyGlassCssVars(GLASS_DEFAULTS);
   };
 
-  // Live preview style — mirrors what glass-frost / glass-liquid render
   const previewStyle: React.CSSProperties = {
     background: `color-mix(in srgb, var(--bg-surface) ${config.bgOpacity}%, transparent)`,
     backdropFilter: `blur(${config.blur}px) saturate(${
@@ -712,9 +683,7 @@ const GlassTab: React.FC = () => {
 
   return (
     <div className="flex flex-col gap-5 pb-6">
-      {/* Live preview card */}
       <div className="relative rounded-2xl overflow-hidden h-28">
-        {/* Colourful bg to make glass visible */}
         <div
           className="absolute inset-0"
           style={{
@@ -795,7 +764,7 @@ const GlassTab: React.FC = () => {
   );
 };
 
-// ─── Panel shell ──────────────────────────────────────────────────────────────
+// ─── Panel ────────────────────────────────────────────────────────────────────
 
 type Tab = "brand" | "light" | "dark" | "glass" | "mui";
 
@@ -815,95 +784,76 @@ const ThemeEditorPanel: React.FC<{ onClose: () => void }> = ({ onClose }) => {
   ];
 
   return (
-    <>
-      <div className="absolute inset-0 backdrop-dim" onClick={onClose} />
-      <div
-        className="relative w-full md:max-w-md mx-auto z-10
-          border-t md:border border-[var(--border-color)]
-          rounded-t-2xl md:rounded-2xl
-          px-6 pt-5 overflow-y-auto flex flex-col gap-4 max-h-[90vh] glass-frost"
-        style={{
-          paddingBottom: "calc(96px + env(safe-area-inset-bottom, 0px))",
-        }}
-      >
-        <div className="w-10 h-1 bg-bg-card rounded-full mx-auto md:hidden shrink-0" />
+    <ModalShell
+      title={
+        <span className="flex items-center gap-1.5">
+          <Palette size={16} /> Theme Editor
+        </span>
+      }
+      onClose={onClose}
+    >
+      <div className="flex items-center justify-between -mt-1 mb-3">
+        <p className="text-xs text-t-muted">
+          {total > 0
+            ? `${total} override${total !== 1 ? "s" : ""} active`
+            : "Admin only"}
+        </p>
+        {total > 0 && (
+          <button
+            onClick={() => {
+              if (confirm("Reset ALL overrides?")) {
+                resetTokenOverrides();
+                [LS_BRAND, LS_STATUS, LS_BASE].forEach((k) =>
+                  localStorage.removeItem(k)
+                );
+              }
+            }}
+            className="text-xs px-3 py-1.5 rounded-lg bg-red-500/10 text-red-400 hover:bg-red-500/20 transition-colors"
+          >
+            Reset All
+          </button>
+        )}
+      </div>
 
-        <div className="flex items-center justify-between shrink-0">
-          <div>
-            <h2 className="text-base font-bold text-t-primary flex items-center gap-1.5">
-              <Palette size={16} /> Theme Editor
-            </h2>
-            <p className="text-xs text-t-muted mt-0.5">
-              {total > 0
-                ? `${total} override${total !== 1 ? "s" : ""} active`
-                : "Admin only"}
-            </p>
-          </div>
-          <div className="flex items-center gap-2 shrink-0">
-            {total > 0 && (
-              <button
-                onClick={() => {
-                  if (confirm("Reset ALL overrides?")) {
-                    resetTokenOverrides();
-                    [LS_BRAND, LS_STATUS, LS_BASE].forEach((k) =>
-                      localStorage.removeItem(k)
-                    );
-                  }
-                }}
-                className="text-xs px-3 py-1.5 rounded-lg bg-red-500/10 text-red-400 hover:bg-red-500/20 transition-colors"
-              >
-                Reset All
-              </button>
-            )}
-            <button
-              onClick={onClose}
-              className="w-8 h-8 flex items-center justify-center rounded-full text-t-muted hover:text-t-primary hover:bg-bg-card transition-colors"
-            >
-              ✕
-            </button>
-          </div>
-        </div>
-
-        <div className="flex gap-1 shrink-0">
-          {TABS.map((t) => (
-            <button
-              key={t.id}
-              onClick={() => setTab(t.id)}
-              className={`flex-1 py-2 px-2 rounded-xl text-xs font-semibold transition-colors
+      <div className="flex gap-1 mb-4">
+        {TABS.map((t) => (
+          <button
+            key={t.id}
+            onClick={() => setTab(t.id)}
+            className={`flex-1 py-2 px-2 rounded-xl text-xs font-semibold transition-colors
+              ${
+                tab === t.id
+                  ? "bg-c-brand text-white"
+                  : "bg-bg-card text-t-muted hover:text-t-secondary"
+              }`}
+          >
+            {t.label}
+            {t.badge && (
+              <span
+                className={`ml-1 text-[10px] font-bold
                 ${
                   tab === t.id
-                    ? "bg-c-brand text-white"
-                    : "bg-bg-card text-t-muted hover:text-t-secondary"
+                    ? "text-white/70"
+                    : t.badge === "ON"
+                    ? "text-pass"
+                    : "text-c-brand"
                 }`}
-            >
-              {t.label}
-              {t.badge && (
-                <span
-                  className={`ml-1 text-[10px] font-bold
-                  ${
-                    tab === t.id
-                      ? "text-white/70"
-                      : t.badge === "ON"
-                      ? "text-pass"
-                      : "text-c-brand"
-                  }`}
-                >
-                  {t.badge}
-                </span>
-              )}
-            </button>
-          ))}
-        </div>
-
-        <div className="flex-1 pt-1">
-          {tab === "brand" && <BrandTab />}
-          {tab === "light" && <ModeTab mode="light" />}
-          {tab === "dark" && <ModeTab mode="dark" />}
-          {tab === "glass" && <GlassTab />} {/* ← was missing */}
-          {tab === "mui" && <MuiTab />}
-        </div>
+              >
+                {t.badge}
+              </span>
+            )}
+          </button>
+        ))}
       </div>
-    </>
+
+      <div className="flex-1">
+        {tab === "brand" && <BrandTab />}
+        {tab === "light" && <ModeTab mode="light" />}
+        {tab === "dark" && <ModeTab mode="dark" />}
+        {tab === "glass" && <GlassTab />}
+        {tab === "mui" && <MuiTab />}
+      </div>
+    </ModalShell>
   );
 };
 
@@ -917,15 +867,7 @@ const ThemeEditor: React.FC<Props> = ({ onClose }) => {
   const { user } = useAuth();
   if (user?.role !== "admin") return null;
 
-  return createPortal(
-    <div
-      className="fixed inset-0 flex items-end md:items-center justify-center"
-      style={{ zIndex: 9999 }}
-    >
-      <ThemeEditorPanel onClose={onClose} />
-    </div>,
-    document.body
-  );
+  return <ThemeEditorPanel onClose={onClose} />;
 };
 
 export default ThemeEditor;
