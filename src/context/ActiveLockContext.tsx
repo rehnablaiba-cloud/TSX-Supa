@@ -8,6 +8,20 @@ import {
 } from "react";
 import { supabase } from "../supabase";
 import { useAuth, updateLoggedIn } from "./AuthContext";
+import { useTheme } from "./ThemeContext";
+import {
+  Shield,
+  GripVertical,
+  X,
+  Trash2,
+  ChevronDown,
+  ChevronUp,
+  ArrowDown,
+  Lock,
+  Activity,
+  RefreshCw,
+  Settings,
+} from "lucide-react";
 
 const HEARTBEAT_MS = 30_000;
 const STALE_MS = 2 * 60 * 1000;
@@ -29,35 +43,114 @@ interface SessionLog {
   category: "heartbeat" | "rehydrate" | "lock" | "system";
   status: "ok" | "error" | "pending" | "info" | "warn";
   message: string;
+  id: number;
 }
 
-/**
- * Category colours use CSS custom properties so they respect
- * whatever theme / brand overrides the app has applied.
- */
-const CATEGORY_VAR: Record<SessionLog["category"], string> = {
-  heartbeat: "var(--color-brand)",
-  rehydrate: "var(--color-pend)",
-  lock: "var(--color-pass)",
-  system: "var(--text-muted)",
+// ─── Styling maps ─────────────────────────────────────────────────────────────
+const CAT_STYLE: Record<SessionLog["category"], string> = {
+  heartbeat: "bg-blue-500/15 text-blue-400",
+  rehydrate: "bg-amber-500/15 text-amber-400",
+  lock: "bg-green-500/15 text-green-400",
+  system: "bg-gray-500/15  text-gray-400",
 };
 
-const STATUS_ICON: Record<SessionLog["status"], string> = {
-  ok: "✅",
-  error: "❌",
-  pending: "⏳",
-  info: "ℹ️",
-  warn: "⚠️",
+const CAT_ICON: Record<SessionLog["category"], React.ReactNode> = {
+  heartbeat: <Activity size={9} />,
+  rehydrate: <RefreshCw size={9} />,
+  lock: <Lock size={9} />,
+  system: <Settings size={9} />,
 };
 
-// ─── useDraggablePosition ─────────────────────────────────────────────────────
-/**
- * Right/bottom anchored drag — matches the pattern used by SessionLog's pill.
- * Position is persisted to localStorage so the widget remembers where you
- * left it across page refreshes.
- */
+const LEVEL_DOT: Record<SessionLog["status"], string> = {
+  ok: "bg-green-400",
+  error: "bg-red-400",
+  warn: "bg-amber-400",
+  pending: "bg-blue-400",
+  info: "bg-gray-400",
+};
+
+const LEVEL_TEXT: Record<SessionLog["status"], string> = {
+  ok: "text-green-400",
+  error: "text-red-400",
+  warn: "text-amber-400",
+  pending: "text-blue-400",
+  info: "text-gray-400",
+};
+
+const ALL_CATS: SessionLog["category"][] = [
+  "heartbeat",
+  "rehydrate",
+  "lock",
+  "system",
+];
+
+function fmt(t: string) {
+  return t;
+}
+
+// ─── Glass styles (mirrors SessionLog) ───────────────────────────────────────
+function useLockGlassStyles() {
+  const { theme } = useTheme();
+  const isDark = theme === "dark";
+  return {
+    panel: {
+      background: isDark ? "rgba(10,10,16,0.92)" : "rgba(248,250,252,0.92)",
+      backdropFilter: "blur(20px) saturate(180%)",
+      WebkitBackdropFilter: "blur(20px) saturate(180%)",
+      borderColor: isDark ? "rgba(255,255,255,0.08)" : "rgba(0,0,0,0.08)",
+    },
+    logText: isDark ? "#e2e8f0" : "#1e293b",
+    mutedText: isDark ? "#64748b" : "#94a3b8",
+    border: isDark ? "rgba(255,255,255,0.06)" : "rgba(0,0,0,0.06)",
+    detailBg: isDark ? "rgba(0,0,0,0.30)" : "rgba(241,245,249,0.60)",
+  };
+}
+
+// ─── Entry row (mirrors SessionLog's EntryRow) ────────────────────────────────
+const EntryRow: React.FC<{
+  entry: SessionLog;
+  styles: ReturnType<typeof useLockGlassStyles>;
+}> = ({ entry, styles }) => (
+  <div
+    className="border-b last:border-b-0 px-3 py-1.5"
+    style={{ borderColor: styles.border }}
+  >
+    <div className="flex items-start gap-2">
+      <span
+        className="text-[10px] font-mono shrink-0 mt-px w-[4.5rem] leading-4"
+        style={{ color: styles.mutedText }}
+      >
+        {entry.time}
+      </span>
+      <span
+        className={`flex items-center gap-0.5 text-[9px] font-bold px-1.5 py-0.5
+          rounded-full shrink-0 uppercase tracking-wide mt-px ${
+            CAT_STYLE[entry.category]
+          }`}
+      >
+        {CAT_ICON[entry.category]}
+        {entry.category}
+      </span>
+      <span
+        className={`w-1.5 h-1.5 rounded-full shrink-0 mt-1.5 ${
+          LEVEL_DOT[entry.status]
+        }`}
+      />
+      <span
+        className={`text-[10px] font-mono flex-1 leading-4 break-all ${
+          LEVEL_TEXT[entry.status]
+        }`}
+      >
+        {entry.message}
+      </span>
+    </div>
+  </div>
+);
+
+// ─── Draggable position hook (same pattern as SessionLog) ─────────────────────
 function getDefaultPos() {
-  return { right: 16, bottom: 16 };
+  const isMd = typeof window !== "undefined" && window.innerWidth >= 768;
+  return { right: isMd ? 24 : 16, bottom: isMd ? 80 : 160 }; // offset from SessionLog pill
 }
 
 function useDraggablePosition() {
@@ -70,7 +163,7 @@ function useDraggablePosition() {
     return getDefaultPos();
   });
 
-  const handleRef = useRef<HTMLDivElement | null>(null);
+  const pillRef = useRef<HTMLButtonElement>(null);
   const dragRef = useRef({
     active: false,
     moved: false,
@@ -79,81 +172,65 @@ function useDraggablePosition() {
     startRight: 0,
     startBottom: 0,
   });
-  const posRef = useRef(pos);
-  useEffect(() => {
-    posRef.current = pos;
-  }, [pos]);
 
   const clamp = useCallback((next: { right: number; bottom: number }) => {
-    const padding = 8;
+    const pad = 8;
     const vw = window.innerWidth;
     const vh = window.innerHeight;
-    const rect = handleRef.current
-      ?.closest<HTMLElement>("[data-draggable]")
-      ?.getBoundingClientRect();
-    const w = rect?.width ?? 380;
-    const h = rect?.height ?? 300;
+    const rect = pillRef.current?.getBoundingClientRect();
+    const w = rect?.width ?? 140;
+    const h = rect?.height ?? 40;
     return {
-      right: Math.max(padding, Math.min(vw - w - padding, next.right)),
-      bottom: Math.max(padding, Math.min(vh - h - padding, next.bottom)),
+      right: Math.max(pad, Math.min(vw - w - pad, next.right)),
+      bottom: Math.max(pad, Math.min(vh - h - pad, next.bottom)),
     };
   }, []);
 
-  useEffect(() => {
-    const handle = handleRef.current;
-    if (!handle) return;
-
-    const onPointerDown = (e: PointerEvent) => {
-      if (e.button !== 0 && e.pointerType === "mouse") return;
-      handle.setPointerCapture(e.pointerId);
+  const onPointerDown = useCallback(
+    (e: React.PointerEvent<HTMLButtonElement>) => {
+      (e.target as HTMLElement).setPointerCapture(e.pointerId);
       dragRef.current = {
         active: true,
         moved: false,
         startX: e.clientX,
         startY: e.clientY,
-        startRight: posRef.current.right,
-        startBottom: posRef.current.bottom,
+        startRight: pos.right,
+        startBottom: pos.bottom,
       };
-      e.preventDefault();
-    };
+    },
+    [pos]
+  );
 
-    const onPointerMove = (e: PointerEvent) => {
+  const onPointerMove = useCallback(
+    (e: React.PointerEvent<HTMLButtonElement>) => {
       if (!dragRef.current.active) return;
       const dx = e.clientX - dragRef.current.startX;
       const dy = e.clientY - dragRef.current.startY;
       if (Math.abs(dx) > 2 || Math.abs(dy) > 2) dragRef.current.moved = true;
-      const next = clamp({
-        right: dragRef.current.startRight - dx,
-        bottom: dragRef.current.startBottom - dy,
-      });
-      posRef.current = next;
-      setPos(next);
-    };
+      setPos(
+        clamp({
+          right: dragRef.current.startRight - dx,
+          bottom: dragRef.current.startBottom - dy,
+        })
+      );
+    },
+    [clamp]
+  );
 
-    const onPointerUp = () => {
-      if (!dragRef.current.active) return;
-      dragRef.current.active = false;
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(posRef.current));
-    };
+  const onPointerUp = useCallback(() => {
+    if (!dragRef.current.active) return;
+    dragRef.current.active = false;
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(pos));
+    return !dragRef.current.moved;
+  }, [pos]);
 
-    handle.addEventListener("pointerdown", onPointerDown);
-    window.addEventListener("pointermove", onPointerMove);
-    window.addEventListener("pointerup", onPointerUp);
-    return () => {
-      handle.removeEventListener("pointerdown", onPointerDown);
-      window.removeEventListener("pointermove", onPointerMove);
-      window.removeEventListener("pointerup", onPointerUp);
-    };
-  }, [clamp]);
-
-  // Keep in bounds on viewport resize
   useEffect(() => {
     const handle = () => setPos((p) => clamp(p));
     window.addEventListener("resize", handle);
     return () => window.removeEventListener("resize", handle);
   }, [clamp]);
 
-  return { pos, handleRef };
+  return { pos, pillRef, onPointerDown, onPointerMove, onPointerUp };
 }
 
 // ─── Debug Widget ─────────────────────────────────────────────────────────────
@@ -161,337 +238,230 @@ const SessionDebugWidget = ({
   logs,
   lockInfo,
   nextBeat,
+  onClear,
 }: {
   logs: SessionLog[];
   lockInfo: { module_test_id: string; user_id: string } | null;
   nextBeat: number | null;
+  onClear: () => void;
 }) => {
-  const [minimized, setMinimized] = useState(false);
+  const [open, setOpen] = useState(false);
   const [filter, setFilter] = useState<SessionLog["category"] | "all">("all");
-  const { pos, handleRef } = useDraggablePosition();
+  const [autoScroll, setAutoScroll] = useState(true);
+  const listRef = useRef<HTMLDivElement>(null);
+  const styles = useLockGlassStyles();
+  const suppressClick = useRef(false);
 
-  const filtered =
+  const { pos, pillRef, onPointerDown, onPointerMove, onPointerUp } =
+    useDraggablePosition();
+
+  const visible =
     filter === "all" ? logs : logs.filter((l) => l.category === filter);
+
+  const hasError = logs.some((l) => l.status === "error");
+  const hasWarn = !hasError && logs.some((l) => l.status === "warn");
+  const pillDot = hasError
+    ? "bg-red-500 animate-pulse"
+    : hasWarn
+    ? "bg-amber-500"
+    : "bg-green-500";
+
+  useEffect(() => {
+    if (!autoScroll || !open || !listRef.current) return;
+    listRef.current.scrollTop = listRef.current.scrollHeight;
+  }, [logs, autoScroll, open]);
+
+  const handleScroll = () => {
+    if (!listRef.current) return;
+    const { scrollTop, scrollHeight, clientHeight } = listRef.current;
+    setAutoScroll(scrollHeight - scrollTop - clientHeight < 40);
+  };
+
+  const jumpLatest = () => {
+    setAutoScroll(true);
+    if (listRef.current)
+      listRef.current.scrollTop = listRef.current.scrollHeight;
+  };
+
+  const handlePillPointerUp = (e: React.PointerEvent<HTMLButtonElement>) => {
+    const wasClick = onPointerUp();
+    if (wasClick && !suppressClick.current) setOpen((p) => !p);
+    else suppressClick.current = false;
+  };
 
   return (
     <div
-      data-draggable
-      style={{
-        position: "fixed",
-        right: pos.right,
-        bottom: pos.bottom,
-        zIndex: 9999,
-        width: minimized ? "auto" : 380,
-        fontFamily: "monospace",
-        fontSize: 11,
-        borderRadius: 10,
-        overflow: "hidden",
-        border: "1px solid var(--border-color)",
-        background: "var(--bg-base)",
-        boxShadow:
-          "0 4px 32px color-mix(in srgb, var(--bg-base) 60%, transparent)",
-        transition: "box-shadow 0.25s ease",
-      }}
+      className="fixed z-[89] flex flex-col items-end gap-2 pointer-events-none"
+      style={{ right: pos.right, bottom: pos.bottom }}
     >
-      {/* ── Header / drag handle ───────────────────────────────────────── */}
-      <div
-        ref={handleRef}
-        style={{
-          background: "var(--bg-nav)",
-          backdropFilter: "blur(12px)",
-          WebkitBackdropFilter: "blur(12px)",
-          padding: "7px 10px",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          cursor: "grab",
-          borderBottom: "1px solid var(--border-color)",
-          userSelect: "none",
-          WebkitUserSelect: "none",
-        }}
-      >
-        <span
-          style={{
-            color: "var(--color-brand)",
-            fontWeight: "bold",
-            fontSize: 12,
-          }}
+      {/* ── Expanded panel ──────────────────────────────────────────── */}
+      {open && (
+        <div
+          className="pointer-events-auto w-[380px] max-w-[calc(100vw-2rem)]
+            rounded-2xl border shadow-2xl flex flex-col overflow-hidden"
+          style={{ ...styles.panel, maxHeight: "min(480px, 60vh)" }}
         >
-          🛡️ Lock Session Monitor
-        </span>
-
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          {lockInfo && !minimized && (
+          {/* Header */}
+          <div
+            className="flex items-center gap-2 px-3 py-2.5 border-b shrink-0"
+            style={{ borderColor: styles.border }}
+          >
+            <Shield size={13} style={{ color: styles.mutedText }} />
             <span
-              style={{
-                background:
-                  "color-mix(in srgb, var(--color-pass) 15%, transparent)",
-                color: "var(--color-pass)",
-                border:
-                  "1px solid color-mix(in srgb, var(--color-pass) 30%, transparent)",
-                borderRadius: 99,
-                padding: "1px 7px",
-                fontSize: 10,
-                pointerEvents: "none",
-              }}
+              className="text-xs font-bold flex-1"
+              style={{ color: styles.logText }}
             >
-              🔒 LOCKED
+              Lock Session Monitor
             </span>
-          )}
-
-          <button
-            onPointerDown={(e) => e.stopPropagation()}
-            onClick={() => setMinimized((p) => !p)}
-            style={{
-              background: "transparent",
-              border: "none",
-              color: "var(--text-muted)",
-              cursor: "pointer",
-              fontSize: 12,
-              lineHeight: 1,
-              padding: "2px 4px",
-            }}
-          >
-            {minimized ? "▲" : "▼"}
-          </button>
-        </div>
-      </div>
-
-      {!minimized && (
-        <>
-          {/* ── Lock info panel ───────────────────────────────────────── */}
-          <div
-            style={{
-              padding: "8px 10px",
-              borderBottom: "1px solid var(--border-color)",
-              display: "grid",
-              gridTemplateColumns: "1fr 1fr",
-              gap: 4,
-              background: "var(--bg-surface)",
-            }}
-          >
-            <div>
-              <div
-                style={{
-                  color: "var(--text-muted)",
-                  fontSize: 10,
-                  marginBottom: 2,
-                }}
-              >
-                STATUS
-              </div>
-              <div
-                style={{
-                  color: lockInfo ? "var(--color-pass)" : "var(--color-fail)",
-                  fontWeight: "bold",
-                }}
-              >
-                {lockInfo ? "🔒 Active" : "🔓 No Lock"}
-              </div>
-            </div>
-
-            <div>
-              <div
-                style={{
-                  color: "var(--text-muted)",
-                  fontSize: 10,
-                  marginBottom: 2,
-                }}
-              >
-                NEXT HEARTBEAT
-              </div>
-              <div
-                style={{
-                  color: lockInfo ? "var(--color-pend)" : "var(--text-muted)",
-                }}
-              >
-                {lockInfo && nextBeat !== null ? `in ${nextBeat}s` : "—"}
-              </div>
-            </div>
-
             {lockInfo && (
-              <>
-                <div style={{ gridColumn: "1 / -1" }}>
-                  <div
-                    style={{
-                      color: "var(--text-muted)",
-                      fontSize: 10,
-                      marginBottom: 2,
-                    }}
-                  >
-                    TEST
-                  </div>
-                  <div
-                    style={{
-                      color: "var(--text-primary)",
-                      overflow: "hidden",
-                      textOverflow: "ellipsis",
-                      whiteSpace: "nowrap",
-                    }}
-                  >
-                    {lockInfo.module_test_id}
-                  </div>
-                </div>
-                <div style={{ gridColumn: "1 / -1" }}>
-                  <div
-                    style={{
-                      color: "var(--text-muted)",
-                      fontSize: 10,
-                      marginBottom: 2,
-                    }}
-                  >
-                    USER ID
-                  </div>
-                  <div style={{ color: "var(--text-secondary)" }}>
-                    {lockInfo.user_id.slice(0, 12)}...
-                  </div>
-                </div>
-              </>
+              <span className="text-[9px] font-bold bg-green-500/15 text-green-400 border border-green-500/30 px-2 py-0.5 rounded-full mr-1">
+                🔒 LOCKED
+              </span>
             )}
-          </div>
-
-          {/* ── Category filter tabs ──────────────────────────────────── */}
-          <div
-            style={{
-              display: "flex",
-              gap: 4,
-              padding: "6px 8px",
-              borderBottom: "1px solid var(--border-color)",
-              overflowX: "auto",
-              background: "var(--bg-surface)",
-            }}
-          >
-            {(["all", "heartbeat", "rehydrate", "lock", "system"] as const).map(
-              (cat) => {
-                const active = filter === cat;
-                return (
-                  <button
-                    key={cat}
-                    onClick={() => setFilter(cat)}
-                    style={{
-                      padding: "2px 8px",
-                      borderRadius: 99,
-                      border: "1px solid",
-                      borderColor: active
-                        ? "var(--color-brand)"
-                        : "var(--border-color)",
-                      background: active
-                        ? "color-mix(in srgb, var(--color-brand) 12%, transparent)"
-                        : "transparent",
-                      color: active
-                        ? "var(--color-brand)"
-                        : cat === "all"
-                        ? "var(--text-muted)"
-                        : CATEGORY_VAR[cat as Exclude<typeof cat, "all">],
-                      cursor: "pointer",
-                      fontSize: 10,
-                      whiteSpace: "nowrap",
-                    }}
-                  >
-                    {cat === "all"
-                      ? `all (${logs.length})`
-                      : `${cat} (${
-                          logs.filter((l) => l.category === cat).length
-                        })`}
-                  </button>
-                );
+            {lockInfo && nextBeat !== null && (
+              <span
+                className="text-[10px] mr-1"
+                style={{ color: styles.mutedText }}
+              >
+                ↻ {nextBeat}s
+              </span>
+            )}
+            <span
+              className="text-[10px] mr-1"
+              style={{ color: styles.mutedText }}
+            >
+              {logs.length} events
+            </span>
+            <button
+              onClick={onClear}
+              className="p-1.5 rounded-lg transition-colors"
+              style={{ color: styles.mutedText }}
+              onMouseEnter={(e) => (e.currentTarget.style.color = "#f87171")}
+              onMouseLeave={(e) =>
+                (e.currentTarget.style.color = styles.mutedText)
               }
-            )}
+            >
+              <Trash2 size={11} />
+            </button>
+            <button
+              onClick={() => setOpen(false)}
+              className="p-1.5 rounded-lg transition-colors"
+              style={{ color: styles.mutedText }}
+              onMouseEnter={(e) =>
+                (e.currentTarget.style.color = styles.logText)
+              }
+              onMouseLeave={(e) =>
+                (e.currentTarget.style.color = styles.mutedText)
+              }
+            >
+              <X size={11} />
+            </button>
           </div>
 
-          {/* ── Log rows ──────────────────────────────────────────────── */}
+          {/* Category filter pills */}
           <div
-            style={{
-              maxHeight: 220,
-              overflowY: "auto",
-              padding: "4px 0",
-              background: "var(--bg-base)",
-            }}
+            className="flex items-center gap-1 px-3 py-2 border-b overflow-x-auto shrink-0"
+            style={{ borderColor: styles.border }}
           >
-            {filtered.length === 0 ? (
-              <div style={{ color: "var(--text-muted)", padding: "8px 10px" }}>
-                No logs yet...
+            <button
+              onClick={() => setFilter("all")}
+              className={`text-[9px] font-bold px-2 py-1 rounded-full shrink-0 uppercase tracking-wide transition-colors
+                ${filter === "all" ? "bg-c-brand text-white" : ""}`}
+              style={filter === "all" ? {} : { color: styles.mutedText }}
+            >
+              All · {logs.length}
+            </button>
+            {ALL_CATS.map((cat) => {
+              const count = logs.filter((l) => l.category === cat).length;
+              if (!count) return null;
+              return (
+                <button
+                  key={cat}
+                  onClick={() => setFilter(cat)}
+                  className={`flex items-center gap-0.5 text-[9px] font-bold px-2 py-1
+                    rounded-full shrink-0 uppercase tracking-wide transition-colors
+                    ${
+                      filter === cat
+                        ? "bg-c-brand text-white"
+                        : `${CAT_STYLE[cat]} opacity-75 hover:opacity-100`
+                    }`}
+                >
+                  {CAT_ICON[cat]}
+                  {cat} · {count}
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Entries */}
+          <div
+            ref={listRef}
+            onScroll={handleScroll}
+            className="flex-1 overflow-y-auto min-h-0 overscroll-contain"
+          >
+            {visible.length === 0 ? (
+              <div
+                className="flex flex-col items-center gap-2 py-10"
+                style={{ color: styles.mutedText }}
+              >
+                <Shield size={22} className="opacity-30" />
+                <p className="text-xs opacity-50">No entries for this filter</p>
               </div>
             ) : (
-              [...filtered].reverse().map((log, i) => {
-                const statusColor =
-                  log.status === "ok"
-                    ? "var(--color-pass)"
-                    : log.status === "error"
-                    ? "var(--color-fail)"
-                    : log.status === "warn"
-                    ? "var(--color-pend)"
-                    : log.status === "pending"
-                    ? "var(--color-pend)"
-                    : "var(--text-secondary)";
-                return (
-                  <div
-                    key={i}
-                    style={{
-                      padding: "3px 10px",
-                      borderBottom: "1px solid var(--bg-surface)",
-                      display: "grid",
-                      gridTemplateColumns: "68px 76px 1fr",
-                      gap: 4,
-                      alignItems: "start",
-                    }}
-                  >
-                    <span style={{ color: "var(--text-muted)", fontSize: 10 }}>
-                      {log.time}
-                    </span>
-                    <span
-                      style={{
-                        color: CATEGORY_VAR[log.category],
-                        fontSize: 10,
-                      }}
-                    >
-                      [{log.category}]
-                    </span>
-                    <span
-                      style={{ color: statusColor, wordBreak: "break-word" }}
-                    >
-                      {STATUS_ICON[log.status]} {log.message}
-                    </span>
-                  </div>
-                );
-              })
+              [...visible]
+                .reverse()
+                .map((l) => <EntryRow key={l.id} entry={l} styles={styles} />)
             )}
           </div>
 
-          {/* ── Footer ────────────────────────────────────────────────── */}
-          <div
-            style={{
-              padding: "5px 10px",
-              borderTop: "1px solid var(--border-color)",
-              display: "flex",
-              justifyContent: "space-between",
-              color: "var(--text-muted)",
-              fontSize: 10,
-              background: "var(--bg-nav)",
-              backdropFilter: "blur(8px)",
-              WebkitBackdropFilter: "blur(8px)",
-            }}
-          >
-            <span>heartbeat every {HEARTBEAT_MS / 1000}s</span>
-            <span>stale after {STALE_MS / 1000}s</span>
-            <span
-              style={{ cursor: "pointer", color: "var(--text-secondary)" }}
-              onClick={() =>
-                console.table(
-                  logs.map((l) => ({
-                    time: l.time,
-                    category: l.category,
-                    status: l.status,
-                    message: l.message,
-                  }))
-                )
-              }
+          {/* Jump to latest */}
+          {!autoScroll && (
+            <button
+              onClick={jumpLatest}
+              className="shrink-0 flex items-center justify-center gap-1.5 py-1.5
+                text-[10px] font-semibold text-c-brand
+                bg-c-brand/10 hover:bg-c-brand/20 transition-colors border-t"
+              style={{ borderColor: styles.border }}
             >
-              📋 dump
-            </span>
-          </div>
-        </>
+              <ArrowDown size={11} />
+              Jump to latest
+            </button>
+          )}
+        </div>
       )}
+
+      {/* ── Floating pill ───────────────────────────────────────────── */}
+      <button
+        ref={pillRef}
+        onPointerDown={onPointerDown}
+        onPointerMove={onPointerMove}
+        onPointerUp={handlePillPointerUp}
+        className="pointer-events-auto flex items-center gap-2 px-3 py-2
+          shadow-xl transition-transform hover:scale-105 active:scale-95
+          glass-frost !rounded-full cursor-grab active:cursor-grabbing select-none"
+        style={{ touchAction: "none" }}
+        title="Drag to move • Click to open Lock Monitor"
+      >
+        <GripVertical size={12} className="opacity-40 -ml-1" />
+        <span className={`w-2 h-2 rounded-full shrink-0 ${pillDot}`} />
+        <Shield size={13} style={{ color: styles.mutedText }} />
+        <span
+          className="text-[10px] font-mono"
+          style={{ color: styles.mutedText }}
+        >
+          {logs.length}
+        </span>
+        {lockInfo && (
+          <span className="text-[9px] font-bold bg-green-500/20 text-green-400 px-1.5 py-0.5 rounded-full leading-none">
+            locked
+          </span>
+        )}
+        {hasError && (
+          <span className="text-[9px] font-bold bg-red-500 text-white px-1.5 py-0.5 rounded-full leading-none">
+            err
+          </span>
+        )}
+      </button>
     </div>
   );
 };
@@ -509,6 +479,7 @@ export const ActiveLockProvider = ({
   const lockRef = useRef<{ module_test_id: string; user_id: string } | null>(
     null
   );
+  const logIdRef = useRef(0);
 
   const [logs, setLogs] = useState<SessionLog[]>([]);
   const [lockInfo, setLockInfo] = useState<{
@@ -526,9 +497,11 @@ export const ActiveLockProvider = ({
     console.log(`[${category.toUpperCase()}][${status}] ${time} — ${message}`);
     setLogs((prev) => [
       ...prev.slice(-99),
-      { time, category, status, message },
+      { time, category, status, message, id: ++logIdRef.current },
     ]);
   };
+
+  const clearLogs = () => setLogs([]);
 
   const startCountdown = () => {
     if (countdownRef.current) clearInterval(countdownRef.current);
@@ -602,7 +575,6 @@ export const ActiveLockProvider = ({
     }
   };
 
-  // ── Rehydrate on page load / refresh / crash ───────────────────────────────
   useEffect(() => {
     const rehydrate = async () => {
       addLog("rehydrate", "pending", "Checking session...");
@@ -636,7 +608,6 @@ export const ActiveLockProvider = ({
           "info",
           `Lock found — last heartbeat ${Math.round(age / 1000)}s ago`
         );
-
         if (age > STALE_MS) {
           addLog(
             "rehydrate",
@@ -666,12 +637,12 @@ export const ActiveLockProvider = ({
   return (
     <ActiveLockContext.Provider value={{ setActiveLock, clearActiveLock }}>
       {children}
-      {/* Admin only — remove once lock system confirmed stable */}
       {user?.role === "admin" && (
         <SessionDebugWidget
           logs={logs}
           lockInfo={lockInfo}
           nextBeat={nextBeat}
+          onClear={clearLogs}
         />
       )}
     </ActiveLockContext.Provider>
