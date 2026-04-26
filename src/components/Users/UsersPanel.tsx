@@ -198,7 +198,7 @@ const UsersPanel: React.FC = () => {
                   <td className="py-3 pr-4">
                     {u.disabled
                       ? <span className="text-xs px-2 py-0.5 rounded-full bg-[var(--color-fail)]/15 text-[var(--color-fail)]">Disabled</span>
-                      : <span className="text-xs px-2 py-0.5 rounded-full bg-green-500/15 text-green-400">Active</span>
+                      : <span className="text-xs px-2 py-0.5 rounded-full bg-[color-mix(in_srgb,var(--color-pass)_15%,transparent)] text-[color-mix(in_srgb,var(--color-pass),white_30%)]">Active</span>
                     }
                   </td>
                   <td className="py-3">
@@ -208,7 +208,7 @@ const UsersPanel: React.FC = () => {
                       <button
                         disabled={u.id === currentUser?.id}
                         onClick={() => setDeleteTarget(u)}
-                        className="text-xs px-3 py-1 rounded-lg bg-[var(--color-fail)]/10 text-red-500 dark:text-[var(--color-fail)] hover:bg-[var(--color-fail)]/20 disabled:opacity-30 transition-colors">
+                        className="text-xs px-3 py-1 rounded-lg bg-[var(--color-fail)]/10 text-[var(--color-fail)] dark:text-[var(--color-fail)] hover:bg-[var(--color-fail)]/20 disabled:opacity-30 transition-colors">
                         Delete
                       </button>
                     </div>
@@ -250,7 +250,7 @@ const UsersPanel: React.FC = () => {
                   id="edit-disabled"
                   checked={editDisabled}
                   onChange={e => setEditDisabled(e.target.checked)}
-                  className="w-4 h-4 accent-red-500"
+                  className="w-4 h-4 accent-[var(--color-fail)]"
                 />
                 <label htmlFor="edit-disabled" className="text-sm text-t-primary select-none">
                   Disable this account

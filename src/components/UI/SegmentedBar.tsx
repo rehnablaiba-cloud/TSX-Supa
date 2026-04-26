@@ -15,7 +15,7 @@ const SegmentedBar: React.FC<Props> = ({ passRate, failPct, pendingPct, total })
   if (total === 0) return <div className="h-1.5 w-full rounded-full bg-bg-card" />;
   return (
     <div className="h-1.5 w-full rounded-full overflow-hidden flex">
-      {passRate   > 0 && <div className="h-full bg-green-500 transition-all duration-700" style={{ width: `${passRate}%`   }} />}
+      {passRate   > 0 && <div className="h-full bg-[var(--color-pass)] transition-all duration-700" style={{ width: `${passRate}%`   }} />}
       {failPct    > 0 && <div className="h-full bg-[var(--color-fail)]   transition-all duration-700" style={{ width: `${failPct}%`    }} />}
       {pendingPct > 0 && (
         <div className="h-full transition-all duration-700"

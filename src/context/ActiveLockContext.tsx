@@ -48,10 +48,10 @@ interface SessionLog {
 
 // ─── Styling maps ─────────────────────────────────────────────────────────────
 const CAT_STYLE: Record<SessionLog["category"], string> = {
-  heartbeat: "bg-blue-500/15 text-blue-400",
-  rehydrate: "bg-[var(--color-warn)]-500/15 text-amber-400",
-  lock: "bg-green-500/15 text-green-400",
-  system: "bg-gray-500/15  text-gray-400",
+  heartbeat: "bg-[color-mix(in_srgb,var(--color-brand)_15%,transparent)] text-[color-mix(in_srgb,var(--color-brand),white_30%)]",
+  rehydrate: "bg-[color-mix(in_srgb,var(--color-pend)_15%,transparent)] text-[color-mix(in_srgb,var(--color-warn),white_30%)]",
+  lock: "bg-[color-mix(in_srgb,var(--color-pass)_15%,transparent)] text-[color-mix(in_srgb,var(--color-pass),white_30%)]",
+  system: "bg-[color-mix(in_srgb,var(--text-muted)_15%,transparent)]  text-[var(--text-muted)]",
 };
 
 const CAT_ICON: Record<SessionLog["category"], React.ReactNode> = {
@@ -62,19 +62,19 @@ const CAT_ICON: Record<SessionLog["category"], React.ReactNode> = {
 };
 
 const LEVEL_DOT: Record<SessionLog["status"], string> = {
-  ok: "bg-green-400",
-  error: "bg-red-400",
+  ok: "bg-[color-mix(in_srgb,var(--color-pass),white_30%)]",
+  error: "bg-[color-mix(in_srgb,var(--color-fail),white_30%)]",
   warn: "bg-[var(--color-warn)]",
-  pending: "bg-blue-400",
+  pending: "bg-[color-mix(in_srgb,var(--color-brand),white_30%)]",
   info: "bg-gray-400",
 };
 
 const LEVEL_TEXT: Record<SessionLog["status"], string> = {
-  ok: "text-green-400",
+  ok: "text-[color-mix(in_srgb,var(--color-pass),white_30%)]",
   error: "text-[var(--color-fail)]",
-  warn: "text-amber-400",
-  pending: "text-blue-400",
-  info: "text-gray-400",
+  warn: "text-[color-mix(in_srgb,var(--color-warn),white_30%)]",
+  pending: "text-[color-mix(in_srgb,var(--color-brand),white_30%)]",
+  info: "text-[var(--text-muted)]",
 };
 
 const ALL_CATS: SessionLog["category"][] = [
@@ -264,7 +264,7 @@ const SessionDebugWidget = ({
     ? "bg-[var(--color-fail)] animate-pulse"
     : hasWarn
     ? "bg-[var(--color-warn)]-500"
-    : "bg-green-500";
+    : "bg-[var(--color-pass)]";
 
   useEffect(() => {
     if (!autoScroll || !open || !listRef.current) return;
@@ -314,7 +314,7 @@ const SessionDebugWidget = ({
               Lock Session Monitor
             </span>
             {lockInfo && (
-              <span className="text-[9px] font-bold bg-green-500/15 text-green-400 border border-green-500/30 px-2 py-0.5 rounded-full mr-1">
+              <span className="text-[9px] font-bold bg-[color-mix(in_srgb,var(--color-pass)_15%,transparent)] text-[color-mix(in_srgb,var(--color-pass),white_30%)] border border-[var(--color-pass)]/30 px-2 py-0.5 rounded-full mr-1">
                 🔒 LOCKED
               </span>
             )}
@@ -452,7 +452,7 @@ const SessionDebugWidget = ({
           {logs.length}
         </span>
         {lockInfo && (
-          <span className="text-[9px] font-bold bg-green-500/20 text-green-400 px-1.5 py-0.5 rounded-full leading-none">
+          <span className="text-[9px] font-bold bg-[color-mix(in_srgb,var(--color-pass)_20%,transparent)] text-[color-mix(in_srgb,var(--color-pass),white_30%)] px-1.5 py-0.5 rounded-full leading-none">
             locked
           </span>
         )}

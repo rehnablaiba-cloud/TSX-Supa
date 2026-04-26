@@ -36,7 +36,7 @@ export const DiffRow: React.FC<{
           <span className="text-[var(--color-fail)] line-through break-all">
             {before || <em>empty</em>}
           </span>
-          <span className="text-green-400 break-all">
+          <span className="text-[color-mix(in_srgb,var(--color-pass),white_30%)] break-all">
             {after || <em>empty</em>}
           </span>
         </div>
@@ -189,7 +189,7 @@ export const NavButtons: React.FC<{
       onClick={onNext}
       disabled={nextDisabled}
       className={`flex-1 btn-primary text-sm disabled:opacity-50 disabled:cursor-not-allowed
-        ${nextDanger ? "!bg-[var(--color-fail)] hover:!bg-red-600" : ""}`}
+        ${nextDanger ? "!bg-[var(--color-fail)] hover:!bg-[color-mix(in_srgb,var(--color-fail),black_20%)]" : ""}`}
     >
       {nextLabel}
     </button>

@@ -49,10 +49,10 @@ export const useToast = () => useContext(Ctx);
 const ToastContainer: React.FC = () => {
   const { toasts, removeToast } = useContext(Ctx);
   const colors: Record<ToastVariant, string> = {
-    success: "border-green-500 bg-green-500/10 text-green-300",
-    error: "border-red-500  bg-[var(--color-fail)]/10  text-red-300",
-    info: "border-blue-500 bg-blue-500/10 text-blue-300",
-    warning: "border-amber-500 bg-[var(--color-warn)]-500/10 text-amber-300",
+    success: "border-[var(--color-pass)] bg-[color-mix(in_srgb,var(--color-pass)_10%,transparent)] text-[color-mix(in_srgb,var(--color-pass),white_50%)]",
+    error: "border-[var(--color-fail)]  bg-[var(--color-fail)]/10  text-[color-mix(in_srgb,var(--color-fail),white_50%)]",
+    info: "border-[var(--color-brand)] bg-[color-mix(in_srgb,var(--color-brand)_10%,transparent)] text-[color-mix(in_srgb,var(--color-brand),white_50%)]",
+    warning: "border-[var(--color-warn)] bg-[color-mix(in_srgb,var(--color-pend)_10%,transparent)] text-[color-mix(in_srgb,var(--color-warn),white_50%)]",
   };
   return (
     <div className="fixed top-4 right-4 z-[9999] flex flex-col gap-2 max-w-sm w-full">

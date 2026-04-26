@@ -25,12 +25,12 @@ const SessionTimeoutModal: React.FC<Props> = ({
         <div className="flex flex-col items-center gap-3 text-center">
           <div
             className={`w-14 h-14 rounded-full flex items-center justify-center transition-colors
-            ${urgent ? "bg-[var(--color-fail)]/20" : "bg-amber-500/20"}`}
+            ${urgent ? "bg-[var(--color-fail)]/20" : "bg-[color-mix(in_srgb,var(--color-warn)_20%,transparent)]"}`}
           >
             <Clock
               size={28}
               className={`transition-colors ${
-                urgent ? "text-[var(--color-fail)]" : "text-amber-400"
+                urgent ? "text-[var(--color-fail)]" : "text-[var(--color-warn)]"
               }`}
             />
           </div>
@@ -47,7 +47,7 @@ const SessionTimeoutModal: React.FC<Props> = ({
           {/* Countdown */}
           <div
             className={`text-5xl font-mono font-bold tabular-nums transition-colors
-            ${urgent ? "text-[var(--color-fail)]" : "text-amber-400"}`}
+            ${urgent ? "text-[var(--color-fail)]" : "text-[var(--color-warn)]"}`}
           >
             {display}
           </div>
@@ -63,7 +63,7 @@ const SessionTimeoutModal: React.FC<Props> = ({
         <div className="w-full h-1.5 rounded-full bg-bg-card overflow-hidden">
           <div
             className={`h-full rounded-full transition-all duration-1000
-              ${urgent ? "bg-[var(--color-fail)]" : "bg-amber-500"}`}
+              ${urgent ? "bg-[var(--color-fail)]" : "bg-[var(--color-warn)]"}`}
             style={{ width: `${(secondsLeft / (5 * 60)) * 100}%` }}
           />
         </div>
@@ -80,7 +80,7 @@ const SessionTimeoutModal: React.FC<Props> = ({
           <button
             onClick={onSignOut}
             className="w-full px-4 py-2.5 rounded-xl border border-[var(--border-color)]
-              text-t-secondary hover:text-[var(--color-fail)] hover:border-red-400/40
+              text-t-secondary hover:text-[var(--color-fail)] hover:border-[color-mix(in_srgb,var(--color-fail)_40%,transparent)]
               text-sm font-medium transition-colors flex items-center justify-center gap-2"
           >
             <LogOut size={15} />

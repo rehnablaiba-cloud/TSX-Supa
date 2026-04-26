@@ -50,7 +50,7 @@ export const DiffRow: React.FC<DiffRowProps> = ({ label, before, after }) => {
           <span className="text-[var(--color-fail)] line-through break-all">
             {before !== '' ? before : <em>empty</em>}
           </span>
-          <span className="text-green-400 break-all">
+          <span className="text-[color-mix(in_srgb,var(--color-pass),white_30%)] break-all">
             {after !== '' ? after : <em>empty</em>}
           </span>
         </div>

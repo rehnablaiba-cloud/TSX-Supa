@@ -298,7 +298,7 @@ const ImportTestsModal: React.FC<Props> = ({ onClose, onBack }) => {
             <button
               onClick={handleSubmit}
               className={`flex-1 px-4 py-2.5 rounded-xl text-sm font-semibold text-white ${
-                op === "delete" ? "bg-[var(--color-fail)] hover:bg-red-600" : "btn-primary"
+                op === "delete" ? "bg-[var(--color-fail)] hover:bg-[color-mix(in_srgb,var(--color-fail),black_20%)]" : "btn-primary"
               }`}
             >
               Confirm {op}
@@ -317,7 +317,7 @@ const ImportTestsModal: React.FC<Props> = ({ onClose, onBack }) => {
       {/* ── done ── */}
       {stage === "done" && (
         <div className="flex flex-col items-center gap-3 py-6">
-          <CheckCircle size={32} className="text-green-400" />
+          <CheckCircle size={32} className="text-[color-mix(in_srgb,var(--color-pass),white_30%)]" />
           <p className="text-sm font-semibold text-t-primary">Done!</p>
           <button onClick={onClose} className="btn-primary text-sm px-6">
             Close

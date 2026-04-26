@@ -32,7 +32,7 @@ const ConfirmDialog: React.FC<Props> = ({
           <button
             onClick={onConfirm}
             className={`${
-              danger ? "bg-red-600 hover:bg-red-700" : "btn-primary"
+              danger ? "bg-[color-mix(in_srgb,var(--color-fail),black_20%)] hover:bg-[color-mix(in_srgb,var(--color-fail),black_35%)]" : "btn-primary"
             } text-white font-semibold px-4 py-2 rounded-xl text-sm transition-colors`}
           >
             {confirmText}

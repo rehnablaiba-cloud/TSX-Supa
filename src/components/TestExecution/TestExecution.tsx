@@ -210,8 +210,8 @@ const UndoAllModal: React.FC<{
       onClick={(e) => e.stopPropagation()}
     >
       <div className="flex flex-col items-center gap-3 text-center">
-        <div className="w-14 h-14 rounded-full bg-[var(--color-warn)]-500/10 border-2 border-amber-500/30 flex items-center justify-center">
-          <AlertTriangle size={26} className="text-amber-500" />
+        <div className="w-14 h-14 rounded-full bg-[color-mix(in_srgb,var(--color-pend)_10%,transparent)] border-2 border-[color-mix(in_srgb,var(--color-pend)_30%,transparent)] flex items-center justify-center">
+          <AlertTriangle size={26} className="text-[var(--color-pend)]" />
         </div>
         <div>
           <h2 className="text-base font-bold text-t-primary">
@@ -223,11 +223,11 @@ const UndoAllModal: React.FC<{
             completed step{doneCount !== 1 ? "s" : ""} (out of{" "}
             <span className="font-semibold text-t-primary">{totalCount}</span>)
             back to{" "}
-            <span className="font-semibold text-amber-500">pending</span>.
+            <span className="font-semibold text-[var(--color-pend)]">pending</span>.
           </p>
         </div>
       </div>
-      <div className="flex items-start gap-2 px-3 py-2.5 rounded-lg bg-[var(--color-warn)]-500/8 border border-amber-500/25 text-xs text-amber-600 dark:text-amber-400">
+      <div className="flex items-start gap-2 px-3 py-2.5 rounded-lg bg-[color-mix(in_srgb,var(--color-pend)_8%,transparent)] border border-[color-mix(in_srgb,var(--color-pend)_25%,transparent)] text-xs text-[color-mix(in_srgb,var(--color-pend),black_15%)] dark:text-[color-mix(in_srgb,var(--color-pend),white_30%)]">
         <AlertTriangle size={13} className="shrink-0 mt-0.5" />
         <span>
           All remarks and results will be cleared.{" "}
@@ -357,15 +357,15 @@ const LockedScreen: React.FC<{
   onBack: () => void;
 }> = ({ locked_by_name, test_name, onBack }) => (
   <div className="flex flex-col flex-1 items-center justify-center gap-6 p-8 text-center">
-    <div className="w-16 h-16 rounded-full bg-[var(--color-warn)]-500/10 border-2 border-amber-500/30 flex items-center justify-center">
-      <Lock size={28} className="text-amber-500" />
+    <div className="w-16 h-16 rounded-full bg-[color-mix(in_srgb,var(--color-pend)_10%,transparent)] border-2 border-[color-mix(in_srgb,var(--color-pend)_30%,transparent)] flex items-center justify-center">
+      <Lock size={28} className="text-[var(--color-pend)]" />
     </div>
     <div>
       <h2 className="text-lg font-bold text-t-primary mb-1">
         Test In Progress
       </h2>
       <p className="text-t-secondary text-sm max-w-sm">
-        <span className="text-amber-600 dark:text-amber-400 font-semibold">
+        <span className="text-[color-mix(in_srgb,var(--color-pend),black_15%)] dark:text-[color-mix(in_srgb,var(--color-pend),white_30%)] font-semibold">
           {locked_by_name}
         </span>{" "}
         is currently executing{" "}
@@ -373,9 +373,9 @@ const LockedScreen: React.FC<{
         cannot enter until they finish.
       </p>
     </div>
-    <div className="flex items-center gap-2 px-4 py-2 bg-[var(--color-warn)]-500/10 border border-amber-500/20 rounded-full">
+    <div className="flex items-center gap-2 px-4 py-2 bg-[color-mix(in_srgb,var(--color-pend)_10%,transparent)] border border-[color-mix(in_srgb,var(--color-pend)_20%,transparent)] rounded-full">
       <span className="w-2 h-2 rounded-full bg-[var(--color-warn)] animate-pulse inline-block" />
-      <span className="text-xs text-amber-600 dark:text-amber-400 font-medium">
+      <span className="text-xs text-[color-mix(in_srgb,var(--color-pend),black_15%)] dark:text-[color-mix(in_srgb,var(--color-pend),white_30%)] font-medium">
         You'll be unblocked instantly when they finish.
       </span>
     </div>
@@ -395,7 +395,7 @@ const TesterBadge: React.FC<{
   if (!name) return null;
   const color =
     status === "pass"
-      ? "text-green-400"
+      ? "text-[color-mix(in_srgb,var(--color-pass),white_30%)]"
       : status === "fail"
       ? "text-[var(--color-fail)]"
       : "text-t-muted";
@@ -443,7 +443,7 @@ const TableStepRow: React.FC<{
 
   const rowBg =
     step.status === "pass"
-      ? "bg-green-500/5"
+      ? "bg-[color-mix(in_srgb,var(--color-pass)_5%,transparent)]"
       : step.status === "fail"
       ? "bg-[var(--color-fail)]/5"
       : "";
@@ -531,7 +531,7 @@ const TableStepRow: React.FC<{
           <span
             className={`text-xs font-bold px-2 py-0.5 rounded-full capitalize ${
               step.status === "pass"
-                ? "bg-green-500/15 text-green-400"
+                ? "bg-[color-mix(in_srgb,var(--color-pass)_15%,transparent)] text-[color-mix(in_srgb,var(--color-pass),white_30%)]"
                 : step.status === "fail"
                 ? "bg-[var(--color-fail)]/15 text-[var(--color-fail)]"
                 : "bg-[var(--border-color)] text-t-muted"
@@ -552,8 +552,8 @@ const TableStepRow: React.FC<{
               }}
               className={`flex-1 h-7 rounded-md text-xs font-bold transition-colors flex items-center justify-center ${
                 step.status === "pass"
-                  ? "bg-green-500 text-white"
-                  : "bg-green-500/10 hover:bg-green-500/25 text-green-400 border border-green-500/20"
+                  ? "bg-[var(--color-pass)] text-white"
+                  : "bg-[color-mix(in_srgb,var(--color-pass)_10%,transparent)] hover:bg-[color-mix(in_srgb,var(--color-pass)_25%,transparent)] text-[color-mix(in_srgb,var(--color-pass),white_30%)] border border-[color-mix(in_srgb,var(--color-pass)_20%,transparent)]"
               }`}
             >
               <Check size={13} />
@@ -643,7 +643,7 @@ const MobileStepCard: React.FC<{
 
   const rowBg =
     step.status === "pass"
-      ? "bg-green-500/5"
+      ? "bg-[color-mix(in_srgb,var(--color-pass)_5%,transparent)]"
       : step.status === "fail"
       ? "bg-[var(--color-fail)]/5"
       : "";
@@ -730,10 +730,10 @@ const MobileStepCard: React.FC<{
           <div className="flex items-center gap-2 min-w-0">
             {isFocused && (
               <span className="flex items-center gap-1.5 text-[10px] font-medium shrink-0">
-                <kbd className="px-1 py-0.5 rounded bg-green-500/10 text-green-400 border border-green-500/20 font-mono text-[9px]">
+                <kbd className="px-1 py-0.5 rounded bg-[color-mix(in_srgb,var(--color-pass)_10%,transparent)] text-[color-mix(in_srgb,var(--color-pass),white_30%)] border border-[color-mix(in_srgb,var(--color-pass)_20%,transparent)] font-mono text-[9px]">
                   P
                 </kbd>
-                <span className="text-green-400">pass</span>
+                <span className="text-[color-mix(in_srgb,var(--color-pass),white_30%)]">pass</span>
                 <span className="text-t-muted opacity-40">·</span>
                 <kbd className="px-1 py-0.5 rounded bg-[var(--color-fail)]/10 text-[var(--color-fail)] border border-[var(--color-fail)]/20 font-mono text-[9px]">
                   F
@@ -744,7 +744,7 @@ const MobileStepCard: React.FC<{
             <span
               className={`shrink-0 text-xs font-bold px-2 py-0.5 rounded-full capitalize ${
                 step.status === "pass"
-                  ? "bg-green-500/15 text-green-400"
+                  ? "bg-[color-mix(in_srgb,var(--color-pass)_15%,transparent)] text-[color-mix(in_srgb,var(--color-pass),white_30%)]"
                   : step.status === "fail"
                   ? "bg-[var(--color-fail)]/15 text-[var(--color-fail)]"
                   : "bg-[var(--border-color)] text-t-muted"
@@ -850,8 +850,8 @@ const MobileStepCard: React.FC<{
             }}
             className={`shrink-0 w-8 h-8 rounded-md text-xs font-bold transition-colors flex items-center justify-center ${
               step.status === "pass"
-                ? "bg-green-500 text-white"
-                : "bg-green-500/10 hover:bg-green-500/25 text-green-400 border border-green-500/20"
+                ? "bg-[var(--color-pass)] text-white"
+                : "bg-[color-mix(in_srgb,var(--color-pass)_10%,transparent)] hover:bg-[color-mix(in_srgb,var(--color-pass)_25%,transparent)] text-[color-mix(in_srgb,var(--color-pass),white_30%)] border border-[color-mix(in_srgb,var(--color-pass)_20%,transparent)]"
             }`}
           >
             <Check size={14} />
@@ -1417,7 +1417,7 @@ const TestExecution: React.FC<Props> = ({
           <div className="p-4 flex justify-center">
             <button
               onClick={handleForceRelease}
-              className="text-xs text-[var(--color-fail)] hover:text-red-300 underline underline-offset-2 transition-colors"
+              className="text-xs text-[var(--color-fail)] hover:text-[color-mix(in_srgb,var(--color-fail),white_50%)] underline underline-offset-2 transition-colors"
             >
               Force-release lock (admin)
             </button>
@@ -1522,7 +1522,7 @@ const TestExecution: React.FC<Props> = ({
           <div className="flex items-center justify-between mb-1.5">
             <div className="flex items-center gap-4 text-xs text-t-muted">
               <span>
-                <span className="text-green-400 font-semibold">
+                <span className="text-[color-mix(in_srgb,var(--color-pass),white_30%)] font-semibold">
                   {passCount}
                 </span>{" "}
                 pass
@@ -1542,14 +1542,14 @@ const TestExecution: React.FC<Props> = ({
               {focusedStepId && (
                 <span className="hidden md:flex items-center gap-2 text-xs text-t-muted">
                   <span className="flex items-center gap-1">
-                    <kbd className="px-1.5 py-0.5 rounded bg-green-500/10 text-green-400 font-mono text-[10px] border border-green-500/20">
+                    <kbd className="px-1.5 py-0.5 rounded bg-[color-mix(in_srgb,var(--color-pass)_10%,transparent)] text-[color-mix(in_srgb,var(--color-pass),white_30%)] font-mono text-[10px] border border-[color-mix(in_srgb,var(--color-pass)_20%,transparent)]">
                       P
                     </kbd>
                     <span className="text-[var(--border-color)] mx-0.5">/</span>
-                    <kbd className="px-1.5 py-0.5 rounded bg-green-500/10 text-green-400 font-mono text-[10px] border border-green-500/20">
+                    <kbd className="px-1.5 py-0.5 rounded bg-[color-mix(in_srgb,var(--color-pass)_10%,transparent)] text-[color-mix(in_srgb,var(--color-pass),white_30%)] font-mono text-[10px] border border-[color-mix(in_srgb,var(--color-pass)_20%,transparent)]">
                       Enter
                     </kbd>
-                    <span className="text-green-400 ml-1">pass</span>
+                    <span className="text-[color-mix(in_srgb,var(--color-pass),white_30%)] ml-1">pass</span>
                   </span>
                   <span className="text-[var(--border-color)]">·</span>
                   <span className="flex items-center gap-1">
@@ -1567,7 +1567,7 @@ const TestExecution: React.FC<Props> = ({
           </div>
           <div className="h-1.5 bg-[var(--border-color)] rounded-full overflow-hidden flex">
             <div
-              className="h-full bg-green-500 transition-all duration-500"
+              className="h-full bg-[var(--color-pass)] transition-all duration-500"
               style={{ width: `${passPct}%` }}
             />
             <div
@@ -1757,17 +1757,17 @@ const TestExecution: React.FC<Props> = ({
             {/* Undo All — admin only */}
             {isAdmin && doneCount > 0 && (
               <div className="flex items-center justify-center py-6 px-4">
-                <div className="flex items-center gap-3 px-4 py-3 rounded-xl border border-dashed border-amber-500/30 bg-[var(--color-warn)]-500/5">
+                <div className="flex items-center gap-3 px-4 py-3 rounded-xl border border-dashed border-[color-mix(in_srgb,var(--color-pend)_30%,transparent)] bg-[color-mix(in_srgb,var(--color-pend)_5%,transparent)]">
                   <AlertTriangle
                     size={14}
-                    className="text-amber-500 shrink-0"
+                    className="text-[var(--color-pend)] shrink-0"
                   />
                   <span className="text-xs text-t-muted">
                     Admin action — resets all progress
                   </span>
                   <button
                     onClick={() => setShowUndoModal(true)}
-                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold text-amber-600 dark:text-amber-400 bg-[var(--color-warn)]-500/10 hover:bg-[var(--color-warn)]-500/20 border border-amber-500/30 hover:border-amber-500/60 transition-colors whitespace-nowrap"
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold text-[color-mix(in_srgb,var(--color-pend),black_15%)] dark:text-[color-mix(in_srgb,var(--color-pend),white_30%)] bg-[color-mix(in_srgb,var(--color-pend)_10%,transparent)] hover:bg-[color-mix(in_srgb,var(--color-pend)_20%,transparent)] border border-[color-mix(in_srgb,var(--color-pend)_30%,transparent)] hover:border-[color-mix(in_srgb,var(--color-pend)_60%,transparent)] transition-colors whitespace-nowrap"
                   >
                     <RotateCcw size={12} /> Undo All
                   </button>
