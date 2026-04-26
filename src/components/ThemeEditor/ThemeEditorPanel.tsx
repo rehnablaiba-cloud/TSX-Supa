@@ -1,15 +1,19 @@
 /**
  * ThemeEditorPanel.tsx
  * Tabs: Palette | Light | Dark | MUI
- * Uses glass-frost for the panel shell.
+ * Admin-only. Rendered via createPortal to document.body.
+ * Shell matches ExportAllModal exactly.
  */
 
 import React, { useState, useRef, useEffect } from "react";
+import { createPortal } from "react-dom";
+import { Palette } from "lucide-react";
 import {
   useTheme,
   MuiConfig,
   MUI_CONFIG_DEFAULTS,
 } from "../../context/ThemeContext";
+import { useAuth } from "../../context/AuthContext";
 import { verifyThemePassword } from "../../config/themeEditorConfig";
 import {
   tokens as defaultTokens,
@@ -192,8 +196,8 @@ const NumInput: React.FC<{
     step={step}
     onChange={(e) => onChange(Number(e.target.value))}
     className="w-16 text-xs font-mono text-center px-2 py-1 rounded-lg
-        bg-[var(--input-bg)] border border-[var(--input-border)] text-[var(--input-text)]
-        focus:outline-none focus:border-c-brand transition-colors"
+      bg-[var(--input-bg)] border border-[var(--input-border)] text-[var(--input-text)]
+      focus:outline-none focus:border-c-brand transition-colors"
   />
 );
 
@@ -207,9 +211,11 @@ const PasswordGate: React.FC<{
   const [error, setError] = useState("");
   const [checking, setChecking] = useState(false);
   const ref = useRef<HTMLInputElement>(null);
+
   useEffect(() => {
     ref.current?.focus();
   }, []);
+
   const submit = async () => {
     if (!pw.trim()) return;
     setChecking(true);
@@ -223,8 +229,9 @@ const PasswordGate: React.FC<{
       ref.current?.focus();
     }
   };
+
   return (
-    <div className="flex flex-col items-center justify-center h-full gap-6 px-8 py-10">
+    <div className="flex flex-col items-center justify-center gap-6 px-8 py-10">
       <div className="text-4xl">🔒</div>
       <div className="text-center">
         <p className="font-semibold text-t-primary text-base">Theme Editor</p>
@@ -437,6 +444,7 @@ const BrandStatusEditor: React.FC = () => {
           ))}
         </div>
       </div>
+
       <div>
         <div className="flex items-center justify-between mb-2">
           <p className="text-[10px] font-bold uppercase tracking-wider text-t-muted">
@@ -474,6 +482,7 @@ const BrandStatusEditor: React.FC = () => {
           ))}
         </div>
       </div>
+
       <p className="text-[10px] text-t-muted px-1">
         Active mode: <span className="font-semibold text-c-brand">{theme}</span>{" "}
         — Light and Dark tabs edit each mode independently.
@@ -482,7 +491,7 @@ const BrandStatusEditor: React.FC = () => {
   );
 };
 
-// ─── MUI tab ─────────────────────────────────────────────────────────────────
+// ─── MUI tab ──────────────────────────────────────────────────────────────────
 
 function buildMuiCode(cfg: MuiConfig): string {
   return `// 1. Install (if not done):
@@ -531,7 +540,6 @@ const MuiEditor: React.FC = () => {
 
   return (
     <div className="flex flex-col gap-4 pb-6">
-      {/* ── THE MAIN SWITCH ── */}
       <div
         className={`rounded-2xl border-2 p-4 transition-colors
         ${
@@ -558,7 +566,6 @@ const MuiEditor: React.FC = () => {
             onChange={(v) => setMuiConfig({ active: v })}
           />
         </div>
-
         {muiConfig.active && (
           <div className="mt-3 pt-3 border-t border-c-brand/20 text-[11px] text-t-secondary space-y-1">
             <p>
@@ -582,7 +589,6 @@ const MuiEditor: React.FC = () => {
         )}
       </div>
 
-      {/* Install check */}
       <div className="rounded-xl px-4 py-3 border bg-bg-card border-[var(--border-color)]">
         <p className="text-xs font-semibold text-t-primary mb-0.5">
           Install status
@@ -592,12 +598,10 @@ const MuiEditor: React.FC = () => {
         </code>
         <p className="text-[10px] text-t-muted mt-1">
           If already installed, activating the toggle above applies the theme
-          immediately. If not, a banner will appear — the app keeps working with
-          Tailwind.
+          immediately.
         </p>
       </div>
 
-      {/* How it bridges Tailwind ↔ MUI */}
       <div className="rounded-xl px-4 py-3 border bg-bg-card border-[var(--border-color)]">
         <p className="text-xs font-semibold text-t-primary mb-1">
           🔗 How Tailwind ↔ MUI stay in sync
@@ -609,13 +613,10 @@ const MuiEditor: React.FC = () => {
           <code className="font-mono text-c-brand">background.paper</code> both
           resolve to{" "}
           <code className="font-mono text-c-brand">var(--bg-surface)</code>.
-          Change a token → both update instantly. You can mix{" "}
-          <code className="font-mono text-c-brand">sx</code> and Tailwind
-          classes on the same element.
+          Change a token → both update instantly.
         </p>
       </div>
 
-      {/* Typography */}
       <div>
         <div className="flex items-center justify-between mb-2">
           <p className="text-[10px] font-bold uppercase tracking-wider text-t-muted">
@@ -688,7 +689,6 @@ const MuiEditor: React.FC = () => {
         </div>
       </div>
 
-      {/* Shape */}
       <div>
         <p className="text-[10px] font-bold uppercase tracking-wider text-t-muted mb-2">
           📐 Shape & Components
@@ -728,8 +728,6 @@ const MuiEditor: React.FC = () => {
             />
           </Row>
         </div>
-
-        {/* Live preview */}
         <div className="flex gap-2 mt-2 px-1">
           <div
             className="flex-1 h-9 bg-c-brand flex items-center justify-center text-white text-xs font-semibold shadow"
@@ -755,7 +753,6 @@ const MuiEditor: React.FC = () => {
         </p>
       </div>
 
-      {/* Code reference */}
       <div>
         <div className="flex items-center justify-between mb-2">
           <p className="text-[10px] font-bold uppercase tracking-wider text-t-muted">
@@ -786,7 +783,7 @@ const MuiEditor: React.FC = () => {
   );
 };
 
-// ─── Main panel shell ─────────────────────────────────────────────────────────
+// ─── Panel shell ──────────────────────────────────────────────────────────────
 
 type Tab = "brand" | "light" | "dark" | "mui";
 
@@ -805,38 +802,43 @@ const ThemeEditorPanel: React.FC<{ onClose: () => void }> = ({ onClose }) => {
   ];
 
   return (
-    <div className="fixed fixed inset-0 z-[60] flex items-end">
+    <>
+      {/* Backdrop */}
       <div className="absolute inset-0 backdrop-dim" onClick={onClose} />
+
+      {/* Sheet panel — mirrors ExportAllModal exactly */}
       <div
-        className="relative w-full rounded-t-2xl z-10 glass-frost"
+        className="relative w-full md:max-w-md mx-auto z-10
+          border-t md:border border-[var(--border-color)]
+          rounded-t-2xl md:rounded-2xl
+          px-6 pt-5 overflow-y-auto flex flex-col gap-4 max-h-[90vh] glass-frost"
         style={{
-          borderTop: "1px solid var(--border-color)",
-          maxHeight: "92dvh",
-          background: "red",
+          paddingBottom: "calc(96px + env(safe-area-inset-bottom, 0px))",
         }}
       >
-        <div className="w-10 h-1 bg-bg-card rounded-full mx-auto mt-3 mb-1 shrink-0" />
+        {/* Drag pill */}
+        <div className="w-10 h-1 bg-bg-card rounded-full mx-auto md:hidden shrink-0" />
 
         {/* Header */}
-        <div className="flex items-center justify-between px-5 py-3 shrink-0 border-b border-[var(--border-color)]">
+        <div className="flex items-center justify-between shrink-0">
           <div>
-            <p className="font-semibold text-t-primary text-sm">
-              🎨 Theme Editor
+            <h2 className="text-base font-bold text-t-primary flex items-center gap-1.5">
+              <Palette size={16} /> Theme Editor
+            </h2>
+            <p className="text-xs text-t-muted mt-0.5">
+              {total > 0
+                ? `${total} token override${total !== 1 ? "s" : ""} active`
+                : "Customise colors and MUI config"}
             </p>
-            {total > 0 && (
-              <p className="text-[10px] text-c-brand">
-                {total} token override{total !== 1 ? "s" : ""} active
-              </p>
-            )}
           </div>
-          <div className="flex gap-2">
+          <div className="flex items-center gap-2 shrink-0">
             {total > 0 && (
               <button
                 onClick={() => {
                   if (confirm("Reset ALL token overrides?")) {
                     resetTokenOverrides();
-                    localStorage.removeItem("themeEditorBrandPalette");
-                    localStorage.removeItem("themeEditorStatusColors");
+                    localStorage.removeItem(LS_BRAND_KEY);
+                    localStorage.removeItem(LS_STATUS_KEY);
                   }
                 }}
                 className="text-xs px-3 py-1.5 rounded-lg bg-red-500/10 text-red-400 hover:bg-red-500/20 transition-colors"
@@ -846,15 +848,15 @@ const ThemeEditorPanel: React.FC<{ onClose: () => void }> = ({ onClose }) => {
             )}
             <button
               onClick={onClose}
-              className="text-xs px-3 py-1.5 rounded-lg bg-bg-card text-t-secondary hover:text-t-primary transition-colors"
+              className="w-8 h-8 flex items-center justify-center rounded-full text-t-muted hover:text-t-primary hover:bg-bg-card transition-colors"
             >
-              Done
+              ✕
             </button>
           </div>
         </div>
 
         {/* Tabs */}
-        <div className="flex gap-1 px-4 pt-3 pb-2 shrink-0">
+        <div className="flex gap-1 shrink-0">
           {TABS.map((t) => (
             <button
               key={t.id}
@@ -885,46 +887,62 @@ const ThemeEditorPanel: React.FC<{ onClose: () => void }> = ({ onClose }) => {
         </div>
 
         {/* Content */}
-        <div className="overflow-y-auto flex-1 px-4 pt-2">
+        <div className="flex-1 pt-1">
           {tab === "brand" && <BrandStatusEditor />}
           {tab === "light" && <TokenEditor mode="light" />}
           {tab === "dark" && <TokenEditor mode="dark" />}
           {tab === "mui" && <MuiEditor />}
         </div>
       </div>
-    </div>
+    </>
   );
 };
 
-// ─── Exported wrapper ─────────────────────────────────────────────────────────
+// ─── Exported wrapper — admin-only, portal, password gate ─────────────────────
 
-const ThemeEditor: React.FC<{ onClose: () => void }> = ({ onClose }) => {
+interface Props {
+  onClose: () => void;
+}
+
+const ThemeEditor: React.FC<Props> = ({ onClose }) => {
+  const { user } = useAuth();
   const [state, setState] = useState<"password" | "open">(() =>
     sessionStorage.getItem("themeEditorUnlocked") === "1" ? "open" : "password"
   );
+
+  // Non-admins get nothing
+  if (user?.role !== "admin") return null;
+
   const unlock = () => {
     sessionStorage.setItem("themeEditorUnlocked", "1");
     setState("open");
   };
 
-  if (state === "password") {
-    return (
-      <div className="fixed fixed inset-0 z-[60] flex items-end">
-        <div className="absolute inset-0 backdrop-dim" onClick={onClose} />
-        <div
-          className="relative w-full rounded-t-2xl z-10 glass-frost"
-          style={{
-            borderTop: "1px solid var(--border-color)",
-            height: "55dvh",
-          }}
-        >
-          <div className="w-10 h-1 bg-bg-card rounded-full mx-auto mt-3" />
-          <PasswordGate onUnlock={unlock} onCancel={onClose} />
-        </div>
-      </div>
-    );
-  }
-  return <ThemeEditorPanel onClose={onClose} />;
+  const portal = (
+    <div
+      className="fixed inset-0 flex items-end md:items-center justify-center"
+      style={{ zIndex: 9999 }}
+    >
+      {state === "password" ? (
+        <>
+          <div className="absolute inset-0 backdrop-dim" onClick={onClose} />
+          <div
+            className="relative w-full md:max-w-md mx-auto z-10
+              border-t md:border border-[var(--border-color)]
+              rounded-t-2xl md:rounded-2xl
+              glass-frost"
+          >
+            <div className="w-10 h-1 bg-bg-card rounded-full mx-auto mt-3 md:hidden" />
+            <PasswordGate onUnlock={unlock} onCancel={onClose} />
+          </div>
+        </>
+      ) : (
+        <ThemeEditorPanel onClose={onClose} />
+      )}
+    </div>
+  );
+
+  return createPortal(portal, document.body);
 };
 
 export default ThemeEditor;
