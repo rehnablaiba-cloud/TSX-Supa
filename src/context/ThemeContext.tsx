@@ -11,7 +11,6 @@ import {
   type TokenMap,
   type BrandShade,
   type GlassConfig,
-  type MuiConfig,
   type StoredTheme,
   loadStoredTheme,
   saveStoredTheme,
@@ -23,11 +22,6 @@ import {
 
 // ═══════════════════════════════════════════════════════════════════════════════
 //  ThemeContext — React state layer over the unified applyStoredTheme()
-//
-//  Responsibilities:
-//    1. Mirror localStorage theme state in React state (for UI binding)
-//    2. Provide setters that persist AND apply via applyStoredTheme()
-//    3. Expose MUI config (separate from CSS vars, but persisted together)
 // ═══════════════════════════════════════════════════════════════════════════════
 
 export interface MuiConfig {
@@ -54,6 +48,11 @@ interface ThemeContextValue {
   // Current mode
   mode: AppTheme;
   setMode: (mode: AppTheme) => void;
+
+  // Aliases used by ThemeToggle, MobileNav, and other components
+  theme: AppTheme;
+  setTheme: (mode: AppTheme) => void;
+  toggleTheme: () => void;
 
   // Token overrides per mode (exposed for ThemeEditor)
   customTokens: Record<AppTheme, Partial<TokenMap>>;
@@ -105,7 +104,6 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({
 }) => {
   const [isReady, setIsReady] = useState(false);
 
-  // Load persisted state
   const stored = loadStoredTheme();
   const [mode, setModeState] = useState<AppTheme>(stored?.mode ?? "light");
   const [customTokens, setCustomTokens] = useState<
@@ -152,6 +150,14 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({
     localStorage.setItem("themeMode", newMode);
   }, []);
 
+  const toggleTheme = useCallback(() => {
+    setModeState((prev) => {
+      const next: AppTheme = prev === "dark" ? "light" : "dark";
+      localStorage.setItem("themeMode", next);
+      return next;
+    });
+  }, []);
+
   // ── Token overrides ───────────────────────────────────────────────────────
   const setTokenOverride = useCallback(
     (targetMode: AppTheme, key: TokenKey, value: string) => {
@@ -166,7 +172,6 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({
   const resetTokenOverrides = useCallback(() => {
     setCustomTokens({ light: {}, dark: {} });
     localStorage.removeItem("themeEditorOverrides");
-    // Re-apply base theme to clear override CSS vars
     applyStoredTheme({ mode, glass: glassConfig });
   }, [mode, glassConfig]);
 
@@ -190,7 +195,7 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({
 
   // ── MUI ───────────────────────────────────────────────────────────────────
   const setMuiConfig = useCallback((patch: Partial<MuiConfig>) => {
-    setMuiConfigState((prev) => {
+    setMuiConfigState((prev: MuiConfig) => {
       const next = { ...prev, ...patch };
       saveMuiConfig(next);
       return next;
@@ -234,6 +239,10 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({
       value={{
         mode,
         setMode,
+        // Aliases for components using the old API
+        theme: mode,
+        setTheme: setMode,
+        toggleTheme,
         customTokens,
         setTokenOverride,
         resetTokenOverrides,
