@@ -43,20 +43,37 @@ const MuiActivator: React.FC<{ children: React.ReactNode }> = ({
   const [loading, setLoading] = useState(false);
 
   const buildMuiTheme = useCallback(async () => {
+    console.group("🔧 MuiActivator.buildMuiTheme()");
+    console.log("muiConfig.active:", muiConfig.active);
+    console.log("theme:", theme);
+    console.log("customTokens:", customTokens);
+
     if (!muiConfig.active) {
+      console.log("⏹️ MUI inactive — clearing provider");
       setProvider(null);
       setMuiTheme(null);
       setMuiError(null);
+      console.groupEnd();
       return;
     }
+
     setLoading(true);
+    console.log("⏳ Starting dynamic import...");
+
     try {
-      const { ThemeProvider: TP, createTheme } = await import(
-        "@mui/material/styles"
-      );
+      const mod = await import("@mui/material/styles");
+      console.log("✅ @mui/material/styles loaded:", mod);
+
+      const { ThemeProvider: TP, createTheme } = mod;
       const base = tokens[theme];
       const over = customTokens[theme];
       const tv = (key: TokenKey): string => (over[key] ?? base[key]) || "";
+
+      console.log("Building theme with:");
+      console.log("  primary.main:", tv("colorBrand") || palette.brand[500]);
+      console.log("  bg.default:", tv("bgBase"));
+      console.log("  bg.paper:", tv("bgSurface"));
+
       const muiT = createTheme({
         palette: {
           mode: theme,
@@ -106,21 +123,25 @@ const MuiActivator: React.FC<{ children: React.ReactNode }> = ({
           },
         },
       });
+
+      console.log("✅ MUI theme object created:", muiT);
       setMuiTheme(muiT);
       setProvider(() => TP as unknown as MuiProviderComponent);
       setMuiError(null);
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
-      console.warn("MUI ThemeProvider error:", msg);
+      console.error("❌ MUI import/build failed:", msg);
       setMuiError(msg);
       setProvider(null);
       setMuiTheme(null);
     } finally {
       setLoading(false);
+      console.groupEnd();
     }
   }, [theme, muiConfig, customTokens]);
 
   useEffect(() => {
+    console.log("⚡ MuiActivator useEffect triggered");
     buildMuiTheme();
   }, [buildMuiTheme]);
 

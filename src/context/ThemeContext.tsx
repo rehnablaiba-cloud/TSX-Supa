@@ -253,8 +253,16 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({
 
   // ── CRITICAL: apply EVERY stored theme layer on mount ──────────────────────
   useEffect(() => {
+    console.group("🚀 ThemeProvider init");
+    console.log("Mode:", theme);
+    console.log("Overrides:", customTokens);
+    console.log("MUI config:", muiConfig);
+    console.log("Glass config:", glassConfig);
+    console.log("Status colors:", statusColors);
     applyStoredTheme(theme);
     localStorage.setItem(LS_THEME, theme);
+    console.log("✅ applyStoredTheme() completed");
+    console.groupEnd();
   }, [theme, customTokens]);
 
   const setTheme = (t: AppTheme) => setThemeState(t);
@@ -280,9 +288,15 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({
   }, []);
 
   const setMuiConfig = useCallback((patch: Partial<MuiConfig>) => {
+    console.group("🎨 ThemeContext.setMuiConfig");
+    console.log("Incoming patch:", patch);
     setMuiConfigState((prev) => {
       const next = { ...prev, ...patch };
+      console.log("Previous:", prev);
+      console.log("Next:", next);
       localStorage.setItem(LS_MUI, JSON.stringify(next));
+      console.log("✅ Written to localStorage:", LS_MUI);
+      console.groupEnd();
       return next;
     });
   }, []);

@@ -522,7 +522,14 @@ const MuiTab: React.FC = () => {
           </div>
           <Toggle
             value={muiConfig.active}
-            onChange={(v) => setMuiConfig({ active: v })}
+            onChange={(v) => {
+              console.group("🖱️ ThemeEditor MUI Toggle");
+              console.log("User clicked. New value:", v);
+              console.log("Current muiConfig:", muiConfig);
+              setMuiConfig({ active: v });
+              console.log("Called setMuiConfig({ active:", v, "})");
+              console.groupEnd();
+            }}
           />
         </div>
       </div>
@@ -852,6 +859,65 @@ const ThemeEditorPanel: React.FC<{ onClose: () => void }> = ({ onClose }) => {
         {tab === "dark" && <ModeTab mode="dark" />}
         {tab === "glass" && <GlassTab />}
         {tab === "mui" && <MuiTab />}
+      </div>
+
+      {/* ── DEBUG: SessionLog-style console dump ── */}
+      <div className="mt-4 p-3 rounded-xl border border-dashed border-[var(--border-color)] bg-bg-card">
+        <p className="text-[10px] font-bold uppercase tracking-wider text-t-muted mb-2">
+          🔍 Debug Tools
+        </p>
+        <div className="flex gap-2 flex-wrap">
+          <button
+            onClick={() => {
+              console.group("📋 THEME STATE DUMP");
+              console.log("localStorage.theme:", localStorage.getItem("theme"));
+              console.log(
+                "localStorage.themeEditorMuiConfig:",
+                localStorage.getItem("themeEditorMuiConfig")
+              );
+              console.log(
+                "localStorage.themeEditorGlass:",
+                localStorage.getItem("themeEditorGlass")
+              );
+              console.log(
+                "localStorage.themeEditorBrandPalette:",
+                localStorage.getItem("themeEditorBrandPalette")
+              );
+              console.log(
+                "localStorage.themeEditorStatusColors:",
+                localStorage.getItem("themeEditorStatusColors")
+              );
+              console.log(
+                "localStorage.themeEditorOverrides:",
+                localStorage.getItem("themeEditorOverrides")
+              );
+              console.log("document.documentElement styles:");
+              const s = getComputedStyle(document.documentElement);
+              console.log(
+                "  --color-brand:",
+                s.getPropertyValue("--color-brand")
+              );
+              console.log(
+                "  --glass-blur:",
+                s.getPropertyValue("--glass-blur")
+              );
+              console.log("  --bg-base:", s.getPropertyValue("--bg-base"));
+              console.groupEnd();
+            }}
+            className="text-[10px] px-2 py-1 rounded bg-bg-surface border border-[var(--border-color)] text-t-secondary hover:text-t-primary"
+          >
+            Dump localStorage + CSS
+          </button>
+          <button
+            onClick={() => {
+              console.clear();
+              console.log("🧹 Console cleared");
+            }}
+            className="text-[10px] px-2 py-1 rounded bg-bg-surface border border-[var(--border-color)] text-t-secondary hover:text-t-primary"
+          >
+            Clear Console
+          </button>
+        </div>
       </div>
     </ModalShell>
   );
