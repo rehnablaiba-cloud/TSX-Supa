@@ -68,15 +68,29 @@ type ViewMode = "table" | "chart";
 
 // ─── Constants ─────────────────────────────────────────────────────────────────
 const STATUS_ICON: Record<string, React.ReactNode> = {
-  pass: <CheckCircle2 size={13} className="text-green-400 shrink-0" />,
-  fail: <XCircle size={13} className="text-red-400 shrink-0" />,
-  pending: <Clock size={13} className="text-amber-400 shrink-0" />,
+  pass: (
+    <CheckCircle2 size={13} className="text-[var(--color-pass)] shrink-0" />
+  ),
+  fail: <XCircle size={13} className="text-[var(--color-fail)] shrink-0" />,
+  pending: <Clock size={13} className="text-[var(--color-pend)] shrink-0" />,
 };
 
-const STATUS_BADGE: Record<string, string> = {
-  pass: "bg-green-500/10 text-green-400",
-  fail: "bg-red-500/10 text-red-400",
-  pending: "bg-amber-500/10 text-amber-400",
+const STATUS_BADGE: Record<string, React.CSSProperties> = {
+  pass: {
+    background: "color-mix(in srgb, var(--color-pass) 10%, transparent)",
+    color: "var(--color-pass)",
+    border: "1px solid color-mix(in srgb, var(--color-pass) 25%, transparent)",
+  },
+  fail: {
+    background: "color-mix(in srgb, var(--color-fail) 10%, transparent)",
+    color: "var(--color-fail)",
+    border: "1px solid color-mix(in srgb, var(--color-fail) 25%, transparent)",
+  },
+  pending: {
+    background: "color-mix(in srgb, var(--color-pend) 10%, transparent)",
+    color: "var(--color-pend)",
+    border: "1px solid color-mix(in srgb, var(--color-pend) 25%, transparent)",
+  },
 };
 
 const SESSION_STORAGE_KEY = "testreport_session_start";
@@ -140,23 +154,42 @@ const SessionDetailModal: React.FC<SessionModalProps> = ({
             {[
               {
                 label: "Pass",
-                cls: "text-green-400 bg-green-500/10",
+                style: {
+                  color: "var(--color-pass)",
+                  background:
+                    "color-mix(in srgb, var(--color-pass) 10%, transparent)",
+                  border:
+                    "1px solid color-mix(in srgb, var(--color-pass) 25%, transparent)",
+                } as React.CSSProperties,
                 count: group.pass,
               },
               {
                 label: "Fail",
-                cls: "text-red-400 bg-red-500/10",
+                style: {
+                  color: "var(--color-fail)",
+                  background:
+                    "color-mix(in srgb, var(--color-fail) 10%, transparent)",
+                  border:
+                    "1px solid color-mix(in srgb, var(--color-fail) 25%, transparent)",
+                } as React.CSSProperties,
                 count: group.fail,
               },
               {
                 label: "Undo",
-                cls: "text-amber-400 bg-amber-500/10",
+                style: {
+                  color: "var(--color-pend)",
+                  background:
+                    "color-mix(in srgb, var(--color-pend) 10%, transparent)",
+                  border:
+                    "1px solid color-mix(in srgb, var(--color-pend) 25%, transparent)",
+                } as React.CSSProperties,
                 count: group.undo,
               },
-            ].map(({ label, cls, count }) => (
+            ].map(({ label, style, count }) => (
               <span
                 key={label}
-                className={`text-[11px] font-bold px-2.5 py-0.5 rounded-full border border-[var(--border-color)] ${cls}`}
+                className="text-[11px] font-bold px-2.5 py-0.5 rounded-full"
+                style={style}
               >
                 {label}: {count}
               </span>
@@ -205,10 +238,8 @@ const SessionDetailModal: React.FC<SessionModalProps> = ({
                   </td>
                   <td className="px-4 py-2.5 text-center">
                     <span
-                      className={`inline-flex items-center gap-1 font-bold px-2 py-0.5
-                        rounded-full ${
-                          STATUS_BADGE[step.status] ?? STATUS_BADGE.pending
-                        }`}
+                      className="inline-flex items-center gap-1 font-bold px-2 py-0.5 rounded-full"
+                      style={STATUS_BADGE[step.status] ?? STATUS_BADGE.pending}
                     >
                       {STATUS_ICON[step.status]}
                       {step.status === "pending" ? "undo" : step.status}
@@ -428,7 +459,6 @@ const TestReport: React.FC<Props> = ({ module_test_id, onBack }) => {
   );
 
   // ── Lookup map: tests_name → tests.serial_no ──────────────────────────────
-  // ← CHANGED
   const testSerialMap = useMemo(() => {
     const map = new Map<string, string>();
     modules.forEach((m) => {
@@ -442,7 +472,6 @@ const TestReport: React.FC<Props> = ({ module_test_id, onBack }) => {
   }, [modules]);
 
   // ── Session data formatted as FlatData for export ─────────────────────────
-  // ← CHANGED
   const sessionFlatData = useMemo<FlatData[]>(() => {
     return sessionSteps.map((s) => ({
       module: s.module_name,
@@ -464,7 +493,7 @@ const TestReport: React.FC<Props> = ({ module_test_id, onBack }) => {
       .map((r) => ({
         module: meta?.module_name ?? "",
         test: meta?.test?.name ?? meta?.tests_name ?? "",
-        test_serial_no: meta?.test?.serial_no ?? "", // ← CHANGED
+        test_serial_no: meta?.test?.serial_no ?? "",
         serial: r.step?.serial_no ?? 0,
         action: r.step?.action ?? "",
         expected: r.step?.expected_result ?? "",
@@ -493,7 +522,7 @@ const TestReport: React.FC<Props> = ({ module_test_id, onBack }) => {
               flat.push({
                 module: m.name,
                 test: mt.test?.name ?? "",
-                test_serial_no: mt.test?.serial_no ?? "", // ← CHANGED
+                test_serial_no: mt.test?.serial_no ?? "",
                 serial: sr.step?.serial_no ?? 0,
                 action: sr.step?.action ?? "",
                 expected: sr.step?.expected_result ?? "",
@@ -506,7 +535,6 @@ const TestReport: React.FC<Props> = ({ module_test_id, onBack }) => {
     return flat;
   };
 
-  // ← CHANGED: stats now come from session data
   const exportStats = () => {
     const flat = sessionFlatData.filter((s) => !s.isdivider);
     return [
@@ -581,24 +609,42 @@ const TestReport: React.FC<Props> = ({ module_test_id, onBack }) => {
           {[
             {
               label: "Pass",
-              cls: "text-green-400 bg-green-500/10",
+              style: {
+                color: "var(--color-pass)",
+                background:
+                  "color-mix(in srgb, var(--color-pass) 10%, transparent)",
+                border:
+                  "1px solid color-mix(in srgb, var(--color-pass) 25%, transparent)",
+              } as React.CSSProperties,
               count: sessionGroups.reduce((n, g) => n + g.pass, 0),
             },
             {
               label: "Fail",
-              cls: "text-red-400 bg-red-500/10",
+              style: {
+                color: "var(--color-fail)",
+                background:
+                  "color-mix(in srgb, var(--color-fail) 10%, transparent)",
+                border:
+                  "1px solid color-mix(in srgb, var(--color-fail) 25%, transparent)",
+              } as React.CSSProperties,
               count: sessionGroups.reduce((n, g) => n + g.fail, 0),
             },
             {
               label: "Undo",
-              cls: "text-amber-400 bg-amber-500/10",
+              style: {
+                color: "var(--color-pend)",
+                background:
+                  "color-mix(in srgb, var(--color-pend) 10%, transparent)",
+                border:
+                  "1px solid color-mix(in srgb, var(--color-pend) 25%, transparent)",
+              } as React.CSSProperties,
               count: sessionGroups.reduce((n, g) => n + g.undo, 0),
             },
-          ].map(({ label, cls, count }) => (
+          ].map(({ label, style, count }) => (
             <span
               key={label}
-              className={`text-xs font-bold px-3 py-1 rounded-full
-                border border-[var(--border-color)] ${cls}`}
+              className="text-xs font-bold px-3 py-1 rounded-full"
+              style={style}
             >
               {label}: {count}
             </span>
@@ -634,17 +680,26 @@ const TestReport: React.FC<Props> = ({ module_test_id, onBack }) => {
                   {g.total}
                 </span>
                 {g.pass > 0 && (
-                  <span className="text-[11px] font-bold text-green-400">
+                  <span
+                    className="text-[11px] font-bold"
+                    style={{ color: "var(--color-pass)" }}
+                  >
                     {g.pass}✓
                   </span>
                 )}
                 {g.fail > 0 && (
-                  <span className="text-[11px] font-bold text-red-400">
+                  <span
+                    className="text-[11px] font-bold"
+                    style={{ color: "var(--color-fail)" }}
+                  >
                     {g.fail}✗
                   </span>
                 )}
                 {g.undo > 0 && (
-                  <span className="text-[11px] font-bold text-amber-400">
+                  <span
+                    className="text-[11px] font-bold"
+                    style={{ color: "var(--color-pend)" }}
+                  >
                     {g.undo}↩
                   </span>
                 )}
@@ -677,8 +732,13 @@ const TestReport: React.FC<Props> = ({ module_test_id, onBack }) => {
       <div className="flex-1 flex flex-col">
         <Topbar title="Test Report" onBack={onBack} />
         <div className="flex flex-col items-center justify-center py-20 gap-3">
-          <AlertTriangle size={32} className="text-red-400" />
-          <p className="text-sm text-red-400 font-medium">{error}</p>
+          <AlertTriangle size={32} style={{ color: "var(--color-fail)" }} />
+          <p
+            className="text-sm font-medium"
+            style={{ color: "var(--color-fail)" }}
+          >
+            {error}
+          </p>
           <button
             onClick={() =>
               module_test_id ? fetchDrillDown() : fetchStandalone()
@@ -739,33 +799,60 @@ const TestReport: React.FC<Props> = ({ module_test_id, onBack }) => {
               {
                 label: "Total",
                 value: stats.total,
-                cls: "bg-bg-card text-t-primary",
+                style: {
+                  background: "var(--bg-card)",
+                  color: "var(--text-primary)",
+                  border: "1px solid var(--border-color)",
+                } as React.CSSProperties,
               },
               {
                 label: "Pass",
                 value: stats.pass,
-                cls: "bg-green-500/10 text-green-400",
+                style: {
+                  background:
+                    "color-mix(in srgb, var(--color-pass) 10%, transparent)",
+                  color: "var(--color-pass)",
+                  border:
+                    "1px solid color-mix(in srgb, var(--color-pass) 25%, transparent)",
+                } as React.CSSProperties,
               },
               {
                 label: "Fail",
                 value: stats.fail,
-                cls: "bg-red-500/10 text-red-400",
+                style: {
+                  background:
+                    "color-mix(in srgb, var(--color-fail) 10%, transparent)",
+                  color: "var(--color-fail)",
+                  border:
+                    "1px solid color-mix(in srgb, var(--color-fail) 25%, transparent)",
+                } as React.CSSProperties,
               },
               {
                 label: "Pending",
                 value: stats.pending,
-                cls: "bg-amber-500/10 text-amber-400",
+                style: {
+                  background:
+                    "color-mix(in srgb, var(--color-pend) 10%, transparent)",
+                  color: "var(--color-pend)",
+                  border:
+                    "1px solid color-mix(in srgb, var(--color-pend) 25%, transparent)",
+                } as React.CSSProperties,
               },
               {
                 label: "Pass %",
                 value: `${stats.passRate}%`,
-                cls: "bg-c-brand-bg text-c-brand",
+                style: {
+                  background: "var(--color-brand-bg)",
+                  color: "var(--color-brand)",
+                  border:
+                    "1px solid color-mix(in srgb, var(--color-brand) 25%, transparent)",
+                } as React.CSSProperties,
               },
             ].map((s) => (
               <span
                 key={s.label}
-                className={`flex items-center gap-1 text-xs font-bold px-3 py-1 rounded-full
-                  border border-[var(--border-color)] ${s.cls}`}
+                className="flex items-center gap-1 text-xs font-bold px-3 py-1 rounded-full"
+                style={s.style}
               >
                 {s.label}: {s.value}
               </span>
@@ -849,13 +936,22 @@ const TestReport: React.FC<Props> = ({ module_test_id, onBack }) => {
                   <tr className="bg-bg-card text-t-muted uppercase text-xs">
                     <th className="px-4 py-3 text-left">Test</th>
                     <th className="px-4 py-3 text-center">Total</th>
-                    <th className="px-4 py-3 text-center text-green-600 dark:text-green-400">
+                    <th
+                      className="px-4 py-3 text-center"
+                      style={{ color: "var(--color-pass)" }}
+                    >
                       Pass
                     </th>
-                    <th className="px-4 py-3 text-center text-red-600 dark:text-red-400">
+                    <th
+                      className="px-4 py-3 text-center"
+                      style={{ color: "var(--color-fail)" }}
+                    >
                       Fail
                     </th>
-                    <th className="px-4 py-3 text-center text-amber-600 dark:text-amber-400">
+                    <th
+                      className="px-4 py-3 text-center"
+                      style={{ color: "var(--color-pend)" }}
+                    >
                       Pending
                     </th>
                     <th className="px-4 py-3 text-center">Pass Rate</th>
@@ -869,13 +965,22 @@ const TestReport: React.FC<Props> = ({ module_test_id, onBack }) => {
                     <td className="px-4 py-3 text-center font-bold text-t-primary">
                       {stats.total}
                     </td>
-                    <td className="px-4 py-3 text-center font-semibold text-green-600 dark:text-green-400">
+                    <td
+                      className="px-4 py-3 text-center font-semibold"
+                      style={{ color: "var(--color-pass)" }}
+                    >
                       {stats.pass}
                     </td>
-                    <td className="px-4 py-3 text-center font-semibold text-red-600 dark:text-red-400">
+                    <td
+                      className="px-4 py-3 text-center font-semibold"
+                      style={{ color: "var(--color-fail)" }}
+                    >
                       {stats.fail}
                     </td>
-                    <td className="px-4 py-3 text-center font-semibold text-amber-600 dark:text-amber-400">
+                    <td
+                      className="px-4 py-3 text-center font-semibold"
+                      style={{ color: "var(--color-pend)" }}
+                    >
                       {stats.pending}
                     </td>
                     <td className="px-4 py-3 text-center">
@@ -924,7 +1029,7 @@ const TestReport: React.FC<Props> = ({ module_test_id, onBack }) => {
         actions={
           <button
             onClick={() => setShowExportModal(true)}
-            disabled={sessionFlatData.length === 0} // ← CHANGED
+            disabled={sessionFlatData.length === 0}
             className="flex items-center gap-1.5 px-4 py-2 bg-bg-card hover:bg-bg-surface
               disabled:opacity-40 disabled:cursor-not-allowed text-t-primary
               text-sm font-semibold rounded-lg transition border border-[var(--border-color)]"
@@ -944,16 +1049,20 @@ const TestReport: React.FC<Props> = ({ module_test_id, onBack }) => {
           {
             label: "CSV",
             icon: <FileSpreadsheet size={16} />,
-            color: "bg-[var(--color-primary)]",
-            hoverColor: "hover:bg-[var(--color-primary-hover)]",
-            onConfirm: () => exportReportCSV([], sessionFlatData), // ← CHANGED
+            color:
+              "bg-[var(--bg-card)] border border-[var(--border-color)] text-[var(--text-primary)]",
+            hoverColor:
+              "hover:bg-[var(--bg-surface)] hover:border-[var(--color-brand)]",
+            onConfirm: () => exportReportCSV([], sessionFlatData),
           },
           {
             label: "PDF",
             icon: <FileText size={16} />,
-            color: "bg-[var(--color-blue)]",
-            hoverColor: "hover:bg-[var(--color-blue-hover)]",
-            onConfirm: () => exportReportPDF([], sessionFlatData), // ← CHANGED
+            color:
+              "bg-[var(--bg-card)] border border-[var(--border-color)] text-[var(--text-primary)]",
+            hoverColor:
+              "hover:bg-[var(--bg-surface)] hover:border-[var(--color-brand)]",
+            onConfirm: () => exportReportPDF([], sessionFlatData),
           },
         ]}
       />
@@ -1003,13 +1112,22 @@ const TestReport: React.FC<Props> = ({ module_test_id, onBack }) => {
                     <th className="px-4 py-3 text-left">Trainset</th>
                     <th className="px-4 py-3 text-center">Tests</th>
                     <th className="px-4 py-3 text-center">Total Steps</th>
-                    <th className="px-4 py-3 text-center text-green-600 dark:text-green-400">
+                    <th
+                      className="px-4 py-3 text-center"
+                      style={{ color: "var(--color-pass)" }}
+                    >
                       Pass
                     </th>
-                    <th className="px-4 py-3 text-center text-red-600 dark:text-red-400">
+                    <th
+                      className="px-4 py-3 text-center"
+                      style={{ color: "var(--color-fail)" }}
+                    >
                       Fail
                     </th>
-                    <th className="px-4 py-3 text-center text-amber-600 dark:text-amber-400">
+                    <th
+                      className="px-4 py-3 text-center"
+                      style={{ color: "var(--color-pend)" }}
+                    >
                       Pending
                     </th>
                     <th className="px-4 py-3 text-center">Pass Rate</th>
@@ -1040,13 +1158,22 @@ const TestReport: React.FC<Props> = ({ module_test_id, onBack }) => {
                         <td className="px-4 py-3 text-center font-bold text-t-primary">
                           {total}
                         </td>
-                        <td className="px-4 py-3 text-center font-semibold text-green-600 dark:text-green-400">
+                        <td
+                          className="px-4 py-3 text-center font-semibold"
+                          style={{ color: "var(--color-pass)" }}
+                        >
                           {pass}
                         </td>
-                        <td className="px-4 py-3 text-center font-semibold text-red-600 dark:text-red-400">
+                        <td
+                          className="px-4 py-3 text-center font-semibold"
+                          style={{ color: "var(--color-fail)" }}
+                        >
                           {fail}
                         </td>
-                        <td className="px-4 py-3 text-center font-semibold text-amber-600 dark:text-amber-400">
+                        <td
+                          className="px-4 py-3 text-center font-semibold"
+                          style={{ color: "var(--color-pend)" }}
+                        >
                           {pending}
                         </td>
                         <td className="px-4 py-3 text-center">

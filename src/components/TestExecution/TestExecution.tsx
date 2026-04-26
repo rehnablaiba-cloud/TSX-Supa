@@ -168,7 +168,6 @@ const MOBILE_DIVIDER_LEVELS: Record<
 const getDividerLevel = (expected_result: string): number =>
   Math.min(Math.max(parseInt(expected_result, 10) || 1, 1), 3);
 
-// ── Strip raw prefixes from divider action text ────────────────────────────
 const cleanDividerLabel = (action: string): string =>
   action.replace(/^[^a-zA-Z0-9]+/, "");
 
@@ -1333,7 +1332,6 @@ const TestExecution: React.FC<Props> = ({
     [steps, filter, search]
   );
 
-  // ── flatData — fixed isdivider key + cleanDividerLabel ────────────────────
   const flatData = useMemo<FlatData[]>(
     () =>
       steps.map((s) =>
@@ -1432,6 +1430,7 @@ const TestExecution: React.FC<Props> = ({
         />
       )}
 
+      {/* ── Export Modal — same option style as ModuleDashboard ───────────── */}
       <ExportModal
         isOpen={showExportModal}
         onClose={() => setShowExportModal(false)}
@@ -1442,16 +1441,20 @@ const TestExecution: React.FC<Props> = ({
           {
             label: "CSV",
             icon: <FileSpreadsheet size={16} />,
-            color: "bg-[var(--color-primary)]",
-            hoverColor: "hover:bg-[var(--color-primary-hover)]",
+            color:
+              "bg-[var(--bg-card)] border border-[var(--border-color)] text-[var(--text-primary)]",
+            hoverColor:
+              "hover:bg-[var(--bg-surface)] hover:border-[var(--color-brand)]",
             onConfirm: () =>
               exportExecutionCSV(module_name, exportTestName, flatData),
           },
           {
             label: "PDF",
             icon: <FileText size={16} />,
-            color: "bg-[var(--color-blue)]",
-            hoverColor: "hover:bg-[var(--color-blue-hover)]",
+            color:
+              "bg-[var(--bg-card)] border border-[var(--border-color)] text-[var(--text-primary)]",
+            hoverColor:
+              "hover:bg-[var(--bg-surface)] hover:border-[var(--color-brand)]",
             onConfirm: () =>
               exportExecutionPDF(module_name, exportTestName, flatData),
           },
@@ -1463,7 +1466,7 @@ const TestExecution: React.FC<Props> = ({
         onClose={() => setShowMassImageUpload(false)}
       />
 
-      {/* Fixed header */}
+      {/* ── Fixed header ─────────────────────────────────────────────────── */}
       <div className="flex-shrink-0">
         <Topbar
           title={
@@ -1478,11 +1481,20 @@ const TestExecution: React.FC<Props> = ({
               {isAdmin && (
                 <button
                   onClick={() => setShowMassImageUpload(true)}
-                  className="px-3 py-2 rounded-xl border border-[var(--border-color)] bg-bg-card text-t-primary text-sm font-semibold hover:bg-bg-surface transition-colors"
+                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg bg-bg-card hover:bg-bg-surface border border-[var(--border-color)] text-t-primary transition"
                 >
                   Mass Upload Images
                 </button>
               )}
+              {/* ── Export — same placement + style as ModuleDashboard ── */}
+              <button
+                onClick={() => setShowExportModal(true)}
+                disabled={filtered.length === 0}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg bg-bg-card hover:bg-bg-surface border border-[var(--border-color)] text-t-primary transition disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                <Upload size={13} />
+                Export
+              </button>
               <button onClick={handleFinish} className="btn-primary text-sm">
                 Finish Test
               </button>
@@ -1550,33 +1562,23 @@ const TestExecution: React.FC<Props> = ({
           </div>
         </div>
 
-        {/* Filters */}
+        {/* ── Filters only — export moved to Topbar ────────────────────── */}
         <div className="flex flex-col border-b border-[var(--border-color)]">
-          <div className="flex items-center gap-2 px-4 py-2">
-            <button
-              onClick={() => setShowExportModal(true)}
-              disabled={filtered.length === 0}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-[var(--border-color)] bg-bg-card hover:bg-bg-surface disabled:opacity-40 disabled:cursor-not-allowed text-t-primary text-xs font-semibold transition shrink-0"
-            >
-              <Upload size={13} /> Export
-            </button>
-            <div className="flex-1" />
-            <div className="flex gap-1">
-              {(["all", "pass", "fail", "pending"] as Filter[]).map((f) => (
-                <button
-                  key={f}
-                  onClick={() => setFilter(f)}
-                  style={filter === f ? { color: "#ffffff" } : undefined}
-                  className={`px-2.5 py-1 rounded-lg text-xs font-medium transition-colors capitalize ${
-                    filter === f
-                      ? "bg-c-brand"
-                      : "text-t-muted hover:text-t-primary"
-                  }`}
-                >
-                  {f}
-                </button>
-              ))}
-            </div>
+          <div className="flex items-center justify-end gap-1 px-4 py-2">
+            {(["all", "pass", "fail", "pending"] as Filter[]).map((f) => (
+              <button
+                key={f}
+                onClick={() => setFilter(f)}
+                style={filter === f ? { color: "#ffffff" } : undefined}
+                className={`px-2.5 py-1 rounded-lg text-xs font-medium transition-colors capitalize ${
+                  filter === f
+                    ? "bg-c-brand"
+                    : "text-t-muted hover:text-t-primary"
+                }`}
+              >
+                {f}
+              </button>
+            ))}
           </div>
           <div className="px-4 pb-2">
             <input
@@ -1589,7 +1591,7 @@ const TestExecution: React.FC<Props> = ({
         </div>
       </div>
 
-      {/* Scroll container */}
+      {/* ── Scroll container ─────────────────────────────────────────────── */}
       <div ref={scrollContainerRef} className="flex-1 min-h-0 overflow-y-auto">
         {loading ? (
           <div className="flex items-center justify-center py-20">

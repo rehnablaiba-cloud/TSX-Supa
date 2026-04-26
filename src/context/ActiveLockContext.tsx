@@ -1,9 +1,17 @@
-import { createContext, useContext, useEffect, useRef, useState } from "react";
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useRef,
+  useState,
+  useCallback,
+} from "react";
 import { supabase } from "../supabase";
 import { useAuth, updateLoggedIn } from "./AuthContext";
 
 const HEARTBEAT_MS = 30_000;
 const STALE_MS = 2 * 60 * 1000;
+const STORAGE_KEY = "lock-monitor-pos";
 
 interface ActiveLockContextValue {
   setActiveLock: (module_test_id: string, user_id: string) => void;
@@ -24,15 +32,14 @@ interface SessionLog {
 }
 
 /**
- * Decorative category colors are intentionally fixed — they serve as
- * visual identifiers in a debug widget and should not invert with the
- * theme. All semantic / structural colors use CSS vars instead.
+ * Category colours use CSS custom properties so they respect
+ * whatever theme / brand overrides the app has applied.
  */
-const CATEGORY_COLOR: Record<SessionLog["category"], string> = {
-  heartbeat: "#7dd3fc",
-  rehydrate: "#a78bfa",
-  lock: "#4ade80",
-  system: "#94a3b8",
+const CATEGORY_VAR: Record<SessionLog["category"], string> = {
+  heartbeat: "var(--color-brand)",
+  rehydrate: "var(--color-pend)",
+  lock: "var(--color-pass)",
+  system: "var(--text-muted)",
 };
 
 const STATUS_ICON: Record<SessionLog["status"], string> = {
@@ -43,35 +50,54 @@ const STATUS_ICON: Record<SessionLog["status"], string> = {
   warn: "⚠️",
 };
 
-// ─── useDraggable ─────────────────────────────────────────────────────────────
+// ─── useDraggablePosition ─────────────────────────────────────────────────────
 /**
- * Pointer-event drag hook. Works with mouse and touch.
- *
- * Usage:
- *   const { pos, handleRef, isDragging } = useDraggable();
- *   <div data-draggable style={pos ? { top: pos.y, left: pos.x } : { bottom: 16, right: 16 }}>
- *     <div ref={handleRef}>drag me</div>
- *   </div>
- *
- * The widget keeps its default CSS-anchored position (bottom/right) until the
- * first drag, then switches to top/left absolute coordinates. This means the
- * initial placement requires zero calculation.
+ * Right/bottom anchored drag — matches the pattern used by SessionLog's pill.
+ * Position is persisted to localStorage so the widget remembers where you
+ * left it across page refreshes.
  */
-function useDraggable() {
-  // null → use original CSS bottom/right; once dragged, holds top/left px
-  const [pos, setPos] = useState<{ x: number; y: number } | null>(null);
-  const [isDragging, setIsDragging] = useState(false);
+function getDefaultPos() {
+  return { right: 16, bottom: 16 };
+}
+
+function useDraggablePosition() {
+  const [pos, setPos] = useState<{ right: number; bottom: number }>(() => {
+    if (typeof window === "undefined") return getDefaultPos();
+    try {
+      const saved = localStorage.getItem(STORAGE_KEY);
+      if (saved) return { ...getDefaultPos(), ...JSON.parse(saved) };
+    } catch {}
+    return getDefaultPos();
+  });
 
   const handleRef = useRef<HTMLDivElement | null>(null);
-  const dragging = useRef(false);
-  const startPtr = useRef({ x: 0, y: 0 });
-  const startPos = useRef({ x: 0, y: 0 });
-  // Keep latest pos in a ref so the pointermove handler is never stale
-  const posRef = useRef<{ x: number; y: number } | null>(null);
-
+  const dragRef = useRef({
+    active: false,
+    moved: false,
+    startX: 0,
+    startY: 0,
+    startRight: 0,
+    startBottom: 0,
+  });
+  const posRef = useRef(pos);
   useEffect(() => {
     posRef.current = pos;
   }, [pos]);
+
+  const clamp = useCallback((next: { right: number; bottom: number }) => {
+    const padding = 8;
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+    const rect = handleRef.current
+      ?.closest<HTMLElement>("[data-draggable]")
+      ?.getBoundingClientRect();
+    const w = rect?.width ?? 380;
+    const h = rect?.height ?? 300;
+    return {
+      right: Math.max(padding, Math.min(vw - w - padding, next.right)),
+      bottom: Math.max(padding, Math.min(vh - h - padding, next.bottom)),
+    };
+  }, []);
 
   useEffect(() => {
     const handle = handleRef.current;
@@ -79,53 +105,35 @@ function useDraggable() {
 
     const onPointerDown = (e: PointerEvent) => {
       if (e.button !== 0 && e.pointerType === "mouse") return;
-
-      dragging.current = true;
-      setIsDragging(true);
       handle.setPointerCapture(e.pointerId);
-      startPtr.current = { x: e.clientX, y: e.clientY };
-
-      // Materialise position from bounding rect on first drag so the
-      // widget doesn't jump from its CSS-anchored spot.
-      const widget = handle.closest<HTMLElement>("[data-draggable]");
-      const rect = widget?.getBoundingClientRect();
-      const origin = rect
-        ? { x: rect.left, y: rect.top }
-        : posRef.current ?? {
-            x: window.innerWidth - 396,
-            y: window.innerHeight - 300,
-          };
-
-      startPos.current = origin;
-      // Immediately materialise so pointermove has a base
-      posRef.current = origin;
-      setPos(origin);
-
+      dragRef.current = {
+        active: true,
+        moved: false,
+        startX: e.clientX,
+        startY: e.clientY,
+        startRight: posRef.current.right,
+        startBottom: posRef.current.bottom,
+      };
       e.preventDefault();
     };
 
     const onPointerMove = (e: PointerEvent) => {
-      if (!dragging.current) return;
-      const dx = e.clientX - startPtr.current.x;
-      const dy = e.clientY - startPtr.current.y;
-      const next = {
-        x: Math.max(
-          0,
-          Math.min(window.innerWidth - 40, startPos.current.x + dx)
-        ),
-        y: Math.max(
-          0,
-          Math.min(window.innerHeight - 40, startPos.current.y + dy)
-        ),
-      };
+      if (!dragRef.current.active) return;
+      const dx = e.clientX - dragRef.current.startX;
+      const dy = e.clientY - dragRef.current.startY;
+      if (Math.abs(dx) > 2 || Math.abs(dy) > 2) dragRef.current.moved = true;
+      const next = clamp({
+        right: dragRef.current.startRight - dx,
+        bottom: dragRef.current.startBottom - dy,
+      });
       posRef.current = next;
       setPos(next);
     };
 
     const onPointerUp = () => {
-      if (!dragging.current) return;
-      dragging.current = false;
-      setIsDragging(false);
+      if (!dragRef.current.active) return;
+      dragRef.current.active = false;
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(posRef.current));
     };
 
     handle.addEventListener("pointerdown", onPointerDown);
@@ -136,10 +144,16 @@ function useDraggable() {
       window.removeEventListener("pointermove", onPointerMove);
       window.removeEventListener("pointerup", onPointerUp);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [clamp]);
 
-  return { pos, handleRef, isDragging };
+  // Keep in bounds on viewport resize
+  useEffect(() => {
+    const handle = () => setPos((p) => clamp(p));
+    window.addEventListener("resize", handle);
+    return () => window.removeEventListener("resize", handle);
+  }, [clamp]);
+
+  return { pos, handleRef };
 }
 
 // ─── Debug Widget ─────────────────────────────────────────────────────────────
@@ -154,22 +168,18 @@ const SessionDebugWidget = ({
 }) => {
   const [minimized, setMinimized] = useState(false);
   const [filter, setFilter] = useState<SessionLog["category"] | "all">("all");
-  const { pos, handleRef, isDragging } = useDraggable();
+  const { pos, handleRef } = useDraggablePosition();
 
   const filtered =
     filter === "all" ? logs : logs.filter((l) => l.category === filter);
-
-  // Switch from CSS bottom/right anchor → explicit top/left after first drag
-  const positionStyle: React.CSSProperties = pos
-    ? { top: pos.y, left: pos.x, bottom: "auto", right: "auto" }
-    : { bottom: 16, right: 16 };
 
   return (
     <div
       data-draggable
       style={{
         position: "fixed",
-        ...positionStyle,
+        right: pos.right,
+        bottom: pos.bottom,
         zIndex: 9999,
         width: minimized ? "auto" : 380,
         fontFamily: "monospace",
@@ -177,17 +187,13 @@ const SessionDebugWidget = ({
         borderRadius: 10,
         overflow: "hidden",
         border: "1px solid var(--border-color)",
-        boxShadow: isDragging
-          ? "0 16px 56px color-mix(in srgb, var(--bg-base) 75%, transparent)"
-          : "0 4px 32px color-mix(in srgb, var(--bg-base) 60%, transparent)",
-        // Suppress layout transitions while dragging — they fight pointer position
-        transition: isDragging
-          ? "box-shadow 0.1s ease, transform 0.1s ease"
-          : "box-shadow 0.25s ease",
-        transform: isDragging ? "scale(1.018)" : "scale(1)",
+        background: "var(--bg-base)",
+        boxShadow:
+          "0 4px 32px color-mix(in srgb, var(--bg-base) 60%, transparent)",
+        transition: "box-shadow 0.25s ease",
       }}
     >
-      {/* ── Header — this is the drag handle ───────────────────────────────── */}
+      {/* ── Header / drag handle ───────────────────────────────────────── */}
       <div
         ref={handleRef}
         style={{
@@ -198,10 +204,8 @@ const SessionDebugWidget = ({
           display: "flex",
           alignItems: "center",
           justifyContent: "space-between",
-          // Show grab/grabbing cursor; the collapse toggle is a child button
-          cursor: isDragging ? "grabbing" : "grab",
+          cursor: "grab",
           borderBottom: "1px solid var(--border-color)",
-          // Prevent text selection while dragging
           userSelect: "none",
           WebkitUserSelect: "none",
         }}
@@ -228,7 +232,6 @@ const SessionDebugWidget = ({
                 borderRadius: 99,
                 padding: "1px 7px",
                 fontSize: 10,
-                // Don't let the badge interfere with drag
                 pointerEvents: "none",
               }}
             >
@@ -236,12 +239,6 @@ const SessionDebugWidget = ({
             </span>
           )}
 
-          {/*
-            Collapse toggle is a real <button> so it gets its own click
-            target and doesn't conflict with the drag handler on the header.
-            onPointerDown stops propagation so clicking the button never
-            initiates a drag.
-          */}
           <button
             onPointerDown={(e) => e.stopPropagation()}
             onClick={() => setMinimized((p) => !p)}
@@ -261,8 +258,8 @@ const SessionDebugWidget = ({
       </div>
 
       {!minimized && (
-        <div style={{ background: "var(--bg-base)" }}>
-          {/* ── Lock info panel ──────────────────────────────────────────────── */}
+        <>
+          {/* ── Lock info panel ───────────────────────────────────────── */}
           <div
             style={{
               padding: "8px 10px",
@@ -270,6 +267,7 @@ const SessionDebugWidget = ({
               display: "grid",
               gridTemplateColumns: "1fr 1fr",
               gap: 4,
+              background: "var(--bg-surface)",
             }}
           >
             <div>
@@ -291,6 +289,7 @@ const SessionDebugWidget = ({
                 {lockInfo ? "🔒 Active" : "🔓 No Lock"}
               </div>
             </div>
+
             <div>
               <div
                 style={{
@@ -309,6 +308,7 @@ const SessionDebugWidget = ({
                 {lockInfo && nextBeat !== null ? `in ${nextBeat}s` : "—"}
               </div>
             </div>
+
             {lockInfo && (
               <>
                 <div style={{ gridColumn: "1 / -1" }}>
@@ -350,7 +350,7 @@ const SessionDebugWidget = ({
             )}
           </div>
 
-          {/* ── Category filter tabs ─────────────────────────────────────────── */}
+          {/* ── Category filter tabs ──────────────────────────────────── */}
           <div
             style={{
               display: "flex",
@@ -358,6 +358,7 @@ const SessionDebugWidget = ({
               padding: "6px 8px",
               borderBottom: "1px solid var(--border-color)",
               overflowX: "auto",
+              background: "var(--bg-surface)",
             }}
           >
             {(["all", "heartbeat", "rehydrate", "lock", "system"] as const).map(
@@ -379,7 +380,9 @@ const SessionDebugWidget = ({
                         : "transparent",
                       color: active
                         ? "var(--color-brand)"
-                        : "var(--text-muted)",
+                        : cat === "all"
+                        ? "var(--text-muted)"
+                        : CATEGORY_VAR[cat as Exclude<typeof cat, "all">],
                       cursor: "pointer",
                       fontSize: 10,
                       whiteSpace: "nowrap",
@@ -396,8 +399,15 @@ const SessionDebugWidget = ({
             )}
           </div>
 
-          {/* ── Log rows ─────────────────────────────────────────────────────── */}
-          <div style={{ maxHeight: 220, overflowY: "auto", padding: "4px 0" }}>
+          {/* ── Log rows ──────────────────────────────────────────────── */}
+          <div
+            style={{
+              maxHeight: 220,
+              overflowY: "auto",
+              padding: "4px 0",
+              background: "var(--bg-base)",
+            }}
+          >
             {filtered.length === 0 ? (
               <div style={{ color: "var(--text-muted)", padding: "8px 10px" }}>
                 No logs yet...
@@ -412,7 +422,7 @@ const SessionDebugWidget = ({
                     : log.status === "warn"
                     ? "var(--color-pend)"
                     : log.status === "pending"
-                    ? "#fb923c"
+                    ? "var(--color-pend)"
                     : "var(--text-secondary)";
                 return (
                   <div
@@ -421,7 +431,7 @@ const SessionDebugWidget = ({
                       padding: "3px 10px",
                       borderBottom: "1px solid var(--bg-surface)",
                       display: "grid",
-                      gridTemplateColumns: "68px 72px 1fr",
+                      gridTemplateColumns: "68px 76px 1fr",
                       gap: 4,
                       alignItems: "start",
                     }}
@@ -431,7 +441,7 @@ const SessionDebugWidget = ({
                     </span>
                     <span
                       style={{
-                        color: CATEGORY_COLOR[log.category],
+                        color: CATEGORY_VAR[log.category],
                         fontSize: 10,
                       }}
                     >
@@ -448,7 +458,7 @@ const SessionDebugWidget = ({
             )}
           </div>
 
-          {/* ── Footer ───────────────────────────────────────────────────────── */}
+          {/* ── Footer ────────────────────────────────────────────────── */}
           <div
             style={{
               padding: "5px 10px",
@@ -457,6 +467,9 @@ const SessionDebugWidget = ({
               justifyContent: "space-between",
               color: "var(--text-muted)",
               fontSize: 10,
+              background: "var(--bg-nav)",
+              backdropFilter: "blur(8px)",
+              WebkitBackdropFilter: "blur(8px)",
             }}
           >
             <span>heartbeat every {HEARTBEAT_MS / 1000}s</span>
@@ -477,7 +490,7 @@ const SessionDebugWidget = ({
               📋 dump
             </span>
           </div>
-        </div>
+        </>
       )}
     </div>
   );

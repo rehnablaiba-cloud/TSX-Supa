@@ -40,7 +40,7 @@ const ANIM_STYLE = `
 @keyframes fadeSlideIn    { from{opacity:0;transform:translateY(10px)}  to{opacity:1;transform:translateY(0)} }
 @keyframes fadeSlideInRow { from{opacity:0;transform:translateX(-6px)}  to{opacity:1;transform:translateX(0)} }
 @keyframes fadeScaleIn    { from{opacity:0;transform:scale(.95) translateY(-4px)} to{opacity:1;transform:scale(1) translateY(0)} }
-@keyframes neonPulse      { 0%,100%{box-shadow:0 0 0 0 rgba(34,211,238,0.0),0 0 12px 2px rgba(34,211,238,0.18)} 50%{box-shadow:0 0 0 0 rgba(34,211,238,0.0),0 0 22px 6px rgba(34,211,238,0.32)} }
+@keyframes neonPulse      { 0%,100%{box-shadow:0 0 0 0 rgba(var(--neon-cyan),0.0),0 0 12px 2px rgba(var(--neon-cyan),0.18)} 50%{box-shadow:0 0 0 0 rgba(var(--neon-cyan),0.0),0 0 22px 6px rgba(var(--neon-cyan),0.32)} }
 `;
 
 function useInjectStyle() {
@@ -320,7 +320,6 @@ const ModuleDashboard: React.FC<Props> = ({
   }, [chartData]);
 
   // ── Build export data — sorted + divider labels cleaned ──────────────────
-  // ── Build export data — sorted + divider labels cleaned ──────────────────
   const buildFlatData = (): FlatData[] =>
     module_tests.flatMap((mt) =>
       mt.step_results
@@ -334,7 +333,7 @@ const ModuleDashboard: React.FC<Props> = ({
         .map((sr) => ({
           module: module_name,
           test: mt.test?.name ?? mt.tests_name,
-          test_serial_no: mt.test?.serial_no ?? "", // ← ADD THIS LINE
+          test_serial_no: mt.test?.serial_no ?? "",
           serial: sr.step?.serial_no ?? 0,
           action: cleanDividerLabel(sr.step?.action ?? ""),
           expected: sr.step?.expected_result ?? "",
@@ -370,7 +369,16 @@ const ModuleDashboard: React.FC<Props> = ({
       <div className="flex-1 flex flex-col">
         <Topbar title={module_name} onBack={onBack} />
         <div className="p-6">
-          <div className="bg-red-500/10 border border-red-500/30 rounded-xl p-4 text-red-500 text-sm">
+          <div
+            className="rounded-xl p-4 text-sm"
+            style={{
+              background:
+                "color-mix(in srgb, var(--color-fail) 10%, transparent)",
+              border:
+                "1px solid color-mix(in srgb, var(--color-fail) 30%, transparent)",
+              color: "var(--color-fail)",
+            }}
+          >
             Failed to load module: {error}
           </div>
         </div>
@@ -379,7 +387,7 @@ const ModuleDashboard: React.FC<Props> = ({
 
   return (
     <div className="flex-1 flex flex-col">
-      {/* ── Export Modal — same design as TestExecution ────────────────────── */}
+      {/* ── Export Modal — uniform theme-aware buttons ─────────────────────── */}
       <ExportModal
         isOpen={showExportModal}
         onClose={() => setShowExportModal(false)}
@@ -390,15 +398,19 @@ const ModuleDashboard: React.FC<Props> = ({
           {
             label: "CSV",
             icon: <FileSpreadsheet size={16} />,
-            color: "bg-[var(--color-primary)]",
-            hoverColor: "hover:bg-[var(--color-primary-hover)]",
+            color:
+              "bg-[var(--bg-card)] border border-[var(--border-color)] text-[var(--text-primary)]",
+            hoverColor:
+              "hover:bg-[var(--bg-surface)] hover:border-[var(--color-brand)]",
             onConfirm: () => exportModuleDetailCSV(buildFlatData()),
           },
           {
             label: "PDF",
             icon: <FileText size={16} />,
-            color: "bg-[var(--color-blue)]",
-            hoverColor: "hover:bg-[var(--color-blue-hover)]",
+            color:
+              "bg-[var(--bg-card)] border border-[var(--border-color)] text-[var(--text-primary)]",
+            hoverColor:
+              "hover:bg-[var(--bg-surface)] hover:border-[var(--color-brand)]",
             onConfirm: () =>
               exportModuleDetailPDF(buildFlatData(), module_name),
           },
@@ -428,32 +440,60 @@ const ModuleDashboard: React.FC<Props> = ({
             {
               label: "Total",
               value: globalStats.total,
-              cls: "bg-bg-card text-t-primary",
+              style: {
+                background: "var(--bg-card)",
+                color: "var(--text-primary)",
+                border: "1px solid var(--border-color)",
+              } as React.CSSProperties,
             },
             {
               label: "Pass",
               value: globalStats.pass,
-              cls: "bg-green-500/10 text-green-400",
+              style: {
+                background:
+                  "color-mix(in srgb, var(--color-pass) 10%, transparent)",
+                color: "var(--color-pass)",
+                border:
+                  "1px solid color-mix(in srgb, var(--color-pass) 25%, transparent)",
+              } as React.CSSProperties,
             },
             {
               label: "Fail",
               value: globalStats.fail,
-              cls: "bg-red-500/10 text-red-400",
+              style: {
+                background:
+                  "color-mix(in srgb, var(--color-fail) 10%, transparent)",
+                color: "var(--color-fail)",
+                border:
+                  "1px solid color-mix(in srgb, var(--color-fail) 25%, transparent)",
+              } as React.CSSProperties,
             },
             {
               label: "Pending",
               value: globalStats.pending,
-              cls: "bg-amber-500/10 text-amber-400",
+              style: {
+                background:
+                  "color-mix(in srgb, var(--color-pend) 10%, transparent)",
+                color: "var(--color-pend)",
+                border:
+                  "1px solid color-mix(in srgb, var(--color-pend) 25%, transparent)",
+              } as React.CSSProperties,
             },
             {
               label: "Pass %",
               value: `${globalStats.passRate}%`,
-              cls: "bg-c-brand-bg text-c-brand",
+              style: {
+                background: "var(--color-brand-bg)",
+                color: "var(--color-brand)",
+                border:
+                  "1px solid color-mix(in srgb, var(--color-brand) 25%, transparent)",
+              } as React.CSSProperties,
             },
           ].map((s) => (
             <span
               key={s.label}
-              className={`flex items-center gap-1 text-xs font-bold px-3 py-1 rounded-full border border-[var(--border-color)] ${s.cls}`}
+              className="flex items-center gap-1 text-xs font-bold px-3 py-1 rounded-full"
+              style={s.style}
             >
               {s.label}: {s.value}
             </span>
@@ -516,9 +556,9 @@ const ModuleDashboard: React.FC<Props> = ({
 
             const cardStyle: React.CSSProperties = isMyLock
               ? {
-                  border: "1.5px solid rgba(34,211,238,0.55)",
+                  border: "1.5px solid rgba(var(--neon-cyan), 0.55)",
                   background:
-                    "linear-gradient(135deg, rgba(34,211,238,0.07) 0%, transparent 60%)",
+                    "linear-gradient(135deg, rgba(var(--neon-cyan), 0.07) 0%, transparent 60%)",
                   animation: "neonPulse 2.6s ease-in-out infinite",
                 }
               : {};
@@ -533,11 +573,24 @@ const ModuleDashboard: React.FC<Props> = ({
                   style={cardStyle}
                 >
                   {isMyLock && (
-                    <div className="flex items-center gap-1.5 self-start px-2.5 py-1 rounded-lg w-fit bg-cyan-500/15 border border-cyan-400/40 text-cyan-300 text-xs font-semibold">
-                      <Lock size={11} className="text-cyan-400" />
+                    <div
+                      className="flex items-center gap-1.5 self-start px-2.5 py-1 rounded-lg w-fit text-xs font-semibold"
+                      style={{
+                        color: "var(--color-my-lock)",
+                        borderColor:
+                          "color-mix(in srgb, var(--color-my-lock) 40%, transparent)",
+                        background:
+                          "color-mix(in srgb, var(--color-my-lock) 10%, transparent)",
+                        border: "1px solid",
+                      }}
+                    >
+                      <Lock
+                        size={11}
+                        style={{ color: "var(--color-my-lock)" }}
+                      />
                       <span>Locked by me</span>
-                      <span className="text-cyan-400/50">·</span>
-                      <span className="text-cyan-400/70">
+                      <span style={{ opacity: 0.5 }}>·</span>
+                      <span style={{ opacity: 0.7 }}>
                         {new Date(lock.locked_at).toLocaleTimeString([], {
                           hour: "2-digit",
                           minute: "2-digit",
@@ -547,11 +600,21 @@ const ModuleDashboard: React.FC<Props> = ({
                   )}
 
                   {isOtherLock && (
-                    <div className="flex items-center gap-1.5 self-start px-2.5 py-1 rounded-lg w-fit bg-amber-500/15 border border-amber-500/35 text-amber-400 text-xs font-semibold">
+                    <div
+                      className="flex items-center gap-1.5 self-start px-2.5 py-1 rounded-lg w-fit text-xs font-semibold"
+                      style={{
+                        color: "var(--color-other-lock)",
+                        borderColor:
+                          "color-mix(in srgb, var(--color-other-lock) 40%, transparent)",
+                        background:
+                          "color-mix(in srgb, var(--color-other-lock) 10%, transparent)",
+                        border: "1px solid",
+                      }}
+                    >
                       <Lock size={11} />
                       <span>In use by {lock.locked_by_name}</span>
-                      <span className="text-amber-400/50">·</span>
-                      <span className="text-amber-400/70">
+                      <span style={{ opacity: 0.5 }}>·</span>
+                      <span style={{ opacity: 0.7 }}>
                         {new Date(lock.locked_at).toLocaleTimeString([], {
                           hour: "2-digit",
                           minute: "2-digit",
@@ -559,13 +622,22 @@ const ModuleDashboard: React.FC<Props> = ({
                       </span>
                       {isAdmin && (
                         <>
-                          <span className="text-amber-400/30 mx-0.5">|</span>
+                          <span style={{ opacity: 0.3 }} className="mx-0.5">
+                            |
+                          </span>
                           <button
                             onClick={(e) => {
                               e.stopPropagation();
                               forceReleaseLock(mt.id, lock.locked_by_name);
                             }}
-                            className="flex items-center gap-1 text-[11px] font-bold text-red-400 hover:text-red-300 bg-red-500/10 hover:bg-red-500/20 border border-red-500/30 rounded-md px-1.5 py-0.5 transition-colors"
+                            className="flex items-center gap-1 text-[11px] font-bold rounded-md px-1.5 py-0.5 transition-colors"
+                            style={{
+                              color: "var(--color-fail)",
+                              background:
+                                "color-mix(in srgb, var(--color-fail) 10%, transparent)",
+                              border:
+                                "1px solid color-mix(in srgb, var(--color-fail) 30%, transparent)",
+                            }}
                           >
                             <Unlock size={10} />
                             Release
@@ -578,9 +650,12 @@ const ModuleDashboard: React.FC<Props> = ({
                   <div className="flex items-start justify-between gap-2">
                     <div className="flex items-center gap-2 flex-wrap min-w-0">
                       <span
-                        className={`font-mono text-xs font-bold shrink-0 ${
-                          isMyLock ? "text-cyan-400" : "text-c-brand"
-                        }`}
+                        className="font-mono text-xs font-bold shrink-0"
+                        style={{
+                          color: isMyLock
+                            ? "var(--color-my-lock)"
+                            : "var(--color-brand)",
+                        }}
                       >
                         {mt.test?.serial_no}
                       </span>
@@ -602,7 +677,21 @@ const ModuleDashboard: React.FC<Props> = ({
                       {isMyLock ? (
                         <button
                           onClick={() => onExecute(mt.id)}
-                          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all bg-cyan-500 hover:bg-cyan-400 text-gray-950 shadow-[0_0_14px_3px_rgba(34,211,238,0.40)] hover:shadow-[0_0_20px_5px_rgba(34,211,238,0.55)]"
+                          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all"
+                          style={{
+                            background: "var(--color-my-lock)",
+                            color: "#000",
+                            boxShadow:
+                              "0 0 14px 3px rgba(var(--neon-cyan), 0.40)",
+                          }}
+                          onMouseEnter={(e) => {
+                            e.currentTarget.style.boxShadow =
+                              "0 0 20px 5px rgba(var(--neon-cyan), 0.55)";
+                          }}
+                          onMouseLeave={(e) => {
+                            e.currentTarget.style.boxShadow =
+                              "0 0 14px 3px rgba(var(--neon-cyan), 0.40)";
+                          }}
                         >
                           <RotateCcw size={12} />
                           Resume
@@ -622,15 +711,24 @@ const ModuleDashboard: React.FC<Props> = ({
 
                   <div className="flex items-center gap-3 flex-wrap text-xs">
                     <span className="badge-pass">
-                      <span className="w-1.5 h-1.5 rounded-full bg-green-500 inline-block mr-1" />
+                      <span
+                        className="w-1.5 h-1.5 rounded-full inline-block mr-1"
+                        style={{ background: "var(--color-pass)" }}
+                      />
                       {pass} Pass
                     </span>
                     <span className="badge-fail">
-                      <span className="w-1.5 h-1.5 rounded-full bg-red-500 inline-block mr-1" />
+                      <span
+                        className="w-1.5 h-1.5 rounded-full inline-block mr-1"
+                        style={{ background: "var(--color-fail)" }}
+                      />
                       {fail} Fail
                     </span>
                     <span className="flex items-center gap-1 font-semibold text-t-muted bg-bg-card border border-[var(--border-color)] rounded-full px-2.5 py-0.5">
-                      <span className="w-1.5 h-1.5 rounded-full bg-[var(--text-muted)] inline-block" />
+                      <span
+                        className="w-1.5 h-1.5 rounded-full inline-block"
+                        style={{ background: "var(--text-muted)" }}
+                      />
                       {pending} Pending
                     </span>
                   </div>
@@ -655,14 +753,20 @@ const ModuleDashboard: React.FC<Props> = ({
                     <div className="h-1.5 w-full rounded-full overflow-hidden flex">
                       {passRate > 0 && (
                         <div
-                          className="h-full bg-green-500 transition-all duration-700"
-                          style={{ width: `${passRate}%` }}
+                          className="h-full transition-all duration-700"
+                          style={{
+                            width: `${passRate}%`,
+                            background: "var(--color-pass)",
+                          }}
                         />
                       )}
                       {failPct > 0 && (
                         <div
-                          className="h-full bg-red-500 transition-all duration-700"
-                          style={{ width: `${failPct}%` }}
+                          className="h-full transition-all duration-700"
+                          style={{
+                            width: `${failPct}%`,
+                            background: "var(--color-fail)",
+                          }}
                         />
                       )}
                       {100 - passRate - failPct > 0 && (
@@ -670,7 +774,7 @@ const ModuleDashboard: React.FC<Props> = ({
                           className="h-full transition-all duration-700"
                           style={{
                             width: `${100 - passRate - failPct}%`,
-                            backgroundColor: "var(--text-muted)",
+                            background: "var(--color-pend)",
                             opacity: 0.3,
                           }}
                         />
