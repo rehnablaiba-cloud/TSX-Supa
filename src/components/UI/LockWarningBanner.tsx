@@ -21,12 +21,15 @@ const LockWarningBanner: React.FC<Props> = ({
   const bannerRef = useRef<HTMLDivElement>(null);
 
   useLayoutEffect(() => {
-    if (bannerRef.current)
+    if (!bannerRef.current) return;
+    const ctx = gsap.context(() => {
       gsap.fromTo(
         bannerRef.current,
         { opacity: 0, y: -8 },
         { opacity: 1, y: 0, duration: 0.35, ease: "power2.out" }
       );
+    });
+    return () => ctx.revert();
   }, []);
 
   const totalOther = Array.from(otherLockedModules.values()).reduce(

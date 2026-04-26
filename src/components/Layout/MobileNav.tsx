@@ -84,20 +84,23 @@ const MobileNav: React.FC<Props> = ({ activePage, onNavigate }) => {
       .catch(() => {});
   }, []);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!navRef.current) return;
-    gsap.fromTo(
-      navRef.current,
-      { y: 80, opacity: 0, scale: 0.92 },
-      {
-        y: 0,
-        opacity: 1,
-        scale: 1,
-        duration: 0.65,
-        ease: "back.out(1.4)",
-        delay: 0.1,
-      }
-    );
+    const ctx = gsap.context(() => {
+      gsap.fromTo(
+        navRef.current,
+        { y: 80, opacity: 0, scale: 0.92 },
+        {
+          y: 0,
+          opacity: 1,
+          scale: 1,
+          duration: 0.65,
+          ease: "back.out(1.4)",
+          delay: 0.1,
+        }
+      );
+    });
+    return () => ctx.revert();
   }, []);
 
   // Click outside to close more menu
@@ -109,46 +112,49 @@ const MobileNav: React.FC<Props> = ({ activePage, onNavigate }) => {
   }, [moreOpen]);
 
   // Animate more popup
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!moreRef.current) return;
-    if (moreOpen) {
-      gsap.set(moreRef.current, { display: "flex" });
-      gsap.fromTo(
-        moreRef.current,
-        { opacity: 0, scale: 0.92, y: 8 },
-        {
-          opacity: 1,
-          scale: 1,
-          y: 0,
-          duration: 0.3,
-          ease: "back.out(1.4)",
-        }
-      );
-      const items = moreRef.current.querySelectorAll(".more-item");
-      gsap.fromTo(
-        items,
-        { opacity: 0, scale: 0.85 },
-        {
-          opacity: 1,
-          scale: 1,
-          duration: 0.25,
-          stagger: 0.02,
-          ease: "back.out(1.4)",
-          delay: 0.08,
-        }
-      );
-    } else {
-      gsap.to(moreRef.current, {
-        opacity: 0,
-        scale: 0.95,
-        y: 8,
-        duration: 0.2,
-        ease: "power2.in",
-        onComplete: () => {
-          if (moreRef.current) gsap.set(moreRef.current, { display: "none" });
-        },
-      });
-    }
+    const ctx = gsap.context(() => {
+      if (moreOpen) {
+        gsap.set(moreRef.current, { display: "flex" });
+        gsap.fromTo(
+          moreRef.current,
+          { opacity: 0, scale: 0.92, y: 8 },
+          {
+            opacity: 1,
+            scale: 1,
+            y: 0,
+            duration: 0.3,
+            ease: "back.out(1.4)",
+          }
+        );
+        const items = moreRef.current.querySelectorAll(".more-item");
+        gsap.fromTo(
+          items,
+          { opacity: 0, scale: 0.85 },
+          {
+            opacity: 1,
+            scale: 1,
+            duration: 0.25,
+            stagger: 0.02,
+            ease: "back.out(1.4)",
+            delay: 0.08,
+          }
+        );
+      } else {
+        gsap.to(moreRef.current, {
+          opacity: 0,
+          scale: 0.95,
+          y: 8,
+          duration: 0.2,
+          ease: "power2.in",
+          onComplete: () => {
+            if (moreRef.current) gsap.set(moreRef.current, { display: "none" });
+          },
+        });
+      }
+    });
+    return () => ctx.revert();
   }, [moreOpen]);
 
   const handleSignOut = async () => {
@@ -163,7 +169,7 @@ const MobileNav: React.FC<Props> = ({ activePage, onNavigate }) => {
   ) => {
     if (!el) return;
     gsap
-      .timeline()
+      .timeline({ overwrite: true })
       .to(el, { scale: 0.82, duration: 0.1, ease: "power2.in" })
       .to(el, { scale: 1.08, duration: 0.18, ease: "back.out(2)" })
       .to(el, { scale: 1, duration: 0.14, ease: "power2.out" });

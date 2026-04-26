@@ -19,12 +19,15 @@ const LoginPage: React.FC = () => {
   const { signIn } = useAuth();
   const { theme } = useTheme();
 
-  useEffect(() => {
-    gsap.fromTo(
-      cardRef.current,
-      { opacity: 0, y: 40, scale: 0.96 },
-      { opacity: 1, y: 0, scale: 1, duration: 0.7, ease: "back.out(1.4)" }
-    );
+  useLayoutEffect(() => {
+    const ctx = gsap.context(() => {
+      gsap.fromTo(
+        cardRef.current,
+        { opacity: 0, y: 40, scale: 0.96 },
+        { opacity: 1, y: 0, scale: 1, duration: 0.7, ease: "back.out(1.4)" }
+      );
+    });
+    return () => ctx.revert();
   }, []);
 
   // Countdown display while blocked

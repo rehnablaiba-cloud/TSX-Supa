@@ -19,26 +19,28 @@ const ModalShell: React.FC<ModalShellProps> = ({
   const backdropRef = useRef<HTMLDivElement>(null);
   const cardRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!backdropRef.current || !cardRef.current) return;
-
-    gsap.fromTo(
-      backdropRef.current,
-      { opacity: 0 },
-      { opacity: 1, duration: 0.25, ease: "power2.out" }
-    );
-    gsap.fromTo(
-      cardRef.current,
-      { opacity: 0, scale: 0.96, y: 16 },
-      {
-        opacity: 1,
-        scale: 1,
-        y: 0,
-        duration: 0.35,
-        ease: "back.out(1.4)",
-        delay: 0.05,
-      }
-    );
+    const ctx = gsap.context(() => {
+      gsap.fromTo(
+        backdropRef.current,
+        { opacity: 0 },
+        { opacity: 1, duration: 0.25, ease: "power2.out" }
+      );
+      gsap.fromTo(
+        cardRef.current,
+        { opacity: 0, scale: 0.96, y: 16 },
+        {
+          opacity: 1,
+          scale: 1,
+          y: 0,
+          duration: 0.35,
+          ease: "back.out(1.4)",
+          delay: 0.05,
+        }
+      );
+    });
+    return () => ctx.revert();
   }, []);
 
   const handleClose = () => {
@@ -46,6 +48,7 @@ const ModalShell: React.FC<ModalShellProps> = ({
       onClose();
       return;
     }
+    gsap.killTweensOf([cardRef.current, backdropRef.current]);
     gsap.to(cardRef.current, {
       opacity: 0,
       scale: 0.96,

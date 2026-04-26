@@ -163,19 +163,27 @@ const Dashboard: React.FC<Props> = ({ onNavigate }) => {
   }, [fetchModules, fetchActiveLocksData]);
 
   useLayoutEffect(() => {
-    if (!initialLoad && gridRef.current && gridRef.current.children.length > 0)
-      gsap.fromTo(
-        gridRef.current.children,
-        { opacity: 0, y: 16 },
-        {
-          opacity: 1,
-          y: 0,
-          stagger: 0.06,
-          duration: 0.4,
-          ease: "power2.out",
-          clearProps: "opacity,transform",
-        }
-      );
+    if (
+      !initialLoad &&
+      gridRef.current &&
+      gridRef.current.children.length > 0
+    ) {
+      const ctx = gsap.context(() => {
+        gsap.fromTo(
+          gridRef.current!.children,
+          { opacity: 0, y: 16 },
+          {
+            opacity: 1,
+            y: 0,
+            stagger: 0.06,
+            duration: 0.4,
+            ease: "power2.out",
+            clearProps: "opacity,transform",
+          }
+        );
+      });
+      return () => ctx.revert();
+    }
   }, [initialLoad, modules.length]);
 
   const summaries = useMemo(() => buildSummaries(modules), [modules]);
