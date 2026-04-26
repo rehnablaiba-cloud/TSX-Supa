@@ -446,7 +446,7 @@ const MobileNav: React.FC<Props> = ({ activePage, onNavigate }) => {
       <nav
         ref={navRef}
         className="fixed bottom-2 left-1/2 -translate-x-1/2 z-62 md:hidden
-    glass-frost rounded-[26px] flex items-center px-2 py-2 gap-1"
+      glass-frost rounded-[26px] flex items-center px-2 py-2 gap-1"
         style={{
           background: `color-mix(in srgb, var(--bg-surface) var(--glass-nav-bg-opacity), transparent)`,
           width: "calc(100% - 32px)",

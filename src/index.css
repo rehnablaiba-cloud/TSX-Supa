@@ -381,8 +381,8 @@
     --glass-brightness: 1.06;
     --glass-bg-opacity: 40%;
     --glass-border-opacity: 55%;
-    --glass-nav-bg-opacity: 75%; /* bottom navbar */
-    --glass-popup-bg-opacity: 72%; /* more popup */
+    --glass-nav-bg-opacity: 75%;    /* bottom navbar */
+--glass-popup-bg-opacity: 72%;  /* more popup */
   }
 
   /* ── Base ── */
