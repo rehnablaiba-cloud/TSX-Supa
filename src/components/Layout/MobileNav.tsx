@@ -39,25 +39,19 @@ import ImportStepsModal from "../Modals/ImportStepsModal";
 import ImportStepsManualModal from "../Modals/ImportStepsManualModal";
 import ExportTestDocxModal from "../Modals/ExportTestDocxModal";
 
-// ══════════════════════════════════════════════════════════════════════════════
-// REMOVED: useThemeColor() and useBorderColor() hooks
-// REPLACED BY: CSS color-mix() in style objects below
-// color-mix(in srgb, var(--x) N%, transparent) works with any CSS custom
-// property value (hex, rgb, hsl) without JS parsing.
-// ══════════════════════════════════════════════════════════════════════════════
-
 interface Props {
   activePage: string;
   onNavigate: (page: string, module_name?: string) => void;
 }
+
 type ActiveModal =
   | "export"
   | "modules"
   | "tests"
   | "steps-csv"
   | "steps-manual"
-  | "theme"
   | "test-docx"
+  | "theme"
   | null;
 
 const MobileNav: React.FC<Props> = ({ activePage, onNavigate }) => {
@@ -74,11 +68,6 @@ const MobileNav: React.FC<Props> = ({ activePage, onNavigate }) => {
 
   const isAdmin = user?.role === "admin";
 
-  // ── Dynamic glass colors via CSS color-mix() ────────────────────────────
-  // No parsing, no rAF, no hardcoded fallbacks. The browser resolves
-  // var(--bg-surface) etc. instantly and correctly, even if overridden
-  // by the ThemeEditor.
-
   const glassNav = useMemo(
     (): React.CSSProperties => ({
       background: `color-mix(in srgb, var(--bg-surface) 40%, transparent)`,
@@ -88,7 +77,7 @@ const MobileNav: React.FC<Props> = ({ activePage, onNavigate }) => {
       boxShadow:
         "0 8px 32px rgba(0,0,0,0.20), inset 0 1px 0 rgba(255,255,255,0.06)",
     }),
-    [] // ← no dependencies! CSS vars are resolved by browser at paint time
+    []
   );
 
   const glassSheet = useMemo(
@@ -112,7 +101,6 @@ const MobileNav: React.FC<Props> = ({ activePage, onNavigate }) => {
     []
   );
 
-  // ── Sheet drag-handle color ─────────────────────────────────────────────
   const dragHandleColor = `color-mix(in srgb, var(--border-color) 55%, transparent)`;
 
   useEffect(() => {
@@ -121,7 +109,6 @@ const MobileNav: React.FC<Props> = ({ activePage, onNavigate }) => {
       .catch(() => {});
   }, []);
 
-  // ── Navbar entrance ───────────────────────────────────────────────────────
   useEffect(() => {
     if (!navRef.current) return;
     gsap.fromTo(
@@ -138,7 +125,6 @@ const MobileNav: React.FC<Props> = ({ activePage, onNavigate }) => {
     );
   }, []);
 
-  // ── More sheet open/close ─────────────────────────────────────────────────
   useEffect(() => {
     if (!sheetRef.current || !overlayRef.current) return;
     if (menuOpen) {
@@ -224,10 +210,7 @@ const MobileNav: React.FC<Props> = ({ activePage, onNavigate }) => {
 
   return (
     <>
-      {/* ── Overlay ──────────────────────────────────────────────────────────
-          bottom:80 — overlay stops before the nav so the nav is never covered.
-          No backdropFilter here — backdrop-filter creates a stacking context
-          which makes z-index comparisons with siblings unreliable. */}
+      {/* Overlay */}
       <div
         ref={overlayRef}
         className="fixed top-0 left-0 right-0 md:hidden backdrop-dim"
@@ -241,7 +224,7 @@ const MobileNav: React.FC<Props> = ({ activePage, onNavigate }) => {
         onClick={closeMenu}
       />
 
-      {/* ── Sheet  z-[60] ────────────────────────────────────────────────── */}
+      {/* Sheet */}
       <div
         ref={sheetRef}
         className="fixed bottom-0 inset-x-0 z-[60] md:hidden rounded-t-[28px] flex-col"
@@ -278,7 +261,7 @@ const MobileNav: React.FC<Props> = ({ activePage, onNavigate }) => {
             paddingBottom: "calc(96px + env(safe-area-inset-bottom, 0px))",
           }}
         >
-          {/* Theme row */}
+          {/* Theme toggle */}
           <div className="sheet-item flex gap-2 mb-1">
             <button
               onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
@@ -290,19 +273,6 @@ const MobileNav: React.FC<Props> = ({ activePage, onNavigate }) => {
               </span>
               <span className="text-sm text-t-secondary font-medium">
                 {theme === "dark" ? "Light Mode" : "Dark Mode"}
-              </span>
-            </button>
-            <button
-              onClick={() => {
-                setModal("theme");
-                closeMenu();
-              }}
-              className="flex items-center gap-2.5 px-4 py-3 rounded-2xl transition-colors"
-              style={glassItem}
-            >
-              <Palette size={16} className="text-t-muted" />
-              <span className="text-sm text-t-secondary font-medium">
-                Theme
               </span>
             </button>
           </div>
@@ -343,6 +313,11 @@ const MobileNav: React.FC<Props> = ({ activePage, onNavigate }) => {
                     icon: <Hash size={15} />,
                     label: "Manage Steps",
                     modal: "steps-manual" as ActiveModal,
+                  },
+                  {
+                    icon: <Palette size={15} />,
+                    label: "Theme Editor",
+                    modal: "theme" as ActiveModal,
                   },
                 ] as {
                   icon: React.ReactNode;
@@ -385,9 +360,7 @@ const MobileNav: React.FC<Props> = ({ activePage, onNavigate }) => {
         </div>
       </div>
 
-      {/* ── Nav  z-[62] — above overlay(55) and sheet(60) ────────────────────
-          Rendered last in the DOM so it's the topmost painted sibling.
-          display is only hidden when a full-screen modal is open. */}
+      {/* Nav */}
       <nav
         ref={navRef}
         className="fixed bottom-2 left-1/2 -translate-x-1/2 z-[62] md:hidden
@@ -473,7 +446,7 @@ const MobileNav: React.FC<Props> = ({ activePage, onNavigate }) => {
         })}
       </nav>
 
-      {/* ── Modals ────────────────────────────────────────────────────────── */}
+      {/* Modals */}
       {activeModal === "export" && <ExportDataModal onClose={close} />}
       {activeModal === "test-docx" && <ExportTestDocxModal onClose={close} />}
       {activeModal === "modules" && (
