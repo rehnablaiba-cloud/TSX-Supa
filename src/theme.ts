@@ -197,8 +197,8 @@ export function applyTheme(mode: AppTheme) {
     }
   );
   // Neon vars (used by keyframe animations)
-  root.style.setProperty("--neon-cyanÜ, 211, 238");
-  root.style.setProperty("--neon-amberÔ5, 158, 11");
+  root.style.setProperty("--neon-cyan", "34, 211, 238");
+  root.style.setProperty("--neon-amber", "245, 158, 11");
 }
 
 // ── applyBrandShadeOverrides() ───────────────────────────────────────────────
