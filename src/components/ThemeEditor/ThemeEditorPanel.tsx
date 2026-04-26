@@ -3,20 +3,27 @@
  * ThemeEditorPanel.tsx
  * Simplified: auto-generates full brand palette from one color.
  * Admin-only · wrapped in ModalShell · matches all other modals.
+ *
+ * REFACTORED (Item 9): All save paths now call applyStoredTheme()
+ * from src/theme.ts — the same single source of truth used by
+ * ThemeContext on app init.
  */
 
 import React, { useState, useCallback } from "react";
 import { Palette } from "lucide-react";
 import ModalShell from "../Layout/ModalShell";
-import { useTheme, MuiConfig } from "../../context/ThemeContext";
 import { useAuth } from "../../context/AuthContext";
+import { useTheme, type MuiConfig } from "../../context/ThemeContext";
 import {
   tokens as defaultTokens,
   palette as defaultPalette,
-  TokenKey,
+  type TokenKey,
+  type BrandShade,
+  type GlassConfig,
   BRAND_SHADES,
-  BrandShade,
   brandShadeVar,
+  applyStoredTheme,
+  GLASS_DEFAULTS,
 } from "../../theme";
 
 // ─── Color math ───────────────────────────────────────────────────────────────
@@ -139,24 +146,6 @@ const LS_STATUS = "themeEditorStatusColors";
 const LS_BASE = "themeEditorBaseColor";
 const LS_GLASS = "themeEditorGlass";
 
-const GLASS_DEFAULTS = {
-  blur: 28,
-  saturation: 180,
-  brightness: 106,
-  bgOpacity: 40,
-  borderOpacity: 55,
-};
-type GlassConfig = typeof GLASS_DEFAULTS;
-
-function applyGlassCssVars(g: GlassConfig) {
-  const s = document.documentElement.style;
-  s.setProperty("--glass-blur", `${g.blur}px`);
-  s.setProperty("--glass-saturation", `${g.saturation}%`);
-  s.setProperty("--glass-brightness", `${(g.brightness / 100).toFixed(2)}`);
-  s.setProperty("--glass-bg-opacity", `${g.bgOpacity}%`);
-  s.setProperty("--glass-border-opacity", `${g.borderOpacity}%`);
-}
-
 // ─── Shared UI ────────────────────────────────────────────────────────────────
 
 const Swatch: React.FC<{
@@ -232,7 +221,7 @@ const Section: React.FC<{
 // ─── Tab: Brand ───────────────────────────────────────────────────────────────
 
 const BrandTab: React.FC = () => {
-  const { setTokenOverride } = useTheme();
+  const { setBrandPalette, setTokenOverride, mode } = useTheme();
 
   const [baseColor, setBaseColor] = useState<string>(
     () => localStorage.getItem(LS_BASE) ?? "#6366f1"
@@ -258,6 +247,7 @@ const BrandTab: React.FC = () => {
     }
   );
 
+  // Apply brand palette to DOM + persist
   const applyPalette = useCallback(
     (pal: Record<BrandShade, string>) => {
       BRAND_SHADES.forEach((shade) => {
@@ -290,6 +280,8 @@ const BrandTab: React.FC = () => {
     setPalette(pal);
     localStorage.setItem(LS_BRAND, JSON.stringify(pal));
     applyPalette(pal);
+    // ── UNIFIED APPLY ──
+    applyStoredTheme();
   };
 
   const handleStatusChange = (key: string, value: string) => {
@@ -297,6 +289,8 @@ const BrandTab: React.FC = () => {
     setStatusColors(next);
     localStorage.setItem(LS_STATUS, JSON.stringify(next));
     document.documentElement.style.setProperty(`--color-${key}`, value);
+    // ── UNIFIED APPLY ──
+    applyStoredTheme();
   };
 
   return (
@@ -307,7 +301,9 @@ const BrandTab: React.FC = () => {
             🎨 Brand Color
           </p>
           <button
-            onClick={() => handleBaseChange("#6366f1")}
+            onClick={() => {
+              handleBaseChange("#6366f1");
+            }}
             className="text-[10px] text-t-muted hover:text-fail"
           >
             Reset
@@ -403,6 +399,7 @@ const BrandTab: React.FC = () => {
               Object.entries(def).forEach(([k, v]) =>
                 document.documentElement.style.setProperty(`--color-${k}`, v)
               );
+              applyStoredTheme();
             }}
             className="text-[10px] text-t-muted hover:text-fail"
           >
@@ -469,9 +466,16 @@ const ModeTab: React.FC<{ mode: "light" | "dark" }> = ({ mode }) => {
               key={key}
               color={value}
               label={label}
-              onChange={(v) => setTokenOverride(mode, key, v)}
+              onChange={(v) => {
+                setTokenOverride(mode, key, v);
+                // ── UNIFIED APPLY ──
+                applyStoredTheme();
+              }}
               isOverridden={isOverridden}
-              onReset={() => setTokenOverride(mode, key, defVal)}
+              onReset={() => {
+                setTokenOverride(mode, key, defVal);
+                applyStoredTheme();
+              }}
             />
           );
         })}
@@ -667,13 +671,15 @@ const GlassTab: React.FC = () => {
     const next = { ...config, [key]: value };
     setConfig(next);
     localStorage.setItem(LS_GLASS, JSON.stringify(next));
-    applyGlassCssVars(next);
+    // ── UNIFIED APPLY ──
+    applyStoredTheme();
   };
 
   const handleReset = () => {
     setConfig({ ...GLASS_DEFAULTS });
     localStorage.removeItem(LS_GLASS);
-    applyGlassCssVars(GLASS_DEFAULTS);
+    // ── UNIFIED APPLY ──
+    applyStoredTheme();
   };
 
   const previewStyle: React.CSSProperties = {
@@ -776,7 +782,7 @@ const GlassTab: React.FC = () => {
 type Tab = "brand" | "light" | "dark" | "glass" | "mui";
 
 const ThemeEditorPanel: React.FC<{ onClose: () => void }> = ({ onClose }) => {
-  const { resetTokenOverrides, customTokens, muiConfig } = useTheme();
+  const { resetTokenOverrides, customTokens, muiConfig, resetAll } = useTheme();
   const [tab, setTab] = useState<Tab>("brand");
   const lc = Object.keys(customTokens.light).length;
   const dc = Object.keys(customTokens.dark).length;
@@ -809,10 +815,7 @@ const ThemeEditorPanel: React.FC<{ onClose: () => void }> = ({ onClose }) => {
           <button
             onClick={() => {
               if (confirm("Reset ALL overrides?")) {
-                resetTokenOverrides();
-                [LS_BRAND, LS_STATUS, LS_BASE].forEach((k) =>
-                  localStorage.removeItem(k)
-                );
+                resetAll();
               }
             }}
             className="text-xs px-3 py-1.5 rounded-lg bg-red-500/10 text-red-400 hover:bg-red-500/20 transition-colors"

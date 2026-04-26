@@ -6,6 +6,8 @@
  *  3. cssVarMap     — maps TokenKey → "--css-variable-name"
  *  4. applyTheme()  — writes dark/light defaults to :root
  *  5. applyBrandShadeOverrides() — layers brand palette overrides
+ *  6. applyStoredTheme() — UNIFIED: applies EVERYTHING from localStorage
+ *                          (called by both ThemeContext init & ThemeEditor save)
  */
 
 export type AppTheme = "light" | "dark";
@@ -33,7 +35,7 @@ export type TokenKey =
   | "colorBrandBg"
   | "colorPass"
   | "colorFail"
-  | "colorPend"; // ← ADD: status colors
+  | "colorPend";
 
 export type TokenMap = Record<TokenKey, string>;
 
@@ -58,9 +60,9 @@ export const cssVarMap: Record<TokenKey, string> = {
   colorBrand: "--color-brand",
   colorBrandHover: "--color-brand-hover",
   colorBrandBg: "--color-brand-bg",
-  colorPass: "--color-pass", // ← ADD
-  colorFail: "--color-fail", // ← ADD
-  colorPend: "--color-pend", // ← ADD
+  colorPass: "--color-pass",
+  colorFail: "--color-fail",
+  colorPend: "--color-pend",
 };
 
 // ── Brand shade helpers ──────────────────────────────────────────────────────
@@ -122,9 +124,9 @@ export const tokens: Record<AppTheme, TokenMap> = {
     colorBrand: palette.brand[500],
     colorBrandHover: palette.brand[400],
     colorBrandBg: "rgba(59,130,246,0.15)",
-    colorPass: palette.pass, // ← ADD
-    colorFail: palette.fail, // ← ADD
-    colorPend: palette.pend, // ← ADD
+    colorPass: palette.pass,
+    colorFail: palette.fail,
+    colorPend: palette.pend,
   },
   light: {
     bgBase: "#f8fafc",
@@ -146,16 +148,42 @@ export const tokens: Record<AppTheme, TokenMap> = {
     colorBrand: palette.brand[600],
     colorBrandHover: palette.brand[500],
     colorBrandBg: "rgba(37,99,235,0.10)",
-    colorPass: palette.pass, // ← ADD
-    colorFail: palette.fail, // ← ADD
-    colorPend: palette.pend, // ← ADD
+    colorPass: palette.pass,
+    colorFail: palette.fail,
+    colorPend: palette.pend,
   },
 };
 
 // Alias for ThemeEditorPanel compatibility
 export const defaultTokens = tokens;
 
-// ── applyTheme() ─────────────────────────────────────────────────────────────
+// ── Glass config type & defaults ─────────────────────────────────────────────
+export interface GlassConfig {
+  blur: number;
+  saturation: number;
+  brightness: number;
+  bgOpacity: number;
+  borderOpacity: number;
+}
+
+export const GLASS_DEFAULTS: GlassConfig = {
+  blur: 28,
+  saturation: 180,
+  brightness: 106,
+  bgOpacity: 40,
+  borderOpacity: 55,
+};
+
+// ── localStorage keys (must match ThemeEditorPanel) ──────────────────────────
+const LS_MODE = "themeMode";
+const LS_BRAND = "themeEditorBrandPalette";
+const LS_STATUS = "themeEditorStatusColors";
+const LS_BASE = "themeEditorBaseColor";
+const LS_GLASS = "themeEditorGlass";
+const LS_OVERRIDES = "themeEditorOverrides";
+const LS_MUI = "themeEditorMuiConfig";
+
+// ── applyTheme() ── base mode application ────────────────────────────────────
 export function applyTheme(mode: AppTheme) {
   const root = document.documentElement;
   const map = tokens[mode];
@@ -164,7 +192,7 @@ export function applyTheme(mode: AppTheme) {
       root.style.setProperty(varName, map[key]);
     }
   );
-  // Also set neon vars from palette (used by keyframe animations)
+  // Neon vars (used by keyframe animations)
   root.style.setProperty("--neon-cyan", "34, 211, 238");
   root.style.setProperty("--neon-amber", "245, 158, 11");
 }
@@ -180,4 +208,180 @@ export function applyBrandShadeOverrides(
       root.style.setProperty(brandShadeVar(shade), saved);
     }
   });
+}
+
+// ── applyGlassCssVars() ──────────────────────────────────────────────────────
+export function applyGlassCssVars(g: GlassConfig) {
+  const s = document.documentElement.style;
+  s.setProperty("--glass-blur", `${g.blur}px`);
+  s.setProperty("--glass-saturation", `${g.saturation}%`);
+  s.setProperty("--glass-brightness", `${(g.brightness / 100).toFixed(2)}`);
+  s.setProperty("--glass-bg-opacity", `${g.bgOpacity}%`);
+  s.setProperty("--glass-border-opacity", `${g.borderOpacity}%`);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+//  UNIFIED THEME APPLICATION — Item 9 Fix
+//  Single function called by BOTH ThemeContext init AND ThemeEditor save.
+// ═══════════════════════════════════════════════════════════════════════════════
+
+export interface StoredTheme {
+  mode: AppTheme;
+  brandPalette?: Partial<Record<BrandShade, string>>;
+  statusColors?: Record<string, string>;
+  glass?: GlassConfig;
+  overrides?: Record<AppTheme, Partial<TokenMap>>;
+}
+
+/**
+ * Load the complete stored theme from localStorage.
+ * Returns null if nothing is stored.
+ */
+export function loadStoredTheme(): StoredTheme | null {
+  try {
+    const mode = (localStorage.getItem(LS_MODE) as AppTheme) || "light";
+    const brandPalette = (() => {
+      const r = localStorage.getItem(LS_BRAND);
+      return r
+        ? (JSON.parse(r) as Partial<Record<BrandShade, string>>)
+        : undefined;
+    })();
+    const statusColors = (() => {
+      const r = localStorage.getItem(LS_STATUS);
+      return r ? (JSON.parse(r) as Record<string, string>) : undefined;
+    })();
+    const glass = (() => {
+      const r = localStorage.getItem(LS_GLASS);
+      return r
+        ? ({ ...GLASS_DEFAULTS, ...JSON.parse(r) } as GlassConfig)
+        : undefined;
+    })();
+    const overrides = (() => {
+      const r = localStorage.getItem(LS_OVERRIDES);
+      return r
+        ? (JSON.parse(r) as Record<AppTheme, Partial<TokenMap>>)
+        : undefined;
+    })();
+
+    return { mode, brandPalette, statusColors, glass, overrides };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Save the complete theme to localStorage.
+ */
+export function saveStoredTheme(theme: StoredTheme): void {
+  localStorage.setItem(LS_MODE, theme.mode);
+  if (theme.brandPalette) {
+    localStorage.setItem(LS_BRAND, JSON.stringify(theme.brandPalette));
+  }
+  if (theme.statusColors) {
+    localStorage.setItem(LS_STATUS, JSON.stringify(theme.statusColors));
+  }
+  if (theme.glass) {
+    localStorage.setItem(LS_GLASS, JSON.stringify(theme.glass));
+  }
+  if (theme.overrides) {
+    localStorage.setItem(LS_OVERRIDES, JSON.stringify(theme.overrides));
+  }
+}
+
+/**
+ * Apply EVERYTHING to the DOM in one shot.
+ * This is the single source of truth for how themes get applied.
+ *
+ * Call sites:
+ *   • ThemeContext.tsx — on app mount (prevents FOUC)
+ *   • ThemeEditorPanel.tsx — on "Apply & Save" button click
+ *   • Any future theme restore/reset path
+ */
+export function applyStoredTheme(theme?: StoredTheme): void {
+  const t = theme ?? loadStoredTheme() ?? { mode: "light" };
+
+  // 1. Base mode tokens
+  applyTheme(t.mode);
+
+  // 2. Brand palette overrides
+  if (t.brandPalette && Object.keys(t.brandPalette).length > 0) {
+    applyBrandShadeOverrides(t.brandPalette);
+  }
+
+  // 3. Status color overrides (pass/fail/pend)
+  if (t.statusColors) {
+    Object.entries(t.statusColors).forEach(([key, value]) => {
+      document.documentElement.style.setProperty(`--color-${key}`, value);
+    });
+  }
+
+  // 4. Glass effect config
+  if (t.glass) {
+    applyGlassCssVars(t.glass);
+  } else {
+    applyGlassCssVars(GLASS_DEFAULTS);
+  }
+
+  // 5. Mode-specific token overrides (light/dark custom colours)
+  if (t.overrides) {
+    (Object.entries(t.overrides) as [AppTheme, Partial<TokenMap>][]).forEach(
+      ([mode, modeOverrides]) => {
+        // Only apply overrides for the CURRENT mode to avoid polluting inactive mode vars
+        if (mode === t.mode) {
+          Object.entries(modeOverrides).forEach(([key, value]) => {
+            const varName = cssVarMap[key as TokenKey];
+            if (varName && value) {
+              document.documentElement.style.setProperty(varName, value);
+            }
+          });
+        }
+      }
+    );
+  }
+
+  // 6. Sync dark/light class on <html>
+  document.documentElement.classList.remove("light", "dark");
+  document.documentElement.classList.add(t.mode);
+
+  // 7. Meta theme-color for mobile browsers
+  const metaTheme = document.querySelector('meta[name="theme-color"]');
+  if (metaTheme) {
+    metaTheme.setAttribute(
+      "content",
+      t.mode === "dark" ? "#030712" : "#f8fafc"
+    );
+  }
+}
+
+/**
+ * Initialise theme on app boot.
+ * Call once in main.tsx or App.tsx before React paint.
+ */
+export function initTheme(): void {
+  const stored = loadStoredTheme();
+  if (stored) {
+    applyStoredTheme(stored);
+  } else {
+    // First visit — detect system preference
+    const prefersDark = window.matchMedia(
+      "(prefers-color-scheme: dark)"
+    ).matches;
+    applyStoredTheme({ mode: prefersDark ? "dark" : "light" });
+  }
+}
+
+/**
+ * Reset theme to defaults (clears all localStorage keys).
+ */
+export function resetTheme(): void {
+  [
+    LS_MODE,
+    LS_BRAND,
+    LS_STATUS,
+    LS_BASE,
+    LS_GLASS,
+    LS_OVERRIDES,
+    LS_MUI,
+  ].forEach((k) => localStorage.removeItem(k));
+  applyStoredTheme({ mode: "light" });
 }

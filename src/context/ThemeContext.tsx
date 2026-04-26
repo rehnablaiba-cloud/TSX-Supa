@@ -1,359 +1,252 @@
-/**
- * ThemeContext.tsx
- *
- * Manages:
- *  1. light / dark mode  — applyTheme() from theme.ts
- *  2. Token overrides    — layered on top of defaults, persisted to localStorage
- *  3. MUI config         — active flag + typography/shape settings, also persisted
- *  4. Glass config       — blur, saturation, brightness, opacity values
- *  5. Status colors      — pass / fail / pending overrides
- */
 import React, {
   createContext,
   useContext,
+  useCallback,
   useEffect,
   useState,
-  useCallback,
 } from "react";
 import {
-  applyTheme,
-  applyBrandShadeOverrides,
-  cssVarMap,
-  TokenKey,
-  TokenMap,
-  BrandShade,
-  tokens,
+  type AppTheme,
+  type TokenKey,
+  type TokenMap,
+  type BrandShade,
+  type GlassConfig,
+  type StoredTheme,
+  loadStoredTheme,
+  saveStoredTheme,
+  applyStoredTheme,
+  GLASS_DEFAULTS,
+  tokens as defaultTokens,
+  palette as defaultPalette,
 } from "../theme";
 
-// ─── Types ────────────────────────────────────────────────────────────────────
-
-export type AppTheme = "light" | "dark";
-
-type ModeOverrides = Partial<TokenMap>;
-type CustomTokens = { light: ModeOverrides; dark: ModeOverrides };
+// ═══════════════════════════════════════════════════════════════════════════════
+//  ThemeContext — React state layer over the unified applyStoredTheme()
+//
+//  Responsibilities:
+//    1. Mirror localStorage theme state in React state (for UI binding)
+//    2. Provide setters that persist AND apply via applyStoredTheme()
+//    3. Expose MUI config (separate from CSS vars, but persisted together)
+// ═══════════════════════════════════════════════════════════════════════════════
 
 export interface MuiConfig {
   active: boolean;
-  fontFamily: string;
-  fontSize: number;
-  fontWeightRegular: number;
-  fontWeightMedium: number;
-  fontWeightBold: number;
   borderRadius: number;
   buttonBorderRadius: number;
   textFieldBorderRadius: number;
-  buttonTextTransform: "none" | "uppercase" | "capitalize";
+  fontSize: number;
   disablePaperBgImage: boolean;
 }
 
-export interface GlassConfig {
-  blur: number;
-  saturation: number;
-  brightness: number;
-  bgOpacity: number;
-  borderOpacity: number;
-}
-
-export interface StatusColors {
-  pass: string;
-  fail: string;
-  pending: string;
-}
-
-// ─── Defaults ─────────────────────────────────────────────────────────────────
-
-export const MUI_CONFIG_DEFAULTS: MuiConfig = {
+const DEFAULT_MUI: MuiConfig = {
   active: false,
-  fontFamily: "Inter, system-ui, sans-serif",
-  fontSize: 14,
-  fontWeightRegular: 400,
-  fontWeightMedium: 500,
-  fontWeightBold: 700,
   borderRadius: 12,
-  buttonBorderRadius: 12,
-  textFieldBorderRadius: 12,
-  buttonTextTransform: "none",
-  disablePaperBgImage: true,
+  buttonBorderRadius: 10,
+  textFieldBorderRadius: 10,
+  fontSize: 14,
+  disablePaperBgImage: false,
 };
 
-export const GLASS_DEFAULTS: GlassConfig = {
-  blur: 28,
-  saturation: 180,
-  brightness: 1.06,
-  bgOpacity: 40,
-  borderOpacity: 55,
-};
-
-export const STATUS_DEFAULTS: StatusColors = {
-  pass: "#22c55e",
-  fail: "#ef4444",
-  pending: "#f59e0b",
-};
-
-// ─── LocalStorage keys ────────────────────────────────────────────────────────
-
-const LS_THEME = "theme";
-const LS_OVERRIDES = "themeEditorOverrides";
 const LS_MUI = "themeEditorMuiConfig";
-const LS_BRAND_KEY = "themeEditorBrandPalette";
-const LS_GLASS = "themeEditorGlass";
-const LS_STATUS = "themeEditorStatusColors";
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
+interface ThemeContextValue {
+  // Current mode
+  mode: AppTheme;
+  setMode: (mode: AppTheme) => void;
 
-function loadOverrides(): CustomTokens {
-  try {
-    const r = localStorage.getItem(LS_OVERRIDES);
-    if (r) return JSON.parse(r);
-  } catch {}
-  return { light: {}, dark: {} };
-}
-
-function loadMuiConfig(): MuiConfig {
-  try {
-    const r = localStorage.getItem(LS_MUI);
-    if (r) return { ...MUI_CONFIG_DEFAULTS, ...JSON.parse(r) };
-  } catch {}
-  return { ...MUI_CONFIG_DEFAULTS };
-}
-
-function loadBrandOverrides(): Partial<Record<BrandShade, string>> {
-  try {
-    const r = localStorage.getItem(LS_BRAND_KEY);
-    if (r) return JSON.parse(r);
-  } catch {}
-  return {};
-}
-
-function loadGlassConfig(): GlassConfig {
-  try {
-    const r = localStorage.getItem(LS_GLASS);
-    if (r) return { ...GLASS_DEFAULTS, ...JSON.parse(r) };
-  } catch {}
-  return { ...GLASS_DEFAULTS };
-}
-
-function loadStatusColors(): StatusColors {
-  try {
-    const r = localStorage.getItem(LS_STATUS);
-    if (r) return { ...STATUS_DEFAULTS, ...JSON.parse(r) };
-  } catch {}
-  return { ...STATUS_DEFAULTS };
-}
-
-function applyGlassConfig(config: GlassConfig) {
-  const root = document.documentElement;
-  root.style.setProperty("--glass-blur", `${config.blur}px`);
-  root.style.setProperty("--glass-saturation", `${config.saturation}%`);
-  root.style.setProperty("--glass-brightness", `${config.brightness}`);
-  root.style.setProperty("--glass-bg-opacity", `${config.bgOpacity}%`);
-  root.style.setProperty("--glass-border-opacity", `${config.borderOpacity}%`);
-}
-
-function applyStatusColors(colors: StatusColors) {
-  const root = document.documentElement;
-  root.style.setProperty("--color-pass", colors.pass);
-  root.style.setProperty("--color-fail", colors.fail);
-  root.style.setProperty("--color-pend", colors.pending);
-}
-
-/** Sync data-theme attribute and theme-color meta tag */
-function syncThemeAttributes(mode: AppTheme) {
-  const root = document.documentElement;
-  root.setAttribute("data-theme", mode);
-
-  const meta = document.getElementById(
-    "theme-color-meta"
-  ) as HTMLMetaElement | null;
-  if (meta) {
-    meta.content = tokens[mode].bgBase;
-  }
-}
-
-/**
- * ── applyStoredTheme ─────────────────────────────────────────────────────────
- * Reads EVERY persisted theme layer from localStorage and applies it.
- * Call this once on app startup (and after any external storage mutation).
- */
-export function applyStoredTheme(mode: AppTheme) {
-  const overrides = loadOverrides();
-  const brand = loadBrandOverrides();
-  const glass = loadGlassConfig();
-  const status = loadStatusColors();
-
-  applyTheme(mode);
-  const root = document.documentElement;
-  (Object.entries(overrides[mode]) as [TokenKey, string][]).forEach(
-    ([key, value]) => {
-      if (value) root.style.setProperty(cssVarMap[key], value);
-    }
-  );
-  applyBrandShadeOverrides(brand);
-  applyGlassConfig(glass);
-  applyStatusColors(status);
-  syncThemeAttributes(mode);
-}
-
-// ─── Context type ─────────────────────────────────────────────────────────────
-
-interface ThemeContextType {
-  theme: AppTheme;
-  toggleTheme: () => void;
-  setTheme: (t: AppTheme) => void;
-
-  customTokens: CustomTokens;
+  // Token overrides per mode (exposed for ThemeEditor)
+  customTokens: Record<AppTheme, Partial<TokenMap>>;
   setTokenOverride: (mode: AppTheme, key: TokenKey, value: string) => void;
   resetTokenOverrides: () => void;
 
+  // Brand palette (exposed for ThemeEditor)
+  brandPalette: Partial<Record<BrandShade, string>> | null;
+  setBrandPalette: (palette: Partial<Record<BrandShade, string>>) => void;
+
+  // Status colors
+  statusColors: Record<string, string>;
+  setStatusColor: (key: string, value: string) => void;
+
+  // Glass config
+  glassConfig: GlassConfig;
+  setGlassConfig: (config: GlassConfig) => void;
+
+  // MUI config
   muiConfig: MuiConfig;
-  setMuiConfig: (cfg: Partial<MuiConfig>) => void;
+  setMuiConfig: (config: Partial<MuiConfig>) => void;
   resetMuiConfig: () => void;
 
-  glassConfig: GlassConfig;
-  setGlassConfig: (cfg: Partial<GlassConfig>) => void;
-  resetGlassConfig: () => void;
+  // Unified apply (for external callers / debug)
+  reapplyTheme: () => void;
 
-  statusColors: StatusColors;
-  setStatusColors: (cfg: Partial<StatusColors>) => void;
-  resetStatusColors: () => void;
+  // Reset everything
+  resetAll: () => void;
 }
 
-// ─── Context + Provider ───────────────────────────────────────────────────────
+const ThemeContext = createContext<ThemeContextValue | undefined>(undefined);
 
-const ThemeContext = createContext<ThemeContextType>({
-  theme: "dark",
-  toggleTheme: () => {},
-  setTheme: () => {},
-  customTokens: { light: {}, dark: {} },
-  setTokenOverride: () => {},
-  resetTokenOverrides: () => {},
-  muiConfig: MUI_CONFIG_DEFAULTS,
-  setMuiConfig: () => {},
-  resetMuiConfig: () => {},
-  glassConfig: GLASS_DEFAULTS,
-  setGlassConfig: () => {},
-  resetGlassConfig: () => {},
-  statusColors: STATUS_DEFAULTS,
-  setStatusColors: () => {},
-  resetStatusColors: () => {},
-});
+// ── Helper: load MUI config from localStorage ────────────────────────────────
+function loadMuiConfig(): MuiConfig {
+  try {
+    const raw = localStorage.getItem(LS_MUI);
+    if (raw) return { ...DEFAULT_MUI, ...JSON.parse(raw) };
+  } catch {}
+  return { ...DEFAULT_MUI };
+}
 
+function saveMuiConfig(config: MuiConfig) {
+  localStorage.setItem(LS_MUI, JSON.stringify(config));
+}
+
+// ── Provider ─────────────────────────────────────────────────────────────────
 export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({
   children,
 }) => {
-  const [theme, setThemeState] = useState<AppTheme>(
-    () => (localStorage.getItem(LS_THEME) as AppTheme) ?? "dark"
+  const [isReady, setIsReady] = useState(false);
+
+  // Load persisted state
+  const stored = loadStoredTheme();
+  const [mode, setModeState] = useState<AppTheme>(stored?.mode ?? "light");
+  const [customTokens, setCustomTokens] = useState<
+    Record<AppTheme, Partial<TokenMap>>
+  >(stored?.overrides ?? { light: {}, dark: {} });
+  const [brandPalette, setBrandPaletteState] = useState<Partial<
+    Record<BrandShade, string>
+  > | null>(stored?.brandPalette ?? null);
+  const [statusColors, setStatusColorsState] = useState<Record<string, string>>(
+    stored?.statusColors ?? {
+      pass: defaultPalette.pass,
+      fail: defaultPalette.fail,
+      pend: defaultPalette.pend,
+    }
   );
-  const [customTokens, setCustomTokens] = useState<CustomTokens>(loadOverrides);
+  const [glassConfig, setGlassConfigState] = useState<GlassConfig>(
+    stored?.glass ?? { ...GLASS_DEFAULTS }
+  );
   const [muiConfig, setMuiConfigState] = useState<MuiConfig>(loadMuiConfig);
-  const [glassConfig, setGlassConfigState] =
-    useState<GlassConfig>(loadGlassConfig);
-  const [statusColors, setStatusColorsState] =
-    useState<StatusColors>(loadStatusColors);
 
-  // ── CRITICAL: apply EVERY stored theme layer on mount ──────────────────────
+  // ── Apply theme on mount (prevents FOUC) ──────────────────────────────────
   useEffect(() => {
-    console.group("🚀 ThemeProvider init");
-    console.log("Mode:", theme);
-    console.log("Overrides:", customTokens);
-    console.log("MUI config:", muiConfig);
-    console.log("Glass config:", glassConfig);
-    console.log("Status colors:", statusColors);
+    applyStoredTheme();
+    setIsReady(true);
+  }, []);
+
+  // ── Re-apply whenever core theme state changes ────────────────────────────
+  useEffect(() => {
+    if (!isReady) return;
+    const theme: StoredTheme = {
+      mode,
+      brandPalette: brandPalette ?? undefined,
+      statusColors,
+      glass: glassConfig,
+      overrides: customTokens,
+    };
+    saveStoredTheme(theme);
     applyStoredTheme(theme);
-    localStorage.setItem(LS_THEME, theme);
-    console.log("✅ applyStoredTheme() completed");
-    console.groupEnd();
-  }, [theme, customTokens]);
+  }, [mode, brandPalette, statusColors, glassConfig, customTokens, isReady]);
 
-  const setTheme = (t: AppTheme) => setThemeState(t);
-  const toggleTheme = () =>
-    setThemeState((p) => (p === "dark" ? "light" : "dark"));
+  // ── Mode ──────────────────────────────────────────────────────────────────
+  const setMode = useCallback((newMode: AppTheme) => {
+    setModeState(newMode);
+    localStorage.setItem("themeMode", newMode);
+  }, []);
 
+  // ── Token overrides ───────────────────────────────────────────────────────
   const setTokenOverride = useCallback(
-    (mode: AppTheme, key: TokenKey, value: string) => {
-      setCustomTokens((prev) => {
-        const next = { light: { ...prev.light }, dark: { ...prev.dark } };
-        next[mode] = { ...next[mode], [key]: value };
-        localStorage.setItem(LS_OVERRIDES, JSON.stringify(next));
-        return next;
-      });
+    (targetMode: AppTheme, key: TokenKey, value: string) => {
+      setCustomTokens((prev) => ({
+        ...prev,
+        [targetMode]: { ...prev[targetMode], [key]: value },
+      }));
     },
     []
   );
 
   const resetTokenOverrides = useCallback(() => {
-    const empty: CustomTokens = { light: {}, dark: {} };
-    localStorage.setItem(LS_OVERRIDES, JSON.stringify(empty));
-    setCustomTokens(empty);
+    setCustomTokens({ light: {}, dark: {} });
+    localStorage.removeItem("themeEditorOverrides");
+    // Re-apply base theme to clear override CSS vars
+    applyStoredTheme({ mode, glass: glassConfig });
+  }, [mode, glassConfig]);
+
+  // ── Brand palette ─────────────────────────────────────────────────────────
+  const setBrandPalette = useCallback(
+    (palette: Partial<Record<BrandShade, string>>) => {
+      setBrandPaletteState(palette);
+    },
+    []
+  );
+
+  // ── Status colors ─────────────────────────────────────────────────────────
+  const setStatusColor = useCallback((key: string, value: string) => {
+    setStatusColorsState((prev) => ({ ...prev, [key]: value }));
   }, []);
 
+  // ── Glass ─────────────────────────────────────────────────────────────────
+  const setGlassConfig = useCallback((config: GlassConfig) => {
+    setGlassConfigState(config);
+  }, []);
+
+  // ── MUI ───────────────────────────────────────────────────────────────────
   const setMuiConfig = useCallback((patch: Partial<MuiConfig>) => {
-    console.group("🎨 ThemeContext.setMuiConfig");
-    console.log("Incoming patch:", patch);
     setMuiConfigState((prev) => {
       const next = { ...prev, ...patch };
-      console.log("Previous:", prev);
-      console.log("Next:", next);
-      localStorage.setItem(LS_MUI, JSON.stringify(next));
-      console.log("✅ Written to localStorage:", LS_MUI);
-      console.groupEnd();
+      saveMuiConfig(next);
       return next;
     });
   }, []);
 
   const resetMuiConfig = useCallback(() => {
-    localStorage.setItem(LS_MUI, JSON.stringify(MUI_CONFIG_DEFAULTS));
-    setMuiConfigState({ ...MUI_CONFIG_DEFAULTS });
+    setMuiConfigState({ ...DEFAULT_MUI });
+    saveMuiConfig({ ...DEFAULT_MUI });
   }, []);
 
-  const setGlassConfig = useCallback((patch: Partial<GlassConfig>) => {
-    setGlassConfigState((prev) => {
-      const next = { ...prev, ...patch };
-      localStorage.setItem(LS_GLASS, JSON.stringify(next));
-      applyGlassConfig(next);
-      return next;
+  // ── Re-apply (for debug / external sync) ──────────────────────────────────
+  const reapplyTheme = useCallback(() => {
+    applyStoredTheme();
+  }, []);
+
+  // ── Reset all ─────────────────────────────────────────────────────────────
+  const resetAll = useCallback(() => {
+    setModeState("light");
+    setCustomTokens({ light: {}, dark: {} });
+    setBrandPaletteState(null);
+    setStatusColorsState({
+      pass: defaultPalette.pass,
+      fail: defaultPalette.fail,
+      pend: defaultPalette.pend,
     });
-  }, []);
-
-  const resetGlassConfig = useCallback(() => {
-    localStorage.setItem(LS_GLASS, JSON.stringify(GLASS_DEFAULTS));
     setGlassConfigState({ ...GLASS_DEFAULTS });
-    applyGlassConfig(GLASS_DEFAULTS);
-  }, []);
-
-  const setStatusColors = useCallback((patch: Partial<StatusColors>) => {
-    setStatusColorsState((prev) => {
-      const next = { ...prev, ...patch };
-      localStorage.setItem(LS_STATUS, JSON.stringify(next));
-      applyStatusColors(next);
-      return next;
-    });
-  }, []);
-
-  const resetStatusColors = useCallback(() => {
-    localStorage.setItem(LS_STATUS, JSON.stringify(STATUS_DEFAULTS));
-    setStatusColorsState({ ...STATUS_DEFAULTS });
-    applyStatusColors(STATUS_DEFAULTS);
+    setMuiConfigState({ ...DEFAULT_MUI });
+    localStorage.removeItem("themeMode");
+    localStorage.removeItem("themeEditorOverrides");
+    localStorage.removeItem("themeEditorBrandPalette");
+    localStorage.removeItem("themeEditorStatusColors");
+    localStorage.removeItem("themeEditorGlass");
+    localStorage.removeItem("themeEditorBaseColor");
+    localStorage.removeItem(LS_MUI);
+    applyStoredTheme({ mode: "light" });
   }, []);
 
   return (
     <ThemeContext.Provider
       value={{
-        theme,
-        toggleTheme,
-        setTheme,
+        mode,
+        setMode,
         customTokens,
         setTokenOverride,
         resetTokenOverrides,
+        brandPalette,
+        setBrandPalette,
+        statusColors,
+        setStatusColor,
+        glassConfig,
+        setGlassConfig,
         muiConfig,
         setMuiConfig,
         resetMuiConfig,
-        glassConfig,
-        setGlassConfig,
-        resetGlassConfig,
-        statusColors,
-        setStatusColors,
-        resetStatusColors,
+        reapplyTheme,
+        resetAll,
       }}
     >
       {children}
@@ -361,4 +254,8 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({
   );
 };
 
-export const useTheme = () => useContext(ThemeContext);
+export const useTheme = () => {
+  const ctx = useContext(ThemeContext);
+  if (!ctx) throw new Error("useTheme must be used within ThemeProvider");
+  return ctx;
+};

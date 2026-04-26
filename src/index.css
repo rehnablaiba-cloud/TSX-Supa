@@ -4,12 +4,12 @@
 
 /*
  * ═══════════════════════════════════════════════════════════════════════
- *  THEME TOKENS  —  Set at runtime by applyTheme() in src/theme.ts
+ *  THEME TOKENS  —  Set at runtime by applyStoredTheme() in src/theme.ts
  *  :root holds NEUTRAL defaults only. Real values injected via JS.
  * ═══════════════════════════════════════════════════════════════════════
  */
 :root {
-  /* Neutral fallbacks — overridden immediately by applyTheme() */
+  /* Neutral fallbacks — overridden immediately by applyStoredTheme() */
   --bg-base: #f8fafc;
   --bg-surface: #ffffff;
   --bg-card: #f1f5f9;
@@ -46,22 +46,24 @@
   --brand-700: #1d4ed8;
   --brand-800: #1e40af;
   --brand-900: #1e3a8a;
+
+  /* Divider colors — consumed by TestExecution.tsx */
   --color-divider-1: #14b8a6;
   --color-divider-2: #f59e0b;
   --color-divider-3: #0ea5e9;
 
+  /* Log system colors — consumed by DevTools/SessionLog.tsx */
+  --log-auth-bg: color-mix(in srgb, var(--color-brand) 15%, transparent);
+  --log-auth-text: var(--color-brand);
+  --log-level-info: var(--color-brand);
+  --log-level-warn: var(--color-pend);
+  --log-level-error: var(--color-fail);
+
   /*
    * ── Glass effect vars ──────────────────────────────────────────────
-   *  Written at runtime by applyGlassCssVars() in ThemeEditorPanel.
+   *  Written at runtime by applyGlassCssVars() in src/theme.ts.
    *  Fallbacks here match GLASS_DEFAULTS so the UI is correct before
    *  any user customisation is loaded.
-   *
-   *  Contract (must match applyGlassCssVars output format):
-   *    --glass-blur           → <number>px          e.g. 28px
-   *    --glass-saturation     → <number>%            e.g. 180%
-   *    --glass-brightness     → <decimal>            e.g. 1.06   ← no %
-   *    --glass-bg-opacity     → <number>%            e.g. 40%
-   *    --glass-border-opacity → <number>%            e.g. 55%
    */
   --glass-blur: 28px;
   --glass-saturation: 180%;
@@ -121,12 +123,6 @@
   }
 
   /* ── Heavy frost (modals, floating nav, overlays) ── */
-  /*
-   * Uses --glass-* vars for backdrop-filter and color-mix amounts.
-   * The @apply backdrop-blur-xl is intentionally REMOVED here so the
-   * blur is driven exclusively by --glass-blur (avoids double-apply
-   * fighting with the CSS var value).
-   */
   .glass-frost {
     background: color-mix(
       in srgb,
@@ -151,10 +147,6 @@
   }
 
   /* ── Liquid glass (iOS-style, high saturation boost) ── */
-  /*
-   * Same var-driven approach. Hardcoded values replaced with CSS vars.
-   * Default values on :root reproduce the original look exactly.
-   */
   .glass-liquid {
     background: color-mix(
       in srgb,
@@ -257,6 +249,47 @@
     background: var(--bg-card);
     color: var(--text-muted);
     border: 1px solid var(--border-color);
+  }
+
+  /* ── Log category badges (theme-aware, no hardcoded colors) ── */
+  .badge-log-auth {
+    @apply inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-medium;
+    background: var(--log-auth-bg);
+    color: var(--log-auth-text);
+    border: 1px solid color-mix(in srgb, var(--log-auth-text) 20%, transparent);
+  }
+  .badge-log-info {
+    @apply inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-medium;
+    background: color-mix(in srgb, var(--log-level-info) 12%, transparent);
+    color: var(--log-level-info);
+    border: 1px solid color-mix(in srgb, var(--log-level-info) 25%, transparent);
+  }
+  .badge-log-warn {
+    @apply inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-medium;
+    background: color-mix(in srgb, var(--log-level-warn) 12%, transparent);
+    color: var(--log-level-warn);
+    border: 1px solid color-mix(in srgb, var(--log-level-warn) 25%, transparent);
+  }
+  .badge-log-error {
+    @apply inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-medium;
+    background: color-mix(in srgb, var(--log-level-error) 12%, transparent);
+    color: var(--log-level-error);
+    border: 1px solid
+      color-mix(in srgb, var(--log-level-error) 25%, transparent);
+  }
+
+  /* ── Log level dots ── */
+  .dot-log-info {
+    @apply w-2 h-2 rounded-full;
+    background: var(--log-level-info);
+  }
+  .dot-log-warn {
+    @apply w-2 h-2 rounded-full;
+    background: var(--log-level-warn);
+  }
+  .dot-log-error {
+    @apply w-2 h-2 rounded-full;
+    background: var(--log-level-error);
   }
 
   /* ── Gradient background ── */
