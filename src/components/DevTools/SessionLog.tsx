@@ -25,17 +25,17 @@ import { useTheme } from "../../context/ThemeContext";
 
 // ── Styling maps ────────────────────────────────────────────────────────
 const LEVEL_DOT: Record<LogLevel, string> = {
-  info: "bg-[var(--log-level-info)]",
-  success: "bg-[var(--color-pass)]",
-  warn: "bg-[var(--log-level-warn)]",
-  error: "bg-[var(--log-level-error)]",
+  info: "bg-(--log-level-info)",
+  success: "bg-pass",
+  warn: "bg-(--log-level-warn)",
+  error: "bg-(--log-level-error)",
 };
 
 const LEVEL_TEXT: Record<LogLevel, string> = {
-  info: "bg-[var(--log-level-info)]",
-  success: "bg-[var(--color-pass)]",
-  warn: "bg-[var(--log-level-warn)]",
-  error: "bg-[var(--log-level-error)]",
+  info: "bg-(--log-level-info)",
+  success: "bg-pass",
+  warn: "bg-(--log-level-warn)",
+  error: "bg-(--log-level-error)",
 };
 
 const CAT_STYLE: Record<LogCategory, string> = {
@@ -108,14 +108,14 @@ const EntryRow: React.FC<{
             ? "cursor-pointer hover:bg-[color-mix(in_srgb,var(--text-primary)_5%,transparent)] dark:hover:bg-[color-mix(in_srgb,var(--bg-surface)_5%,transparent)]"
             : ""
         }
-        ${entry.level === "error" ? "bg-[var(--color-fail)]/5" : ""}`}
+        ${entry.level === "error" ? "bg-fail/5" : ""}`}
       style={{ borderColor: styles.border }}
       onClick={() => entry.detail && setOpen((p) => !p)}
     >
       <div className="flex items-start gap-2">
         {/* Timestamp */}
         <span
-          className="text-[10px] font-mono shrink-0 mt-px w-[4.5rem] leading-4"
+          className="text-[10px] font-mono shrink-0 mt-px w-18 leading-4"
           style={{ color: styles.mutedText }}
         >
           {fmt(entry.ts)}
@@ -158,7 +158,7 @@ const EntryRow: React.FC<{
       {/* Expanded detail */}
       {open && entry.detail && (
         <pre
-          className="mt-2 ml-[8.5rem] text-[9px] font-mono rounded-lg p-2 overflow-x-auto whitespace-pre-wrap break-all"
+          className="mt-2 ml-34 text-[9px] font-mono rounded-lg p-2 overflow-x-auto whitespace-pre-wrap break-all"
           style={{
             backgroundColor: styles.detailBg,
             color: styles.mutedText,
@@ -294,10 +294,10 @@ const SessionLog: React.FC = () => {
   const hasError = errorCount > 0;
   const hasWarn = !hasError && entries.some((e) => e.level === "warn");
   const pillDot = hasError
-    ? "bg-[var(--color-fail)] animate-pulse"
+    ? "bg-fail animate-pulse"
     : hasWarn
-    ? "bg-[var(--color-warn)]"
-    : "bg-[var(--color-pass)]";
+    ? "bg-(--color-warn)"
+    : "bg-pass";
 
   // Auto-scroll to bottom
   useEffect(() => {
@@ -335,7 +335,7 @@ const SessionLog: React.FC = () => {
 
   return (
     <div
-      className="fixed z-[90] flex flex-col items-end gap-2 pointer-events-none"
+      className="fixed z-90 flex flex-col items-end gap-2 pointer-events-none"
       style={{ right: pos.right, bottom: pos.bottom }}
     >
       {/* ── Expanded panel ─────────────────────────────────────────── */}
@@ -402,7 +402,7 @@ const SessionLog: React.FC = () => {
             <button
               onClick={() => setFilter("all")}
               className={`text-[9px] font-bold px-2 py-1 rounded-full shrink-0 uppercase tracking-wide transition-colors
-                ${filter === "all" ? "bg-c-brand text-[var(--bg-surface)]" : ""}`}
+                ${filter === "all" ? "bg-c-brand text-(--bg-surface)" : ""}`}
               style={filter === "all" ? {} : { color: styles.mutedText }}
             >
               All · {entries.length}
@@ -418,7 +418,7 @@ const SessionLog: React.FC = () => {
                     rounded-full shrink-0 uppercase tracking-wide transition-colors
                     ${
                       filter === cat
-                        ? "bg-c-brand text-[var(--bg-surface)]"
+                        ? "bg-c-brand text-(--bg-surface)"
                         : `${CAT_STYLE[cat]} opacity-75 hover:opacity-100`
                     }`}
                 >
@@ -474,7 +474,7 @@ const SessionLog: React.FC = () => {
         onPointerUp={handlePillPointerUp}
         className="pointer-events-auto flex items-center gap-2 px-3 py-2
           shadow-xl transition-transform hover:scale-105 active:scale-95
-          glass-frost !rounded-full cursor-grab active:cursor-grabbing select-none"
+          glass-frost rounded-full! cursor-grab active:cursor-grabbing select-none"
         style={{ touchAction: "none" }}
         title="Drag to move • Click to open Session Log"
       >
@@ -488,7 +488,7 @@ const SessionLog: React.FC = () => {
           {entries.length}
         </span>
         {errorCount > 0 && (
-          <span className="text-[9px] font-bold bg-[var(--color-fail)] text-[var(--bg-surface)]">
+          <span className="text-[9px] font-bold bg-fail text-(--bg-surface)">
             {errorCount} err
           </span>
         )}

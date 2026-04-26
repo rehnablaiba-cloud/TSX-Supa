@@ -47,7 +47,7 @@ export const DiffRow: React.FC<DiffRowProps> = ({ label, before, after }) => {
       <span className="text-t-muted font-medium">{label}</span>
       {changed ? (
         <div className="pl-3 flex flex-col gap-0.5">
-          <span className="text-[var(--color-fail)] line-through break-all">
+          <span className="text-fail line-through break-all">
             {before !== '' ? before : <em>empty</em>}
           </span>
           <span className="text-[color-mix(in_srgb,var(--color-pass),white_30%)] break-all">

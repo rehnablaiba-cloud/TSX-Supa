@@ -289,27 +289,27 @@ const Dashboard: React.FC<Props> = ({ onNavigate }) => {
             label: "CSV",
             icon: <FileSpreadsheet size={16} />,
             color:
-              "bg-[var(--bg-card)] border border-[var(--border-color)] text-[var(--text-primary)]",
+              "bg-(--bg-card) border border-(--border-color) text-(--text-primary)",
             hoverColor:
-              "hover:bg-[var(--bg-surface)] hover:border-[var(--color-brand)]",
+              "hover:bg-(--bg-surface) hover:border-(--color-brand)",
             onConfirm: () => exportDashboardCSV(summaries),
           },
           {
             label: "PDF",
             icon: <FileText size={16} />,
             color:
-              "bg-[var(--bg-card)] border border-[var(--border-color)] text-[var(--text-primary)]",
+              "bg-(--bg-card) border border-(--border-color) text-(--text-primary)",
             hoverColor:
-              "hover:bg-[var(--bg-surface)] hover:border-[var(--color-brand)]",
+              "hover:bg-(--bg-surface) hover:border-(--color-brand)",
             onConfirm: () => exportDashboardPDF(buildSummariesWithTests()),
           },
           {
             label: "DOCX",
             icon: <FileDown size={16} />,
             color:
-              "bg-[var(--bg-card)] border border-[var(--border-color)] text-[var(--text-primary)]",
+              "bg-(--bg-card) border border-(--border-color) text-(--text-primary)",
             hoverColor:
-              "hover:bg-[var(--bg-surface)] hover:border-[var(--color-brand)]",
+              "hover:bg-(--bg-surface) hover:border-(--color-brand)",
             onConfirm: () => exportDashboardDocx(buildSummariesWithTests()),
           },
         ]}
@@ -330,7 +330,7 @@ const Dashboard: React.FC<Props> = ({ onNavigate }) => {
         <button
           onClick={() => setShowExportModal(true)}
           disabled={modules.length === 0}
-          className="flex items-center gap-1.5 px-4 py-2 text-sm font-semibold rounded-lg transition bg-bg-card hover:bg-bg-surface border border-[var(--border-color)] text-t-primary disabled:opacity-40 disabled:cursor-not-allowed"
+          className="flex items-center gap-1.5 px-4 py-2 text-sm font-semibold rounded-lg transition bg-bg-card hover:bg-bg-surface border border-(--border-color) text-t-primary disabled:opacity-40 disabled:cursor-not-allowed"
         >
           <Upload size={14} /> Export
         </button>
@@ -356,7 +356,7 @@ const Dashboard: React.FC<Props> = ({ onNavigate }) => {
                 Pass / Fail / Pending across all trainsets
               </p>
             </div>
-            <div className="flex items-center gap-1 bg-bg-surface rounded-lg p-1 border border-[var(--border-color)]">
+            <div className="flex items-center gap-1 bg-bg-surface rounded-lg p-1 border border-(--border-color)">
               {chartTabs.map((tab) => (
                 <button
                   key={tab.key}
@@ -415,7 +415,7 @@ const Dashboard: React.FC<Props> = ({ onNavigate }) => {
                 ].map((stat) => (
                   <div
                     key={stat.label}
-                    className="flex items-center justify-between px-4 py-3 rounded-xl border border-[var(--border-color)] bg-bg-surface"
+                    className="flex items-center justify-between px-4 py-3 rounded-xl border border-(--border-color) bg-bg-surface"
                   >
                     <div className="flex items-center gap-2">
                       <span
@@ -578,15 +578,15 @@ const Dashboard: React.FC<Props> = ({ onNavigate }) => {
 
                 <div className="flex gap-2 mb-3">
                   <span className="badge-pass">
-                    <span className="w-1.5 h-1.5 rounded-full bg-[var(--color-pass)] inline-block mr-1" />
+                    <span className="w-1.5 h-1.5 rounded-full bg-pass inline-block mr-1" />
                     {pass} Pass
                   </span>
                   <span className="badge-fail">
-                    <span className="w-1.5 h-1.5 rounded-full bg-[var(--color-fail)] inline-block mr-1" />
+                    <span className="w-1.5 h-1.5 rounded-full bg-fail inline-block mr-1" />
                     {fail} Fail
                   </span>
-                  <span className="flex items-center gap-1 text-xs font-semibold text-t-muted bg-bg-card border border-[var(--border-color)] rounded-full px-2.5 py-0.5">
-                    <span className="w-1.5 h-1.5 rounded-full bg-[var(--text-muted)] inline-block" />
+                  <span className="flex items-center gap-1 text-xs font-semibold text-t-muted bg-bg-card border border-(--border-color) rounded-full px-2.5 py-0.5">
+                    <span className="w-1.5 h-1.5 rounded-full bg-(--text-muted) inline-block" />
                     {pending} Pending
                   </span>
                 </div>

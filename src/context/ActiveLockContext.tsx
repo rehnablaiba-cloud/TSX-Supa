@@ -51,7 +51,7 @@ const CAT_STYLE: Record<SessionLog["category"], string> = {
   heartbeat: "bg-[color-mix(in_srgb,var(--color-brand)_15%,transparent)] text-[color-mix(in_srgb,var(--color-brand),white_30%)]",
   rehydrate: "bg-[color-mix(in_srgb,var(--color-pend)_15%,transparent)] text-[color-mix(in_srgb,var(--color-warn),white_30%)]",
   lock: "bg-[color-mix(in_srgb,var(--color-pass)_15%,transparent)] text-[color-mix(in_srgb,var(--color-pass),white_30%)]",
-  system: "bg-[color-mix(in_srgb,var(--text-muted)_15%,transparent)]  text-[var(--text-muted)]",
+  system: "bg-[color-mix(in_srgb,var(--text-muted)_15%,transparent)]  text-(--text-muted)",
 };
 
 const CAT_ICON: Record<SessionLog["category"], React.ReactNode> = {
@@ -64,17 +64,17 @@ const CAT_ICON: Record<SessionLog["category"], React.ReactNode> = {
 const LEVEL_DOT: Record<SessionLog["status"], string> = {
   ok: "bg-[color-mix(in_srgb,var(--color-pass),white_30%)]",
   error: "bg-[color-mix(in_srgb,var(--color-fail),white_30%)]",
-  warn: "bg-[var(--color-warn)]",
+  warn: "bg-(--color-warn)",
   pending: "bg-[color-mix(in_srgb,var(--color-brand),white_30%)]",
   info: "bg-[color-mix(in_srgb,var(--text-muted),white_25%)]",
 };
 
 const LEVEL_TEXT: Record<SessionLog["status"], string> = {
   ok: "text-[color-mix(in_srgb,var(--color-pass),white_30%)]",
-  error: "text-[var(--color-fail)]",
+  error: "text-fail",
   warn: "text-[color-mix(in_srgb,var(--color-warn),white_30%)]",
   pending: "text-[color-mix(in_srgb,var(--color-brand),white_30%)]",
-  info: "text-[var(--text-muted)]",
+  info: "text-(--text-muted)",
 };
 
 const ALL_CATS: SessionLog["category"][] = [
@@ -117,7 +117,7 @@ const EntryRow: React.FC<{
   >
     <div className="flex items-start gap-2">
       <span
-        className="text-[10px] font-mono shrink-0 mt-px w-[4.5rem] leading-4"
+        className="text-[10px] font-mono shrink-0 mt-px w-18 leading-4"
         style={{ color: styles.mutedText }}
       >
         {entry.time}
@@ -261,10 +261,10 @@ const SessionDebugWidget = ({
   const hasError = logs.some((l) => l.status === "error");
   const hasWarn = !hasError && logs.some((l) => l.status === "warn");
   const pillDot = hasError
-    ? "bg-[var(--color-fail)] animate-pulse"
+    ? "bg-fail animate-pulse"
     : hasWarn
-    ? "bg-[var(--color-warn)]"
-    : "bg-[var(--color-pass)]";
+    ? "bg-(--color-warn)"
+    : "bg-pass";
 
   useEffect(() => {
     if (!autoScroll || !open || !listRef.current) return;
@@ -291,7 +291,7 @@ const SessionDebugWidget = ({
 
   return (
     <div
-      className="fixed z-[89] flex flex-col items-end gap-2 pointer-events-none"
+      className="fixed z-89 flex flex-col items-end gap-2 pointer-events-none"
       style={{ right: pos.right, bottom: pos.bottom }}
     >
       {/* ── Expanded panel ──────────────────────────────────────────── */}
@@ -314,7 +314,7 @@ const SessionDebugWidget = ({
               Lock Session Monitor
             </span>
             {lockInfo && (
-              <span className="text-[9px] font-bold bg-[color-mix(in_srgb,var(--color-pass)_15%,transparent)] text-[color-mix(in_srgb,var(--color-pass),white_30%)] border border-[var(--color-pass)]/30 px-2 py-0.5 rounded-full mr-1">
+              <span className="text-[9px] font-bold bg-[color-mix(in_srgb,var(--color-pass)_15%,transparent)] text-[color-mix(in_srgb,var(--color-pass),white_30%)] border border-pass/30 px-2 py-0.5 rounded-full mr-1">
                 🔒 LOCKED
               </span>
             )}
@@ -366,7 +366,7 @@ const SessionDebugWidget = ({
             <button
               onClick={() => setFilter("all")}
               className={`text-[9px] font-bold px-2 py-1 rounded-full shrink-0 uppercase tracking-wide transition-colors
-                ${filter === "all" ? "bg-c-brand text-[var(--bg-surface)]" : ""}`}
+                ${filter === "all" ? "bg-c-brand text-(--bg-surface)" : ""}`}
               style={filter === "all" ? {} : { color: styles.mutedText }}
             >
               All · {logs.length}
@@ -382,7 +382,7 @@ const SessionDebugWidget = ({
                     rounded-full shrink-0 uppercase tracking-wide transition-colors
                     ${
                       filter === cat
-                        ? "bg-c-brand text-[var(--bg-surface)]"
+                        ? "bg-c-brand text-(--bg-surface)"
                         : `${CAT_STYLE[cat]} opacity-75 hover:opacity-100`
                     }`}
                 >
@@ -438,7 +438,7 @@ const SessionDebugWidget = ({
         onPointerUp={handlePillPointerUp}
         className="pointer-events-auto flex items-center gap-2 px-3 py-2
           shadow-xl transition-transform hover:scale-105 active:scale-95
-          glass-frost !rounded-full cursor-grab active:cursor-grabbing select-none"
+          glass-frost rounded-full! cursor-grab active:cursor-grabbing select-none"
         style={{ touchAction: "none" }}
         title="Drag to move • Click to open Lock Monitor"
       >
@@ -457,7 +457,7 @@ const SessionDebugWidget = ({
           </span>
         )}
         {hasError && (
-          <span className="text-[9px] font-bold bg-[var(--color-fail)] text-[var(--bg-surface)] px-1.5 py-0.5 rounded-full leading-none">
+          <span className="text-[9px] font-bold bg-fail text-(--bg-surface) px-1.5 py-0.5 rounded-full leading-none">
             err
           </span>
         )}

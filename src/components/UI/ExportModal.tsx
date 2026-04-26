@@ -68,11 +68,11 @@ const ExportModal: React.FC<Props> = ({
 
         {/* Section label */}
         <div className="flex items-center gap-3">
-          <div className="flex-1 h-px bg-[var(--border-color)]" />
+          <div className="flex-1 h-px bg-(--border-color)" />
           <span className="text-xs text-t-muted uppercase tracking-widest font-semibold">
             Choose Format
           </span>
-          <div className="flex-1 h-px bg-[var(--border-color)]" />
+          <div className="flex-1 h-px bg-(--border-color)" />
         </div>
 
         {/* Export Options */}

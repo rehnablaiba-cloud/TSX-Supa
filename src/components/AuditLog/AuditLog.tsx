@@ -12,10 +12,10 @@ import {
 } from "../../lib/supabase/queries.auditlog";
 
 const DOT: Record<string, string> = {
-  pass: "bg-[var(--color-pass)]",
-  fail: "bg-[var(--color-fail)]",
-  warn: "bg-[var(--color-warn)]",
-  info: "bg-[var(--color-brand)]",
+  pass: "bg-pass",
+  fail: "bg-fail",
+  warn: "bg-(--color-warn)",
+  info: "bg-(--color-brand)",
 };
 
 const AuditLog: React.FC = () => {
@@ -41,8 +41,8 @@ const AuditLog: React.FC = () => {
       <div className="flex-1 flex flex-col">
         <Topbar title="Audit Log" subtitle="Admin only" />
         <div className="flex flex-col items-center justify-center flex-1 gap-4 p-8 text-center">
-          <div className="w-14 h-14 rounded-full bg-[var(--color-fail)]/10 border border-[var(--color-fail)]/20 flex items-center justify-center">
-            <Lock size={24} className="text-[var(--color-fail)]" />
+          <div className="w-14 h-14 rounded-full bg-fail/10 border border-fail/20 flex items-center justify-center">
+            <Lock size={24} className="text-fail" />
           </div>
           <div>
             <p className="font-semibold text-t-primary">Access Restricted</p>
@@ -75,7 +75,7 @@ const AuditLog: React.FC = () => {
             >
               <span
                 className={`mt-1.5 w-2 h-2 rounded-full shrink-0 ${
-                  DOT[ev.severity ?? ""] ?? "bg-[var(--text-muted)]"
+                  DOT[ev.severity ?? ""] ?? "bg-(--text-muted)"
                 }`}
               />
               <div className="flex-1 min-w-0">

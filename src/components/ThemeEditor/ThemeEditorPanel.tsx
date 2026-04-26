@@ -157,7 +157,7 @@ const Swatch: React.FC<{
 }> = ({ color, label, onChange, onReset, isOverridden }) => (
   <div className="flex items-center gap-3 py-2">
     <label
-      className="relative w-9 h-9 rounded-xl border border-[var(--border-color)] cursor-pointer shrink-0 overflow-hidden shadow-sm"
+      className="relative w-9 h-9 rounded-xl border border-(--border-color) cursor-pointer shrink-0 overflow-hidden shadow-xs"
       style={{ backgroundColor: color }}
     >
       <input
@@ -194,7 +194,7 @@ const Section: React.FC<{
       </p>
       {action}
     </div>
-    <div className="bg-bg-card rounded-xl border border-[var(--border-color)] px-3 divide-y divide-[var(--border-color)]">
+    <div className="bg-bg-card rounded-xl border border-(--border-color) px-3 divide-y divide-(--border-color)">
       {children}
     </div>
   </div>
@@ -345,7 +345,7 @@ const BrandTab: React.FC = () => {
           ))}
         </div>
 
-        <div className="flex rounded-xl overflow-hidden border border-[var(--border-color)] h-8">
+        <div className="flex rounded-xl overflow-hidden border border-(--border-color) h-8">
           {BRAND_SHADES.map((shade) => (
             <div
               key={shade}
@@ -487,9 +487,9 @@ const GLASS_SLIDERS: {
   unit: string;
 }[] = [
   {
-    key: "blur",
+    key: "blur-sm",
     label: "Blur",
-    sub: "backdrop-filter blur",
+    sub: "backdrop-filter blur-sm",
     min: 0,
     max: 60,
     unit: "px",
@@ -616,7 +616,7 @@ const GlassTab: React.FC = () => {
               max={max}
               value={config[key]}
               onChange={(e) => handleChange(key, Number(e.target.value))}
-              className="w-full accent-[var(--c-brand)]"
+              className="w-full accent-(--c-brand)"
             />
             <div className="flex justify-between mt-0.5">
               <span className="text-[9px] text-t-muted">
@@ -687,7 +687,7 @@ const ThemeEditorPanel: React.FC<{ onClose: () => void }> = ({ onClose }) => {
                 resetAll();
               }
             }}
-            className="text-xs px-3 py-1.5 rounded-lg bg-[var(--color-fail)]/10 text-[var(--color-fail)] hover:bg-[var(--color-fail)]/20 transition-colors"
+            className="text-xs px-3 py-1.5 rounded-lg bg-fail/10 text-fail hover:bg-fail/20 transition-colors"
           >
             Reset All
           </button>
@@ -702,7 +702,7 @@ const ThemeEditorPanel: React.FC<{ onClose: () => void }> = ({ onClose }) => {
             className={`flex-1 py-2 px-2 rounded-xl text-xs font-semibold transition-colors
               ${
                 tab === t.id
-                  ? "bg-c-brand text-[var(--bg-surface)]"
+                  ? "bg-c-brand text-(--bg-surface)"
                   : "bg-bg-card text-t-muted hover:text-t-secondary"
               }`}
           >
@@ -710,7 +710,7 @@ const ThemeEditorPanel: React.FC<{ onClose: () => void }> = ({ onClose }) => {
             {t.badge && (
               <span
                 className={`ml-1 text-[10px] font-bold
-                ${tab === t.id ? "text-[var(--bg-surface)]/70" : "text-c-brand"}`}
+                ${tab === t.id ? "text-(--bg-surface)/70" : "text-c-brand"}`}
               >
                 {t.badge}
               </span>
@@ -727,7 +727,7 @@ const ThemeEditorPanel: React.FC<{ onClose: () => void }> = ({ onClose }) => {
       </div>
 
       {/* ── DEBUG: SessionLog-style console dump ── */}
-      <div className="mt-4 p-3 rounded-xl border border-dashed border-[var(--border-color)] bg-bg-card">
+      <div className="mt-4 p-3 rounded-xl border border-dashed border-(--border-color) bg-bg-card">
         <p className="text-[10px] font-bold uppercase tracking-wider text-t-muted mb-2">
           🔍 Debug Tools
         </p>
@@ -765,7 +765,7 @@ const ThemeEditorPanel: React.FC<{ onClose: () => void }> = ({ onClose }) => {
               console.log("  --bg-base:", s.getPropertyValue("--bg-base"));
               console.groupEnd();
             }}
-            className="text-[10px] px-2 py-1 rounded bg-bg-surface border border-[var(--border-color)] text-t-secondary hover:text-t-primary"
+            className="text-[10px] px-2 py-1 rounded-sm bg-bg-surface border border-(--border-color) text-t-secondary hover:text-t-primary"
           >
             Dump localStorage + CSS
           </button>
@@ -774,7 +774,7 @@ const ThemeEditorPanel: React.FC<{ onClose: () => void }> = ({ onClose }) => {
               console.clear();
               console.log("🧹 Console cleared");
             }}
-            className="text-[10px] px-2 py-1 rounded bg-bg-surface border border-[var(--border-color)] text-t-secondary hover:text-t-primary"
+            className="text-[10px] px-2 py-1 rounded-sm bg-bg-surface border border-(--border-color) text-t-secondary hover:text-t-primary"
           >
             Clear Console
           </button>

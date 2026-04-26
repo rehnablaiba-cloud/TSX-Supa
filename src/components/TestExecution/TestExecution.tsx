@@ -103,24 +103,24 @@ const DIVIDER_LEVELS: Record<
     size: "text-xs font-bold tracking-widest uppercase",
   },
   2: {
-    dot: "bg-[var(--color-divider-2)]",
-    text: "text-[var(--color-divider-2)]",
+    dot: "bg-divider-2",
+    text: "text-divider-2",
     bgStyle: {
       backgroundColor:
         "color-mix(in srgb, var(--color-divider-2) 5%, transparent)",
     },
-    border: "border-l-[2px] border-[var(--color-divider-2)]",
+    border: "border-l-2 border-divider-2",
     indent: "px-8",
     size: "text-xs font-semibold tracking-wider uppercase",
   },
   3: {
-    dot: "bg-[var(--color-divider-3)]",
-    text: "text-[var(--color-divider-3)]",
+    dot: "bg-divider-3",
+    text: "text-divider-3",
     bgStyle: {
       backgroundColor:
         "color-mix(in srgb, var(--color-divider-3) 5%, transparent)",
     },
-    border: "border-l-[2px] border-[var(--color-divider-3)]",
+    border: "border-l-2 border-divider-3",
     indent: "px-12",
     size: "text-[11px] font-medium tracking-wide",
   },
@@ -145,8 +145,8 @@ const MOBILE_DIVIDER_LEVELS: Record<
         "color-mix(in srgb, var(--color-divider-1) 10%, transparent)",
     },
     borderStyle: { borderLeft: "3px solid var(--color-divider-1)" },
-    textClass: "text-[var(--color-divider-1)]",
-    dotClass: "bg-[var(--color-divider-1)]",
+    textClass: "text-divider-1",
+    dotClass: "bg-divider-1",
     dotSize: 7,
     fontSize: "text-[14px] font-bold tracking-widest uppercase",
     ml: "ml-0",
@@ -158,8 +158,8 @@ const MOBILE_DIVIDER_LEVELS: Record<
         "color-mix(in srgb, var(--color-divider-2) 10%, transparent)",
     },
     borderStyle: { borderLeft: "2px solid var(--color-divider-2)" },
-    textClass: "text-[var(--color-divider-2)]",
-    dotClass: "bg-[var(--color-divider-2)]",
+    textClass: "text-divider-2",
+    dotClass: "bg-divider-2",
     dotSize: 5,
     fontSize: "text-[12px] font-semibold tracking-wide uppercase",
     ml: "ml-4",
@@ -171,8 +171,8 @@ const MOBILE_DIVIDER_LEVELS: Record<
         "color-mix(in srgb, var(--color-divider-3) 10%, transparent)",
     },
     borderStyle: { borderLeft: "2px solid var(--color-divider-3)" },
-    textClass: "text-[var(--color-divider-3)]",
-    dotClass: "bg-[var(--color-divider-3)]",
+    textClass: "text-divider-3",
+    dotClass: "bg-divider-3",
     dotSize: 4,
     fontSize: "text-[11px] font-medium tracking-wide",
     ml: "ml-8",
@@ -211,7 +211,7 @@ const UndoAllModal: React.FC<{
     >
       <div className="flex flex-col items-center gap-3 text-center">
         <div className="w-14 h-14 rounded-full bg-[color-mix(in_srgb,var(--color-pend)_10%,transparent)] border-2 border-[color-mix(in_srgb,var(--color-pend)_30%,transparent)] flex items-center justify-center">
-          <AlertTriangle size={26} className="text-[var(--color-pend)]" />
+          <AlertTriangle size={26} className="text-pend" />
         </div>
         <div>
           <h2 className="text-base font-bold text-t-primary">
@@ -223,7 +223,7 @@ const UndoAllModal: React.FC<{
             completed step{doneCount !== 1 ? "s" : ""} (out of{" "}
             <span className="font-semibold text-t-primary">{totalCount}</span>)
             back to{" "}
-            <span className="font-semibold text-[var(--color-pend)]">pending</span>.
+            <span className="font-semibold text-pend">pending</span>.
           </p>
         </div>
       </div>
@@ -237,13 +237,13 @@ const UndoAllModal: React.FC<{
       <div className="flex gap-2 pt-1">
         <button
           onClick={onCancel}
-          className="flex-1 px-4 py-2.5 rounded-xl border text-sm font-semibold text-t-secondary hover:text-t-primary hover:border-[var(--color-brand)] border-[var(--border-color)] bg-bg-card transition-colors"
+          className="flex-1 px-4 py-2.5 rounded-xl border text-sm font-semibold text-t-secondary hover:text-t-primary hover:border-(--color-brand) border-(--border-color) bg-bg-card transition-colors"
         >
           Cancel
         </button>
         <button
           onClick={onConfirm}
-          className="flex-1 px-4 py-2.5 rounded-xl text-sm font-bold text-[var(--bg-surface)] bg-[var(--color-warn)] hover:bg-[color-mix(in_srgb,var(--color-warn),black_10%)] active:bg-[color-mix(in_srgb,var(--color-warn),black_20%)] transition-colors flex items-center justify-center gap-1.5"
+          className="flex-1 px-4 py-2.5 rounded-xl text-sm font-bold text-(--bg-surface) bg-(--color-warn) hover:bg-[color-mix(in_srgb,var(--color-warn),black_10%)] active:bg-[color-mix(in_srgb,var(--color-warn),black_20%)] transition-colors flex items-center justify-center gap-1.5"
         >
           <RotateCcw size={14} /> Yes, Reset All
         </button>
@@ -272,7 +272,7 @@ const ImagePreviewModal: React.FC<{
 
   return (
     <div
-      className="fixed inset-0 z-[100] flex items-center justify-center p-4"
+      className="fixed inset-0 z-100 flex items-center justify-center p-4"
       style={{
         background: "color-mix(in srgb, var(--bg-base) 92%, transparent)",
         backdropFilter: "blur(12px)",
@@ -358,7 +358,7 @@ const LockedScreen: React.FC<{
 }> = ({ locked_by_name, test_name, onBack }) => (
   <div className="flex flex-col flex-1 items-center justify-center gap-6 p-8 text-center">
     <div className="w-16 h-16 rounded-full bg-[color-mix(in_srgb,var(--color-pend)_10%,transparent)] border-2 border-[color-mix(in_srgb,var(--color-pend)_30%,transparent)] flex items-center justify-center">
-      <Lock size={28} className="text-[var(--color-pend)]" />
+      <Lock size={28} className="text-pend" />
     </div>
     <div>
       <h2 className="text-lg font-bold text-t-primary mb-1">
@@ -374,14 +374,14 @@ const LockedScreen: React.FC<{
       </p>
     </div>
     <div className="flex items-center gap-2 px-4 py-2 bg-[color-mix(in_srgb,var(--color-pend)_10%,transparent)] border border-[color-mix(in_srgb,var(--color-pend)_20%,transparent)] rounded-full">
-      <span className="w-2 h-2 rounded-full bg-[var(--color-warn)] animate-pulse inline-block" />
+      <span className="w-2 h-2 rounded-full bg-(--color-warn) animate-pulse inline-block" />
       <span className="text-xs text-[color-mix(in_srgb,var(--color-pend),black_15%)] dark:text-[color-mix(in_srgb,var(--color-pend),white_30%)] font-medium">
         You'll be unblocked instantly when they finish.
       </span>
     </div>
     <button
       onClick={onBack}
-      className="flex items-center gap-1.5 px-6 py-2 rounded-xl border border-[var(--border-color)] text-t-secondary hover:text-t-primary hover:border-[var(--color-brand)] text-sm font-medium transition-colors"
+      className="flex items-center gap-1.5 px-6 py-2 rounded-xl border border-(--border-color) text-t-secondary hover:text-t-primary hover:border-(--color-brand) text-sm font-medium transition-colors"
     >
       <ArrowLeft size={14} /> Go Back
     </button>
@@ -397,7 +397,7 @@ const TesterBadge: React.FC<{
     status === "pass"
       ? "text-[color-mix(in_srgb,var(--color-pass),white_30%)]"
       : status === "fail"
-      ? "text-[var(--color-fail)]"
+      ? "text-fail"
       : "text-t-muted";
   return (
     <span
@@ -445,7 +445,7 @@ const TableStepRow: React.FC<{
     step.status === "pass"
       ? "bg-[color-mix(in_srgb,var(--color-pass)_5%,transparent)]"
       : step.status === "fail"
-      ? "bg-[var(--color-fail)]/5"
+      ? "bg-fail/5"
       : "";
   const focusStyle = isFocused
     ? { outline: "2px solid var(--color-brand)", outlineOffset: "-2px" }
@@ -456,13 +456,13 @@ const TableStepRow: React.FC<{
       ref={rowRef}
       onClick={onFocus}
       style={focusStyle}
-      className={`border-b border-[var(--border-color)] hover:bg-bg-card transition-colors cursor-pointer ${rowBg}`}
+      className={`border-b border-(--border-color) hover:bg-bg-card transition-colors cursor-pointer ${rowBg}`}
     >
-      <td className="px-2 py-3 text-center border-r border-[var(--border-color)]">
+      <td className="px-2 py-3 text-center border-r border-(--border-color)">
         <span className="text-xs font-mono text-t-muted">{step.serial_no}</span>
       </td>
-      <td className="px-4 py-3 border-r border-[var(--border-color)] align-top">
-        <p className="text-sm text-t-primary leading-snug break-words whitespace-pre-wrap">
+      <td className="px-4 py-3 border-r border-(--border-color) align-top">
+        <p className="text-sm text-t-primary leading-snug wrap-break-word whitespace-pre-wrap">
           {step.action}
         </p>
         {!!step.action_image_urls?.length && (
@@ -477,15 +477,15 @@ const TableStepRow: React.FC<{
                     e.stopPropagation();
                     onImageClick(step.action_image_urls, i, "Action");
                   }}
-                  className="w-16 h-16 rounded-lg object-cover border border-[var(--border-color)] cursor-zoom-in hover:opacity-90 hover:scale-105 transition-transform"
+                  className="w-16 h-16 rounded-lg object-cover border border-(--border-color) cursor-zoom-in hover:opacity-90 hover:scale-105 transition-transform"
                 />
               ) : null
             )}
           </div>
         )}
       </td>
-      <td className="px-4 py-3 border-r border-[var(--border-color)] align-top">
-        <p className="text-sm text-t-secondary leading-snug break-words whitespace-pre-wrap">
+      <td className="px-4 py-3 border-r border-(--border-color) align-top">
+        <p className="text-sm text-t-secondary leading-snug wrap-break-word whitespace-pre-wrap">
           {step.expected_result}
         </p>
         {!!step.expected_image_urls?.length && (
@@ -500,14 +500,14 @@ const TableStepRow: React.FC<{
                     e.stopPropagation();
                     onImageClick(step.expected_image_urls, i, "Expected");
                   }}
-                  className="w-16 h-16 rounded-lg object-cover border border-[var(--border-color)] cursor-zoom-in hover:opacity-90 hover:scale-105 transition-transform"
+                  className="w-16 h-16 rounded-lg object-cover border border-(--border-color) cursor-zoom-in hover:opacity-90 hover:scale-105 transition-transform"
                 />
               ) : null
             )}
           </div>
         )}
       </td>
-      <td className="px-3 py-3 border-r border-[var(--border-color)]">
+      <td className="px-3 py-3 border-r border-(--border-color)">
         <textarea
           value={remarks}
           onChange={(e) => {
@@ -526,15 +526,15 @@ const TableStepRow: React.FC<{
           className="input text-sm resize-none w-full"
         />
       </td>
-      <td className="px-2 py-3 text-center border-r border-[var(--border-color)]">
+      <td className="px-2 py-3 text-center border-r border-(--border-color)">
         <div className="flex flex-col items-center gap-1.5">
           <span
             className={`text-xs font-bold px-2 py-0.5 rounded-full capitalize ${
               step.status === "pass"
                 ? "bg-[color-mix(in_srgb,var(--color-pass)_15%,transparent)] text-[color-mix(in_srgb,var(--color-pass),white_30%)]"
                 : step.status === "fail"
-                ? "bg-[var(--color-fail)]/15 text-[var(--color-fail)]"
-                : "bg-[var(--border-color)] text-t-muted"
+                ? "bg-fail/15 text-fail"
+                : "bg-(--border-color) text-t-muted"
             }`}
           >
             {step.status}
@@ -552,7 +552,7 @@ const TableStepRow: React.FC<{
               }}
               className={`flex-1 h-7 rounded-md text-xs font-bold transition-colors flex items-center justify-center ${
                 step.status === "pass"
-                  ? "bg-[var(--color-pass)] text-[var(--bg-surface)]"
+                  ? "bg-pass text-(--bg-surface)"
                   : "bg-[color-mix(in_srgb,var(--color-pass)_10%,transparent)] hover:bg-[color-mix(in_srgb,var(--color-pass)_25%,transparent)] text-[color-mix(in_srgb,var(--color-pass),white_30%)] border border-[color-mix(in_srgb,var(--color-pass)_20%,transparent)]"
               }`}
             >
@@ -565,8 +565,8 @@ const TableStepRow: React.FC<{
               }}
               className={`flex-1 h-7 rounded-md text-xs font-bold transition-colors flex items-center justify-center ${
                 step.status === "fail"
-                  ? "bg-[var(--color-fail)] text-[var(--bg-surface)]"
-                  : "bg-[var(--color-fail)]/10 hover:bg-[var(--color-fail)]/25 text-[var(--color-fail)] border border-[var(--color-fail)]/20"
+                  ? "bg-fail text-(--bg-surface)"
+                  : "bg-fail/10 hover:bg-fail/25 text-fail border border-fail/20"
               }`}
             >
               <X size={13} />
@@ -578,7 +578,7 @@ const TableStepRow: React.FC<{
                 e.stopPropagation();
                 onUpdate(step.stepId, "pending", "");
               }}
-              className="w-full h-7 rounded-md text-xs font-semibold text-t-muted hover:text-t-primary bg-bg-card hover:bg-bg-surface border border-[var(--border-color)] transition-colors flex items-center justify-center"
+              className="w-full h-7 rounded-md text-xs font-semibold text-t-muted hover:text-t-primary bg-bg-card hover:bg-bg-surface border border-(--border-color) transition-colors flex items-center justify-center"
             >
               Undo
             </button>
@@ -645,7 +645,7 @@ const MobileStepCard: React.FC<{
     step.status === "pass"
       ? "bg-[color-mix(in_srgb,var(--color-pass)_5%,transparent)]"
       : step.status === "fail"
-      ? "bg-[var(--color-fail)]/5"
+      ? "bg-fail/5"
       : "";
   const accentColor = isFocused
     ? "var(--color-brand)"
@@ -659,7 +659,7 @@ const MobileStepCard: React.FC<{
     <>
       {showRemarksDialog && (
         <div
-          className="fixed inset-0 z-[200] flex items-end justify-center"
+          className="fixed inset-0 z-200 flex items-end justify-center"
           style={{
             backgroundColor: "rgba(0,0,0,0.55)",
             backdropFilter: "blur(4px)",
@@ -667,7 +667,7 @@ const MobileStepCard: React.FC<{
           onClick={discardRemarks}
         >
           <div
-            className="w-full max-w-lg rounded-t-2xl border border-[var(--border-color)] shadow-2xl p-4 flex flex-col gap-3"
+            className="w-full max-w-lg rounded-t-2xl border border-(--border-color) shadow-2xl p-4 flex flex-col gap-3"
             style={{ backgroundColor: "var(--bg-surface)" }}
             onClick={(e) => e.stopPropagation()}
           >
@@ -677,7 +677,7 @@ const MobileStepCard: React.FC<{
               </span>
               <button
                 onClick={discardRemarks}
-                className="w-7 h-7 rounded-full bg-[var(--border-color)] flex items-center justify-center text-t-muted hover:text-t-primary transition-colors"
+                className="w-7 h-7 rounded-full bg-(--border-color) flex items-center justify-center text-t-muted hover:text-t-primary transition-colors"
               >
                 <X size={13} />
               </button>
@@ -700,13 +700,13 @@ const MobileStepCard: React.FC<{
             <div className="flex gap-2">
               <button
                 onClick={discardRemarks}
-                className="flex-1 px-4 py-2.5 rounded-xl border border-[var(--border-color)] text-sm font-semibold text-t-secondary hover:text-t-primary transition-colors"
+                className="flex-1 px-4 py-2.5 rounded-xl border border-(--border-color) text-sm font-semibold text-t-secondary hover:text-t-primary transition-colors"
               >
                 Discard
               </button>
               <button
                 onClick={saveRemarks}
-                className="flex-1 px-4 py-2.5 rounded-xl text-sm font-bold text-[var(--bg-surface)] bg-c-brand hover:bg-c-brand/90 transition-colors"
+                className="flex-1 px-4 py-2.5 rounded-xl text-sm font-bold text-(--bg-surface) bg-c-brand hover:bg-c-brand/90 transition-colors"
               >
                 Save
               </button>
@@ -718,27 +718,27 @@ const MobileStepCard: React.FC<{
       <div
         ref={cardRef}
         onClick={onFocus}
-        className={`rounded-xl overflow-hidden border border-[var(--border-color)] w-full cursor-pointer transition-shadow ${rowBg} ${
+        className={`rounded-xl overflow-hidden border border-(--border-color) w-full cursor-pointer transition-shadow ${rowBg} ${
           isFocused ? "ring-2 ring-[color-mix(in_srgb,var(--color-brand),white_30%)]" : ""
         }`}
         style={{ borderLeftColor: accentColor, borderLeftWidth: 3 }}
       >
-        <div className="flex items-center justify-between px-3 py-2 border-b border-[var(--border-color)] bg-bg-card">
+        <div className="flex items-center justify-between px-3 py-2 border-b border-(--border-color) bg-bg-card">
           <span className="text-xs font-mono text-t-muted tracking-wide">
             #{step.serial_no}
           </span>
           <div className="flex items-center gap-2 min-w-0">
             {isFocused && (
               <span className="flex items-center gap-1.5 text-[10px] font-medium shrink-0">
-                <kbd className="px-1 py-0.5 rounded bg-[color-mix(in_srgb,var(--color-pass)_10%,transparent)] text-[color-mix(in_srgb,var(--color-pass),white_30%)] border border-[color-mix(in_srgb,var(--color-pass)_20%,transparent)] font-mono text-[9px]">
+                <kbd className="px-1 py-0.5 rounded-sm bg-[color-mix(in_srgb,var(--color-pass)_10%,transparent)] text-[color-mix(in_srgb,var(--color-pass),white_30%)] border border-[color-mix(in_srgb,var(--color-pass)_20%,transparent)] font-mono text-[9px]">
                   P
                 </kbd>
                 <span className="text-[color-mix(in_srgb,var(--color-pass),white_30%)]">pass</span>
                 <span className="text-t-muted opacity-40">·</span>
-                <kbd className="px-1 py-0.5 rounded bg-[var(--color-fail)]/10 text-[var(--color-fail)] border border-[var(--color-fail)]/20 font-mono text-[9px]">
+                <kbd className="px-1 py-0.5 rounded-sm bg-fail/10 text-fail border border-fail/20 font-mono text-[9px]">
                   F
                 </kbd>
-                <span className="text-[var(--color-fail)]">fail</span>
+                <span className="text-fail">fail</span>
               </span>
             )}
             <span
@@ -746,8 +746,8 @@ const MobileStepCard: React.FC<{
                 step.status === "pass"
                   ? "bg-[color-mix(in_srgb,var(--color-pass)_15%,transparent)] text-[color-mix(in_srgb,var(--color-pass),white_30%)]"
                   : step.status === "fail"
-                  ? "bg-[var(--color-fail)]/15 text-[var(--color-fail)]"
-                  : "bg-[var(--border-color)] text-t-muted"
+                  ? "bg-fail/15 text-fail"
+                  : "bg-(--border-color) text-t-muted"
               }`}
             >
               {step.status}
@@ -756,14 +756,14 @@ const MobileStepCard: React.FC<{
           </div>
         </div>
 
-        <div className="grid grid-cols-[80px_1fr] border-b border-[var(--border-color)]">
-          <div className="px-3 py-2.5 border-r border-[var(--border-color)] bg-bg-card flex items-start">
+        <div className="grid grid-cols-[80px_1fr] border-b border-(--border-color)">
+          <div className="px-3 py-2.5 border-r border-(--border-color) bg-bg-card flex items-start">
             <span className="text-[10px] font-semibold text-t-muted uppercase tracking-wider mt-0.5">
               Action
             </span>
           </div>
           <div className="px-3 py-2.5 min-w-0">
-            <p className="text-sm leading-snug break-words text-t-primary whitespace-pre-wrap">
+            <p className="text-sm leading-snug wrap-break-word text-t-primary whitespace-pre-wrap">
               {step.action}
             </p>
             {!!step.action_image_urls?.length && (
@@ -778,7 +778,7 @@ const MobileStepCard: React.FC<{
                         e.stopPropagation();
                         onImageClick(step.action_image_urls, i, "Action");
                       }}
-                      className="w-[72px] h-[72px] rounded-lg object-cover border border-[var(--border-color)] cursor-zoom-in hover:opacity-90 hover:scale-105 transition-transform"
+                      className="w-[72px] h-[72px] rounded-lg object-cover border border-(--border-color) cursor-zoom-in hover:opacity-90 hover:scale-105 transition-transform"
                     />
                   ) : null
                 )}
@@ -787,14 +787,14 @@ const MobileStepCard: React.FC<{
           </div>
         </div>
 
-        <div className="grid grid-cols-[80px_1fr] border-b border-[var(--border-color)]">
-          <div className="px-3 py-2.5 border-r border-[var(--border-color)] bg-bg-card flex items-start">
+        <div className="grid grid-cols-[80px_1fr] border-b border-(--border-color)">
+          <div className="px-3 py-2.5 border-r border-(--border-color) bg-bg-card flex items-start">
             <span className="text-[10px] font-semibold text-t-muted uppercase tracking-wider mt-0.5">
               Expected
             </span>
           </div>
           <div className="px-3 py-2.5 min-w-0">
-            <p className="text-sm leading-snug break-words text-t-secondary whitespace-pre-wrap">
+            <p className="text-sm leading-snug wrap-break-word text-t-secondary whitespace-pre-wrap">
               {step.expected_result}
             </p>
             {!!step.expected_image_urls?.length && (
@@ -809,7 +809,7 @@ const MobileStepCard: React.FC<{
                         e.stopPropagation();
                         onImageClick(step.expected_image_urls, i, "Expected");
                       }}
-                      className="w-[72px] h-[72px] rounded-lg object-cover border border-[var(--border-color)] cursor-zoom-in hover:opacity-90 hover:scale-105 transition-transform"
+                      className="w-[72px] h-[72px] rounded-lg object-cover border border-(--border-color) cursor-zoom-in hover:opacity-90 hover:scale-105 transition-transform"
                     />
                   ) : null
                 )}
@@ -824,7 +824,7 @@ const MobileStepCard: React.FC<{
             className={`flex-1 min-w-0 flex items-center gap-1.5 px-3 h-8 rounded-full border text-xs font-medium transition-colors truncate ${
               remarks
                 ? "border-c-brand/40 bg-c-brand/8 text-t-primary hover:bg-c-brand/15"
-                : "border-[var(--border-color)] bg-bg-surface text-t-muted hover:border-c-brand/40 hover:text-t-primary"
+                : "border-(--border-color) bg-bg-surface text-t-muted hover:border-c-brand/40 hover:text-t-primary"
             }`}
           >
             <span className="truncate">{remarks || "Add remarks…"}</span>
@@ -838,7 +838,7 @@ const MobileStepCard: React.FC<{
                 e.stopPropagation();
                 onUpdate(step.stepId, "pending", "");
               }}
-              className="shrink-0 px-2.5 h-8 rounded-md text-xs font-semibold text-t-muted hover:text-t-primary bg-bg-surface hover:bg-bg-card border border-[var(--border-color)] transition-colors"
+              className="shrink-0 px-2.5 h-8 rounded-md text-xs font-semibold text-t-muted hover:text-t-primary bg-bg-surface hover:bg-bg-card border border-(--border-color) transition-colors"
             >
               Undo
             </button>
@@ -850,7 +850,7 @@ const MobileStepCard: React.FC<{
             }}
             className={`shrink-0 w-8 h-8 rounded-md text-xs font-bold transition-colors flex items-center justify-center ${
               step.status === "pass"
-                ? "bg-[var(--color-pass)] text-[var(--bg-surface)]"
+                ? "bg-pass text-(--bg-surface)"
                 : "bg-[color-mix(in_srgb,var(--color-pass)_10%,transparent)] hover:bg-[color-mix(in_srgb,var(--color-pass)_25%,transparent)] text-[color-mix(in_srgb,var(--color-pass),white_30%)] border border-[color-mix(in_srgb,var(--color-pass)_20%,transparent)]"
             }`}
           >
@@ -863,8 +863,8 @@ const MobileStepCard: React.FC<{
             }}
             className={`shrink-0 w-8 h-8 rounded-md text-xs font-bold transition-colors flex items-center justify-center ${
               step.status === "fail"
-                ? "bg-[var(--color-fail)] text-[var(--bg-surface)]"
-                : "bg-[var(--color-fail)]/10 hover:bg-[var(--color-fail)]/25 text-[var(--color-fail)] border border-[var(--color-fail)]/20"
+                ? "bg-fail text-(--bg-surface)"
+                : "bg-fail/10 hover:bg-fail/25 text-fail border border-fail/20"
             }`}
           >
             <X size={14} />
@@ -1417,7 +1417,7 @@ const TestExecution: React.FC<Props> = ({
           <div className="p-4 flex justify-center">
             <button
               onClick={handleForceRelease}
-              className="text-xs text-[var(--color-fail)] hover:text-[color-mix(in_srgb,var(--color-fail),white_50%)] underline underline-offset-2 transition-colors"
+              className="text-xs text-fail hover:text-[color-mix(in_srgb,var(--color-fail),white_50%)] underline underline-offset-2 transition-colors"
             >
               Force-release lock (admin)
             </button>
@@ -1457,9 +1457,9 @@ const TestExecution: React.FC<Props> = ({
             label: "CSV",
             icon: <FileSpreadsheet size={16} />,
             color:
-              "bg-[var(--bg-card)] border border-[var(--border-color)] text-[var(--text-primary)]",
+              "bg-(--bg-card) border border-(--border-color) text-(--text-primary)",
             hoverColor:
-              "hover:bg-[var(--bg-surface)] hover:border-[var(--color-brand)]",
+              "hover:bg-(--bg-surface) hover:border-(--color-brand)",
             onConfirm: () =>
               exportExecutionCSV(module_name, exportTestName, flatData),
           },
@@ -1467,9 +1467,9 @@ const TestExecution: React.FC<Props> = ({
             label: "PDF",
             icon: <FileText size={16} />,
             color:
-              "bg-[var(--bg-card)] border border-[var(--border-color)] text-[var(--text-primary)]",
+              "bg-(--bg-card) border border-(--border-color) text-(--text-primary)",
             hoverColor:
-              "hover:bg-[var(--bg-surface)] hover:border-[var(--color-brand)]",
+              "hover:bg-(--bg-surface) hover:border-(--color-brand)",
             onConfirm: () =>
               exportExecutionPDF(module_name, exportTestName, flatData),
           },
@@ -1496,7 +1496,7 @@ const TestExecution: React.FC<Props> = ({
               {isAdmin && (
                 <button
                   onClick={() => setShowMassImageUpload(true)}
-                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg bg-bg-card hover:bg-bg-surface border border-[var(--border-color)] text-t-primary transition"
+                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg bg-bg-card hover:bg-bg-surface border border-(--border-color) text-t-primary transition"
                 >
                   Mass Upload Images
                 </button>
@@ -1505,7 +1505,7 @@ const TestExecution: React.FC<Props> = ({
               <button
                 onClick={() => setShowExportModal(true)}
                 disabled={filtered.length === 0}
-                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg bg-bg-card hover:bg-bg-surface border border-[var(--border-color)] text-t-primary transition disabled:opacity-40 disabled:cursor-not-allowed"
+                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg bg-bg-card hover:bg-bg-surface border border-(--border-color) text-t-primary transition disabled:opacity-40 disabled:cursor-not-allowed"
               >
                 <Upload size={13} />
                 Export
@@ -1528,7 +1528,7 @@ const TestExecution: React.FC<Props> = ({
                 pass
               </span>
               <span>
-                <span className="text-[var(--color-fail)] font-semibold">{failCount}</span>{" "}
+                <span className="text-fail font-semibold">{failCount}</span>{" "}
                 fail
               </span>
               <span>
@@ -1542,21 +1542,21 @@ const TestExecution: React.FC<Props> = ({
               {focusedStepId && (
                 <span className="hidden md:flex items-center gap-2 text-xs text-t-muted">
                   <span className="flex items-center gap-1">
-                    <kbd className="px-1.5 py-0.5 rounded bg-[color-mix(in_srgb,var(--color-pass)_10%,transparent)] text-[color-mix(in_srgb,var(--color-pass),white_30%)] font-mono text-[10px] border border-[color-mix(in_srgb,var(--color-pass)_20%,transparent)]">
+                    <kbd className="px-1.5 py-0.5 rounded-sm bg-[color-mix(in_srgb,var(--color-pass)_10%,transparent)] text-[color-mix(in_srgb,var(--color-pass),white_30%)] font-mono text-[10px] border border-[color-mix(in_srgb,var(--color-pass)_20%,transparent)]">
                       P
                     </kbd>
-                    <span className="text-[var(--border-color)] mx-0.5">/</span>
-                    <kbd className="px-1.5 py-0.5 rounded bg-[color-mix(in_srgb,var(--color-pass)_10%,transparent)] text-[color-mix(in_srgb,var(--color-pass),white_30%)] font-mono text-[10px] border border-[color-mix(in_srgb,var(--color-pass)_20%,transparent)]">
+                    <span className="text-(--border-color) mx-0.5">/</span>
+                    <kbd className="px-1.5 py-0.5 rounded-sm bg-[color-mix(in_srgb,var(--color-pass)_10%,transparent)] text-[color-mix(in_srgb,var(--color-pass),white_30%)] font-mono text-[10px] border border-[color-mix(in_srgb,var(--color-pass)_20%,transparent)]">
                       Enter
                     </kbd>
                     <span className="text-[color-mix(in_srgb,var(--color-pass),white_30%)] ml-1">pass</span>
                   </span>
-                  <span className="text-[var(--border-color)]">·</span>
+                  <span className="text-(--border-color)">·</span>
                   <span className="flex items-center gap-1">
-                    <kbd className="px-1.5 py-0.5 rounded bg-[var(--color-fail)]/10 text-[var(--color-fail)] font-mono text-[10px] border border-[var(--color-fail)]/20">
+                    <kbd className="px-1.5 py-0.5 rounded-sm bg-fail/10 text-fail font-mono text-[10px] border border-fail/20">
                       F
                     </kbd>
-                    <span className="text-[var(--color-fail)] ml-1">fail</span>
+                    <span className="text-fail ml-1">fail</span>
                   </span>
                 </span>
               )}
@@ -1565,20 +1565,20 @@ const TestExecution: React.FC<Props> = ({
               </span>
             </div>
           </div>
-          <div className="h-1.5 bg-[var(--border-color)] rounded-full overflow-hidden flex">
+          <div className="h-1.5 bg-(--border-color) rounded-full overflow-hidden flex">
             <div
-              className="h-full bg-[var(--color-pass)] transition-all duration-500"
+              className="h-full bg-pass transition-all duration-500"
               style={{ width: `${passPct}%` }}
             />
             <div
-              className="h-full bg-[var(--color-fail)] transition-all duration-500"
+              className="h-full bg-fail transition-all duration-500"
               style={{ width: `${failPct}%` }}
             />
           </div>
         </div>
 
         {/* ── Filters only — export moved to Topbar ────────────────────── */}
-        <div className="flex flex-col border-b border-[var(--border-color)]">
+        <div className="flex flex-col border-b border-(--border-color)">
           <div className="flex items-center justify-end gap-1 px-4 py-2">
             {(["all", "pass", "fail", "pending"] as Filter[]).map((f) => (
               <button
@@ -1621,20 +1621,20 @@ const TestExecution: React.FC<Props> = ({
             {/* Desktop table */}
             <table className="hidden md:table w-full text-sm border-collapse table-fixed">
               <thead className="sticky top-0 z-10">
-                <tr className="bg-bg-surface border-b border-[var(--border-color)]">
-                  <th className="text-left px-2 py-2.5 text-xs font-semibold text-t-muted uppercase tracking-wider w-[6%]  border-r border-[var(--border-color)]">
+                <tr className="bg-bg-surface border-b border-(--border-color)">
+                  <th className="text-left px-2 py-2.5 text-xs font-semibold text-t-muted uppercase tracking-wider w-[6%]  border-r border-(--border-color)">
                     S.No
                   </th>
-                  <th className="text-left px-4 py-2.5 text-xs font-semibold text-t-muted uppercase tracking-wider w-[28%] border-r border-[var(--border-color)]">
+                  <th className="text-left px-4 py-2.5 text-xs font-semibold text-t-muted uppercase tracking-wider w-[28%] border-r border-(--border-color)">
                     Action
                   </th>
-                  <th className="text-left px-4 py-2.5 text-xs font-semibold text-t-muted uppercase tracking-wider w-[28%] border-r border-[var(--border-color)]">
+                  <th className="text-left px-4 py-2.5 text-xs font-semibold text-t-muted uppercase tracking-wider w-[28%] border-r border-(--border-color)">
                     Expected Result
                   </th>
-                  <th className="text-left px-3 py-2.5 text-xs font-semibold text-t-muted uppercase tracking-wider w-[13%] border-r border-[var(--border-color)]">
+                  <th className="text-left px-3 py-2.5 text-xs font-semibold text-t-muted uppercase tracking-wider w-[13%] border-r border-(--border-color)">
                     Remarks
                   </th>
-                  <th className="text-center px-2 py-2.5 text-xs font-semibold text-t-muted uppercase tracking-wider w-[11%] border-r border-[var(--border-color)]">
+                  <th className="text-center px-2 py-2.5 text-xs font-semibold text-t-muted uppercase tracking-wider w-[11%] border-r border-(--border-color)">
                     Status
                   </th>
                   <th className="text-center px-2 py-2.5 text-xs font-semibold text-t-muted uppercase tracking-wider w-[14%]">
@@ -1651,7 +1651,7 @@ const TestExecution: React.FC<Props> = ({
                       return (
                         <tr
                           key={step.stepId}
-                          className={`border-b border-[var(--border-color)]`}
+                          className={`border-b border-(--border-color)`}
                           style={s.bgStyle}
                         >
                           <td
@@ -1697,8 +1697,8 @@ const TestExecution: React.FC<Props> = ({
 
             {/* Mobile cards */}
             <div className="md:hidden flex flex-col">
-              <div className="sticky top-0 z-10 grid grid-cols-[64px_1fr] border-b border-[var(--border-color)] bg-bg-surface/80 backdrop-blur-md">
-                <div className="px-3 py-2 border-r border-[var(--border-color)]">
+              <div className="sticky top-0 z-10 grid grid-cols-[64px_1fr] border-b border-(--border-color) bg-bg-surface/80 backdrop-blur-md">
+                <div className="px-3 py-2 border-r border-(--border-color)">
                   <span className="text-[10px] font-semibold text-t-muted uppercase tracking-wider">
                     S.No
                   </span>
@@ -1760,7 +1760,7 @@ const TestExecution: React.FC<Props> = ({
                 <div className="flex items-center gap-3 px-4 py-3 rounded-xl border border-dashed border-[color-mix(in_srgb,var(--color-pend)_30%,transparent)] bg-[color-mix(in_srgb,var(--color-pend)_5%,transparent)]">
                   <AlertTriangle
                     size={14}
-                    className="text-[var(--color-pend)] shrink-0"
+                    className="text-pend shrink-0"
                   />
                   <span className="text-xs text-t-muted">
                     Admin action — resets all progress

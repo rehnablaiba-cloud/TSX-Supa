@@ -202,7 +202,7 @@ const MobileNav: React.FC<Props> = ({ activePage, onNavigate }) => {
       {/* More Options Popup — centered above navbar, same width, flex-wrap centered */}
       <div
         ref={moreRef}
-        className="fixed left-1/2 -translate-x-1/2 z-[70] md:hidden glass-frost p-3"
+        className="fixed left-1/2 -translate-x-1/2 z-70 md:hidden glass-frost p-3"
         style={{
           bottom: "calc(76px + env(safe-area-inset-bottom, 0px))",
           width: "calc(100% - 32px)",
@@ -415,7 +415,7 @@ const MobileNav: React.FC<Props> = ({ activePage, onNavigate }) => {
               handleSignOut();
               setMoreOpen(false);
             }}
-            className="more-item flex flex-col items-center justify-center gap-1 p-2 rounded-xl transition-all duration-200 hover:bg-[var(--color-fail)]/10 active:scale-90"
+            className="more-item flex flex-col items-center justify-center gap-1 p-2 rounded-xl transition-all duration-200 hover:bg-fail/10 active:scale-90"
             style={{ width: 72 }}
           >
             <div
@@ -425,11 +425,11 @@ const MobileNav: React.FC<Props> = ({ activePage, onNavigate }) => {
                   "color-mix(in srgb, var(--color-fail) 12%, transparent)",
               }}
             >
-              <span className="text-[var(--color-fail)]/80">
+              <span className="text-fail/80">
                 <LogOut size={16} />
               </span>
             </div>
-            <span className="text-[9px] font-medium text-[var(--color-fail)]/70 leading-tight text-center">
+            <span className="text-[9px] font-medium text-fail/70 leading-tight text-center">
               Exit
             </span>
           </button>
@@ -439,7 +439,7 @@ const MobileNav: React.FC<Props> = ({ activePage, onNavigate }) => {
       {/* Nav */}
       <nav
         ref={navRef}
-        className="fixed bottom-2 left-1/2 -translate-x-1/2 z-[62] md:hidden
+        className="fixed bottom-2 left-1/2 -translate-x-1/2 z-62 md:hidden
           rounded-[26px] flex items-center px-2 py-2 gap-1"
         style={{
           ...glassNav,

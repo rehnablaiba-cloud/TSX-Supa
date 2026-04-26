@@ -399,18 +399,18 @@ const ModuleDashboard: React.FC<Props> = ({
             label: "CSV",
             icon: <FileSpreadsheet size={16} />,
             color:
-              "bg-[var(--bg-card)] border border-[var(--border-color)] text-[var(--text-primary)]",
+              "bg-(--bg-card) border border-(--border-color) text-(--text-primary)",
             hoverColor:
-              "hover:bg-[var(--bg-surface)] hover:border-[var(--color-brand)]",
+              "hover:bg-(--bg-surface) hover:border-(--color-brand)",
             onConfirm: () => exportModuleDetailCSV(buildFlatData()),
           },
           {
             label: "PDF",
             icon: <FileText size={16} />,
             color:
-              "bg-[var(--bg-card)] border border-[var(--border-color)] text-[var(--text-primary)]",
+              "bg-(--bg-card) border border-(--border-color) text-(--text-primary)",
             hoverColor:
-              "hover:bg-[var(--bg-surface)] hover:border-[var(--color-brand)]",
+              "hover:bg-(--bg-surface) hover:border-(--color-brand)",
             onConfirm: () =>
               exportModuleDetailPDF(buildFlatData(), module_name),
           },
@@ -426,7 +426,7 @@ const ModuleDashboard: React.FC<Props> = ({
         actions={
           <button
             onClick={() => setShowExportModal(true)}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg bg-bg-card hover:bg-bg-surface border border-[var(--border-color)] text-t-primary transition"
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg bg-bg-card hover:bg-bg-surface border border-(--border-color) text-t-primary transition"
           >
             <Upload size={13} />
             Export
@@ -513,7 +513,7 @@ const ModuleDashboard: React.FC<Props> = ({
                     onClick={() => setChartType(type)}
                     className={`text-xs font-semibold px-3 py-1 rounded-lg transition-colors ${
                       chartType === type
-                        ? "bg-c-brand text-[var(--bg-surface)]"
+                        ? "bg-c-brand text-(--bg-surface)"
                         : "text-t-muted hover:text-t-primary"
                     }`}
                   >
@@ -668,7 +668,7 @@ const ModuleDashboard: React.FC<Props> = ({
                       <button
                         onClick={() => onViewReport(mt.id)}
                         disabled={isOtherLock}
-                        className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-colors bg-bg-card hover:bg-bg-surface border border-[var(--border-color)] text-t-secondary hover:text-t-primary disabled:opacity-30 disabled:cursor-not-allowed"
+                        className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-colors bg-bg-card hover:bg-bg-surface border border-(--border-color) text-t-secondary hover:text-t-primary disabled:opacity-30 disabled:cursor-not-allowed"
                       >
                         <ChevronRight size={12} />
                         Report
@@ -700,7 +700,7 @@ const ModuleDashboard: React.FC<Props> = ({
                         <button
                           onClick={() => onExecute(mt.id)}
                           disabled={isOtherLock}
-                          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors bg-c-brand hover:bg-c-brand-hover text-[var(--bg-surface)] disabled:opacity-30 disabled:cursor-not-allowed"
+                          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors bg-c-brand hover:bg-c-brand-hover text-(--bg-surface) disabled:opacity-30 disabled:cursor-not-allowed"
                         >
                           <Play size={12} />
                           Execute
@@ -724,7 +724,7 @@ const ModuleDashboard: React.FC<Props> = ({
                       />
                       {fail} Fail
                     </span>
-                    <span className="flex items-center gap-1 font-semibold text-t-muted bg-bg-card border border-[var(--border-color)] rounded-full px-2.5 py-0.5">
+                    <span className="flex items-center gap-1 font-semibold text-t-muted bg-bg-card border border-(--border-color) rounded-full px-2.5 py-0.5">
                       <span
                         className="w-1.5 h-1.5 rounded-full inline-block"
                         style={{ background: "var(--text-muted)" }}

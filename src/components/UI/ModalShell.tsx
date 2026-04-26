@@ -27,7 +27,7 @@ const ModalShell: React.FC<Props> = ({
     {/* Sheet */}
     <div
       className="relative w-full md:max-w-md mx-auto glass-frost
-      border-t md:border border-[var(--border-color)]
+      border-t md:border border-(--border-color)
       rounded-t-2xl md:rounded-2xl
       px-6 pt-5 pb-10 md:pb-6 z-10 flex flex-col gap-4 max-h-[90vh] overflow-y-auto"
     >

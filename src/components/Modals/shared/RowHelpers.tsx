@@ -33,7 +33,7 @@ export const DiffRow: React.FC<{
       <span className="text-t-muted">{label}</span>
       {changed ? (
         <div className="pl-2 flex flex-col gap-0.5">
-          <span className="text-[var(--color-fail)] line-through break-all">
+          <span className="text-fail line-through break-all">
             {before || <em>empty</em>}
           </span>
           <span className="text-[color-mix(in_srgb,var(--color-pass),white_30%)] break-all">
@@ -57,20 +57,20 @@ export const ContextStrip: React.FC<{
   return (
     <div className="flex flex-wrap gap-2 text-xs">
       {module && (
-        <span className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-bg-card border border-[var(--border-color)]">
+        <span className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-bg-card border border-(--border-color)">
           <Package size={12} className="text-t-muted" />
           <span className="text-t-primary font-medium">{module.name}</span>
         </span>
       )}
       {test && (
-        <span className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-bg-card border border-[var(--border-color)]">
+        <span className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-bg-card border border-(--border-color)">
           <FlaskConical size={12} className="text-t-muted" />
           <span className="text-t-primary font-medium">{test.name}</span>
           <span className="text-t-muted">SN {test.serial_no}</span>
         </span>
       )}
       {step && (
-        <span className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-bg-card border border-[var(--border-color)]">
+        <span className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-bg-card border border-(--border-color)">
           <Hash size={12} className="text-t-muted" />
           <span className="font-mono font-bold text-c-brand">
             SN {step.serial_no}
@@ -97,14 +97,14 @@ export const OpCard: React.FC<{
       ${
         selected
           ? danger
-            ? "border-[var(--color-fail)]/60 bg-[var(--color-fail)]/10"
+            ? "border-fail/60 bg-fail/10"
             : "border-c-brand bg-c-brand-bg"
-          : "border-[var(--border-color)] bg-bg-card hover:bg-bg-base"
+          : "border-(--border-color) bg-bg-card hover:bg-bg-base"
       }`}
   >
     <span
       className={
-        selected ? (danger ? "text-[var(--color-fail)]" : "text-c-brand") : "text-t-muted"
+        selected ? (danger ? "text-fail" : "text-c-brand") : "text-t-muted"
       }
     >
       {icon}
@@ -114,7 +114,7 @@ export const OpCard: React.FC<{
         className={`text-sm font-semibold ${
           selected
             ? danger
-              ? "text-[var(--color-fail)]"
+              ? "text-fail"
               : "text-c-brand"
             : "text-t-primary"
         }`}
@@ -125,8 +125,8 @@ export const OpCard: React.FC<{
     </div>
     {selected && (
       <span
-        className={`w-4 h-4 rounded-full flex items-center justify-center text-[var(--bg-surface)] shrink-0 ${
-          danger ? "bg-[var(--color-fail)]" : "bg-c-brand"
+        className={`w-4 h-4 rounded-full flex items-center justify-center text-(--bg-surface) shrink-0 ${
+          danger ? "bg-fail" : "bg-c-brand"
         }`}
       >
         ✓
@@ -139,7 +139,7 @@ export const OpCard: React.FC<{
 export const LoadingList: React.FC<{ label?: string }> = ({
   label = "Loading…",
 }) => (
-  <div className="flex items-center gap-2 px-4 py-3 rounded-xl bg-bg-card border border-[var(--border-color)] text-t-muted text-sm">
+  <div className="flex items-center gap-2 px-4 py-3 rounded-xl bg-bg-card border border-(--border-color) text-t-muted text-sm">
     <span className="w-4 h-4 border-2 border-c-brand border-t-transparent rounded-full animate-spin shrink-0" />
     {label}
   </div>
@@ -149,14 +149,14 @@ export const LoadingList: React.FC<{ label?: string }> = ({
 export const EmptyList: React.FC<{ label?: string }> = ({
   label = "No items found.",
 }) => (
-  <div className="rounded-xl border border-[var(--color-pend)]/30 bg-[var(--color-pend)]/10 px-4 py-3 text-xs text-[var(--color-pend)]">
+  <div className="rounded-xl border border-pend/30 bg-pend/10 px-4 py-3 text-xs text-pend">
     {label}
   </div>
 );
 
 // ── ErrBanner — inline error display ─────────────────────────────────────────
 export const ErrBanner: React.FC<{ msg: string }> = ({ msg }) => (
-  <div className="rounded-xl border border-[var(--color-fail)]/30 bg-[var(--color-fail)]/10 px-4 py-3 text-xs text-[var(--color-fail)] flex items-start gap-2">
+  <div className="rounded-xl border border-fail/30 bg-fail/10 px-4 py-3 text-xs text-fail flex items-start gap-2">
     <span className="shrink-0 mt-0.5">✕</span>
     <p>{msg}</p>
   </div>
@@ -164,7 +164,7 @@ export const ErrBanner: React.FC<{ msg: string }> = ({ msg }) => (
 
 // ── SuccessBanner — result message on done stage ──────────────────────────────
 export const SuccessBanner: React.FC<{ msg: string }> = ({ msg }) => (
-  <div className="rounded-xl border border-[var(--color-pass)]/30 bg-[var(--color-pass)]/10 p-4 text-sm flex items-start gap-3 text-[var(--color-pass)]">
+  <div className="rounded-xl border border-pass/30 bg-pass/10 p-4 text-sm flex items-start gap-3 text-pass">
     <span className="shrink-0 text-base">✓</span>
     <p className="font-medium">{msg}</p>
   </div>
@@ -181,7 +181,7 @@ export const NavButtons: React.FC<{
   <div className="flex gap-2 pt-1">
     <button
       onClick={onBack}
-      className="flex-1 px-4 py-2.5 rounded-xl border border-[var(--border-color)] text-t-secondary hover:text-t-primary text-sm font-medium transition-colors"
+      className="flex-1 px-4 py-2.5 rounded-xl border border-(--border-color) text-t-secondary hover:text-t-primary text-sm font-medium transition-colors"
     >
       Back
     </button>
@@ -189,7 +189,7 @@ export const NavButtons: React.FC<{
       onClick={onNext}
       disabled={nextDisabled}
       className={`flex-1 btn-primary text-sm disabled:opacity-50 disabled:cursor-not-allowed
-        ${nextDanger ? "!bg-[var(--color-fail)] hover:!bg-[color-mix(in_srgb,var(--color-fail),black_20%)]" : ""}`}
+        ${nextDanger ? "bg-fail! hover:bg-[color-mix(in_srgb,var(--color-fail),black_20%)]!" : ""}`}
     >
       {nextLabel}
     </button>

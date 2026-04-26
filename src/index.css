@@ -1,79 +1,400 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import 'tailwindcss';
+
+@custom-variant dark (&:is(.dark *));
+
+@theme {
+  --color-bg-base: var(--bg-base);
+  --color-bg-surface: var(--bg-surface);
+  --color-bg-card: var(--bg-card);
+  --color-bg-nav: var(--bg-nav);
+  --color-t-primary: var(--text-primary);
+  --color-t-secondary: var(--text-secondary);
+  --color-t-muted: var(--text-muted);
+  --color-c-brand: var(--color-brand);
+  --color-c-brand-hover: var(--color-brand-hover);
+  --color-c-brand-bg: var(--color-brand-bg);
+
+  --color-brand-50: var(--brand-50);
+  --color-brand-100: var(--brand-100);
+  --color-brand-200: var(--brand-200);
+  --color-brand-300: var(--brand-300);
+  --color-brand-400: var(--brand-400);
+  --color-brand-500: var(--brand-500);
+  --color-brand-600: var(--brand-600);
+  --color-brand-700: var(--brand-700);
+  --color-brand-800: var(--brand-800);
+  --color-brand-900: var(--brand-900);
+
+  --color-pass: var(--color-pass, #22c55e);
+  --color-fail: var(--color-fail, #ef4444);
+  --color-pend: var(--color-pend, #f59e0b);
+  --color-divider-1: var(--color-divider-1, #14b8a6);
+  --color-divider-2: var(--color-divider-2, #f59e0b);
+  --color-divider-3: var(--color-divider-3, #0ea5e9);
+  --color-log-auth-bg: var(--log-auth-bg, rgba(59, 130, 246, 0.15));
+  --color-log-auth-text: var(--log-auth-text, #3b82f6);
+  --color-log-info: var(--log-level-info, #3b82f6);
+  --color-log-warn: var(--log-level-warn, #f59e0b);
+  --color-log-error: var(--log-level-error, #ef4444);
+}
 
 /*
+  The default border color has changed to `currentcolor` in Tailwind CSS v4,
+  so we've added these compatibility styles to make sure everything still
+  looks the same as it did with Tailwind CSS v3.
+
+  If we ever want to remove these styles, we need to add an explicit border
+  color utility to any element that depends on these defaults.
+*/
+@layer base {
+  *,
+  ::after,
+  ::before,
+  ::backdrop,
+  ::file-selector-button {
+    border-color: var(--color-gray-200, currentcolor);
+  }
+}
+
+@utility glass {
+  /* ── Standard glass card ── */
+  background: color-mix(in srgb, var(--bg-surface) 86%, transparent);
+  border: 1px solid color-mix(in srgb, var(--border-color) 80%, transparent);
+  @apply backdrop-blur-md rounded-2xl;
+  transition:
+    background-color 0.3s ease,
+    border-color 0.3s ease;
+
+  /* ── Neon pulse keyframes (theme-adaptive via CSS vars) ── */
+}
+
+@utility glass-frost {
+  /* ── Heavy frost (modals, floating nav, overlays) ── */
+  background: color-mix(
+    in srgb,
+    var(--bg-surface) var(--glass-bg-opacity),
+    transparent
+  );
+  border: 1px solid
+    color-mix(
+      in srgb,
+      var(--border-color) var(--glass-border-opacity),
+      transparent
+    );
+  @apply rounded-2xl;
+  box-shadow:
+    0 8px 32px color-mix(in srgb, var(--bg-base) 40%, transparent),
+    inset 0 1px 0 color-mix(in srgb, var(--text-primary) 6%, transparent);
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturation))
+    brightness(var(--glass-brightness));
+  -webkit-backdrop-filter: blur(var(--glass-blur))
+    saturate(var(--glass-saturation)) brightness(var(--glass-brightness));
+  transition:
+    background-color 0.3s ease,
+    border-color 0.3s ease,
+    box-shadow 0.3s ease;
+
+  /* ── Neon pulse keyframes (theme-adaptive via CSS vars) ── */
+}
+
+@utility glass-liquid {
+  /* ── Liquid glass (iOS-style, high saturation boost) ── */
+  background: color-mix(
+    in srgb,
+    var(--bg-surface) var(--glass-bg-opacity),
+    transparent
+  );
+  border: 1px solid
+    color-mix(
+      in srgb,
+      var(--border-color) var(--glass-border-opacity),
+      transparent
+    );
+  @apply rounded-3xl;
+  box-shadow:
+    0 8px 32px color-mix(in srgb, var(--bg-base) 35%, transparent),
+    inset 0 1px 0 color-mix(in srgb, var(--text-primary) 8%, transparent);
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturation))
+    brightness(var(--glass-brightness));
+  -webkit-backdrop-filter: blur(var(--glass-blur))
+    saturate(var(--glass-saturation)) brightness(var(--glass-brightness));
+  transition:
+    background-color 0.3s ease,
+    border-color 0.3s ease,
+    box-shadow 0.3s ease;
+
+  /* ── Neon pulse keyframes (theme-adaptive via CSS vars) ── */
+}
+
+@utility card {
+  /* ── Card (uses glass internally) ── */
+  @apply glass p-5;
+
+  /* ── Neon pulse keyframes (theme-adaptive via CSS vars) ── */
+}
+
+@utility backdrop-dim {
+  /* ── Modal backdrop (theme-aware dimming, not hardcoded black) ── */
+  background: color-mix(in srgb, var(--bg-base) 55%, transparent);
+  @apply backdrop-blur-xs;
+  transition: background-color 0.3s ease;
+
+  /* ── Neon pulse keyframes (theme-adaptive via CSS vars) ── */
+}
+
+@utility btn-primary {
+  /* ── Primary button (auto-inverse text via color-mix) ── */
+  @apply font-semibold px-4 py-2 rounded-xl transition-all duration-200
+           disabled:opacity-50 disabled:cursor-not-allowed;
+  background-color: var(--color-brand);
+  color: color-mix(in srgb, var(--text-primary) 99%, transparent);
+  &:hover:not(:disabled) {
+    background-color: var(--color-brand-hover);
+  }
+
+  /* ── Neon pulse keyframes (theme-adaptive via CSS vars) ── */
+}
+
+@utility btn-ghost {
+  /* ── Ghost button ── */
+  background-color: var(--glass-bg);
+  color: var(--text-secondary);
+  @apply px-4 py-2 rounded-xl transition-all duration-200;
+  &:hover {
+    background-color: var(--bg-card);
+  }
+
+  /* ── Neon pulse keyframes (theme-adaptive via CSS vars) ── */
+}
+
+@utility input {
+  /* ── Input ── */
+  @apply w-full rounded-xl px-4 py-2.5 focus:outline-hidden transition-colors;
+  background-color: var(--input-bg);
+  color: var(--input-text);
+  border: 1px solid var(--input-border);
+  transition:
+    background-color 0.2s ease,
+    border-color 0.2s ease,
+    color 0.2s ease;
+  &::placeholder {
+    color: var(--text-muted);
+  }
+  &:focus {
+    border-color: var(--color-brand);
+  }
+
+  /* ── Neon pulse keyframes (theme-adaptive via CSS vars) ── */
+}
+
+@utility badge-pass {
+  /* ── Status badges ── */
+  @apply inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold;
+  background: color-mix(in srgb, var(--color-pass) 12%, transparent);
+  color: var(--color-pass);
+  border: 1px solid color-mix(in srgb, var(--color-pass) 25%, transparent);
+
+  /* ── Neon pulse keyframes (theme-adaptive via CSS vars) ── */
+}
+
+@utility badge-fail {
+  @apply inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold;
+  background: color-mix(in srgb, var(--color-fail) 12%, transparent);
+  color: var(--color-fail);
+  border: 1px solid color-mix(in srgb, var(--color-fail) 25%, transparent);
+
+  /* ── Neon pulse keyframes (theme-adaptive via CSS vars) ── */
+}
+
+@utility badge-pend {
+  @apply inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold;
+  background: color-mix(in srgb, var(--color-pend) 12%, transparent);
+  color: var(--color-pend);
+  border: 1px solid color-mix(in srgb, var(--color-pend) 25%, transparent);
+
+  /* ── Neon pulse keyframes (theme-adaptive via CSS vars) ── */
+}
+
+@utility badge-admin {
+  @apply inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider;
+  background: color-mix(in srgb, var(--color-brand) 15%, transparent);
+  color: var(--color-brand);
+  border: 1px solid color-mix(in srgb, var(--color-brand) 30%, transparent);
+
+  /* ── Neon pulse keyframes (theme-adaptive via CSS vars) ── */
+}
+
+@utility badge-tester {
+  @apply inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider;
+  background: var(--bg-card);
+  color: var(--text-muted);
+  border: 1px solid var(--border-color);
+
+  /* ── Neon pulse keyframes (theme-adaptive via CSS vars) ── */
+}
+
+@utility badge-log-auth {
+  /* ── Log category badges (theme-aware, no hardcoded colors) ── */
+  @apply inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-medium;
+  background: var(--log-auth-bg);
+  color: var(--log-auth-text);
+  border: 1px solid color-mix(in srgb, var(--log-auth-text) 20%, transparent);
+
+  /* ── Neon pulse keyframes (theme-adaptive via CSS vars) ── */
+}
+
+@utility badge-log-info {
+  @apply inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-medium;
+  background: color-mix(in srgb, var(--log-level-info) 12%, transparent);
+  color: var(--log-level-info);
+  border: 1px solid color-mix(in srgb, var(--log-level-info) 25%, transparent);
+
+  /* ── Neon pulse keyframes (theme-adaptive via CSS vars) ── */
+}
+
+@utility badge-log-warn {
+  @apply inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-medium;
+  background: color-mix(in srgb, var(--log-level-warn) 12%, transparent);
+  color: var(--log-level-warn);
+  border: 1px solid color-mix(in srgb, var(--log-level-warn) 25%, transparent);
+
+  /* ── Neon pulse keyframes (theme-adaptive via CSS vars) ── */
+}
+
+@utility badge-log-error {
+  @apply inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-medium;
+  background: color-mix(in srgb, var(--log-level-error) 12%, transparent);
+  color: var(--log-level-error);
+  border: 1px solid color-mix(in srgb, var(--log-level-error) 25%, transparent);
+
+  /* ── Neon pulse keyframes (theme-adaptive via CSS vars) ── */
+}
+
+@utility dot-log-info {
+  /* ── Log level dots ── */
+  @apply w-2 h-2 rounded-full;
+  background: var(--log-level-info);
+
+  /* ── Neon pulse keyframes (theme-adaptive via CSS vars) ── */
+}
+
+@utility dot-log-warn {
+  @apply w-2 h-2 rounded-full;
+  background: var(--log-level-warn);
+
+  /* ── Neon pulse keyframes (theme-adaptive via CSS vars) ── */
+}
+
+@utility dot-log-error {
+  @apply w-2 h-2 rounded-full;
+  background: var(--log-level-error);
+
+  /* ── Neon pulse keyframes (theme-adaptive via CSS vars) ── */
+}
+
+@utility grad-bg {
+  /* ── Gradient background ── */
+  background: linear-gradient(
+    135deg,
+    var(--grad-from) 0%,
+    var(--grad-via) 50%,
+    var(--grad-to) 100%
+  );
+  transition: background 0.5s ease;
+
+  /* ── Neon pulse keyframes (theme-adaptive via CSS vars) ── */
+}
+
+@utility shimmer {
+  /* ── Shimmer overlay ── */
+  background: linear-gradient(
+    105deg,
+    transparent 40%,
+    color-mix(in srgb, var(--text-primary) 4%, transparent) 45%,
+    color-mix(in srgb, var(--text-primary) 8%, transparent) 50%,
+    color-mix(in srgb, var(--text-primary) 4%, transparent) 55%,
+    transparent 60%
+  );
+  background-size: 200% 200%;
+  animation: shimmerMove 3s ease-in-out infinite;
+
+  /* ── Neon pulse keyframes (theme-adaptive via CSS vars) ── */
+}
+
+@layer utilities {
+  /*
  * ═══════════════════════════════════════════════════════════════════════
  *  THEME TOKENS  —  Set at runtime by applyStoredTheme() in src/theme.ts
  *  :root holds NEUTRAL defaults only. Real values injected via JS.
  * ═══════════════════════════════════════════════════════════════════════
  */
-:root {
-  /* Neutral fallbacks — overridden immediately by applyStoredTheme() */
-  --bg-base: #f8fafc;
-  --bg-surface: #ffffff;
-  --bg-card: #f1f5f9;
-  --bg-nav: rgba(255, 255, 255, 0.85);
-  --border-color: rgba(0, 0, 0, 0.08);
-  --text-primary: #0f172a;
-  --text-secondary: #334155;
-  --text-muted: #64748b;
-  --input-bg: #ffffff;
-  --input-border: rgba(0, 0, 0, 0.12);
-  --input-text: #0f172a;
-  --glass-bg: rgba(0, 0, 0, 0.03);
-  --glass-border: rgba(0, 0, 0, 0.06);
-  --grad-from: #e0e7ff;
-  --grad-via: #f0f9ff;
-  --grad-to: #e0f2fe;
-  --color-brand: #2563eb;
-  --color-brand-hover: #3b82f6;
-  --color-brand-bg: rgba(37, 99, 235, 0.1);
-  --color-pass: #22c55e;
-  --color-fail: #ef4444;
-  --color-pend: #f59e0b;
-  --color-warn: #f59e0b;
-  --color-my-lock: #22d3ee;
-  --color-other-lock: #f59e0b;
-  --neon-cyan: 34, 211, 238;
-  --neon-amber: 245, 158, 11;
-  --brand-50: #eff6ff;
-  --brand-100: #dbeafe;
-  --brand-200: #bfdbfe;
-  --brand-300: #93c5fd;
-  --brand-400: #60a5fa;
-  --brand-500: #3b82f6;
-  --brand-600: #2563eb;
-  --brand-700: #1d4ed8;
-  --brand-800: #1e40af;
-  --brand-900: #1e3a8a;
+  :root {
+    /* Neutral fallbacks — overridden immediately by applyStoredTheme() */
+    --bg-base: #f8fafc;
+    --bg-surface: #ffffff;
+    --bg-card: #f1f5f9;
+    --bg-nav: rgba(255, 255, 255, 0.85);
+    --border-color: rgba(0, 0, 0, 0.08);
+    --text-primary: #0f172a;
+    --text-secondary: #334155;
+    --text-muted: #64748b;
+    --input-bg: #ffffff;
+    --input-border: rgba(0, 0, 0, 0.12);
+    --input-text: #0f172a;
+    --glass-bg: rgba(0, 0, 0, 0.03);
+    --glass-border: rgba(0, 0, 0, 0.06);
+    --grad-from: #e0e7ff;
+    --grad-via: #f0f9ff;
+    --grad-to: #e0f2fe;
+    --color-brand: #2563eb;
+    --color-brand-hover: #3b82f6;
+    --color-brand-bg: rgba(37, 99, 235, 0.1);
+    --color-pass: #22c55e;
+    --color-fail: #ef4444;
+    --color-pend: #f59e0b;
+    --color-warn: #f59e0b;
+    --color-my-lock: #22d3ee;
+    --color-other-lock: #f59e0b;
+    --neon-cyan: 34, 211, 238;
+    --neon-amber: 245, 158, 11;
+    --brand-50: #eff6ff;
+    --brand-100: #dbeafe;
+    --brand-200: #bfdbfe;
+    --brand-300: #93c5fd;
+    --brand-400: #60a5fa;
+    --brand-500: #3b82f6;
+    --brand-600: #2563eb;
+    --brand-700: #1d4ed8;
+    --brand-800: #1e40af;
+    --brand-900: #1e3a8a;
 
-  /* Divider colors — consumed by TestExecution.tsx */
-  --color-divider-1: #14b8a6;
-  --color-divider-2: #f59e0b;
-  --color-divider-3: #0ea5e9;
+    /* Divider colors — consumed by TestExecution.tsx */
+    --color-divider-1: #14b8a6;
+    --color-divider-2: #f59e0b;
+    --color-divider-3: #0ea5e9;
 
-  /* Log system colors — consumed by DevTools/SessionLog.tsx */
-  --log-auth-bg: color-mix(in srgb, var(--color-brand) 15%, transparent);
-  --log-auth-text: var(--color-brand);
-  --log-level-info: var(--color-brand);
-  --log-level-warn: var(--color-warn);
-  --log-level-error: var(--color-fail);
+    /* Log system colors — consumed by DevTools/SessionLog.tsx */
+    --log-auth-bg: color-mix(in srgb, var(--color-brand) 15%, transparent);
+    --log-auth-text: var(--color-brand);
+    --log-level-info: var(--color-brand);
+    --log-level-warn: var(--color-warn);
+    --log-level-error: var(--color-fail);
 
-  /*
+    /*
    * ── Glass effect vars ──────────────────────────────────────────────
    *  Written at runtime by applyGlassCssVars() in src/theme.ts.
    *  Fallbacks here match GLASS_DEFAULTS so the UI is correct before
    *  any user customisation is loaded.
    */
-  --glass-blur: 28px;
-  --glass-saturation: 180%;
-  --glass-brightness: 1.06;
-  --glass-bg-opacity: 40%;
-  --glass-border-opacity: 55%;
-}
+    --glass-blur: 28px;
+    --glass-saturation: 180%;
+    --glass-brightness: 1.06;
+    --glass-bg-opacity: 40%;
+    --glass-border-opacity: 55%;
+  }
 
-/* ── Base ── */
+  /* ── Base ── */
+}
 @layer base {
   * {
     box-sizing: border-box;
@@ -115,208 +436,6 @@
    ═══════════════════════════════════════════════════════════════════ */
 
 @layer utilities {
-  /* ── Standard glass card ── */
-  .glass {
-    background: color-mix(in srgb, var(--bg-surface) 86%, transparent);
-    border: 1px solid color-mix(in srgb, var(--border-color) 80%, transparent);
-    @apply backdrop-blur-md rounded-2xl;
-    transition: background-color 0.3s ease, border-color 0.3s ease;
-  }
-
-  /* ── Heavy frost (modals, floating nav, overlays) ── */
-  .glass-frost {
-    background: color-mix(
-      in srgb,
-      var(--bg-surface) var(--glass-bg-opacity),
-      transparent
-    );
-    border: 1px solid
-      color-mix(
-        in srgb,
-        var(--border-color) var(--glass-border-opacity),
-        transparent
-      );
-    @apply rounded-2xl;
-    box-shadow: 0 8px 32px color-mix(in srgb, var(--bg-base) 40%, transparent),
-      inset 0 1px 0 color-mix(in srgb, var(--text-primary) 6%, transparent);
-    backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturation))
-      brightness(var(--glass-brightness));
-    -webkit-backdrop-filter: blur(var(--glass-blur))
-      saturate(var(--glass-saturation)) brightness(var(--glass-brightness));
-    transition: background-color 0.3s ease, border-color 0.3s ease,
-      box-shadow 0.3s ease;
-  }
-
-  /* ── Liquid glass (iOS-style, high saturation boost) ── */
-  .glass-liquid {
-    background: color-mix(
-      in srgb,
-      var(--bg-surface) var(--glass-bg-opacity),
-      transparent
-    );
-    border: 1px solid
-      color-mix(
-        in srgb,
-        var(--border-color) var(--glass-border-opacity),
-        transparent
-      );
-    @apply rounded-3xl;
-    box-shadow: 0 8px 32px color-mix(in srgb, var(--bg-base) 35%, transparent),
-      inset 0 1px 0 color-mix(in srgb, var(--text-primary) 8%, transparent);
-    backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturation))
-      brightness(var(--glass-brightness));
-    -webkit-backdrop-filter: blur(var(--glass-blur))
-      saturate(var(--glass-saturation)) brightness(var(--glass-brightness));
-    transition: background-color 0.3s ease, border-color 0.3s ease,
-      box-shadow 0.3s ease;
-  }
-
-  /* ── Card (uses glass internally) ── */
-  .card {
-    @apply glass p-5;
-  }
-
-  /* ── Modal backdrop (theme-aware dimming, not hardcoded black) ── */
-  .backdrop-dim {
-    background: color-mix(in srgb, var(--bg-base) 55%, transparent);
-    @apply backdrop-blur-sm;
-    transition: background-color 0.3s ease;
-  }
-
-  /* ── Primary button (auto-inverse text via color-mix) ── */
-  .btn-primary {
-    @apply font-semibold px-4 py-2 rounded-xl transition-all duration-200
-           disabled:opacity-50 disabled:cursor-not-allowed;
-    background-color: var(--color-brand);
-    color: color-mix(in srgb, var(--text-primary) 99%, transparent);
-  }
-  .btn-primary:hover:not(:disabled) {
-    background-color: var(--color-brand-hover);
-  }
-
-  /* ── Ghost button ── */
-  .btn-ghost {
-    background-color: var(--glass-bg);
-    color: var(--text-secondary);
-    @apply px-4 py-2 rounded-xl transition-all duration-200;
-  }
-  .btn-ghost:hover {
-    background-color: var(--bg-card);
-  }
-
-  /* ── Input ── */
-  .input {
-    @apply w-full rounded-xl px-4 py-2.5 focus:outline-none transition-colors;
-    background-color: var(--input-bg);
-    color: var(--input-text);
-    border: 1px solid var(--input-border);
-    transition: background-color 0.2s ease, border-color 0.2s ease,
-      color 0.2s ease;
-  }
-  .input::placeholder {
-    color: var(--text-muted);
-  }
-  .input:focus {
-    border-color: var(--color-brand);
-  }
-
-  /* ── Status badges ── */
-  .badge-pass {
-    @apply inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold;
-    background: color-mix(in srgb, var(--color-pass) 12%, transparent);
-    color: var(--color-pass);
-    border: 1px solid color-mix(in srgb, var(--color-pass) 25%, transparent);
-  }
-  .badge-fail {
-    @apply inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold;
-    background: color-mix(in srgb, var(--color-fail) 12%, transparent);
-    color: var(--color-fail);
-    border: 1px solid color-mix(in srgb, var(--color-fail) 25%, transparent);
-  }
-  .badge-pend {
-    @apply inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold;
-    background: color-mix(in srgb, var(--color-pend) 12%, transparent);
-    color: var(--color-pend);
-    border: 1px solid color-mix(in srgb, var(--color-pend) 25%, transparent);
-  }
-  .badge-admin {
-    @apply inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider;
-    background: color-mix(in srgb, var(--color-brand) 15%, transparent);
-    color: var(--color-brand);
-    border: 1px solid color-mix(in srgb, var(--color-brand) 30%, transparent);
-  }
-  .badge-tester {
-    @apply inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider;
-    background: var(--bg-card);
-    color: var(--text-muted);
-    border: 1px solid var(--border-color);
-  }
-
-  /* ── Log category badges (theme-aware, no hardcoded colors) ── */
-  .badge-log-auth {
-    @apply inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-medium;
-    background: var(--log-auth-bg);
-    color: var(--log-auth-text);
-    border: 1px solid color-mix(in srgb, var(--log-auth-text) 20%, transparent);
-  }
-  .badge-log-info {
-    @apply inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-medium;
-    background: color-mix(in srgb, var(--log-level-info) 12%, transparent);
-    color: var(--log-level-info);
-    border: 1px solid color-mix(in srgb, var(--log-level-info) 25%, transparent);
-  }
-  .badge-log-warn {
-    @apply inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-medium;
-    background: color-mix(in srgb, var(--log-level-warn) 12%, transparent);
-    color: var(--log-level-warn);
-    border: 1px solid color-mix(in srgb, var(--log-level-warn) 25%, transparent);
-  }
-  .badge-log-error {
-    @apply inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-medium;
-    background: color-mix(in srgb, var(--log-level-error) 12%, transparent);
-    color: var(--log-level-error);
-    border: 1px solid
-      color-mix(in srgb, var(--log-level-error) 25%, transparent);
-  }
-
-  /* ── Log level dots ── */
-  .dot-log-info {
-    @apply w-2 h-2 rounded-full;
-    background: var(--log-level-info);
-  }
-  .dot-log-warn {
-    @apply w-2 h-2 rounded-full;
-    background: var(--log-level-warn);
-  }
-  .dot-log-error {
-    @apply w-2 h-2 rounded-full;
-    background: var(--log-level-error);
-  }
-
-  /* ── Gradient background ── */
-  .grad-bg {
-    background: linear-gradient(
-      135deg,
-      var(--grad-from) 0%,
-      var(--grad-via) 50%,
-      var(--grad-to) 100%
-    );
-    transition: background 0.5s ease;
-  }
-
-  /* ── Shimmer overlay ── */
-  .shimmer {
-    background: linear-gradient(
-      105deg,
-      transparent 40%,
-      color-mix(in srgb, var(--text-primary) 4%, transparent) 45%,
-      color-mix(in srgb, var(--text-primary) 8%, transparent) 50%,
-      color-mix(in srgb, var(--text-primary) 4%, transparent) 55%,
-      transparent 60%
-    );
-    background-size: 200% 200%;
-    animation: shimmerMove 3s ease-in-out infinite;
-  }
   @keyframes shimmerMove {
     0% {
       background-position: 200% 0;
@@ -325,8 +444,6 @@
       background-position: -200% 0;
     }
   }
-
-  /* ── Neon pulse keyframes (theme-adaptive via CSS vars) ── */
   @keyframes neonPulse {
     0%,
     100% {

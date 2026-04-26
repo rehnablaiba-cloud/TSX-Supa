@@ -143,7 +143,7 @@ const ExportTestDocxModal: React.FC<Props> = ({ onClose }) => {
 
       {/* Error banner */}
       {error && (
-        <div className="flex items-start gap-2 px-3 py-2.5 rounded-xl bg-[var(--color-fail)]/10 border border-[var(--color-fail)]/20 text-[var(--color-fail)] mb-3">
+        <div className="flex items-start gap-2 px-3 py-2.5 rounded-xl bg-fail/10 border border-fail/20 text-fail mb-3">
           <AlertCircle size={14} className="shrink-0 mt-0.5" />
           <p className="text-xs font-medium">{error}</p>
         </div>
@@ -174,7 +174,7 @@ const ExportTestDocxModal: React.FC<Props> = ({ onClose }) => {
                     className={`flex items-center justify-between px-4 py-3 rounded-2xl border text-left transition-all duration-150 ${
                       active
                         ? "border-c-brand/50 bg-c-brand/10 text-c-brand"
-                        : "border-[var(--border-color)] bg-bg-card text-t-secondary hover:bg-bg-surface"
+                        : "border-(--border-color) bg-bg-card text-t-secondary hover:bg-bg-surface"
                     }`}
                   >
                     <span className="text-sm font-medium">{m.name}</span>
@@ -218,7 +218,7 @@ const ExportTestDocxModal: React.FC<Props> = ({ onClose }) => {
                       className={`flex items-center justify-between px-4 py-3 rounded-2xl border text-left transition-all duration-150 ${
                         active
                           ? "border-c-brand/50 bg-c-brand/10 text-c-brand"
-                          : "border-[var(--border-color)] bg-bg-card text-t-secondary hover:bg-bg-surface"
+                          : "border-(--border-color) bg-bg-card text-t-secondary hover:bg-bg-surface"
                       }`}
                     >
                       <span className="text-sm font-medium">
@@ -244,8 +244,8 @@ const ExportTestDocxModal: React.FC<Props> = ({ onClose }) => {
           disabled={!canExport}
           className={`mt-2 w-full flex items-center justify-center gap-2 px-4 py-3.5 rounded-2xl text-sm font-semibold transition-all duration-150 ${
             canExport
-              ? "bg-c-brand text-[var(--bg-surface)] active:scale-[0.97]"
-              : "bg-bg-card text-t-muted border border-[var(--border-color)] opacity-50 cursor-not-allowed"
+              ? "bg-c-brand text-(--bg-surface) active:scale-[0.97]"
+              : "bg-bg-card text-t-muted border border-(--border-color) opacity-50 cursor-not-allowed"
           }`}
         >
           {exporting ? (

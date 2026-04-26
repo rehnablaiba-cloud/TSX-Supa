@@ -67,7 +67,7 @@ const ModalShell: React.FC<ModalShellProps> = ({
   return (
     <div
       ref={backdropRef}
-      className="fixed inset-0 z-[80] flex items-end md:items-center justify-center backdrop-dim"
+      className="fixed inset-0 z-80 flex items-end md:items-center justify-center backdrop-dim"
       style={{ opacity: 0 }}
       onClick={handleClose}
     >

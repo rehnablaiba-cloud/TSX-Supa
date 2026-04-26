@@ -236,8 +236,8 @@ const AppInner: React.FC = () => {
             title="Install TestPro as an app"
             className="fixed bottom-20 right-4 z-50 flex items-center gap-1.5
               px-2.5 py-1.5 rounded-lg text-[11px] font-semibold
-              bg-bg-surface border border-[var(--border-color)]
-              text-t-secondary hover:text-t-primary hover:border-[var(--color-brand)]
+              bg-bg-surface border border-(--border-color)
+              text-t-secondary hover:text-t-primary hover:border-(--color-brand)
               shadow-lg transition-colors"
           >
             📲 Install

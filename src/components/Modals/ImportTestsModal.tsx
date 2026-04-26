@@ -197,7 +197,7 @@ const ImportTestsModal: React.FC<Props> = ({ onClose, onBack }) => {
             <button
               key={m.id}
               onClick={() => handleOpSelect(m.id)}
-              className="flex items-center gap-3 px-4 py-3 rounded-xl border border-[var(--border-color)] bg-bg-card hover:bg-bg-base text-left transition-all"
+              className="flex items-center gap-3 px-4 py-3 rounded-xl border border-(--border-color) bg-bg-card hover:bg-bg-base text-left transition-all"
             >
               <span className="text-t-muted">{m.icon}</span>
               <div>
@@ -223,7 +223,7 @@ const ImportTestsModal: React.FC<Props> = ({ onClose, onBack }) => {
             <button
               key={t.name}
               onClick={() => handleTestSelect(t)}
-              className="text-left px-3 py-2 rounded-xl border border-[var(--border-color)] bg-bg-card hover:bg-bg-base text-sm text-t-primary"
+              className="text-left px-3 py-2 rounded-xl border border-(--border-color) bg-bg-card hover:bg-bg-base text-sm text-t-primary"
             >
               <span className="font-mono text-c-brand mr-2">{t.serial_no}</span>
               {t.name}
@@ -266,7 +266,7 @@ const ImportTestsModal: React.FC<Props> = ({ onClose, onBack }) => {
       {/* ── confirm ── */}
       {stage === "confirm" && (
         <div className="flex flex-col gap-3">
-          <div className="rounded-xl border border-[var(--border-color)] bg-bg-card p-3 flex flex-col gap-1.5 text-xs">
+          <div className="rounded-xl border border-(--border-color) bg-bg-card p-3 flex flex-col gap-1.5 text-xs">
             <Row label="Operation" value={op.toUpperCase()} brand />
             {op === "create" && (
               <>
@@ -288,20 +288,20 @@ const ImportTestsModal: React.FC<Props> = ({ onClose, onBack }) => {
               <Row label="Delete" value={selectedTest.name} mono />
             )}
           </div>
-          {error && <p className="text-xs text-[var(--color-fail)]">{error}</p>}
+          {error && <p className="text-xs text-fail">{error}</p>}
           <div className="flex gap-2">
             <button
               onClick={() =>
                 setStage(op === "create" ? "fillform" : "selecttest")
               }
-              className="flex-1 px-4 py-2.5 rounded-xl border border-[var(--border-color)] text-t-secondary text-sm"
+              className="flex-1 px-4 py-2.5 rounded-xl border border-(--border-color) text-t-secondary text-sm"
             >
               Back
             </button>
             <button
               onClick={handleSubmit}
-              className={`flex-1 px-4 py-2.5 rounded-xl text-sm font-semibold text-[var(--bg-surface)] ${
-                op === "delete" ? "bg-[var(--color-fail)] hover:bg-[color-mix(in_srgb,var(--color-fail),black_20%)]" : "btn-primary"
+              className={`flex-1 px-4 py-2.5 rounded-xl text-sm font-semibold text-(--bg-surface) ${
+                op === "delete" ? "bg-fail hover:bg-[color-mix(in_srgb,var(--color-fail),black_20%)]" : "btn-primary"
               }`}
             >
               Confirm {op}

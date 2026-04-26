@@ -69,10 +69,10 @@ type ViewMode = "table" | "chart";
 // ─── Constants ─────────────────────────────────────────────────────────────────
 const STATUS_ICON: Record<string, React.ReactNode> = {
   pass: (
-    <CheckCircle2 size={13} className="text-[var(--color-pass)] shrink-0" />
+    <CheckCircle2 size={13} className="text-pass shrink-0" />
   ),
-  fail: <XCircle size={13} className="text-[var(--color-fail)] shrink-0" />,
-  pending: <Clock size={13} className="text-[var(--color-pend)] shrink-0" />,
+  fail: <XCircle size={13} className="text-fail shrink-0" />,
+  pending: <Clock size={13} className="text-pend shrink-0" />,
 };
 
 const STATUS_BADGE: Record<string, React.CSSProperties> = {
@@ -139,11 +139,11 @@ const SessionDetailModal: React.FC<SessionModalProps> = ({
     >
       <div
         className="relative flex flex-col w-full max-w-3xl max-h-[80vh] rounded-2xl
-          bg-bg-card border border-[var(--border-color)] shadow-2xl"
+          bg-bg-card border border-(--border-color) shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
-        <div className="flex items-start justify-between gap-3 px-5 py-4 border-b border-[var(--border-color)]">
+        <div className="flex items-start justify-between gap-3 px-5 py-4 border-b border-(--border-color)">
           <div className="flex flex-col gap-0.5">
             <p className="text-sm font-bold text-t-primary">
               {group.tests_name}
@@ -216,7 +216,7 @@ const SessionDetailModal: React.FC<SessionModalProps> = ({
                 <th className="px-4 py-2.5 text-center">Status</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-[var(--border-color)]">
+            <tbody className="divide-y divide-(--border-color)">
               {sorted.map((step) => (
                 <tr
                   key={step.id}
@@ -252,7 +252,7 @@ const SessionDetailModal: React.FC<SessionModalProps> = ({
         </div>
 
         {/* Footer */}
-        <div className="px-5 py-3 border-t border-[var(--border-color)] text-xs text-t-muted">
+        <div className="px-5 py-3 border-t border-(--border-color) text-xs text-t-muted">
           {group.total} step{group.total !== 1 ? "s" : ""} executed this session
         </div>
       </div>
@@ -563,7 +563,7 @@ const TestReport: React.FC<Props> = ({ module_test_id, onBack }) => {
           onClick={() => setChartType(type)}
           className={`text-xs font-semibold px-3 py-1 rounded-lg transition-colors ${
             chartType === type
-              ? "bg-c-brand text-[var(--bg-surface)]"
+              ? "bg-c-brand text-(--bg-surface)"
               : "text-t-muted hover:text-t-primary"
           }`}
         >
@@ -652,13 +652,13 @@ const TestReport: React.FC<Props> = ({ module_test_id, onBack }) => {
         </div>
 
         {/* Test rows — click to open detail popup */}
-        <div className="flex flex-col gap-1 pt-1 border-t border-[var(--border-color)]">
+        <div className="flex flex-col gap-1 pt-1 border-t border-(--border-color)">
           {sessionGroups.map((g) => (
             <button
               key={`${g.module_name}::${g.tests_name}`}
               onClick={() => setActiveSessionGroup(g)}
               className="flex items-center gap-3 px-3 py-2.5 rounded-lg
-                bg-bg-base hover:bg-bg-surface border border-[var(--border-color)]
+                bg-bg-base hover:bg-bg-surface border border-(--border-color)
                 transition-colors text-left group"
             >
               {/* Module tag */}
@@ -744,7 +744,7 @@ const TestReport: React.FC<Props> = ({ module_test_id, onBack }) => {
               module_test_id ? fetchDrillDown() : fetchStandalone()
             }
             className="px-4 py-2 rounded-xl bg-bg-card hover:bg-bg-surface text-sm
-              text-t-secondary border border-[var(--border-color)] transition"
+              text-t-secondary border border-(--border-color) transition"
           >
             Retry
           </button>
@@ -775,7 +775,7 @@ const TestReport: React.FC<Props> = ({ module_test_id, onBack }) => {
               <button
                 onClick={() => exportReportCSV([], toFlatData())}
                 className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg
-                  bg-bg-card hover:bg-bg-surface border border-[var(--border-color)]
+                  bg-bg-card hover:bg-bg-surface border border-(--border-color)
                   text-t-primary transition"
               >
                 <FileSpreadsheet size={13} /> CSV
@@ -783,7 +783,7 @@ const TestReport: React.FC<Props> = ({ module_test_id, onBack }) => {
               <button
                 onClick={() => exportReportPDF([], toFlatData())}
                 className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg
-                  bg-bg-card hover:bg-bg-surface border border-[var(--border-color)]
+                  bg-bg-card hover:bg-bg-surface border border-(--border-color)
                   text-t-primary transition"
               >
                 <FileText size={13} /> PDF
@@ -907,7 +907,7 @@ const TestReport: React.FC<Props> = ({ module_test_id, onBack }) => {
                 className={`flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5
                   rounded-lg transition-colors ${
                     viewMode === mode
-                      ? "bg-c-brand text-[var(--bg-surface)]"
+                      ? "bg-c-brand text-(--bg-surface)"
                       : "text-t-muted hover:text-t-primary"
                   }`}
               >
@@ -930,7 +930,7 @@ const TestReport: React.FC<Props> = ({ module_test_id, onBack }) => {
           )}
 
           {viewMode === "table" && (
-            <div className="overflow-x-auto rounded-xl border border-[var(--border-color)]">
+            <div className="overflow-x-auto rounded-xl border border-(--border-color)">
               <table className="w-full text-sm">
                 <thead>
                   <tr className="bg-bg-card text-t-muted uppercase text-xs">
@@ -957,7 +957,7 @@ const TestReport: React.FC<Props> = ({ module_test_id, onBack }) => {
                     <th className="px-4 py-3 text-center">Pass Rate</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-[var(--border-color)]">
+                <tbody className="divide-y divide-(--border-color)">
                   <tr className="hover:bg-bg-card transition-colors">
                     <td className="px-4 py-3 font-semibold text-t-primary">
                       {meta.test?.name ?? meta.tests_name}
@@ -985,7 +985,7 @@ const TestReport: React.FC<Props> = ({ module_test_id, onBack }) => {
                     </td>
                     <td className="px-4 py-3 text-center">
                       <div className="flex items-center gap-2 justify-center">
-                        <div className="w-20 h-1.5 bg-[var(--border-color)] rounded-full overflow-hidden">
+                        <div className="w-20 h-1.5 bg-(--border-color) rounded-full overflow-hidden">
                           <div
                             className="h-full rounded-full"
                             style={{
@@ -1032,7 +1032,7 @@ const TestReport: React.FC<Props> = ({ module_test_id, onBack }) => {
             disabled={sessionFlatData.length === 0}
             className="flex items-center gap-1.5 px-4 py-2 bg-bg-card hover:bg-bg-surface
               disabled:opacity-40 disabled:cursor-not-allowed text-t-primary
-              text-sm font-semibold rounded-lg transition border border-[var(--border-color)]"
+              text-sm font-semibold rounded-lg transition border border-(--border-color)"
           >
             <Upload size={14} /> Export
           </button>
@@ -1050,18 +1050,18 @@ const TestReport: React.FC<Props> = ({ module_test_id, onBack }) => {
             label: "CSV",
             icon: <FileSpreadsheet size={16} />,
             color:
-              "bg-[var(--bg-card)] border border-[var(--border-color)] text-[var(--text-primary)]",
+              "bg-(--bg-card) border border-(--border-color) text-(--text-primary)",
             hoverColor:
-              "hover:bg-[var(--bg-surface)] hover:border-[var(--color-brand)]",
+              "hover:bg-(--bg-surface) hover:border-(--color-brand)",
             onConfirm: () => exportReportCSV([], sessionFlatData),
           },
           {
             label: "PDF",
             icon: <FileText size={16} />,
             color:
-              "bg-[var(--bg-card)] border border-[var(--border-color)] text-[var(--text-primary)]",
+              "bg-(--bg-card) border border-(--border-color) text-(--text-primary)",
             hoverColor:
-              "hover:bg-[var(--bg-surface)] hover:border-[var(--color-brand)]",
+              "hover:bg-(--bg-surface) hover:border-(--color-brand)",
             onConfirm: () => exportReportPDF([], sessionFlatData),
           },
         ]}
@@ -1073,7 +1073,7 @@ const TestReport: React.FC<Props> = ({ module_test_id, onBack }) => {
           {moduleDropdown}
           <div
             className="flex items-center gap-2 rounded-xl p-1
-            bg-bg-card border border-[var(--border-color)] w-fit"
+            bg-bg-card border border-(--border-color) w-fit"
           >
             {(["graph", "table"] as const).map((v) => (
               <button
@@ -1081,7 +1081,7 @@ const TestReport: React.FC<Props> = ({ module_test_id, onBack }) => {
                 onClick={() => setView(v)}
                 className={`px-4 py-2 rounded-lg text-sm font-semibold transition capitalize ${
                   view === v
-                    ? "bg-c-brand text-[var(--bg-surface)]"
+                    ? "bg-c-brand text-(--bg-surface)"
                     : "text-t-muted hover:text-t-primary"
                 }`}
               >
@@ -1105,7 +1105,7 @@ const TestReport: React.FC<Props> = ({ module_test_id, onBack }) => {
           )}
 
           {view === "table" && (
-            <div className="overflow-x-auto rounded-xl border border-[var(--border-color)]">
+            <div className="overflow-x-auto rounded-xl border border-(--border-color)">
               <table className="w-full text-sm">
                 <thead>
                   <tr className="bg-bg-card text-t-muted uppercase text-xs">
@@ -1133,7 +1133,7 @@ const TestReport: React.FC<Props> = ({ module_test_id, onBack }) => {
                     <th className="px-4 py-3 text-center">Pass Rate</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-[var(--border-color)]">
+                <tbody className="divide-y divide-(--border-color)">
                   {displayModules.map((m) => {
                     const r = getNonDividerResults(m.step_results ?? []);
                     const total = r.length;
@@ -1178,7 +1178,7 @@ const TestReport: React.FC<Props> = ({ module_test_id, onBack }) => {
                         </td>
                         <td className="px-4 py-3 text-center">
                           <div className="flex items-center gap-2 justify-center">
-                            <div className="w-20 h-1.5 bg-[var(--border-color)] rounded-full overflow-hidden">
+                            <div className="w-20 h-1.5 bg-(--border-color) rounded-full overflow-hidden">
                               <div
                                 className="h-full rounded-full"
                                 style={{

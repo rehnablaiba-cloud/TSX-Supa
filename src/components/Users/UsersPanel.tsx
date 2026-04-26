@@ -38,7 +38,7 @@ const UsersPanel: React.FC = () => {
       <div className="flex-1 flex flex-col">
         <Topbar title="Users" subtitle="Admin only" />
         <div className="flex flex-col items-center justify-center flex-1 gap-4 p-8 text-center">
-          <div className="w-14 h-14 rounded-full bg-[var(--color-fail)]/10 border border-[var(--color-fail)]/20
+          <div className="w-14 h-14 rounded-full bg-fail/10 border border-fail/20
             flex items-center justify-center text-2xl">
             🔒
           </div>
@@ -169,7 +169,7 @@ const UsersPanel: React.FC = () => {
         <div className="card overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
-              <tr className="text-left text-t-muted border-b border-[var(--border-color)]">
+              <tr className="text-left text-t-muted border-b border-(--border-color)">
                 <th className="pb-3 pr-4 font-medium">User</th>
                 <th className="pb-3 pr-4 font-medium">Role</th>
                 <th className="pb-3 pr-4 font-medium">Status</th>
@@ -178,10 +178,10 @@ const UsersPanel: React.FC = () => {
             </thead>
             <tbody>
               {filtered.map(u => (
-                <tr key={u.id} className="border-b border-[var(--border-color)] hover:bg-bg-card transition-colors">
+                <tr key={u.id} className="border-b border-(--border-color) hover:bg-bg-card transition-colors">
                   <td className="py-3 pr-4">
                     <div className="flex items-center gap-3">
-                      <div className="w-8 h-8 rounded-full bg-c-brand flex items-center justify-center text-sm font-bold text-[var(--bg-surface)]">
+                      <div className="w-8 h-8 rounded-full bg-c-brand flex items-center justify-center text-sm font-bold text-(--bg-surface)">
                         {(u.display_name || "?")[0].toUpperCase()}
                       </div>
                       <p className="font-medium text-t-primary">
@@ -197,7 +197,7 @@ const UsersPanel: React.FC = () => {
                   {/* FIX: show disabled status so admins can see locked-out accounts */}
                   <td className="py-3 pr-4">
                     {u.disabled
-                      ? <span className="text-xs px-2 py-0.5 rounded-full bg-[var(--color-fail)]/15 text-[var(--color-fail)]">Disabled</span>
+                      ? <span className="text-xs px-2 py-0.5 rounded-full bg-fail/15 text-fail">Disabled</span>
                       : <span className="text-xs px-2 py-0.5 rounded-full bg-[color-mix(in_srgb,var(--color-pass)_15%,transparent)] text-[color-mix(in_srgb,var(--color-pass),white_30%)]">Active</span>
                     }
                   </td>
@@ -208,7 +208,7 @@ const UsersPanel: React.FC = () => {
                       <button
                         disabled={u.id === currentUser?.id}
                         onClick={() => setDeleteTarget(u)}
-                        className="text-xs px-3 py-1 rounded-lg bg-[var(--color-fail)]/10 text-[var(--color-fail)] dark:text-[var(--color-fail)] hover:bg-[var(--color-fail)]/20 disabled:opacity-30 transition-colors">
+                        className="text-xs px-3 py-1 rounded-lg bg-fail/10 text-fail dark:text-fail hover:bg-fail/20 disabled:opacity-30 transition-colors">
                         Delete
                       </button>
                     </div>
@@ -225,7 +225,7 @@ const UsersPanel: React.FC = () => {
 
       {/* ── Edit modal ── */}
       {showForm && editTarget && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-[color-mix(in_srgb,var(--text-primary)_60%,transparent)] backdrop-blur-sm p-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-[color-mix(in_srgb,var(--text-primary)_60%,transparent)] backdrop-blur-xs p-4">
           <div className="glass rounded-2xl p-6 w-full max-w-md">
             <h3 className="text-lg font-semibold text-t-primary mb-5">Edit User</h3>
             <div className="flex flex-col gap-4">
@@ -250,7 +250,7 @@ const UsersPanel: React.FC = () => {
                   id="edit-disabled"
                   checked={editDisabled}
                   onChange={e => setEditDisabled(e.target.checked)}
-                  className="w-4 h-4 accent-[var(--color-fail)]"
+                  className="w-4 h-4 accent-fail"
                 />
                 <label htmlFor="edit-disabled" className="text-sm text-t-primary select-none">
                   Disable this account

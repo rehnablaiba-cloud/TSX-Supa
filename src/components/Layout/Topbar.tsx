@@ -9,8 +9,8 @@ interface Props {
 
 const Topbar: React.FC<Props> = ({ title, subtitle, actions, onBack }) => (
   <header className="sticky top-0 z-30 flex items-center gap-4 px-6 py-4
-    bg-bg-nav backdrop-blur
-    border-b border-[var(--border-color)]">
+    bg-bg-nav backdrop-blur-sm
+    border-b border-(--border-color)">
     {onBack && (
       <button
         onClick={onBack}

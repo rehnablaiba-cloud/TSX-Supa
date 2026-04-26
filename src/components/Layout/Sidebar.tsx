@@ -63,14 +63,14 @@ const Sidebar: React.FC<Props> = ({ activePage, onNavigate, modules }) => {
   return (
     <aside
       className={`hidden md:flex flex-col
-      bg-bg-nav border-r border-[var(--border-color)]
+      bg-bg-nav border-r border-(--border-color)
       transition-all duration-300 ${
         collapsed ? "w-16" : "w-64"
       } h-screen sticky top-0 shrink-0`}
     >
       {/* Header */}
       <div
-        className={`flex items-center px-4 py-4 border-b border-[var(--border-color)]
+        className={`flex items-center px-4 py-4 border-b border-(--border-color)
         ${collapsed ? "justify-center" : "justify-between"}`}
       >
         {!collapsed && (
@@ -151,7 +151,7 @@ const Sidebar: React.FC<Props> = ({ activePage, onNavigate, modules }) => {
                   text-t-secondary hover:bg-bg-card hover:text-t-primary
                   transition-colors w-full text-left shrink-0"
               >
-                <span className="w-2 h-2 rounded-full shrink-0 bg-[var(--color-brand)]" />
+                <span className="w-2 h-2 rounded-full shrink-0 bg-(--color-brand)" />
                 <span className="truncate">{m.name}</span>
               </button>
             ))}
@@ -160,7 +160,7 @@ const Sidebar: React.FC<Props> = ({ activePage, onNavigate, modules }) => {
       </nav>
 
       {/* Footer */}
-      <div className="border-t border-[var(--border-color)] p-3 flex flex-col gap-2">
+      <div className="border-t border-(--border-color) p-3 flex flex-col gap-2">
         <div
           className={`flex ${collapsed ? "justify-center" : "justify-start"}`}
         >
@@ -187,7 +187,7 @@ const Sidebar: React.FC<Props> = ({ activePage, onNavigate, modules }) => {
               <button
                 onClick={handleSignOut}
                 aria-label="Sign out"
-                className="p-1.5 text-t-muted hover:text-[var(--color-fail)] hover:bg-bg-card rounded-lg transition-colors"
+                className="p-1.5 text-t-muted hover:text-fail hover:bg-bg-card rounded-lg transition-colors"
               >
                 <LogOut size={15} />
               </button>
@@ -197,7 +197,7 @@ const Sidebar: React.FC<Props> = ({ activePage, onNavigate, modules }) => {
               onClick={handleSignOut}
               aria-label="Sign out"
               title="Sign out"
-              className="w-full flex justify-center p-1.5 rounded-lg text-t-muted hover:text-[var(--color-fail)] hover:bg-bg-card transition-colors"
+              className="w-full flex justify-center p-1.5 rounded-lg text-t-muted hover:text-fail hover:bg-bg-card transition-colors"
             >
               <LogOut size={15} />
             </button>

@@ -226,10 +226,10 @@ const MassImageUploadModal: React.FC<Props> = ({ isOpen, onClose }) => {
                           row.status === "done"
                             ? "bg-[color-mix(in_srgb,var(--color-pass)_15%,transparent)] text-[color-mix(in_srgb,var(--color-pass),white_30%)]"
                             : row.status === "error"
-                            ? "bg-[var(--color-fail)]/15 text-[var(--color-fail)]"
+                            ? "bg-fail/15 text-fail"
                             : row.status === "skipped"
                             ? "bg-[color-mix(in_srgb,var(--color-warn)_15%,transparent)] text-[color-mix(in_srgb,var(--color-warn),white_30%)]"
-                            : "bg-[var(--border-color)] text-t-muted"
+                            : "bg-(--border-color) text-t-muted"
                         }`}
                       >
                         {row.status}

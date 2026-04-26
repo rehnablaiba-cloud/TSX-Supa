@@ -28,7 +28,7 @@ const ThemeToggle: React.FC = () => {
         flex items-center justify-center w-9 h-9 rounded-lg
         bg-bg-card hover:bg-bg-surface
         text-t-secondary hover:text-t-primary
-        border border-[var(--border-color)]
+        border border-(--border-color)
         transition-colors duration-200
       "
     >

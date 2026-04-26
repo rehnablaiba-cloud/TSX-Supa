@@ -93,7 +93,7 @@ const ImportModal: React.FC<Props> = ({ onClose }) => {
           <button
             key={opt.id}
             onClick={() => setTarget(opt.id)}
-            className="flex items-center gap-4 px-4 py-3.5 rounded-xl border border-[var(--border-color)] bg-bg-card hover:bg-bg-base hover:border-c-brand/50 transition-all text-left"
+            className="flex items-center gap-4 px-4 py-3.5 rounded-xl border border-(--border-color) bg-bg-card hover:bg-bg-base hover:border-c-brand/50 transition-all text-left"
           >
             <span className="text-t-muted">{opt.icon}</span>
             <div>

@@ -49,17 +49,17 @@ export const useToast = () => useContext(Ctx);
 const ToastContainer: React.FC = () => {
   const { toasts, removeToast } = useContext(Ctx);
   const colors: Record<ToastVariant, string> = {
-    success: "border-[var(--color-pass)] bg-[color-mix(in_srgb,var(--color-pass)_10%,transparent)] text-[color-mix(in_srgb,var(--color-pass),white_50%)]",
-    error: "border-[var(--color-fail)]  bg-[var(--color-fail)]/10  text-[color-mix(in_srgb,var(--color-fail),white_50%)]",
-    info: "border-[var(--color-brand)] bg-[color-mix(in_srgb,var(--color-brand)_10%,transparent)] text-[color-mix(in_srgb,var(--color-brand),white_50%)]",
-    warning: "border-[var(--color-warn)] bg-[color-mix(in_srgb,var(--color-pend)_10%,transparent)] text-[color-mix(in_srgb,var(--color-warn),white_50%)]",
+    success: "border-pass bg-[color-mix(in_srgb,var(--color-pass)_10%,transparent)] text-[color-mix(in_srgb,var(--color-pass),white_50%)]",
+    error: "border-fail  bg-fail/10  text-[color-mix(in_srgb,var(--color-fail),white_50%)]",
+    info: "border-(--color-brand) bg-[color-mix(in_srgb,var(--color-brand)_10%,transparent)] text-[color-mix(in_srgb,var(--color-brand),white_50%)]",
+    warning: "border-(--color-warn) bg-[color-mix(in_srgb,var(--color-pend)_10%,transparent)] text-[color-mix(in_srgb,var(--color-warn),white_50%)]",
   };
   return (
-    <div className="fixed top-4 right-4 z-[9999] flex flex-col gap-2 max-w-sm w-full">
+    <div className="fixed top-4 right-4 z-9999 flex flex-col gap-2 max-w-sm w-full">
       {toasts.map((t) => (
         <div
           key={t.id}
-          className={`flex items-start gap-3 px-4 py-3 rounded-xl border backdrop-blur-sm text-sm shadow-lg ${
+          className={`flex items-start gap-3 px-4 py-3 rounded-xl border backdrop-blur-xs text-sm shadow-lg ${
             colors[t.variant]
           }`}
         >

@@ -185,7 +185,7 @@ const ImportStepsManualModal: React.FC<Props> = ({ onClose, onBack }) => {
                 setOp(o);
                 setStage("selectmodule");
               }}
-              className="flex items-center gap-3 px-4 py-3 rounded-xl border border-[var(--border-color)] bg-bg-card hover:bg-bg-base text-left transition-all"
+              className="flex items-center gap-3 px-4 py-3 rounded-xl border border-(--border-color) bg-bg-card hover:bg-bg-base text-left transition-all"
             >
               <span className="text-t-muted">
                 {o === "create" ? (
@@ -216,7 +216,7 @@ const ImportStepsManualModal: React.FC<Props> = ({ onClose, onBack }) => {
             <button
               key={m.name}
               onClick={() => handleModuleSelect(m.name)}
-              className="text-left px-3 py-2 rounded-xl border border-[var(--border-color)] bg-bg-card hover:bg-bg-base text-sm text-t-primary"
+              className="text-left px-3 py-2 rounded-xl border border-(--border-color) bg-bg-card hover:bg-bg-base text-sm text-t-primary"
             >
               {m.name}
             </button>
@@ -236,7 +236,7 @@ const ImportStepsManualModal: React.FC<Props> = ({ onClose, onBack }) => {
             <button
               key={t.id}
               onClick={() => handleTestSelect(t.tests_name)}
-              className="text-left px-3 py-2 rounded-xl border border-[var(--border-color)] bg-bg-card hover:bg-bg-base text-sm text-t-primary"
+              className="text-left px-3 py-2 rounded-xl border border-(--border-color) bg-bg-card hover:bg-bg-base text-sm text-t-primary"
             >
               {t.tests_name}
             </button>
@@ -256,7 +256,7 @@ const ImportStepsManualModal: React.FC<Props> = ({ onClose, onBack }) => {
             <button
               key={s.id}
               onClick={() => handleStepSelect(s)}
-              className="text-left px-3 py-2 rounded-xl border border-[var(--border-color)] bg-bg-card hover:bg-bg-base text-xs text-t-primary"
+              className="text-left px-3 py-2 rounded-xl border border-(--border-color) bg-bg-card hover:bg-bg-base text-xs text-t-primary"
             >
               <span className="font-mono text-c-brand mr-2">
                 {s.serial_no}
@@ -311,7 +311,7 @@ const ImportStepsManualModal: React.FC<Props> = ({ onClose, onBack }) => {
               type="checkbox"
               checked={is_divider}
               onChange={(e) => setIsDivider(e.target.checked)}
-              className="rounded"
+              className="rounded-sm"
             />
             Is Divider
           </label>
@@ -328,7 +328,7 @@ const ImportStepsManualModal: React.FC<Props> = ({ onClose, onBack }) => {
       {/* ── confirm ── */}
       {stage === "confirm" && (
         <div className="flex flex-col gap-3">
-          <div className="rounded-xl border border-[var(--border-color)] bg-bg-card p-3 flex flex-col gap-1.5 text-xs">
+          <div className="rounded-xl border border-(--border-color) bg-bg-card p-3 flex flex-col gap-1.5 text-xs">
             <Row label="Op" value={op.toUpperCase()} brand />
             <Row label="Trainset" value={selMod} />
             <Row label="Test" value={selTest} />
@@ -367,19 +367,19 @@ const ImportStepsManualModal: React.FC<Props> = ({ onClose, onBack }) => {
               </>
             )}
           </div>
-          {error && <p className="text-xs text-[var(--color-fail)]">{error}</p>}
+          {error && <p className="text-xs text-fail">{error}</p>}
           <div className="flex gap-2">
             <button
               onClick={() => setStage("fillform")}
-              className="flex-1 px-4 py-2.5 rounded-xl border border-[var(--border-color)] text-t-secondary text-sm"
+              className="flex-1 px-4 py-2.5 rounded-xl border border-(--border-color) text-t-secondary text-sm"
             >
               Back
             </button>
             <button
               onClick={handleSubmit}
-              className={`flex-1 px-4 py-2.5 rounded-xl text-sm font-semibold text-[var(--bg-surface)] ${
+              className={`flex-1 px-4 py-2.5 rounded-xl text-sm font-semibold text-(--bg-surface) ${
                 op === "delete"
-                  ? "bg-[var(--color-fail)] hover:bg-[color-mix(in_srgb,var(--color-fail),black_20%)]"
+                  ? "bg-fail hover:bg-[color-mix(in_srgb,var(--color-fail),black_20%)]"
                   : "btn-primary"
               }`}
             >

@@ -214,7 +214,7 @@ const ExportDataModal: React.FC<Props> = ({ onClose }) => {
 
       {/* Hard error */}
       {stage === "error" && errMsg && (
-        <div className="rounded-xl border border-[var(--color-fail)]/30 bg-[var(--color-fail)]/10 p-4 text-sm text-[var(--color-fail)]">
+        <div className="rounded-xl border border-fail/30 bg-fail/10 p-4 text-sm text-fail">
           {errMsg}
         </div>
       )}
@@ -225,7 +225,7 @@ const ExportDataModal: React.FC<Props> = ({ onClose }) => {
           <div className="flex flex-col gap-4">
             {/* Partial fetch warnings */}
             {fetchErrors.length > 0 && (
-              <div className="rounded-xl border border-[var(--color-pend)]/30 bg-[var(--color-pend)]/10 p-3 text-xs text-[var(--color-pend)] flex flex-col gap-1">
+              <div className="rounded-xl border border-pend/30 bg-pend/10 p-3 text-xs text-pend flex flex-col gap-1">
                 <p className="font-semibold">Some tables failed to load</p>
                 {fetchErrors.map((e, i) => (
                   <p key={i}>{e}</p>
@@ -234,13 +234,13 @@ const ExportDataModal: React.FC<Props> = ({ onClose }) => {
             )}
 
             {/* Table row counts */}
-            <div className="rounded-xl border border-[var(--border-color)] overflow-hidden">
-              <div className="bg-bg-card px-3 py-2 border-b border-[var(--border-color)]">
+            <div className="rounded-xl border border-(--border-color) overflow-hidden">
+              <div className="bg-bg-card px-3 py-2 border-b border-(--border-color)">
                 <p className="text-xs font-semibold text-t-muted uppercase tracking-wider">
                   Tables
                 </p>
               </div>
-              <div className="divide-y divide-[var(--border-color)]">
+              <div className="divide-y divide-(--border-color)">
                 {counts.map(({ table, count }) => (
                   <div
                     key={table}
@@ -275,7 +275,7 @@ const ExportDataModal: React.FC<Props> = ({ onClose }) => {
                   className={`flex items-center gap-3 px-4 py-3 rounded-xl border transition-all text-left ${
                     format === f.id
                       ? "border-c-brand bg-c-brand-bg"
-                      : "border-[var(--border-color)] bg-bg-card hover:bg-bg-base"
+                      : "border-(--border-color) bg-bg-card hover:bg-bg-base"
                   }`}
                 >
                   <span
@@ -296,7 +296,7 @@ const ExportDataModal: React.FC<Props> = ({ onClose }) => {
                     <p className="text-xs text-t-muted">{f.desc}</p>
                   </div>
                   {format === f.id && (
-                    <span className="w-4 h-4 rounded-full bg-c-brand flex items-center justify-center text-[var(--bg-surface)] shrink-0">
+                    <span className="w-4 h-4 rounded-full bg-c-brand flex items-center justify-center text-(--bg-surface) shrink-0">
                       <Check size={10} />
                     </span>
                   )}
@@ -312,7 +312,7 @@ const ExportDataModal: React.FC<Props> = ({ onClose }) => {
             >
               {stage === "exporting" ? (
                 <>
-                  <span className="w-4 h-4 border-2 border-[var(--bg-surface)] border-t-transparent rounded-full animate-spin" />
+                  <span className="w-4 h-4 border-2 border-(--bg-surface) border-t-transparent rounded-full animate-spin" />
                   Building…
                 </>
               ) : stage === "done" ? (
@@ -331,7 +331,7 @@ const ExportDataModal: React.FC<Props> = ({ onClose }) => {
             {stage === "done" && (
               <button
                 onClick={onClose}
-                className="w-full px-4 py-2.5 rounded-xl border border-[var(--border-color)] text-t-secondary hover:text-t-primary text-sm font-medium transition-colors"
+                className="w-full px-4 py-2.5 rounded-xl border border-(--border-color) text-t-secondary hover:text-t-primary text-sm font-medium transition-colors"
               >
                 Close
               </button>
