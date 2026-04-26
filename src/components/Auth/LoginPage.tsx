@@ -218,7 +218,7 @@ const LoginPage: React.FC = () => {
           <button
             type="submit"
             disabled={loading || isBlocked}
-            className="btn-primary text-white flex items-center justify-center gap-2 mt-2 min-h-[48px] disabled:opacity-50 disabled:cursor-not-allowed"
+            className="btn-primary text-[var(--bg-surface)] flex items-center justify-center gap-2 mt-2 min-h-[48px] disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {loading ? (
               <>

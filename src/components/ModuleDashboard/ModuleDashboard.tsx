@@ -513,7 +513,7 @@ const ModuleDashboard: React.FC<Props> = ({
                     onClick={() => setChartType(type)}
                     className={`text-xs font-semibold px-3 py-1 rounded-lg transition-colors ${
                       chartType === type
-                        ? "bg-c-brand text-white"
+                        ? "bg-c-brand text-[var(--bg-surface)]"
                         : "text-t-muted hover:text-t-primary"
                     }`}
                   >
@@ -700,7 +700,7 @@ const ModuleDashboard: React.FC<Props> = ({
                         <button
                           onClick={() => onExecute(mt.id)}
                           disabled={isOtherLock}
-                          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors bg-c-brand hover:bg-c-brand-hover text-white disabled:opacity-30 disabled:cursor-not-allowed"
+                          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors bg-c-brand hover:bg-c-brand-hover text-[var(--bg-surface)] disabled:opacity-30 disabled:cursor-not-allowed"
                         >
                           <Play size={12} />
                           Execute

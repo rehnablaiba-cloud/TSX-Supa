@@ -296,7 +296,7 @@ const ExportDataModal: React.FC<Props> = ({ onClose }) => {
                     <p className="text-xs text-t-muted">{f.desc}</p>
                   </div>
                   {format === f.id && (
-                    <span className="w-4 h-4 rounded-full bg-c-brand flex items-center justify-center text-white shrink-0">
+                    <span className="w-4 h-4 rounded-full bg-c-brand flex items-center justify-center text-[var(--bg-surface)] shrink-0">
                       <Check size={10} />
                     </span>
                   )}
@@ -312,7 +312,7 @@ const ExportDataModal: React.FC<Props> = ({ onClose }) => {
             >
               {stage === "exporting" ? (
                 <>
-                  <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                  <span className="w-4 h-4 border-2 border-[var(--bg-surface)] border-t-transparent rounded-full animate-spin" />
                   Building…
                 </>
               ) : stage === "done" ? (

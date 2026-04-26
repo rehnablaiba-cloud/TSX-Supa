@@ -3,7 +3,7 @@ import { useTheme } from "../../context/ThemeContext";
 
 const SunIcon = () => (
   <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"
-    strokeWidth={1.5} stroke="currentColor" className="w-5 h-5 text-yellow-400">
+    strokeWidth={1.5} stroke="currentColor" className="w-5 h-5 text-[color-mix(in_srgb,var(--color-warn),white_30%)]">
     <path strokeLinecap="round" strokeLinejoin="round"
       d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364-6.364-.707.707M6.343 17.657l-.707.707M17.657 17.657l-.707-.707M6.343 6.343l-.707-.707M12 7a5 5 0 1 1 0 10A5 5 0 0 1 12 7Z" />
   </svg>

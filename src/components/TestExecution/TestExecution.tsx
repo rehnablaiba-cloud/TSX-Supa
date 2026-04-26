@@ -243,7 +243,7 @@ const UndoAllModal: React.FC<{
         </button>
         <button
           onClick={onConfirm}
-          className="flex-1 px-4 py-2.5 rounded-xl text-sm font-bold text-white bg-[var(--color-warn)]-500 hover:bg-[var(--color-warn)]-600 active:bg-[var(--color-warn)]-700 transition-colors flex items-center justify-center gap-1.5"
+          className="flex-1 px-4 py-2.5 rounded-xl text-sm font-bold text-[var(--bg-surface)] bg-[var(--color-warn)] hover:bg-[color-mix(in_srgb,var(--color-warn),black_10%)] active:bg-[color-mix(in_srgb,var(--color-warn),black_20%)] transition-colors flex items-center justify-center gap-1.5"
         >
           <RotateCcw size={14} /> Yes, Reset All
         </button>
@@ -552,7 +552,7 @@ const TableStepRow: React.FC<{
               }}
               className={`flex-1 h-7 rounded-md text-xs font-bold transition-colors flex items-center justify-center ${
                 step.status === "pass"
-                  ? "bg-[var(--color-pass)] text-white"
+                  ? "bg-[var(--color-pass)] text-[var(--bg-surface)]"
                   : "bg-[color-mix(in_srgb,var(--color-pass)_10%,transparent)] hover:bg-[color-mix(in_srgb,var(--color-pass)_25%,transparent)] text-[color-mix(in_srgb,var(--color-pass),white_30%)] border border-[color-mix(in_srgb,var(--color-pass)_20%,transparent)]"
               }`}
             >
@@ -565,7 +565,7 @@ const TableStepRow: React.FC<{
               }}
               className={`flex-1 h-7 rounded-md text-xs font-bold transition-colors flex items-center justify-center ${
                 step.status === "fail"
-                  ? "bg-[var(--color-fail)] text-white"
+                  ? "bg-[var(--color-fail)] text-[var(--bg-surface)]"
                   : "bg-[var(--color-fail)]/10 hover:bg-[var(--color-fail)]/25 text-[var(--color-fail)] border border-[var(--color-fail)]/20"
               }`}
             >
@@ -706,7 +706,7 @@ const MobileStepCard: React.FC<{
               </button>
               <button
                 onClick={saveRemarks}
-                className="flex-1 px-4 py-2.5 rounded-xl text-sm font-bold text-white bg-c-brand hover:bg-c-brand/90 transition-colors"
+                className="flex-1 px-4 py-2.5 rounded-xl text-sm font-bold text-[var(--bg-surface)] bg-c-brand hover:bg-c-brand/90 transition-colors"
               >
                 Save
               </button>
@@ -719,7 +719,7 @@ const MobileStepCard: React.FC<{
         ref={cardRef}
         onClick={onFocus}
         className={`rounded-xl overflow-hidden border border-[var(--border-color)] w-full cursor-pointer transition-shadow ${rowBg} ${
-          isFocused ? "ring-2 ring-sky-400" : ""
+          isFocused ? "ring-2 ring-[color-mix(in_srgb,var(--color-brand),white_30%)]" : ""
         }`}
         style={{ borderLeftColor: accentColor, borderLeftWidth: 3 }}
       >
@@ -850,7 +850,7 @@ const MobileStepCard: React.FC<{
             }}
             className={`shrink-0 w-8 h-8 rounded-md text-xs font-bold transition-colors flex items-center justify-center ${
               step.status === "pass"
-                ? "bg-[var(--color-pass)] text-white"
+                ? "bg-[var(--color-pass)] text-[var(--bg-surface)]"
                 : "bg-[color-mix(in_srgb,var(--color-pass)_10%,transparent)] hover:bg-[color-mix(in_srgb,var(--color-pass)_25%,transparent)] text-[color-mix(in_srgb,var(--color-pass),white_30%)] border border-[color-mix(in_srgb,var(--color-pass)_20%,transparent)]"
             }`}
           >
@@ -863,7 +863,7 @@ const MobileStepCard: React.FC<{
             }}
             className={`shrink-0 w-8 h-8 rounded-md text-xs font-bold transition-colors flex items-center justify-center ${
               step.status === "fail"
-                ? "bg-[var(--color-fail)] text-white"
+                ? "bg-[var(--color-fail)] text-[var(--bg-surface)]"
                 : "bg-[var(--color-fail)]/10 hover:bg-[var(--color-fail)]/25 text-[var(--color-fail)] border border-[var(--color-fail)]/20"
             }`}
           >

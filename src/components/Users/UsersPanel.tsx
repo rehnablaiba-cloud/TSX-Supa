@@ -181,7 +181,7 @@ const UsersPanel: React.FC = () => {
                 <tr key={u.id} className="border-b border-[var(--border-color)] hover:bg-bg-card transition-colors">
                   <td className="py-3 pr-4">
                     <div className="flex items-center gap-3">
-                      <div className="w-8 h-8 rounded-full bg-c-brand flex items-center justify-center text-sm font-bold text-white">
+                      <div className="w-8 h-8 rounded-full bg-c-brand flex items-center justify-center text-sm font-bold text-[var(--bg-surface)]">
                         {(u.display_name || "?")[0].toUpperCase()}
                       </div>
                       <p className="font-medium text-t-primary">
@@ -225,7 +225,7 @@ const UsersPanel: React.FC = () => {
 
       {/* ── Edit modal ── */}
       {showForm && editTarget && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-[color-mix(in_srgb,var(--text-primary)_60%,transparent)] backdrop-blur-sm p-4">
           <div className="glass rounded-2xl p-6 w-full max-w-md">
             <h3 className="text-lg font-semibold text-t-primary mb-5">Edit User</h3>
             <div className="flex flex-col gap-4">

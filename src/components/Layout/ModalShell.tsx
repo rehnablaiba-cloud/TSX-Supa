@@ -93,7 +93,7 @@ const ModalShell: React.FC<ModalShellProps> = ({
           </h2>
           <button
             onClick={handleClose}
-            className="w-8 h-8 rounded-full flex items-center justify-center transition-colors hover:bg-white/5 active:scale-90"
+            className="w-8 h-8 rounded-full flex items-center justify-center transition-colors hover:bg-[color-mix(in_srgb,var(--bg-surface)_5%,transparent)] active:scale-90"
             style={{
               background: "color-mix(in srgb, var(--bg-card) 40%, transparent)",
             }}

@@ -563,7 +563,7 @@ const TestReport: React.FC<Props> = ({ module_test_id, onBack }) => {
           onClick={() => setChartType(type)}
           className={`text-xs font-semibold px-3 py-1 rounded-lg transition-colors ${
             chartType === type
-              ? "bg-c-brand text-white"
+              ? "bg-c-brand text-[var(--bg-surface)]"
               : "text-t-muted hover:text-t-primary"
           }`}
         >
@@ -907,7 +907,7 @@ const TestReport: React.FC<Props> = ({ module_test_id, onBack }) => {
                 className={`flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5
                   rounded-lg transition-colors ${
                     viewMode === mode
-                      ? "bg-c-brand text-white"
+                      ? "bg-c-brand text-[var(--bg-surface)]"
                       : "text-t-muted hover:text-t-primary"
                   }`}
               >
@@ -1081,7 +1081,7 @@ const TestReport: React.FC<Props> = ({ module_test_id, onBack }) => {
                 onClick={() => setView(v)}
                 className={`px-4 py-2 rounded-lg text-sm font-semibold transition capitalize ${
                   view === v
-                    ? "bg-c-brand text-white"
+                    ? "bg-c-brand text-[var(--bg-surface)]"
                     : "text-t-muted hover:text-t-primary"
                 }`}
               >

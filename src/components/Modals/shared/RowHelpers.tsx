@@ -125,7 +125,7 @@ export const OpCard: React.FC<{
     </div>
     {selected && (
       <span
-        className={`w-4 h-4 rounded-full flex items-center justify-center text-white shrink-0 ${
+        className={`w-4 h-4 rounded-full flex items-center justify-center text-[var(--bg-surface)] shrink-0 ${
           danger ? "bg-[var(--color-fail)]" : "bg-c-brand"
         }`}
       >

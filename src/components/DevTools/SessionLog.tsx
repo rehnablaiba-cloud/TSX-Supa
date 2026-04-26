@@ -105,7 +105,7 @@ const EntryRow: React.FC<{
       className={`border-b last:border-b-0 px-3 py-1.5 transition-colors
         ${
           entry.detail
-            ? "cursor-pointer hover:bg-black/5 dark:hover:bg-white/5"
+            ? "cursor-pointer hover:bg-[color-mix(in_srgb,var(--text-primary)_5%,transparent)] dark:hover:bg-[color-mix(in_srgb,var(--bg-surface)_5%,transparent)]"
             : ""
         }
         ${entry.level === "error" ? "bg-[var(--color-fail)]/5" : ""}`}
@@ -402,7 +402,7 @@ const SessionLog: React.FC = () => {
             <button
               onClick={() => setFilter("all")}
               className={`text-[9px] font-bold px-2 py-1 rounded-full shrink-0 uppercase tracking-wide transition-colors
-                ${filter === "all" ? "bg-c-brand text-white" : ""}`}
+                ${filter === "all" ? "bg-c-brand text-[var(--bg-surface)]" : ""}`}
               style={filter === "all" ? {} : { color: styles.mutedText }}
             >
               All · {entries.length}
@@ -418,7 +418,7 @@ const SessionLog: React.FC = () => {
                     rounded-full shrink-0 uppercase tracking-wide transition-colors
                     ${
                       filter === cat
-                        ? "bg-c-brand text-white"
+                        ? "bg-c-brand text-[var(--bg-surface)]"
                         : `${CAT_STYLE[cat]} opacity-75 hover:opacity-100`
                     }`}
                 >
@@ -488,7 +488,7 @@ const SessionLog: React.FC = () => {
           {entries.length}
         </span>
         {errorCount > 0 && (
-          <span className="text-[9px] font-bold bg-[var(--color-fail)] text-white">
+          <span className="text-[9px] font-bold bg-[var(--color-fail)] text-[var(--bg-surface)]">
             {errorCount} err
           </span>
         )}

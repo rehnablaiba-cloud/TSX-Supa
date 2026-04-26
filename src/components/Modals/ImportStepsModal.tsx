@@ -297,7 +297,7 @@ const ImportTestsModal: React.FC<Props> = ({ onClose, onBack }) => {
             </button>
             <button
               onClick={handleSubmit}
-              className={`flex-1 px-4 py-2.5 rounded-xl text-sm font-semibold text-white ${
+              className={`flex-1 px-4 py-2.5 rounded-xl text-sm font-semibold text-[var(--bg-surface)] ${
                 op === "delete" ? "bg-[var(--color-fail)] hover:bg-[color-mix(in_srgb,var(--color-fail),black_20%)]" : "btn-primary"
               }`}
             >

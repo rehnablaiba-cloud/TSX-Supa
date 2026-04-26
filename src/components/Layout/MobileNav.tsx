@@ -212,7 +212,7 @@ const MobileNav: React.FC<Props> = ({ activePage, onNavigate }) => {
               setTheme(theme === "dark" ? "light" : "dark");
               setMoreOpen(false);
             }}
-            className="more-item flex flex-col items-center justify-center gap-1 p-2 rounded-xl transition-all duration-200 hover:bg-white/5 active:scale-90"
+            className="more-item flex flex-col items-center justify-center gap-1 p-2 rounded-xl transition-all duration-200 hover:bg-[color-mix(in_srgb,var(--bg-surface)_5%,transparent)] active:scale-90"
             style={{ width: 72 }}
           >
             <div
@@ -238,7 +238,7 @@ const MobileNav: React.FC<Props> = ({ activePage, onNavigate }) => {
                   setModal("export");
                   setMoreOpen(false);
                 }}
-                className="more-item flex flex-col items-center justify-center gap-1 p-2 rounded-xl transition-all duration-200 hover:bg-white/5 active:scale-90"
+                className="more-item flex flex-col items-center justify-center gap-1 p-2 rounded-xl transition-all duration-200 hover:bg-[color-mix(in_srgb,var(--bg-surface)_5%,transparent)] active:scale-90"
                 style={{ width: 72 }}
               >
                 <div
@@ -262,7 +262,7 @@ const MobileNav: React.FC<Props> = ({ activePage, onNavigate }) => {
                   setModal("test-docx");
                   setMoreOpen(false);
                 }}
-                className="more-item flex flex-col items-center justify-center gap-1 p-2 rounded-xl transition-all duration-200 hover:bg-white/5 active:scale-90"
+                className="more-item flex flex-col items-center justify-center gap-1 p-2 rounded-xl transition-all duration-200 hover:bg-[color-mix(in_srgb,var(--bg-surface)_5%,transparent)] active:scale-90"
                 style={{ width: 72 }}
               >
                 <div
@@ -286,7 +286,7 @@ const MobileNav: React.FC<Props> = ({ activePage, onNavigate }) => {
                   setModal("modules");
                   setMoreOpen(false);
                 }}
-                className="more-item flex flex-col items-center justify-center gap-1 p-2 rounded-xl transition-all duration-200 hover:bg-white/5 active:scale-90"
+                className="more-item flex flex-col items-center justify-center gap-1 p-2 rounded-xl transition-all duration-200 hover:bg-[color-mix(in_srgb,var(--bg-surface)_5%,transparent)] active:scale-90"
                 style={{ width: 72 }}
               >
                 <div
@@ -310,7 +310,7 @@ const MobileNav: React.FC<Props> = ({ activePage, onNavigate }) => {
                   setModal("tests");
                   setMoreOpen(false);
                 }}
-                className="more-item flex flex-col items-center justify-center gap-1 p-2 rounded-xl transition-all duration-200 hover:bg-white/5 active:scale-90"
+                className="more-item flex flex-col items-center justify-center gap-1 p-2 rounded-xl transition-all duration-200 hover:bg-[color-mix(in_srgb,var(--bg-surface)_5%,transparent)] active:scale-90"
                 style={{ width: 72 }}
               >
                 <div
@@ -334,7 +334,7 @@ const MobileNav: React.FC<Props> = ({ activePage, onNavigate }) => {
                   setModal("steps-csv");
                   setMoreOpen(false);
                 }}
-                className="more-item flex flex-col items-center justify-center gap-1 p-2 rounded-xl transition-all duration-200 hover:bg-white/5 active:scale-90"
+                className="more-item flex flex-col items-center justify-center gap-1 p-2 rounded-xl transition-all duration-200 hover:bg-[color-mix(in_srgb,var(--bg-surface)_5%,transparent)] active:scale-90"
                 style={{ width: 72 }}
               >
                 <div
@@ -358,7 +358,7 @@ const MobileNav: React.FC<Props> = ({ activePage, onNavigate }) => {
                   setModal("steps-manual");
                   setMoreOpen(false);
                 }}
-                className="more-item flex flex-col items-center justify-center gap-1 p-2 rounded-xl transition-all duration-200 hover:bg-white/5 active:scale-90"
+                className="more-item flex flex-col items-center justify-center gap-1 p-2 rounded-xl transition-all duration-200 hover:bg-[color-mix(in_srgb,var(--bg-surface)_5%,transparent)] active:scale-90"
                 style={{ width: 72 }}
               >
                 <div
@@ -382,7 +382,7 @@ const MobileNav: React.FC<Props> = ({ activePage, onNavigate }) => {
                   setModal("theme");
                   setMoreOpen(false);
                 }}
-                className="more-item flex flex-col items-center justify-center gap-1 p-2 rounded-xl transition-all duration-200 hover:bg-white/5 active:scale-90"
+                className="more-item flex flex-col items-center justify-center gap-1 p-2 rounded-xl transition-all duration-200 hover:bg-[color-mix(in_srgb,var(--bg-surface)_5%,transparent)] active:scale-90"
                 style={{ width: 72 }}
               >
                 <div

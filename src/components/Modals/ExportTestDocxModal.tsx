@@ -244,7 +244,7 @@ const ExportTestDocxModal: React.FC<Props> = ({ onClose }) => {
           disabled={!canExport}
           className={`mt-2 w-full flex items-center justify-center gap-2 px-4 py-3.5 rounded-2xl text-sm font-semibold transition-all duration-150 ${
             canExport
-              ? "bg-c-brand text-white active:scale-[0.97]"
+              ? "bg-c-brand text-[var(--bg-surface)] active:scale-[0.97]"
               : "bg-bg-card text-t-muted border border-[var(--border-color)] opacity-50 cursor-not-allowed"
           }`}
         >

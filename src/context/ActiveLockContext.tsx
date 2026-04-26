@@ -66,7 +66,7 @@ const LEVEL_DOT: Record<SessionLog["status"], string> = {
   error: "bg-[color-mix(in_srgb,var(--color-fail),white_30%)]",
   warn: "bg-[var(--color-warn)]",
   pending: "bg-[color-mix(in_srgb,var(--color-brand),white_30%)]",
-  info: "bg-gray-400",
+  info: "bg-[color-mix(in_srgb,var(--text-muted),white_25%)]",
 };
 
 const LEVEL_TEXT: Record<SessionLog["status"], string> = {
@@ -263,7 +263,7 @@ const SessionDebugWidget = ({
   const pillDot = hasError
     ? "bg-[var(--color-fail)] animate-pulse"
     : hasWarn
-    ? "bg-[var(--color-warn)]-500"
+    ? "bg-[var(--color-warn)]"
     : "bg-[var(--color-pass)]";
 
   useEffect(() => {
@@ -366,7 +366,7 @@ const SessionDebugWidget = ({
             <button
               onClick={() => setFilter("all")}
               className={`text-[9px] font-bold px-2 py-1 rounded-full shrink-0 uppercase tracking-wide transition-colors
-                ${filter === "all" ? "bg-c-brand text-white" : ""}`}
+                ${filter === "all" ? "bg-c-brand text-[var(--bg-surface)]" : ""}`}
               style={filter === "all" ? {} : { color: styles.mutedText }}
             >
               All · {logs.length}
@@ -382,7 +382,7 @@ const SessionDebugWidget = ({
                     rounded-full shrink-0 uppercase tracking-wide transition-colors
                     ${
                       filter === cat
-                        ? "bg-c-brand text-white"
+                        ? "bg-c-brand text-[var(--bg-surface)]"
                         : `${CAT_STYLE[cat]} opacity-75 hover:opacity-100`
                     }`}
                 >
@@ -457,7 +457,7 @@ const SessionDebugWidget = ({
           </span>
         )}
         {hasError && (
-          <span className="text-[9px] font-bold bg-[var(--color-fail)] text-white px-1.5 py-0.5 rounded-full leading-none">
+          <span className="text-[9px] font-bold bg-[var(--color-fail)] text-[var(--bg-surface)] px-1.5 py-0.5 rounded-full leading-none">
             err
           </span>
         )}

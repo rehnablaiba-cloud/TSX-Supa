@@ -702,7 +702,7 @@ const ThemeEditorPanel: React.FC<{ onClose: () => void }> = ({ onClose }) => {
             className={`flex-1 py-2 px-2 rounded-xl text-xs font-semibold transition-colors
               ${
                 tab === t.id
-                  ? "bg-c-brand text-white"
+                  ? "bg-c-brand text-[var(--bg-surface)]"
                   : "bg-bg-card text-t-muted hover:text-t-secondary"
               }`}
           >
@@ -710,7 +710,7 @@ const ThemeEditorPanel: React.FC<{ onClose: () => void }> = ({ onClose }) => {
             {t.badge && (
               <span
                 className={`ml-1 text-[10px] font-bold
-                ${tab === t.id ? "text-white/70" : "text-c-brand"}`}
+                ${tab === t.id ? "text-[var(--bg-surface)]/70" : "text-c-brand"}`}
               >
                 {t.badge}
               </span>

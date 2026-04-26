@@ -75,7 +75,7 @@ const AuditLog: React.FC = () => {
             >
               <span
                 className={`mt-1.5 w-2 h-2 rounded-full shrink-0 ${
-                  DOT[ev.severity ?? ""] ?? "bg-gray-500"
+                  DOT[ev.severity ?? ""] ?? "bg-[var(--text-muted)]"
                 }`}
               />
               <div className="flex-1 min-w-0">
