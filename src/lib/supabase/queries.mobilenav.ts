@@ -49,6 +49,18 @@ export interface ManualStepPayload {
   is_divider: boolean;
 }
 
+// ─── Admin guard ──────────────────────────────────────────────────────────────
+
+/**
+ * Throws if the current session user is not an admin.
+ * Call this at the top of every mutation and sensitive fetch.
+ */
+async function assertAdmin(): Promise<void> {
+  const { data, error } = await supabase.rpc("is_admin");
+  if (error) throw new Error(`Admin check failed: ${error.message}`);
+  if (!data) throw new Error("Forbidden: admin privileges required.");
+}
+
 // ─── Export-dump ──────────────────────────────────────────────────────────────
 
 export const ALL_TABLES: TableName[] = [
@@ -66,6 +78,8 @@ export async function fetchAllTables(): Promise<{
   data: AllData;
   errors: string[];
 }> {
+  await assertAdmin();
+
   const data = {} as AllData;
   const errors: string[] = [];
 
@@ -92,6 +106,7 @@ export async function fetchModuleOptions(): Promise<ModuleOption[]> {
 }
 
 export async function createModule(name: string): Promise<void> {
+  await assertAdmin();
   const { error } = await supabase.from("modules").insert({ name });
   if (error) throw error;
 }
@@ -100,6 +115,7 @@ export async function updateModule(
   oldName: string,
   newName: string
 ): Promise<void> {
+  await assertAdmin();
   const { error } = await supabase
     .from("modules")
     .update({ name: newName })
@@ -108,6 +124,7 @@ export async function updateModule(
 }
 
 export async function deleteModule(name: string): Promise<void> {
+  await assertAdmin();
   const { error } = await supabase.from("modules").delete().eq("name", name);
   if (error) throw error;
 }
@@ -127,42 +144,51 @@ export async function createTest(
   serial_no: string,
   name: string
 ): Promise<void> {
+  await assertAdmin();
   const { error } = await supabase.from("tests").insert({ serial_no, name });
   if (error) throw error;
 }
 
 /**
  * Update a test's name and serial_no.
- * Renames tests_name on test_steps first (FK has no ON UPDATE CASCADE),
- * then updates the parent tests row. Rolls back step rename on failure.
+ *
+ * FK order: test_steps.tests_name → tests.name (child → parent).
+ * We must update the PARENT (tests) first so the new name exists before
+ * re-pointing the child FK. Doing it the other way causes an FK violation
+ * because the new name doesn't exist in tests yet when the child row is written.
+ *
+ * Rollback: if the child update fails after the parent succeeded, we revert
+ * the parent back to oldName to keep the DB consistent.
  */
 export async function updateTest(
   oldName: string,
   newName: string,
   newSerialNo: string
 ): Promise<void> {
+  await assertAdmin();
+
+  // 1. Update parent first — establishes the new name in tests.
+  const { error: testErr } = await supabase
+    .from("tests")
+    .update({ serial_no: newSerialNo, name: newName })
+    .eq("name", oldName);
+  if (testErr) throw new Error(testErr.message);
+
+  // 2. Re-point child FK only when the name actually changed.
   if (newName !== oldName) {
     const { error: stepErr } = await supabase
       .from("test_steps")
       .update({ tests_name: newName })
       .eq("tests_name", oldName);
-    if (stepErr) throw new Error(`Step ref update failed: ${stepErr.message}`);
-  }
 
-  const { error } = await supabase
-    .from("tests")
-    .update({ serial_no: newSerialNo, name: newName })
-    .eq("name", oldName);
-
-  if (error) {
-    // Rollback step rename so DB stays consistent
-    if (newName !== oldName) {
+    if (stepErr) {
+      // Rollback parent so DB stays consistent.
       await supabase
-        .from("test_steps")
-        .update({ tests_name: oldName })
-        .eq("tests_name", newName);
+        .from("tests")
+        .update({ serial_no: newSerialNo, name: oldName })
+        .eq("name", newName);
+      throw new Error(`Step ref update failed: ${stepErr.message}`);
     }
-    throw new Error(error.message);
   }
 }
 
@@ -174,6 +200,8 @@ export async function updateTest(
  *  4. tests
  */
 export async function deleteTestCascade(name: string): Promise<void> {
+  await assertAdmin();
+
   const { data: steps, error: stepsErr } = await supabase
     .from("test_steps")
     .select("id")
@@ -287,6 +315,8 @@ export async function replaceCsvSteps(
   tests_name: string,
   rows: CsvStepRow[]
 ): Promise<void> {
+  await assertAdmin();
+
   const { error: delErr } = await supabase
     .from("test_steps")
     .delete()
@@ -302,6 +332,7 @@ export async function replaceCsvSteps(
 // ─── Steps — Manual CRUD ──────────────────────────────────────────────────────
 
 export async function createStep(payload: ManualStepPayload): Promise<void> {
+  await assertAdmin();
   const { error } = await supabase.from("test_steps").insert(payload);
   if (error) throw error;
 }
@@ -310,6 +341,7 @@ export async function updateStep(
   id: string,
   patch: { action: string; expected_result: string; is_divider: boolean }
 ): Promise<void> {
+  await assertAdmin();
   const { error } = await supabase
     .from("test_steps")
     .update(patch)
@@ -318,6 +350,7 @@ export async function updateStep(
 }
 
 export async function deleteStep(id: string): Promise<void> {
+  await assertAdmin();
   const { error } = await supabase.from("test_steps").delete().eq("id", id);
   if (error) throw error;
 }
@@ -327,6 +360,8 @@ export async function deleteStep(id: string): Promise<void> {
  * step_results has a FK → test_steps so children must be removed first.
  */
 export async function deleteStepWithResults(id: string): Promise<void> {
+  await assertAdmin();
+
   const { error: resErr } = await supabase
     .from("step_results")
     .delete()
