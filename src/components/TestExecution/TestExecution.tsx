@@ -1,4 +1,4 @@
-ge// src/components/TestExecution/TestExecution.tsx
+// src/components/TestExecution/TestExecution.tsx
 import React, {
   useCallback,
   useEffect,
@@ -198,7 +198,10 @@ const UndoAllModal: React.FC<{
 }> = ({ doneCount, totalCount, onConfirm, onCancel }) => (
   <div
     className="fixed inset-0 z-50 flex items-center justify-center p-4"
-    style={{ backgroundColor: "color-mix(in srgb, var(--bg-base) 55%, transparent)", backdropFilter: `blur(var(--glass-blur))` }}
+    style={{
+      backgroundColor: "color-mix(in srgb, var(--bg-base) 55%, transparent)",
+      backdropFilter: `blur(var(--glass-blur))`,
+    }}
     onClick={onCancel}
   >
     <div
@@ -222,8 +225,7 @@ const UndoAllModal: React.FC<{
             <span className="font-semibold text-t-primary">{doneCount}</span>{" "}
             completed step{doneCount !== 1 ? "s" : ""} (out of{" "}
             <span className="font-semibold text-t-primary">{totalCount}</span>)
-            back to{" "}
-            <span className="font-semibold text-pend">pending</span>.
+            back to <span className="font-semibold text-pend">pending</span>.
           </p>
         </div>
       </div>
@@ -661,7 +663,9 @@ const MobileStepCard: React.FC<{
         <div
           className="fixed inset-0 z-200 flex items-end justify-center"
           style={{
-            backgroundColor: "color-mix(in srgb, var(--bg-base) 55%, transparent)", backdropFilter: `blur(var(--glass-blur))`,
+            backgroundColor:
+              "color-mix(in srgb, var(--bg-base) 55%, transparent)",
+            backdropFilter: `blur(var(--glass-blur))`,
           }}
           onClick={discardRemarks}
         >
@@ -718,7 +722,9 @@ const MobileStepCard: React.FC<{
         ref={cardRef}
         onClick={onFocus}
         className={`rounded-xl overflow-hidden border border-(--border-color) w-full cursor-pointer transition-shadow ${rowBg} ${
-          isFocused ? "ring-2 ring-[color-mix(in_srgb,var(--color-brand),white_30%)]" : ""
+          isFocused
+            ? "ring-2 ring-[color-mix(in_srgb,var(--color-brand),white_30%)]"
+            : ""
         }`}
         style={{ borderLeftColor: accentColor, borderLeftWidth: 3 }}
       >
@@ -732,7 +738,9 @@ const MobileStepCard: React.FC<{
                 <kbd className="px-1 py-0.5 rounded-sm bg-[color-mix(in_srgb,var(--color-pass)_10%,transparent)] text-[color-mix(in_srgb,var(--color-pass),white_30%)] border border-[color-mix(in_srgb,var(--color-pass)_20%,transparent)] font-mono text-[9px]">
                   P
                 </kbd>
-                <span className="text-[color-mix(in_srgb,var(--color-pass),white_30%)]">pass</span>
+                <span className="text-[color-mix(in_srgb,var(--color-pass),white_30%)]">
+                  pass
+                </span>
                 <span className="text-t-muted opacity-40">·</span>
                 <kbd className="px-1 py-0.5 rounded-sm bg-fail/10 text-fail border border-fail/20 font-mono text-[9px]">
                   F
@@ -1457,8 +1465,7 @@ const TestExecution: React.FC<Props> = ({
             icon: <FileSpreadsheet size={16} />,
             color:
               "bg-(--bg-card) border border-(--border-color) text-(--text-primary)",
-            hoverColor:
-              "hover:bg-(--bg-surface) hover:border-(--color-brand)",
+            hoverColor: "hover:bg-(--bg-surface) hover:border-(--color-brand)",
             onConfirm: () =>
               exportExecutionCSV(module_name, exportTestName, flatData),
           },
@@ -1467,8 +1474,7 @@ const TestExecution: React.FC<Props> = ({
             icon: <FileText size={16} />,
             color:
               "bg-(--bg-card) border border-(--border-color) text-(--text-primary)",
-            hoverColor:
-              "hover:bg-(--bg-surface) hover:border-(--color-brand)",
+            hoverColor: "hover:bg-(--bg-surface) hover:border-(--color-brand)",
             onConfirm: () =>
               exportExecutionPDF(module_name, exportTestName, flatData),
           },
@@ -1548,7 +1554,9 @@ const TestExecution: React.FC<Props> = ({
                     <kbd className="px-1.5 py-0.5 rounded-sm bg-[color-mix(in_srgb,var(--color-pass)_10%,transparent)] text-[color-mix(in_srgb,var(--color-pass),white_30%)] font-mono text-[10px] border border-[color-mix(in_srgb,var(--color-pass)_20%,transparent)]">
                       Enter
                     </kbd>
-                    <span className="text-[color-mix(in_srgb,var(--color-pass),white_30%)] ml-1">pass</span>
+                    <span className="text-[color-mix(in_srgb,var(--color-pass),white_30%)] ml-1">
+                      pass
+                    </span>
                   </span>
                   <span className="text-(--border-color)">·</span>
                   <span className="flex items-center gap-1">
@@ -1757,10 +1765,7 @@ const TestExecution: React.FC<Props> = ({
             {isAdmin && doneCount > 0 && (
               <div className="flex items-center justify-center py-6 px-4">
                 <div className="flex items-center gap-3 px-4 py-3 rounded-xl border border-dashed border-[color-mix(in_srgb,var(--color-pend)_30%,transparent)] bg-[color-mix(in_srgb,var(--color-pend)_5%,transparent)]">
-                  <AlertTriangle
-                    size={14}
-                    className="text-pend shrink-0"
-                  />
+                  <AlertTriangle size={14} className="text-pend shrink-0" />
                   <span className="text-xs text-t-muted">
                     Admin action — resets all progress
                   </span>
