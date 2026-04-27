@@ -27,7 +27,7 @@
 
   --color-pass: var(--color-pass, #22c55e);
   --color-fail: var(--color-fail, #ef4444);
-  --color-pend: var(--color-pend, #f59e0b);
+  --color-pend: var(--color-pend, #94a3b8);
   --color-divider-1: var(--color-divider-1, #14b8a6);
   --color-divider-2: var(--color-divider-2, #f59e0b);
   --color-divider-3: var(--color-divider-3, #0ea5e9);
@@ -331,7 +331,7 @@
     --color-brand-bg: rgba(37, 99, 235, 0.1);
     --color-pass: #22c55e;
     --color-fail: #ef4444;
-    --color-pend: #f59e0b;
+    --color-pend: #94a3b8;
     --color-warn: #f59e0b;
     --color-my-lock: #22d3ee;
     --color-other-lock: #f59e0b;

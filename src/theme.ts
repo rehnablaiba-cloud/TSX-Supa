@@ -102,7 +102,7 @@ export const palette = {
   },
   pass: "#22c55e",
   fail: "#ef4444",
-  pend: "#f59e0b",
+  pend: "#94a3b8",
   warn: "#f59e0b",
 } as const;
 

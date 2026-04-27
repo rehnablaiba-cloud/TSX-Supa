@@ -11,6 +11,7 @@ import Topbar from "../Layout/Topbar";
 import ExportModal from "../UI/ExportModal";
 import { useAuth } from "../../context/AuthContext";
 import { useTheme } from "../../context/ThemeContext";
+import SegmentedBar from "../UI/SegmentedBar";
 import {
   Lock,
   Unlock,
