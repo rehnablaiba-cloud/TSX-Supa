@@ -6,6 +6,8 @@ import gsap from "gsap";
 import Spinner from "../UI/Spinner";
 import { TrainFront, Eye, EyeOff } from "lucide-react";
 
+const MAX_ATTEMPTS = 5; // single source of truth — match your DB cap
+
 const LoginPage: React.FC = () => {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -30,15 +32,17 @@ const LoginPage: React.FC = () => {
     return () => ctx.revert();
   }, []);
 
-  // Countdown display while blocked
+  // FIX #2 — ticks every second so button + error both count down live
   useEffect(() => {
     if (!blockedUntil) return;
     const interval = setInterval(() => {
       if (new Date() >= blockedUntil) {
         setBlockedUntil(null);
         setError("");
-        setRemaining(5);
-        clearInterval(interval);
+        setRemaining(null); // FIX #4 — let next submission populate from server
+      } else {
+        const s = Math.ceil((blockedUntil.getTime() - Date.now()) / 1000);
+        setError(`Too many attempts. Try again in ${s}s.`);
       }
     }, 1000);
     return () => clearInterval(interval);
@@ -63,7 +67,6 @@ const LoginPage: React.FC = () => {
     setLoading(true);
 
     try {
-      // Gate check — recorded server-side, persists across refreshes
       const { data: gateData, error: gateError } = await supabase.rpc(
         "record_login_attempt",
         { p_email: email.toLowerCase().trim() }
@@ -79,32 +82,33 @@ const LoginPage: React.FC = () => {
 
       if (!gate.allowed) {
         const until = gate.blocked_until ? new Date(gate.blocked_until) : null;
+        // FIX #1 — compute seconds from local `until`, not from state (not flushed yet)
+        const secsLeft = until
+          ? Math.max(0, Math.ceil((until.getTime() - Date.now()) / 1000))
+          : 0;
         setBlockedUntil(until);
         setRemaining(0);
-        setError(
-          `Too many attempts. Try again in ${getBlockedSecondsLeft()}s.`
-        );
+        setError(`Too many attempts. Try again in ${secsLeft}s.`);
         setLoading(false);
         return;
       }
 
-      setRemaining(gate.remaining);
-
-      // Attempt sign in
       const { error: signInError } = await signIn(email, password);
 
       if (signInError) {
+        // FIX — remaining only updated on failure, never on success
+        setRemaining(gate.remaining);
+        // FIX #3 — reordered so remaining === 0 is checked first (was dead code before)
         setError(
-          gate.remaining <= 1
-            ? `Invalid credentials. You have ${gate.remaining} attempt left.`
-            : gate.remaining === 0
+          gate.remaining === 0
             ? "Account temporarily blocked. Try again in 5 minutes."
-            : `Invalid email or password. ${gate.remaining} attempt${
-                gate.remaining !== 1 ? "s" : ""
-              } remaining.`
+            : gate.remaining === 1
+            ? "Invalid credentials. You have 1 attempt left."
+            : `Invalid email or password. ${gate.remaining} attempts remaining.`
         );
       } else {
-        // Clear attempts on success
+        // FIX — clear remaining so the hint never flashes on successful login
+        setRemaining(null);
         await supabase.rpc("clear_login_attempts", {
           p_email: email.toLowerCase().trim(),
         });
@@ -191,7 +195,7 @@ const LoginPage: React.FC = () => {
           </div>
 
           {remaining !== null &&
-            remaining < 5 &&
+            remaining < MAX_ATTEMPTS &&
             remaining > 0 &&
             !isBlocked && (
               <p className="text-[11px] text-t-muted">
