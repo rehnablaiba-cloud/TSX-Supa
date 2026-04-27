@@ -1,7 +1,7 @@
 // src/components/Modals/ImportModal.tsx
 import React, { useState } from "react";
 import { Package, FlaskConical, Hash, FileSpreadsheet } from "lucide-react";
-import ModalShell from "../Layout/ModalShell";
+import ModalShell from "../UI/ModalShell";
 
 import ImportModulesModal     from "./ImportModulesModal";
 import ImportTestsModal       from "./ImportTestsModal";
@@ -31,8 +31,7 @@ const ImportModal: React.FC<Props> = ({ onClose }) => {
     return <ImportStepsManualModal onClose={onClose} onBack={() => setTarget("none")} />;
 
   return (
-    <ModalShell title={<>Import Data</>} onClose={onClose}>
-      <p className="text-xs text-t-muted -mt-2">Choose what to import</p>
+    <ModalShell title="Import Data" subtitle="Choose what to import" onClose={onClose}>
       <div className="flex flex-col gap-2">
         {OPTIONS.map((opt) => (
           <button

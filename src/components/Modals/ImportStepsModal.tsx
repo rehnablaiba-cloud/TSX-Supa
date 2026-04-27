@@ -1,7 +1,7 @@
 // src/components/Modals/ImportStepsModal.tsx
 import React, { useEffect, useRef, useState } from "react";
-import { Hash, Upload, CheckCircle } from "lucide-react";
-import ModalShell from "../Layout/ModalShell";
+import { Hash, Upload, CheckCircle, ArrowLeft } from "lucide-react";
+import ModalShell from "../UI/ModalShell";
 
 import { supabase } from "../../supabase";
 import { parseStepsCsv } from "../../utils/csvParser";
@@ -79,11 +79,19 @@ const ImportStepsModal: React.FC<Props> = ({ onClose, onBack }) => {
 
   return (
     <ModalShell
-      title={<><Hash size={16} /> Import Steps (CSV)</>}
+      title="Import Steps (CSV)"
+      icon={<Hash size={16} />}
+      subtitle={subtitle[stage] ?? "..."}
       onClose={onClose}
-      onBack={stage !== "submitting" && stage !== "done" ? handleBack : undefined}
     >
-      <p className="text-xs text-t-muted -mt-2">{subtitle[stage] ?? "..."}</p>
+      {/* back button */}
+      {stage !== "submitting" && stage !== "done" && (
+        <button onClick={handleBack}
+          className="-mt-2 self-start flex items-center gap-1 text-xs text-t-muted
+            hover:text-t-primary transition-colors">
+          <ArrowLeft size={13} /> Back
+        </button>
+      )}
 
       {stage === "selecttest" && (
         <div className="flex flex-col gap-1.5 max-h-60 overflow-y-auto">

@@ -1,7 +1,7 @@
 // src/components/Modals/ImportModulesModal.tsx
 import React, { useEffect, useState } from "react";
-import { Package, Plus, Pencil, Trash2, CheckCircle } from "lucide-react";
-import ModalShell from "../Layout/ModalShell";
+import { Package, Plus, Pencil, Trash2, CheckCircle, ArrowLeft } from "lucide-react";
+import ModalShell from "../UI/ModalShell";
 
 import { supabase } from "../../supabase";
 import { fetchModuleOptions } from "../../lib/supabase/queries";
@@ -84,11 +84,19 @@ const ImportModulesModal: React.FC<Props> = ({ onClose, onBack }) => {
 
   return (
     <ModalShell
-      title={<><Package size={16} /> Modules</>}
+      title="Modules"
+      icon={<Package size={16} />}
+      subtitle={subtitle[stage]}
       onClose={onClose}
-      onBack={stage !== "submitting" && stage !== "done" ? handleBack : undefined}
     >
-      <p className="text-xs text-t-muted -mt-2">{subtitle[stage]}</p>
+      {/* back button */}
+      {stage !== "submitting" && stage !== "done" && (
+        <button onClick={handleBack}
+          className="-mt-2 self-start flex items-center gap-1 text-xs text-t-muted
+            hover:text-t-primary transition-colors">
+          <ArrowLeft size={13} /> Back
+        </button>
+      )}
 
       {stage === "selectop" && (
         <div className="flex flex-col gap-2">

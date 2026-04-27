@@ -1,7 +1,7 @@
 // src/components/Modals/ImportTestsModal.tsx
 import React, { useEffect, useState } from "react";
-import { FlaskConical, Plus, Pencil, Trash2, CheckCircle } from "lucide-react";
-import ModalShell from "../Layout/ModalShell";
+import { FlaskConical, Plus, Pencil, Trash2, CheckCircle, ArrowLeft } from "lucide-react";
+import ModalShell from "../UI/ModalShell";
 import { Row, DiffRow } from "../UI/ReviewRow";
 import {
   fetchTestOptions,
@@ -76,11 +76,19 @@ const ImportTestsModal: React.FC<Props> = ({ onClose, onBack }) => {
 
   return (
     <ModalShell
-      title={<><FlaskConical size={16} /> Tests</>}
+      title="Tests"
+      icon={<FlaskConical size={16} />}
+      subtitle={subtitle[stage]}
       onClose={onClose}
-      onBack={stage !== "submitting" && stage !== "done" ? handleBack : undefined}
     >
-      <p className="text-xs text-t-muted -mt-2">{subtitle[stage]}</p>
+      {/* back button */}
+      {stage !== "submitting" && stage !== "done" && (
+        <button onClick={handleBack}
+          className="-mt-2 self-start flex items-center gap-1 text-xs text-t-muted
+            hover:text-t-primary transition-colors">
+          <ArrowLeft size={13} /> Back
+        </button>
+      )}
 
       {stage === "selectop" && (
         <div className="flex flex-col gap-2">

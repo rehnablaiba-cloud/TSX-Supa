@@ -409,10 +409,10 @@
     --glass-border-opacity: 55%;
 
     /* glass-nav (navbar on bare background) */
-    --glass-nav-bg-opacity: 75%;
+    --glass-nav-bg-opacity: 85%;
 
     /* glass-popup (more popup on bare background) */
-    --glass-popup-bg-opacity: 72%;
+    --glass-popup-bg-opacity: 85%;
 
     /* glass card utility */
     --glass-card-bg-opacity: 86%;
