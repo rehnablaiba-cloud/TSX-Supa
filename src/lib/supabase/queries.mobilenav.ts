@@ -150,15 +150,12 @@ export async function createTest(
 }
 
 /**
- * Update a test's name and serial_no.
+ * Update a test's name and/or serial_no.
  *
- * FK order: test_steps.tests_name → tests.name (child → parent).
- * We must update the PARENT (tests) first so the new name exists before
- * re-pointing the child FK. Doing it the other way causes an FK violation
- * because the new name doesn't exist in tests yet when the child row is written.
- *
- * Rollback: if the child update fails after the parent succeeded, we revert
- * the parent back to oldName to keep the DB consistent.
+ * ON UPDATE CASCADE on all FK constraints propagates the name change
+ * down to module_tests.tests_name and test_steps.tests_name automatically.
+ * BEFORE UPDATE triggers on each child table then recompute the baked
+ * composite id PKs. No manual child updates needed here.
  */
 export async function updateTest(
   oldName: string,
@@ -166,30 +163,11 @@ export async function updateTest(
   newSerialNo: string
 ): Promise<void> {
   await assertAdmin();
-
-  // 1. Update parent first — establishes the new name in tests.
-  const { error: testErr } = await supabase
+  const { error } = await supabase
     .from("tests")
     .update({ serial_no: newSerialNo, name: newName })
     .eq("name", oldName);
-  if (testErr) throw new Error(testErr.message);
-
-  // 2. Re-point child FK only when the name actually changed.
-  if (newName !== oldName) {
-    const { error: stepErr } = await supabase
-      .from("test_steps")
-      .update({ tests_name: newName })
-      .eq("tests_name", oldName);
-
-    if (stepErr) {
-      // Rollback parent so DB stays consistent.
-      await supabase
-        .from("tests")
-        .update({ serial_no: newSerialNo, name: oldName })
-        .eq("name", newName);
-      throw new Error(`Step ref update failed: ${stepErr.message}`);
-    }
-  }
+  if (error) throw new Error(error.message);
 }
 
 /**
@@ -239,7 +217,6 @@ export async function deleteTestCascade(name: string): Promise<void> {
 /**
  * Fetch steps for a test via RPC.
  * Avoids PostgREST URL-encoding bug when test names contain spaces.
- * Used by ImportStepsModal (select-step stage).
  */
 export async function fetchStepsByTest(
   tests_name: string
@@ -254,7 +231,6 @@ export async function fetchStepsByTest(
 /**
  * Fetch steps for a test — direct query variant.
  * Use fetchStepsByTest (RPC) when test names may contain spaces.
- * Kept for backwards compatibility with existing callers.
  */
 export async function fetchStepOptions(
   tests_name: string
@@ -270,7 +246,6 @@ export async function fetchStepOptions(
 
 /**
  * Fetch tests that belong to a given module.
- * Used in the CSV step-import flow to populate the test picker.
  */
 export async function fetchTestsForModule(
   module_name: string
