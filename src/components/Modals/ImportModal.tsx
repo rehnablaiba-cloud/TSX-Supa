@@ -1,105 +1,53 @@
 // src/components/Modals/ImportModal.tsx
 import React, { useState } from "react";
-import {
-  Download,
-  Package,
-  FlaskConical,
-  Hash,
-  FileSpreadsheet,
-} from "lucide-react";
+import { Package, FlaskConical, Hash, FileSpreadsheet } from "lucide-react";
 import ModalShell from "../Layout/ModalShell";
 
-import ImportModulesModal from "./ImportModulesModal";
-import ImportTestsModal from "./ImportTestsModal";
-import ImportStepsModal from "./ImportStepsModal";
+import ImportModulesModal    from "./ImportModulesModal";
+import ImportTestsModal      from "./ImportTestsModal";
+import ImportStepsModal      from "./ImportStepsModal";
 import ImportStepsManualModal from "./ImportStepsManualModal";
 
 type ImportTarget = "none" | "modules" | "tests" | "steps_csv" | "steps_manual";
 
-interface Props {
-  onClose: () => void;
-}
+interface Props { onClose: () => void }
 
-const OPTIONS: {
-  id: ImportTarget;
-  label: string;
-  icon: React.ReactNode;
-  desc: string;
-}[] = [
-  {
-    id: "modules",
-    label: "Modules",
-    icon: <Package size={20} />,
-    desc: "Create, rename, or delete modules",
-  },
-  {
-    id: "tests",
-    label: "Tests",
-    icon: <FlaskConical size={20} />,
-    desc: "Create, rename, or delete tests",
-  },
-  {
-    id: "steps_csv",
-    label: "Steps — CSV",
-    icon: <FileSpreadsheet size={20} />,
-    desc: "Bulk add / update / delete steps via CSV upload",
-  },
-  {
-    id: "steps_manual",
-    label: "Steps — Manual",
-    icon: <Hash size={20} />,
-    desc: "Add, edit, or delete a single step step-by-step",
-  },
+const OPTIONS: { id: ImportTarget; label: string; icon: React.ReactNode; desc: string }[] = [
+  { id: "modules",      label: "Modules",        icon: <Package size={20} />,       desc: "Create, rename, or delete modules" },
+  { id: "tests",        label: "Tests",           icon: <FlaskConical size={20} />,  desc: "Create, rename, or delete tests" },
+  { id: "steps_csv",    label: "Steps — CSV",     icon: <FileSpreadsheet size={20}/>, desc: "Bulk-replace steps via CSV upload" },
+  { id: "steps_manual", label: "Steps — Manual",  icon: <Hash size={20} />,          desc: "Add, edit, or delete a single step" },
 ];
 
 const ImportModal: React.FC<Props> = ({ onClose }) => {
   const [target, setTarget] = useState<ImportTarget>("none");
 
-  // ── Sub-modal routing ──────────────────────────────────────────────────────
   if (target === "modules")
-    return (
-      <ImportModulesModal onClose={onClose} onBack={() => setTarget("none")} />
-    );
+    return <ImportModulesModal    onClose={onClose} onBack={() => setTarget("none")} />;
   if (target === "tests")
-    return (
-      <ImportTestsModal onClose={onClose} onBack={() => setTarget("none")} />
-    );
+    return <ImportTestsModal      onClose={onClose} onBack={() => setTarget("none")} />;
   if (target === "steps_csv")
-    return (
-      <ImportStepsModal onClose={onClose} onBack={() => setTarget("none")} />
-    );
+    return <ImportStepsModal      onClose={onClose} onBack={() => setTarget("none")} />;
   if (target === "steps_manual")
-    return (
-      <ImportStepsManualModal
-        onClose={onClose}
-        onBack={() => setTarget("none")}
-      />
-    );
+    return <ImportStepsManualModal onClose={onClose} onBack={() => setTarget("none")} />;
 
-  // ── Hub view ───────────────────────────────────────────────────────────────
   return (
     <ModalShell
-      title={
-        <span className="flex items-center gap-1.5">
-          <Download size={16} /> Import Data
-        </span>
-      }
+      title={<>Import Data</>}
+      subtitle="Choose what to import"
       onClose={onClose}
     >
-      <p className="text-xs text-t-muted -mt-1 mb-3">Choose what to import</p>
-
       <div className="flex flex-col gap-2">
         {OPTIONS.map((opt) => (
           <button
             key={opt.id}
             onClick={() => setTarget(opt.id)}
-            className="flex items-center gap-4 px-4 py-3.5 rounded-xl border border-(--border-color) bg-bg-card hover:bg-bg-base hover:border-c-brand/50 transition-all text-left"
+            className="flex items-center gap-4 px-4 py-3.5 rounded-xl border border-(--border-color)
+              bg-bg-card hover:bg-bg-base hover:border-c-brand/50 transition-all text-left"
           >
-            <span className="text-t-muted">{opt.icon}</span>
+            <span className="text-c-brand">{opt.icon}</span>
             <div>
-              <p className="text-sm font-semibold text-t-primary">
-                {opt.label}
-              </p>
+              <p className="text-sm font-semibold text-t-primary">{opt.label}</p>
               <p className="text-xs text-t-muted">{opt.desc}</p>
             </div>
           </button>
