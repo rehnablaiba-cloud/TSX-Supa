@@ -1,67 +1,79 @@
 /**
  * queries.mobilenav.ts
  * All supabase data calls extracted from MobileNav.tsx (admin modals).
- * Merge / re-export these from your central queries.ts if desired.
  */
 
-import {supabase} from "../../supabase";
+import { supabase } from "../../supabase";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 export type TableName =
-  | "profiles" | "modules"  | "tests"       | "test_steps"
-  | "module_tests" | "step_results" | "test_locks" | "audit_log";
+  | "profiles"
+  | "modules"
+  | "tests"
+  | "test_steps"
+  | "module_tests"
+  | "step_results"
+  | "test_locks"
+  | "audit_log";
 
 export type AllData = Record<TableName, Record<string, unknown>[]>;
 
-export interface ModuleOption { name: string }
-export interface TestOption   { serial_no: string; name: string }
-export interface StepOption   {
+export interface ModuleOption {
+  name: string;
+}
+export interface TestOption {
+  serial_no: string;
+  name: string;
+}
+export interface StepOption {
   id: string;
   serial_no: number;
-  testsname: string;
+  tests_name: string;
   action: string;
   expected_result: string;
   is_divider: boolean;
 }
 export interface CsvStepRow {
-  testsname:      string;
-  serial_no:       number;
-  action:         string;
+  tests_name: string;
+  serial_no: number;
+  action: string;
   expected_result: string;
-  is_divider:      boolean;
+  is_divider: boolean;
 }
 export interface ManualStepPayload {
-  testsname:      string;
-  serial_no:       number;
-  action:         string;
+  tests_name: string;
+  serial_no: number;
+  action: string;
   expected_result: string;
-  is_divider:      boolean;
+  is_divider: boolean;
 }
 
 // ─── Export-dump ──────────────────────────────────────────────────────────────
 
 export const ALL_TABLES: TableName[] = [
-  "profiles", "modules", "tests", "test_steps",
-  "module_tests", "step_results", "test_locks", "audit_log",
+  "profiles",
+  "modules",
+  "tests",
+  "test_steps",
+  "module_tests",
+  "step_results",
+  "test_locks",
+  "audit_log",
 ];
 
-/**
- * Fetches every row from every table for the full-DB export dump.
- * Replaces the local fetchAllTables() inside MobileNav.tsx.
- */
 export async function fetchAllTables(): Promise<{
-  data:   AllData;
+  data: AllData;
   errors: string[];
 }> {
   const data = {} as AllData;
   const errors: string[] = [];
 
   await Promise.all(
-    ALL_TABLES.map(async table => {
+    ALL_TABLES.map(async (table) => {
       const { data: rows, error } = await supabase.from(table).select("*");
       if (error) errors.push(`${table}: ${error.message}`);
-      else       data[table] = rows ?? [];
+      else data[table] = rows ?? [];
     })
   );
 
@@ -70,7 +82,6 @@ export async function fetchAllTables(): Promise<{
 
 // ─── Modules CRUD ─────────────────────────────────────────────────────────────
 
-/** Load all modules — used in ImportModulesModal select-module stage. */
 export async function fetchModuleOptions(): Promise<ModuleOption[]> {
   const { data, error } = await supabase
     .from("modules")
@@ -85,7 +96,10 @@ export async function createModule(name: string): Promise<void> {
   if (error) throw error;
 }
 
-export async function updateModule(oldName: string, newName: string): Promise<void> {
+export async function updateModule(
+  oldName: string,
+  newName: string
+): Promise<void> {
   const { error } = await supabase
     .from("modules")
     .update({ name: newName })
@@ -100,7 +114,6 @@ export async function deleteModule(name: string): Promise<void> {
 
 // ─── Tests CRUD ───────────────────────────────────────────────────────────────
 
-/** Load all tests — used in ImportTestsModal select-test stage. */
 export async function fetchTestOptions(): Promise<TestOption[]> {
   const { data, error } = await supabase
     .from("tests")
@@ -110,75 +123,174 @@ export async function fetchTestOptions(): Promise<TestOption[]> {
   return (data ?? []) as TestOption[];
 }
 
-export async function createTest(serial_no: string, name: string): Promise<void> {
+export async function createTest(
+  serial_no: string,
+  name: string
+): Promise<void> {
   const { error } = await supabase.from("tests").insert({ serial_no, name });
   if (error) throw error;
 }
 
-export async function updateTest(oldName: string, newName: string): Promise<void> {
+/**
+ * Update a test's name and serial_no.
+ * Renames tests_name on test_steps first (FK has no ON UPDATE CASCADE),
+ * then updates the parent tests row. Rolls back step rename on failure.
+ */
+export async function updateTest(
+  oldName: string,
+  newName: string,
+  newSerialNo: string
+): Promise<void> {
+  if (newName !== oldName) {
+    const { error: stepErr } = await supabase
+      .from("test_steps")
+      .update({ tests_name: newName })
+      .eq("tests_name", oldName);
+    if (stepErr) throw new Error(`Step ref update failed: ${stepErr.message}`);
+  }
+
   const { error } = await supabase
     .from("tests")
-    .update({ name: newName })
+    .update({ serial_no: newSerialNo, name: newName })
     .eq("name", oldName);
-  if (error) throw error;
-}
 
-export async function deleteTest(name: string): Promise<void> {
-  const { error } = await supabase.from("tests").delete().eq("name", name);
-  if (error) throw error;
+  if (error) {
+    // Rollback step rename so DB stays consistent
+    if (newName !== oldName) {
+      await supabase
+        .from("test_steps")
+        .update({ tests_name: oldName })
+        .eq("tests_name", newName);
+    }
+    throw new Error(error.message);
+  }
 }
-
-// ─── Steps — CSV bulk import ──────────────────────────────────────────────────
 
 /**
- * Fetch tests that belong to a given module.
- * Used in the CSV step-import flow to populate the test picker.
+ * Fully delete a test and all child rows in FK dependency order:
+ *  1. step_results  (FK → test_steps)
+ *  2. test_steps    (FK → tests)
+ *  3. module_tests  (FK → tests)
+ *  4. tests
  */
-export async function fetchTestsForModule(module_name: string): Promise<TestOption[]> {
-  const { data, error } = await supabase
+export async function deleteTestCascade(name: string): Promise<void> {
+  const { data: steps, error: stepsErr } = await supabase
+    .from("test_steps")
+    .select("id")
+    .eq("tests_name", name);
+  if (stepsErr) throw new Error(`Step fetch failed: ${stepsErr.message}`);
+
+  const stepIds = (steps ?? []).map((s: any) => s.id);
+
+  if (stepIds.length > 0) {
+    const { error: srErr } = await supabase
+      .from("step_results")
+      .delete()
+      .in("test_steps_id", stepIds);
+    if (srErr) throw new Error(`step_results cleanup failed: ${srErr.message}`);
+  }
+
+  const { error: tsErr } = await supabase
+    .from("test_steps")
+    .delete()
+    .eq("tests_name", name);
+  if (tsErr) throw new Error(`test_steps cleanup failed: ${tsErr.message}`);
+
+  const { error: mtErr } = await supabase
     .from("module_tests")
-    .select("testsname, tests(serial_no, name)")
-    .eq("module_name", module_name);
+    .delete()
+    .eq("tests_name", name);
+  if (mtErr) throw new Error(`module_tests cleanup failed: ${mtErr.message}`);
+
+  const { error } = await supabase.from("tests").delete().eq("name", name);
   if (error) throw new Error(error.message);
+}
 
-  const tests = ((data ?? []) as any[])
-    .map(r => r.tests)
-    .flat()
-    .filter(Boolean) as TestOption[];
+// ─── Steps — fetch ────────────────────────────────────────────────────────────
 
-  tests.sort((a, b) =>
-    String(a.serial_no).localeCompare(String(b.serial_no), undefined, { numeric: true })
-  );
-  return tests;
+/**
+ * Fetch steps for a test via RPC.
+ * Avoids PostgREST URL-encoding bug when test names contain spaces.
+ * Used by ImportStepsModal (select-step stage).
+ */
+export async function fetchStepsByTest(
+  tests_name: string
+): Promise<StepOption[]> {
+  const { data, error } = await supabase.rpc("get_steps_by_test", {
+    p_tests_name: tests_name,
+  });
+  if (error) throw new Error(error.message);
+  return (data ?? []) as StepOption[];
 }
 
 /**
- * Fetch existing steps for a test.
- * Used to build the diff/preview in the CSV import confirm stage.
+ * Fetch steps for a test — direct query variant.
+ * Use fetchStepsByTest (RPC) when test names may contain spaces.
+ * Kept for backwards compatibility with existing callers.
  */
-export async function fetchStepsForTest(testsname: string): Promise<StepOption[]> {
+export async function fetchStepOptions(
+  tests_name: string
+): Promise<StepOption[]> {
   const { data, error } = await supabase
     .from("test_steps")
-    .select("id, serial_no, testsname, action, expected_result, is_divider")
-    .eq("testsname", testsname)
+    .select("id, serial_no, tests_name, action, expected_result, is_divider")
+    .eq("tests_name", tests_name)
     .order("serial_no", { ascending: true });
   if (error) throw new Error(error.message);
   return (data ?? []) as StepOption[];
 }
 
 /**
- * Bulk-replace all steps for a test:
- *  1. Delete all existing rows for the test.
- *  2. Insert new rows from the parsed CSV.
+ * Fetch tests that belong to a given module.
+ * Used in the CSV step-import flow to populate the test picker.
  */
+export async function fetchTestsForModule(
+  module_name: string
+): Promise<TestOption[]> {
+  const { data, error } = await supabase
+    .from("module_tests")
+    .select("tests_name, tests(serial_no, name)")
+    .eq("module_name", module_name);
+  if (error) throw new Error(error.message);
+
+  const tests = ((data ?? []) as any[])
+    .map((r) => r.tests)
+    .flat()
+    .filter(Boolean) as TestOption[];
+
+  tests.sort((a, b) =>
+    String(a.serial_no).localeCompare(String(b.serial_no), undefined, {
+      numeric: true,
+    })
+  );
+  return tests;
+}
+
+/**
+ * Fetch existing steps for a test — used for diff/preview in CSV import.
+ */
+export async function fetchStepsForTest(
+  tests_name: string
+): Promise<StepOption[]> {
+  const { data, error } = await supabase
+    .from("test_steps")
+    .select("id, serial_no, tests_name, action, expected_result, is_divider")
+    .eq("tests_name", tests_name)
+    .order("serial_no", { ascending: true });
+  if (error) throw new Error(error.message);
+  return (data ?? []) as StepOption[];
+}
+
+// ─── Steps — CSV bulk import ──────────────────────────────────────────────────
+
 export async function replaceCsvSteps(
-  testsname: string,
+  tests_name: string,
   rows: CsvStepRow[]
 ): Promise<void> {
   const { error: delErr } = await supabase
     .from("test_steps")
     .delete()
-    .eq("testsname", testsname);
+    .eq("tests_name", tests_name);
   if (delErr) throw delErr;
 
   if (rows.length === 0) return;
@@ -188,17 +300,6 @@ export async function replaceCsvSteps(
 }
 
 // ─── Steps — Manual CRUD ──────────────────────────────────────────────────────
-
-/** Load steps for a given test — ImportStepsManualModal select-step stage. */
-export async function fetchStepOptions(testsname: string): Promise<StepOption[]> {
-  const { data, error } = await supabase
-    .from("test_steps")
-    .select("id, serial_no, testsname, action, expected_result, is_divider")
-    .eq("testsname", testsname)
-    .order("serial_no", { ascending: true });
-  if (error) throw new Error(error.message);
-  return (data ?? []) as StepOption[];
-}
 
 export async function createStep(payload: ManualStepPayload): Promise<void> {
   const { error } = await supabase.from("test_steps").insert(payload);
@@ -221,12 +322,23 @@ export async function deleteStep(id: string): Promise<void> {
   if (error) throw error;
 }
 
+/**
+ * Delete a step AND its associated step_results.
+ * step_results has a FK → test_steps so children must be removed first.
+ */
+export async function deleteStepWithResults(id: string): Promise<void> {
+  const { error: resErr } = await supabase
+    .from("step_results")
+    .delete()
+    .eq("test_steps_id", id);
+  if (resErr) throw new Error(`Result cleanup failed: ${resErr.message}`);
+
+  const { error } = await supabase.from("test_steps").delete().eq("id", id);
+  if (error) throw new Error(error.message);
+}
+
 // ─── Sign-out cleanup ─────────────────────────────────────────────────────────
 
-/**
- * Release all test locks held by this user then call signOut().
- * Replaces the inline supabase.from("test_locks").delete() in handleSignOut.
- */
 export async function releaseLocksAndSignOut(
   user_id: string,
   signOut: () => Promise<void>

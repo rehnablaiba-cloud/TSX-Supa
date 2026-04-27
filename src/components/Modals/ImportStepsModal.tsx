@@ -9,9 +9,18 @@ import {
   ArrowLeft,
 } from "lucide-react";
 import ModalShell from "../Layout/ModalShell";
-import { supabase } from "../../supabase";
 import { Row, DiffRow } from "../UI/ReviewRow";
-import type { TestOption } from "../../types";
+import {
+  fetchTestOptions,
+  fetchStepsByTest,
+  createStep,
+  updateStep,
+  deleteStepWithResults,
+} from "../../lib/supabase/queries.mobilenav";
+import type {
+  TestOption,
+  StepOption,
+} from "../../lib/supabase/queries.mobilenav";
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -24,13 +33,6 @@ type Stage =
   | "confirm"
   | "submitting"
   | "done";
-
-interface StepOption {
-  id: string;
-  serial_no: string;
-  description: string;
-  tests_name: string;
-}
 
 const OP_META: {
   id: StepOp;
@@ -69,126 +71,61 @@ const ImportStepsModal: React.FC<Props> = ({ onClose, onBack }) => {
   const [stage, setStage] = useState<Stage>("selecttest");
   const [op, setOp] = useState<StepOp>("create");
 
-  // parent test
   const [tests, setTests] = useState<TestOption[]>([]);
   const [selectedTest, setSelectedTest] = useState<TestOption | null>(null);
 
-  // steps for selected test
   const [steps, setSteps] = useState<StepOption[]>([]);
   const [selectedStep, setSelectedStep] = useState<StepOption | null>(null);
 
-  // form fields
-  const [sn, setSn] = useState("");
-  const [description, setDescription] = useState("");
+  const [serialNo, setSerialNo] = useState("");
+  const [action, setAction] = useState("");
+  const [expectedResult, setExpectedResult] = useState("");
+  const [isDivider, setIsDivider] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Load all tests for the initial picker
+  // ── Load tests once ──────────────────────────────────────────────────────
   useEffect(() => {
-    supabase
-      .from("tests")
-      .select("serial_no, name")
-      .order("serial_no")
-      .then(({ data }: { data: any }) =>
-        setTests((data ?? []) as TestOption[])
-      );
+    fetchTestOptions().then(setTests).catch(console.error);
   }, []);
 
-  // Load steps whenever the selected test changes
+  // ── Load steps when selected test changes ────────────────────────────────
   useEffect(() => {
     if (!selectedTest) return;
-    supabase
-      .from("test_steps")
-      .select("id, serial_no, description, tests_name")
-      .eq("tests_name", selectedTest.name)
-      .order("serial_no")
-      .then(({ data }: { data: any }) =>
-        setSteps((data ?? []) as StepOption[])
-      );
+    fetchStepsByTest(selectedTest.name).then(setSteps).catch(console.error);
   }, [selectedTest]);
+
+  // ── Helpers ──────────────────────────────────────────────────────────────
+  const resetForm = () => {
+    setSerialNo("");
+    setAction("");
+    setExpectedResult("");
+    setIsDivider(false);
+  };
 
   const handleTestSelect = (t: TestOption) => {
     setSelectedTest(t);
     setSelectedStep(null);
-    setSn("");
-    setDescription("");
+    resetForm();
     setStage("selectop");
   };
 
   const handleOpSelect = (o: StepOp) => {
     setOp(o);
+    resetForm();
     setStage(o === "create" ? "fillform" : "selectstep");
   };
 
   const handleStepSelect = (s: StepOption) => {
     setSelectedStep(s);
     if (op === "update") {
-      setSn(s.serial_no);
-      setDescription(s.description);
+      setSerialNo(String(s.serial_no));
+      setAction(s.action);
+      setExpectedResult(s.expected_result);
+      setIsDivider(s.is_divider);
     }
     setStage(op === "delete" ? "confirm" : "fillform");
   };
 
-  const handleSubmit = async () => {
-    if (!selectedTest) return;
-    setStage("submitting");
-    setError(null);
-
-    try {
-      if (op === "create") {
-        const { error: e } = await supabase.from("test_steps").insert({
-          serial_no: sn.trim(),
-          description: description.trim(),
-          tests_name: selectedTest.name,
-        });
-        if (e) throw new Error(e.message);
-      } else if (op === "update" && selectedStep) {
-        const { error: e } = await supabase
-          .from("test_steps")
-          .update({
-            serial_no: sn.trim(),
-            description: description.trim(),
-          })
-          .eq("id", selectedStep.id);
-        if (e) throw new Error(e.message);
-      } else if (op === "delete" && selectedStep) {
-        // step_results FK references test_steps — clean up children first
-        const { error: resultErr } = await supabase
-          .from("step_results")
-          .delete()
-          .eq("test_steps_id", selectedStep.id);
-        if (resultErr)
-          throw new Error(`Result cleanup failed: ${resultErr.message}`);
-
-        const { error: e } = await supabase
-          .from("test_steps")
-          .delete()
-          .eq("id", selectedStep.id);
-        if (e) throw new Error(e.message);
-      }
-
-      setStage("done");
-    } catch (e: any) {
-      setError(e.message);
-      setStage("confirm");
-    }
-  };
-
-  const subtitle =
-    stage === "selecttest"
-      ? "Pick a test"
-      : stage === "selectop"
-      ? "Choose operation"
-      : stage === "selectstep"
-      ? "Pick a step"
-      : stage === "fillform"
-      ? "Enter details"
-      : stage === "confirm"
-      ? "Review & confirm"
-      : stage === "done"
-      ? "Done!"
-      : "…";
-
-  // Back button logic per stage
   const handleBack = () => {
     if (stage === "selectop") return setStage("selecttest");
     if (stage === "selectstep") return setStage("selectop");
@@ -199,6 +136,52 @@ const ImportStepsModal: React.FC<Props> = ({ onClose, onBack }) => {
     onBack();
   };
 
+  // ── Submit ───────────────────────────────────────────────────────────────
+  const handleSubmit = async () => {
+    if (!selectedTest) return;
+    setStage("submitting");
+    setError(null);
+
+    try {
+      if (op === "create") {
+        await createStep({
+          tests_name: selectedTest.name,
+          serial_no: Number(serialNo),
+          action: action.trim(),
+          expected_result: expectedResult.trim(),
+          is_divider: isDivider,
+        });
+      } else if (op === "update" && selectedStep) {
+        await updateStep(selectedStep.id, {
+          action: action.trim(),
+          expected_result: expectedResult.trim(),
+          is_divider: isDivider,
+        });
+      } else if (op === "delete" && selectedStep) {
+        await deleteStepWithResults(selectedStep.id);
+      }
+
+      setStage("done");
+    } catch (e: any) {
+      setError(e.message);
+      setStage("confirm");
+    }
+  };
+
+  const canSubmitForm =
+    serialNo.trim() !== "" && !isNaN(Number(serialNo)) && action.trim() !== "";
+
+  const subtitle: Record<Stage, string> = {
+    selecttest: "Pick a test",
+    selectop: "Choose operation",
+    selectstep: "Pick a step",
+    fillform: "Enter details",
+    confirm: "Review & confirm",
+    submitting: "…",
+    done: "Done!",
+  };
+
+  // ── Render ───────────────────────────────────────────────────────────────
   return (
     <ModalShell
       title={
@@ -209,7 +192,7 @@ const ImportStepsModal: React.FC<Props> = ({ onClose, onBack }) => {
       onClose={onClose}
     >
       <div className="flex items-center justify-between -mt-1 mb-3">
-        <p className="text-xs text-t-muted">{subtitle}</p>
+        <p className="text-xs text-t-muted">{subtitle[stage]}</p>
         <button
           onClick={handleBack}
           className="flex items-center gap-1 text-xs text-t-muted hover:text-t-primary transition-colors"
@@ -284,7 +267,12 @@ const ImportStepsModal: React.FC<Props> = ({ onClose, onBack }) => {
               className="text-left px-3 py-2 rounded-xl border border-(--border-color) bg-bg-card hover:bg-bg-base text-sm text-t-primary"
             >
               <span className="font-mono text-c-brand mr-2">{s.serial_no}</span>
-              {s.description}
+              <span className="truncate">{s.action}</span>
+              {s.is_divider && (
+                <span className="ml-2 text-[10px] text-t-muted border border-(--border-color) rounded px-1">
+                  divider
+                </span>
+              )}
             </button>
           ))}
         </div>
@@ -296,27 +284,47 @@ const ImportStepsModal: React.FC<Props> = ({ onClose, onBack }) => {
           <div>
             <label className="block text-xs text-t-muted mb-1">Serial No</label>
             <input
-              value={sn}
-              onChange={(e) => setSn(e.target.value)}
+              type="number"
+              value={serialNo}
+              onChange={(e) => setSerialNo(e.target.value)}
               className="input text-sm"
-              placeholder="e.g. S001"
+              placeholder="e.g. 1"
+            />
+          </div>
+          <div>
+            <label className="block text-xs text-t-muted mb-1">Action</label>
+            <textarea
+              value={action}
+              onChange={(e) => setAction(e.target.value)}
+              className="input text-sm resize-none"
+              rows={2}
+              placeholder="What the tester should do…"
             />
           </div>
           <div>
             <label className="block text-xs text-t-muted mb-1">
-              Description
+              Expected Result
             </label>
             <textarea
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
+              value={expectedResult}
+              onChange={(e) => setExpectedResult(e.target.value)}
               className="input text-sm resize-none"
-              rows={3}
-              placeholder="Step description…"
+              rows={2}
+              placeholder="What should happen…"
             />
           </div>
+          <label className="flex items-center gap-2 text-xs text-t-muted cursor-pointer">
+            <input
+              type="checkbox"
+              checked={isDivider}
+              onChange={(e) => setIsDivider(e.target.checked)}
+              className="accent-c-brand"
+            />
+            Mark as section divider
+          </label>
           <button
             onClick={() => setStage("confirm")}
-            disabled={!description.trim() || !sn.trim()}
+            disabled={!canSubmitForm}
             className="btn-primary text-sm disabled:opacity-50"
           >
             Review
@@ -332,39 +340,64 @@ const ImportStepsModal: React.FC<Props> = ({ onClose, onBack }) => {
             {selectedTest && (
               <Row label="Test" value={selectedTest.name} mono />
             )}
+
             {op === "create" && (
               <>
-                <Row label="S/N" value={sn} mono />
-                <Row label="Description" value={description} />
+                <Row label="Serial No" value={serialNo} mono />
+                <Row label="Action" value={action} />
+                {expectedResult && (
+                  <Row label="Expected" value={expectedResult} />
+                )}
+                {isDivider && <Row label="Divider" value="Yes" />}
               </>
             )}
+
             {op === "update" && selectedStep && (
               <>
                 <DiffRow
                   label="Serial No"
-                  before={selectedStep.serial_no}
-                  after={sn}
+                  before={String(selectedStep.serial_no)}
+                  after={serialNo}
                 />
                 <DiffRow
-                  label="Description"
-                  before={selectedStep.description}
-                  after={description}
+                  label="Action"
+                  before={selectedStep.action}
+                  after={action}
                 />
+                <DiffRow
+                  label="Expected"
+                  before={selectedStep.expected_result}
+                  after={expectedResult}
+                />
+                {isDivider !== selectedStep.is_divider && (
+                  <DiffRow
+                    label="Divider"
+                    before={selectedStep.is_divider ? "Yes" : "No"}
+                    after={isDivider ? "Yes" : "No"}
+                  />
+                )}
               </>
             )}
+
             {op === "delete" && selectedStep && (
               <>
-                <Row label="S/N" value={selectedStep.serial_no} mono />
-                <Row label="Description" value={selectedStep.description} />
+                <Row
+                  label="Serial No"
+                  value={String(selectedStep.serial_no)}
+                  mono
+                />
+                <Row label="Action" value={selectedStep.action} />
               </>
             )}
           </div>
+
           {op === "delete" && (
             <p className="text-xs text-t-muted">
               ⚠ All associated step results will also be deleted.
             </p>
           )}
           {error && <p className="text-xs text-fail">{error}</p>}
+
           <div className="flex gap-2">
             <button
               onClick={() =>
