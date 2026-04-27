@@ -204,7 +204,7 @@ const MobileNav: React.FC<Props> = ({ activePage, onNavigate }) => {
             bottom: "calc(76px + env(safe-area-inset-bottom, 0px))",
             width: "calc(100% - 32px)",
             maxWidth: 420,
-            height: moreRef.current?.offsetHeight ?? 220,
+            height: isAdmin ? 220 : 80,
           }}
         />
       )}
