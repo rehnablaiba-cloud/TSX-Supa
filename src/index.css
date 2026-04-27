@@ -400,7 +400,7 @@
      *    glass (card)    → standard cards                        → --glass-card-bg-opacity (86%)
      *    backdrop-dim    → modal scrim                           → --backdrop-dim-opacity (55%)
      */
-    --glass-blur: 28px;
+    --glass-blur: 40px;
     --glass-saturation: 180%;
     --glass-brightness: 1.06;
 
