@@ -242,9 +242,12 @@ const ModuleDashboard: React.FC<Props> = ({
           ...mt,
           step_results: srByTestsName[mt.tests_name] ?? [],
         }))
-        .sort(
-          (a: any, b: any) =>
-            (a.test?.serial_no ?? 0) - (b.test?.serial_no ?? 0)
+        .sort((a: any, b: any) =>
+          (a.test?.serial_no ?? "").localeCompare(
+            b.test?.serial_no ?? "",
+            undefined,
+            { numeric: true, sensitivity: "base" }
+          )
         );
 
       setmodule_tests(joined as ModuleTestRow[]);
@@ -400,8 +403,7 @@ const ModuleDashboard: React.FC<Props> = ({
             icon: <FileSpreadsheet size={16} />,
             color:
               "bg-(--bg-card) border border-(--border-color) text-(--text-primary)",
-            hoverColor:
-              "hover:bg-(--bg-surface) hover:border-(--color-brand)",
+            hoverColor: "hover:bg-(--bg-surface) hover:border-(--color-brand)",
             onConfirm: () => exportModuleDetailCSV(buildFlatData()),
           },
           {
@@ -409,8 +411,7 @@ const ModuleDashboard: React.FC<Props> = ({
             icon: <FileText size={16} />,
             color:
               "bg-(--bg-card) border border-(--border-color) text-(--text-primary)",
-            hoverColor:
-              "hover:bg-(--bg-surface) hover:border-(--color-brand)",
+            hoverColor: "hover:bg-(--bg-surface) hover:border-(--color-brand)",
             onConfirm: () =>
               exportModuleDetailPDF(buildFlatData(), module_name),
           },
