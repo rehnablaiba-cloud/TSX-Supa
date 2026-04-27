@@ -495,7 +495,7 @@ const MobileNav: React.FC<Props> = ({ activePage, onNavigate }) => {
             >
               {isActive && (
                 <span
-                  className="absolute top-1.5 left-1/2 -translate-x-1/2 w-5 h-0.5 rounded-full"
+                  className="absolute bottom-1 left-1/2 -translate-x-1/2 w-5 h-0.5 rounded-full"
                   style={{
                     background: "var(--color-brand)",
                     boxShadow: "0 0 8px var(--color-brand)",
