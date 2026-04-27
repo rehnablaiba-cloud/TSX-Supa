@@ -11,8 +11,6 @@ import {
 } from "../../lib/supabase/queries.mobilenav";
 import type { TestOption } from "../../lib/supabase/queries.mobilenav";
 
-// ── Types ──────────────────────────────────────────────────────────────────
-
 type TestOp = "create" | "update" | "delete";
 type Stage = "selectop" | "selecttest" | "fillform" | "confirm" | "submitting" | "done";
 
@@ -24,26 +22,23 @@ const OP_META: { id: TestOp; label: string; icon: React.ReactNode; desc: string 
 
 interface Props { onClose: () => void; onBack: () => void }
 
-// ── Component ──────────────────────────────────────────────────────────────
-
 const ImportTestsModal: React.FC<Props> = ({ onClose, onBack }) => {
-  const [stage, setStage]             = useState<Stage>("selectop");
-  const [op, setOp]                   = useState<TestOp>("create");
-  const [tests, setTests]             = useState<TestOption[]>([]);
-  const [selectedTest, setSelected]   = useState<TestOption | null>(null);
-  const [sn, setSn]                   = useState("");
-  const [name, setName]               = useState("");
-  const [error, setError]             = useState<string | null>(null);
+  const [stage, setStage]           = useState<Stage>("selectop");
+  const [op, setOp]                 = useState<TestOp>("create");
+  const [tests, setTests]           = useState<TestOption[]>([]);
+  const [selectedTest, setSelected] = useState<TestOption | null>(null);
+  const [sn, setSn]                 = useState("");
+  const [name, setName]             = useState("");
+  const [error, setError]           = useState<string | null>(null);
 
   useEffect(() => { fetchTestOptions().then(setTests).catch(console.error); }, []);
 
-  // ── Internal back navigation ──────────────────────────────────────────────
   const handleBack = () => {
     switch (stage) {
-      case "selectop":  return onBack();
+      case "selectop":   return onBack();
       case "selecttest": return setStage("selectop");
-      case "fillform":  return setStage(op === "create" ? "selectop" : "selecttest");
-      case "confirm":   return setStage(op === "delete" ? "selecttest" : "fillform");
+      case "fillform":   return setStage(op === "create" ? "selectop" : "selecttest");
+      case "confirm":    return setStage(op === "delete" ? "selecttest" : "fillform");
       default: break;
     }
   };
@@ -63,9 +58,9 @@ const ImportTestsModal: React.FC<Props> = ({ onClose, onBack }) => {
     setStage("submitting");
     setError(null);
     try {
-      if (op === "create")                       await createTest(sn.trim(), name.trim());
-      else if (op === "update" && selectedTest)  await updateTest(selectedTest.name, name.trim(), sn.trim());
-      else if (op === "delete" && selectedTest)  await deleteTestCascade(selectedTest.name);
+      if (op === "create")                      await createTest(sn.trim(), name.trim());
+      else if (op === "update" && selectedTest) await updateTest(selectedTest.name, name.trim(), sn.trim());
+      else if (op === "delete" && selectedTest) await deleteTestCascade(selectedTest.name);
       setStage("done");
     } catch (e: any) { setError(e.message); setStage("confirm"); }
   };
@@ -75,18 +70,18 @@ const ImportTestsModal: React.FC<Props> = ({ onClose, onBack }) => {
     selecttest: "Pick a test",
     fillform:   "Enter details",
     confirm:    "Review & confirm",
-    submitting: "…",
+    submitting: "...",
     done:       "Done!",
   };
 
   return (
     <ModalShell
       title={<><FlaskConical size={16} /> Tests</>}
-      subtitle={subtitle[stage]}
       onClose={onClose}
       onBack={stage !== "submitting" && stage !== "done" ? handleBack : undefined}
     >
-      {/* ── selectop ── */}
+      <p className="text-xs text-t-muted -mt-2">{subtitle[stage]}</p>
+
       {stage === "selectop" && (
         <div className="flex flex-col gap-2">
           {OP_META.map((m) => (
@@ -103,7 +98,6 @@ const ImportTestsModal: React.FC<Props> = ({ onClose, onBack }) => {
         </div>
       )}
 
-      {/* ── selecttest ── */}
       {stage === "selecttest" && (
         <div className="flex flex-col gap-1.5 max-h-60 overflow-y-auto">
           {tests.length === 0 && <p className="text-sm text-t-muted text-center py-4">No tests found.</p>}
@@ -118,7 +112,6 @@ const ImportTestsModal: React.FC<Props> = ({ onClose, onBack }) => {
         </div>
       )}
 
-      {/* ── fillform ── */}
       {stage === "fillform" && (
         <div className="flex flex-col gap-3">
           <div>
@@ -138,13 +131,12 @@ const ImportTestsModal: React.FC<Props> = ({ onClose, onBack }) => {
         </div>
       )}
 
-      {/* ── confirm ── */}
       {stage === "confirm" && (
         <div className="flex flex-col gap-3">
           <div className="rounded-xl border border-(--border-color) bg-bg-card p-3 flex flex-col gap-1.5 text-xs">
             <Row label="Op" value={op.toUpperCase()} brand />
             {op === "create" && (
-              <><Row label="S/N"  value={sn} mono /><Row label="Name" value={name} /></>
+              <><Row label="S/N" value={sn} mono /><Row label="Name" value={name} /></>
             )}
             {op === "update" && selectedTest && (
               <>
@@ -152,38 +144,31 @@ const ImportTestsModal: React.FC<Props> = ({ onClose, onBack }) => {
                 <DiffRow label="Name" before={selectedTest.name}              after={name} />
               </>
             )}
-            {op === "delete" && selectedTest && (
-              <Row label="Test" value={selectedTest.name} />
-            )}
+            {op === "delete" && selectedTest && <Row label="Test" value={selectedTest.name} />}
             {op === "delete" && (
-              <p className="text-amber-400 text-xs mt-1">
-                ⚠ All steps, step results, and module assignments will also be deleted.
+              <p className="text-amber-400 mt-1">
+                Warning: All steps and step results will also be deleted.
               </p>
             )}
           </div>
           {error && <p className="text-xs text-red-400">{error}</p>}
           <div className="flex gap-2">
-            <button onClick={handleBack}
-              className="flex-1 px-4 py-2.5 rounded-xl border border-(--border-color) text-t-secondary text-sm">
-              Back
-            </button>
+            <button onClick={handleBack} className="flex-1 btn-ghost text-sm">Back</button>
             <button onClick={handleSubmit}
-              className={`flex-1 px-4 py-2.5 rounded-xl text-sm font-semibold text-white ${
-                op === "delete" ? "bg-red-500 hover:bg-red-600" : "btn-primary"}`}>
+              className={"flex-1 px-4 py-2.5 rounded-xl text-sm font-semibold text-white " +
+                (op === "delete" ? "bg-red-500 hover:bg-red-600" : "btn-primary")}>
               Confirm {op}
             </button>
           </div>
         </div>
       )}
 
-      {/* ── submitting ── */}
       {stage === "submitting" && (
         <div className="flex items-center justify-center py-8">
           <div className="w-8 h-8 border-4 border-c-brand border-t-transparent rounded-full animate-spin" />
         </div>
       )}
 
-      {/* ── done ── */}
       {stage === "done" && (
         <div className="flex flex-col items-center gap-3 py-6">
           <CheckCircle size={32} className="text-green-400" />

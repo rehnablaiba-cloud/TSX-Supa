@@ -3,20 +3,19 @@ import React, { useState } from "react";
 import { Package, FlaskConical, Hash, FileSpreadsheet } from "lucide-react";
 import ModalShell from "../Layout/ModalShell";
 
-import ImportModulesModal    from "./ImportModulesModal";
-import ImportTestsModal      from "./ImportTestsModal";
-import ImportStepsModal      from "./ImportStepsModal";
+import ImportModulesModal     from "./ImportModulesModal";
+import ImportTestsModal       from "./ImportTestsModal";
+import ImportStepsModal       from "./ImportStepsModal";
 import ImportStepsManualModal from "./ImportStepsManualModal";
 
 type ImportTarget = "none" | "modules" | "tests" | "steps_csv" | "steps_manual";
-
 interface Props { onClose: () => void }
 
 const OPTIONS: { id: ImportTarget; label: string; icon: React.ReactNode; desc: string }[] = [
-  { id: "modules",      label: "Modules",        icon: <Package size={20} />,       desc: "Create, rename, or delete modules" },
-  { id: "tests",        label: "Tests",           icon: <FlaskConical size={20} />,  desc: "Create, rename, or delete tests" },
-  { id: "steps_csv",    label: "Steps — CSV",     icon: <FileSpreadsheet size={20}/>, desc: "Bulk-replace steps via CSV upload" },
-  { id: "steps_manual", label: "Steps — Manual",  icon: <Hash size={20} />,          desc: "Add, edit, or delete a single step" },
+  { id: "modules",      label: "Modules",       icon: <Package size={20} />,         desc: "Create, rename, or delete modules" },
+  { id: "tests",        label: "Tests",          icon: <FlaskConical size={20} />,    desc: "Create, rename, or delete tests" },
+  { id: "steps_csv",    label: "Steps — CSV",    icon: <FileSpreadsheet size={20} />, desc: "Bulk-replace steps via CSV upload" },
+  { id: "steps_manual", label: "Steps — Manual", icon: <Hash size={20} />,            desc: "Add, edit, or delete a single step" },
 ];
 
 const ImportModal: React.FC<Props> = ({ onClose }) => {
@@ -32,11 +31,8 @@ const ImportModal: React.FC<Props> = ({ onClose }) => {
     return <ImportStepsManualModal onClose={onClose} onBack={() => setTarget("none")} />;
 
   return (
-    <ModalShell
-      title={<>Import Data</>}
-      subtitle="Choose what to import"
-      onClose={onClose}
-    >
+    <ModalShell title={<>Import Data</>} onClose={onClose}>
+      <p className="text-xs text-t-muted -mt-2">Choose what to import</p>
       <div className="flex flex-col gap-2">
         {OPTIONS.map((opt) => (
           <button

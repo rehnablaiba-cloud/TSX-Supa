@@ -6,17 +6,10 @@ import ModalShell from "../Layout/ModalShell";
 import { supabase } from "../../supabase";
 import { Row, DiffRow } from "../UI/ReviewRow";
 
-// ── Types ──────────────────────────────────────────────────────────────────
-
 type StepOp = "create" | "update" | "delete";
 type Stage =
-  | "selectop"
-  | "selecttest"
-  | "selectstep"
-  | "fillform"
-  | "confirm"
-  | "submitting"
-  | "done";
+  | "selectop" | "selecttest" | "selectstep"
+  | "fillform" | "confirm" | "submitting" | "done";
 
 interface ExistingStep {
   id: string;
@@ -27,8 +20,6 @@ interface ExistingStep {
 }
 
 interface Props { onClose: () => void; onBack: () => void }
-
-// ── Component ──────────────────────────────────────────────────────────────
 
 const ImportStepsManualModal: React.FC<Props> = ({ onClose, onBack }) => {
   const [stage, setStage]          = useState<Stage>("selectop");
@@ -48,7 +39,6 @@ const ImportStepsManualModal: React.FC<Props> = ({ onClose, onBack }) => {
       .then(({ data }) => setTests((data ?? []) as { id: string; tests_name: string }[]));
   }, []);
 
-  // ── Internal back navigation ──────────────────────────────────────────────
   const handleBack = () => {
     switch (stage) {
       case "selectop":   return onBack();
@@ -66,8 +56,7 @@ const ImportStepsManualModal: React.FC<Props> = ({ onClose, onBack }) => {
       const { data } = await supabase
         .from("test_steps")
         .select("id, serial_no, action, expected_result, is_divider")
-        .eq("tests_name", tests_name)
-        .order("serial_no");
+        .eq("tests_name", tests_name).order("serial_no");
       setSteps((data ?? []) as ExistingStep[]);
       setStage("selectstep");
     } else {
@@ -78,10 +67,8 @@ const ImportStepsManualModal: React.FC<Props> = ({ onClose, onBack }) => {
   const handleStepSelect = (step: ExistingStep) => {
     setSelStep(step);
     if (op === "update") {
-      setSn(String(step.serial_no));
-      setAction(step.action);
-      setExpected(step.expected_result);
-      setIsDivider(step.is_divider);
+      setSn(String(step.serial_no)); setAction(step.action);
+      setExpected(step.expected_result); setIsDivider(step.is_divider);
     }
     setStage(op === "delete" ? "confirm" : "fillform");
   };
@@ -123,16 +110,15 @@ const ImportStepsManualModal: React.FC<Props> = ({ onClose, onBack }) => {
   return (
     <ModalShell
       title={<><Hash size={16} /> Steps (Manual)</>}
-      subtitle={subtitle[stage]}
       onClose={onClose}
       onBack={stage !== "submitting" && stage !== "done" ? handleBack : undefined}
     >
-      {/* selectop */}
+      <p className="text-xs text-t-muted -mt-2">{subtitle[stage]}</p>
+
       {stage === "selectop" && (
         <div className="flex flex-col gap-2">
           {(["create", "update", "delete"] as StepOp[]).map((o) => (
-            <button key={o}
-              onClick={() => { setOp(o); setStage("selecttest"); }}
+            <button key={o} onClick={() => { setOp(o); setStage("selecttest"); }}
               className="flex items-center gap-3 px-4 py-3 rounded-xl border border-(--border-color)
                 bg-bg-card hover:bg-bg-base text-left transition-all">
               <span className="text-t-muted">
@@ -146,15 +132,11 @@ const ImportStepsManualModal: React.FC<Props> = ({ onClose, onBack }) => {
         </div>
       )}
 
-      {/* selecttest */}
       {stage === "selecttest" && (
         <div className="flex flex-col gap-1.5 max-h-60 overflow-y-auto">
-          {tests.length === 0 && (
-            <p className="text-sm text-t-muted text-center py-4">No tests found.</p>
-          )}
+          {tests.length === 0 && <p className="text-sm text-t-muted text-center py-4">No tests found.</p>}
           {tests.map((t) => (
-            <button key={t.id}
-              onClick={() => handleTestSelect(t.tests_name)}
+            <button key={t.id} onClick={() => handleTestSelect(t.tests_name)}
               className="text-left px-3 py-2 rounded-xl border border-(--border-color)
                 bg-bg-card hover:bg-bg-base text-sm text-t-primary">
               {t.tests_name}
@@ -163,15 +145,11 @@ const ImportStepsManualModal: React.FC<Props> = ({ onClose, onBack }) => {
         </div>
       )}
 
-      {/* selectstep */}
       {stage === "selectstep" && (
         <div className="flex flex-col gap-1.5 max-h-60 overflow-y-auto">
-          {steps.length === 0 && (
-            <p className="text-sm text-t-muted text-center py-4">No steps found.</p>
-          )}
+          {steps.length === 0 && <p className="text-sm text-t-muted text-center py-4">No steps found.</p>}
           {steps.map((s) => (
-            <button key={s.id}
-              onClick={() => handleStepSelect(s)}
+            <button key={s.id} onClick={() => handleStepSelect(s)}
               className="text-left px-3 py-2 rounded-xl border border-(--border-color)
                 bg-bg-card hover:bg-bg-base text-xs text-t-primary">
               <span className="font-mono text-c-brand mr-2">{s.serial_no}</span>
@@ -181,7 +159,6 @@ const ImportStepsManualModal: React.FC<Props> = ({ onClose, onBack }) => {
         </div>
       )}
 
-      {/* fillform */}
       {stage === "fillform" && (
         <div className="flex flex-col gap-3">
           <div>
@@ -211,7 +188,6 @@ const ImportStepsManualModal: React.FC<Props> = ({ onClose, onBack }) => {
         </div>
       )}
 
-      {/* confirm */}
       {stage === "confirm" && (
         <div className="flex flex-col gap-3">
           <div className="rounded-xl border border-(--border-color) bg-bg-card p-3 flex flex-col gap-1.5 text-xs">
@@ -221,11 +197,7 @@ const ImportStepsManualModal: React.FC<Props> = ({ onClose, onBack }) => {
               <Row label="Step S/N" value={String(selStep.serial_no)} mono />
             )}
             {op === "create" && (
-              <>
-                <Row label="S/N"      value={sn} mono />
-                <Row label="Action"   value={action} />
-                <Row label="Expected" value={expected} />
-              </>
+              <><Row label="S/N" value={sn} mono /><Row label="Action" value={action} /><Row label="Expected" value={expected} /></>
             )}
             {op === "update" && selStep && (
               <>
@@ -238,27 +210,22 @@ const ImportStepsManualModal: React.FC<Props> = ({ onClose, onBack }) => {
           </div>
           {error && <p className="text-xs text-red-400">{error}</p>}
           <div className="flex gap-2">
-            <button onClick={handleBack}
-              className="flex-1 px-4 py-2.5 rounded-xl border border-(--border-color) text-t-secondary text-sm">
-              Back
-            </button>
+            <button onClick={handleBack} className="flex-1 btn-ghost text-sm">Back</button>
             <button onClick={handleSubmit}
-              className={`flex-1 px-4 py-2.5 rounded-xl text-sm font-semibold text-white ${
-                op === "delete" ? "bg-red-500 hover:bg-red-600" : "btn-primary"}`}>
+              className={"flex-1 px-4 py-2.5 rounded-xl text-sm font-semibold text-white " +
+                (op === "delete" ? "bg-red-500 hover:bg-red-600" : "btn-primary")}>
               Confirm {op}
             </button>
           </div>
         </div>
       )}
 
-      {/* submitting */}
       {stage === "submitting" && (
         <div className="flex items-center justify-center py-8">
           <div className="w-8 h-8 border-4 border-c-brand border-t-transparent rounded-full animate-spin" />
         </div>
       )}
 
-      {/* done */}
       {stage === "done" && (
         <div className="flex flex-col items-center gap-3 py-6">
           <CheckCircle size={32} className="text-green-400" />
