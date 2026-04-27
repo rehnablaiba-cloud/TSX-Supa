@@ -199,7 +199,7 @@ const MobileNav: React.FC<Props> = ({ activePage, onNavigate }) => {
     <>
       <div
         ref={moreRef}
-        className="fixed left-1/2 -translate-x-1/2 z-[70] md:hidden glass-frost p-3"
+        className="fixed left-1/2 -translate-x-1/2 z-[70] md:hidden glass-surface p-3"
         style={{
           bottom: "calc(76px + env(safe-area-inset-bottom, 0px))",
           width: "calc(100% - 32px)",
@@ -433,7 +433,7 @@ const MobileNav: React.FC<Props> = ({ activePage, onNavigate }) => {
 
       <nav
         ref={navRef}
-        className="fixed bottom-2 left-1/2 -translate-x-1/2 z-[62] md:hidden glass-frost rounded-[26px] flex items-center px-2 py-2 gap-1"
+        className="fixed bottom-2 left-1/2 -translate-x-1/2 z-[62] md:hidden glass-surface rounded-[26px] flex items-center px-2 py-2 gap-1"
         style={{
           width: "calc(100% - 32px)",
           maxWidth: 420,

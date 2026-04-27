@@ -94,43 +94,16 @@
     box-shadow 0.3s ease;
 }
 
-@utility glass-nav {
+@utility glass-surface {
   /*
-   * ── Bottom navbar glass ──
-   * Higher opacity than glass-frost because it sits on bare dark background,
-   * not over content cards. Controlled by --glass-nav-bg-opacity.
+   * ── Opaque surface glass (nav bar, more tray, floating panels) ──
+   * Sits directly over live content with no backdrop-dim behind it,
+   * so it needs a high opacity to stay readable. Controlled by
+   * --glass-surface-bg-opacity (88%).
    */
   background: color-mix(
     in srgb,
-    var(--bg-surface) var(--glass-nav-bg-opacity),
-    transparent
-  );
-  border: 1px solid
-    color-mix(
-      in srgb,
-      var(--border-color) var(--glass-border-opacity),
-      transparent
-    );
-  @apply rounded-2xl;
-  box-shadow: 0 8px 32px color-mix(in srgb, var(--bg-base) 40%, transparent),
-    inset 0 1px 0 color-mix(in srgb, var(--text-primary) 6%, transparent);
-  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturation))
-    brightness(var(--glass-brightness));
-  -webkit-backdrop-filter: blur(var(--glass-blur))
-    saturate(var(--glass-saturation)) brightness(var(--glass-brightness));
-  transition: background-color 0.3s ease, border-color 0.3s ease,
-    box-shadow 0.3s ease;
-}
-
-@utility glass-popup {
-  /*
-   * ── More popup glass ──
-   * Same rationale as glass-nav — floats on bare background.
-   * Controlled by --glass-popup-bg-opacity.
-   */
-  background: color-mix(
-    in srgb,
-    var(--bg-surface) var(--glass-popup-bg-opacity),
+    var(--bg-surface) var(--glass-surface-bg-opacity),
     transparent
   );
   border: 1px solid
@@ -395,8 +368,7 @@
      *
      *  Surface guide:
      *    glass-frost     → modals/overlays that sit ON content  → --glass-bg-opacity (40%)
-     *    glass-nav       → bottom navbar on bare dark bg         → --glass-nav-bg-opacity (75%)
-     *    glass-popup     → more popup on bare dark bg            → --glass-popup-bg-opacity (72%)
+     *    glass-surface   → nav bar / more tray on live content  → --glass-surface-bg-opacity (88%)
      *    glass (card)    → standard cards                        → --glass-card-bg-opacity (86%)
      *    backdrop-dim    → modal scrim                           → --backdrop-dim-opacity (55%)
      */
@@ -408,11 +380,8 @@
     --glass-bg-opacity: 40%;
     --glass-border-opacity: 55%;
 
-    /* glass-nav (navbar on bare background) */
-    --glass-nav-bg-opacity: 85%;
-
-    /* glass-popup (more popup on bare background) */
-    --glass-popup-bg-opacity: 85%;
+    /* glass-surface (nav bar + more tray floating over live content) */
+    --glass-surface-bg-opacity: 88%;
 
     /* glass card utility */
     --glass-card-bg-opacity: 86%;
