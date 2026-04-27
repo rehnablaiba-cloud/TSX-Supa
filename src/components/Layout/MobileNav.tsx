@@ -197,28 +197,25 @@ const MobileNav: React.FC<Props> = ({ activePage, onNavigate }) => {
 
   return (
     <>
-      {moreOpen && (
-        <div
-          className="fixed left-1/2 -translate-x-1/2 z-[69] md:hidden rounded-2xl backdrop-dim"
-          style={{
-            bottom: "calc(76px + env(safe-area-inset-bottom, 0px))",
-            width: "calc(100% - 32px)",
-            maxWidth: 420,
-            height: isAdmin ? 220 : 80,
-          }}
-        />
-      )}
-      <div
-        ref={moreRef}
-        className="fixed left-1/2 -translate-x-1/2 z-[70] md:hidden glass-frost p-3"
-        style={{
-          bottom: "calc(76px + env(safe-area-inset-bottom, 0px))",
-          width: "calc(100% - 32px)",
-          maxWidth: 420,
-          display: "none",
-        }}
-        onClick={(e) => e.stopPropagation()}
-      >
+     <div
+  ref={moreRef}
+  className="fixed left-1/2 -translate-x-1/2 z-[70] md:hidden glass-frost p-3"
+  style={{
+    bottom: "calc(76px + env(safe-area-inset-bottom, 0px))",
+    width: "calc(100% - 32px)",
+    maxWidth: 420,
+    display: "none",
+    position: "relative", // ensure absolute child is contained
+  }}
+  onClick={(e) => e.stopPropagation()}
+>
+  {/* Backdrop fills tray exactly — no size mismatch possible */}
+  <div className="absolute inset-0 rounded-2xl backdrop-dim -z-10" />
+
+  <div className="flex flex-wrap justify-center gap-x-2 gap-y-3">
+    {/* ... buttons unchanged ... */}
+  </div>
+</div>
         <div className="flex flex-wrap justify-center gap-x-2 gap-y-3">
           <button
             onClick={() => {
@@ -441,27 +438,20 @@ const MobileNav: React.FC<Props> = ({ activePage, onNavigate }) => {
           </button>
         </div>
       </div>
-      <div
-        className="fixed bottom-2 left-1/2 -translate-x-1/2 z-[61] md:hidden rounded-[26px] backdrop-dim"
-        style={{
-          width: "calc(100% - 32px)",
-          maxWidth: 420,
-          marginBottom: "env(safe-area-inset-bottom, 0px)",
-          height: navRef.current?.offsetHeight ?? 64,
-          display: activeModal !== null ? "none" : undefined,
-        }}
-      />
-
       <nav
-        ref={navRef}
-        className="fixed bottom-2 left-1/2 -translate-x-1/2 z-[62] md:hidden glass-frost rounded-[26px] flex items-center px-2 py-2 gap-1"
-        style={{
-          width: "calc(100% - 32px)",
-          maxWidth: 420,
-          marginBottom: "env(safe-area-inset-bottom, 0px)",
-          display: activeModal !== null ? "none" : undefined,
-        }}
-      >
+      ref={navRef}
+      className="fixed bottom-2 left-1/2 -translate-x-1/2 z-[62] md:hidden glass-frost rounded-[26px] flex items-center px-2 py-2 gap-1"
+      style={{
+        width: "calc(100% - 32px)",
+        maxWidth: 420,
+        marginBottom: "env(safe-area-inset-bottom, 0px)",
+        display: activeModal !== null ? "none" : undefined,
+      }}
+    >
+      <div className="absolute inset-0 rounded-[26px] backdrop-dim -z-10" />
+    
+      {allNavItems.map(...)}
+    </nav>
         {allNavItems.map((item, i) => {
           const isActive =
             item.id === activePage ||
