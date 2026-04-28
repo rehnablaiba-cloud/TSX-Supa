@@ -1621,10 +1621,7 @@ const TestExecution: React.FC<Props> = ({
       <MassImageUploadModal
         isOpen={showMassImageUpload}
         onClose={() => setShowMassImageUpload(false)}
-        module_Name={module_name}
-        moduleTestId={currentMtId}
       />
-
       {/* ── Fixed header ─────────────────────────────────────────────────── */}
       <div className="shrink-0">
         <Topbar
