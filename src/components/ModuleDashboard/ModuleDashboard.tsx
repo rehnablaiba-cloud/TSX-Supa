@@ -274,10 +274,12 @@ const ModuleDashboard: React.FC<Props> = ({
             ...mt,
             step_results: srByTestsName[mt.tests_name] ?? [],
           }))
-          .sort((a, b) => {
-            const aNum = parseInt(a.test?.serial_no ?? "0", 10) || 0;
-            const bNum = parseInt(b.test?.serial_no ?? "0", 10) || 0;
-            return aNum - bNum;
+         // In fetchData, replace the .sort():
+.sort((a, b) => {
+  const aSerial = a.test?.serial_no ?? "";
+  const bSerial = b.test?.serial_no ?? "";
+  return aSerial.localeCompare(bSerial, undefined, { numeric: true, sensitivity: "base" });
+});
           });
 
         setmodule_tests(joined as ModuleTestRow[]);

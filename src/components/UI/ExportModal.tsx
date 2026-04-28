@@ -33,7 +33,7 @@ const ExportModal: React.FC<Props> = ({
       onClick={onClose}
     >
       <div
-        className="relative glass-frost w-full max-w-md p-6 flex flex-col gap-5"
+        className="relative isolate glass-frost w-full max-w-md p-6 flex flex-col gap-5"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
@@ -58,7 +58,7 @@ const ExportModal: React.FC<Props> = ({
           {stats.map((s, i) => (
             <div
               key={i}
-              className="bg-bg-card border border-border rounded-xl p-3 text-center"
+              className="bg-bg-card border border-(--border-color) rounded-xl p-3 text-center"
             >
               <div className="text-lg font-bold text-t-primary">{s.value}</div>
               <div className="text-xs text-t-muted mt-0.5">{s.label}</div>

@@ -1,6 +1,3 @@
-// src/components/Layout/MobileNav.tsx
-// iOS 26 Liquid Glass design + GSAP animations
-
 import React, { useLayoutEffect, useRef, useEffect, useState } from "react";
 import { useAuth } from "../../context/AuthContext";
 import { useTheme } from "../../context/ThemeContext";
