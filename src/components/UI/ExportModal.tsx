@@ -28,78 +28,95 @@ const ExportModal: React.FC<Props> = ({
   if (!isOpen) return null;
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 backdrop-dim"
-      onClick={onClose}
-    >
+    <div className="fixed inset-0 z-50">
+      {/* Backdrop dimmer — sibling, not parent */}
       <div
-        className="relative isolate glass-frost w-full max-w-md p-6 flex flex-col gap-5"
-        onClick={(e) => e.stopPropagation()}
-      >
-        {/* Header */}
-        <div className="flex items-start justify-between">
-          <div>
-            <h2 className="text-lg font-bold text-t-primary">{title}</h2>
-            {subtitle && (
-              <p className="text-sm text-t-muted mt-0.5">{subtitle}</p>
-            )}
+        className="absolute inset-0 backdrop-dim"
+        onClick={onClose}
+        aria-hidden="true"
+      />
+
+      {/* Centered modal panel — blurs through the backdrop */}
+      <div className="absolute inset-0 flex items-center justify-center p-4 pointer-events-none">
+        <div
+          className="relative isolate glass-frost w-full max-w-md p-6 flex flex-col gap-5 pointer-events-auto"
+          onClick={(e) => e.stopPropagation()}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="export-title"
+        >
+          {/* Header */}
+          <div className="flex items-start justify-between">
+            <div>
+              <h2
+                id="export-title"
+                className="text-lg font-bold text-t-primary"
+              >
+                {title}
+              </h2>
+              {subtitle && (
+                <p className="text-sm text-t-muted mt-0.5">{subtitle}</p>
+              )}
+            </div>
+            <button
+              onClick={onClose}
+              className="text-t-muted hover:text-t-primary transition-colors text-xl leading-none mt-0.5"
+              aria-label="Close"
+            >
+              ✕
+            </button>
           </div>
+
+          {/* Stats */}
+          <div className="grid grid-cols-3 gap-3">
+            {stats.map((s, i) => (
+              <div
+                key={i}
+                className="bg-bg-card border border-(--border-color) rounded-xl p-3 text-center"
+              >
+                <div className="text-lg font-bold text-t-primary">
+                  {s.value}
+                </div>
+                <div className="text-xs text-t-muted mt-0.5">{s.label}</div>
+              </div>
+            ))}
+          </div>
+
+          {/* Section divider */}
+          <div className="flex items-center gap-3">
+            <div className="flex-1 h-px bg-(--border-color)" />
+            <span className="text-xs text-t-muted uppercase tracking-widest font-semibold">
+              Choose Format
+            </span>
+            <div className="flex-1 h-px bg-(--border-color)" />
+          </div>
+
+          {/* Export Options */}
+          <div className="flex flex-col gap-2">
+            {options.map((opt, i) => (
+              <button
+                key={i}
+                onClick={() => {
+                  opt.onConfirm();
+                  onClose();
+                }}
+                className={`flex items-center gap-3 w-full px-4 py-3 rounded-xl font-semibold text-sm transition-all ${opt.color} ${opt.hoverColor}`}
+              >
+                <span className="text-base">{opt.icon}</span>
+                <span>Download as {opt.label}</span>
+                <span className="ml-auto text-t-muted text-xs">↓</span>
+              </button>
+            ))}
+          </div>
+
+          {/* Cancel */}
           <button
             onClick={onClose}
-            className="text-t-muted hover:text-t-primary transition-colors text-xl leading-none mt-0.5"
-            aria-label="Close"
+            className="btn-ghost w-full py-2.5 text-sm font-medium"
           >
-            ✕
+            Cancel
           </button>
         </div>
-
-        {/* Stats */}
-        <div className="grid grid-cols-3 gap-3">
-          {stats.map((s, i) => (
-            <div
-              key={i}
-              className="bg-bg-card border border-(--border-color) rounded-xl p-3 text-center"
-            >
-              <div className="text-lg font-bold text-t-primary">{s.value}</div>
-              <div className="text-xs text-t-muted mt-0.5">{s.label}</div>
-            </div>
-          ))}
-        </div>
-
-        {/* Section label */}
-        <div className="flex items-center gap-3">
-          <div className="flex-1 h-px bg-(--border-color)" />
-          <span className="text-xs text-t-muted uppercase tracking-widest font-semibold">
-            Choose Format
-          </span>
-          <div className="flex-1 h-px bg-(--border-color)" />
-        </div>
-
-        {/* Export Options */}
-        <div className="flex flex-col gap-2">
-          {options.map((opt, i) => (
-            <button
-              key={i}
-              onClick={() => {
-                opt.onConfirm();
-                onClose();
-              }}
-              className={`flex items-center gap-3 w-full px-4 py-3 rounded-xl font-semibold text-sm transition-all ${opt.color} ${opt.hoverColor}`}
-            >
-              <span className="text-base">{opt.icon}</span>
-              <span>Download as {opt.label}</span>
-              <span className="ml-auto text-t-muted text-xs">↓</span>
-            </button>
-          ))}
-        </div>
-
-        {/* Cancel */}
-        <button
-          onClick={onClose}
-          className="btn-ghost w-full py-2.5 text-sm font-medium"
-        >
-          Cancel
-        </button>
       </div>
     </div>
   );
