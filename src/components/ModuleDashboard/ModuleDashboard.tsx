@@ -66,6 +66,14 @@ const StaggerRow: React.FC<{ index: number; children: React.ReactNode }> = ({
 const cleanDividerLabel = (action: string): string =>
   action.replace(/^[^a-zA-Z0-9]+/, "");
 
+// Safely unwrap a PostgREST join that may come back as an object OR a
+// single-element array depending on the Supabase client version / type gen.
+function unwrapOne<T>(val: T | T[] | null | undefined): T | null {
+  if (val == null) return null;
+  if (Array.isArray(val)) return val[0] ?? null;
+  return val;
+}
+
 type ChartType = "bar" | "area" | "line" | "pie" | "radar";
 const CHART_TYPES: { type: ChartType; label: string }[] = [
   { type: "bar", label: "Bar" },
@@ -109,7 +117,6 @@ interface ModuleTestRow {
   step_results: TrimmedStepResult[];
 }
 
-// Normalized (post-processing) types — single object, not array
 interface SupabaseModuleTest {
   id: string;
   tests_name: string;
@@ -128,27 +135,6 @@ interface SupabaseStepResult {
     action: string | null;
     expected_result: string | null;
   } | null;
-}
-
-// Raw types as PostgREST actually returns them — joins come back as arrays
-interface RawModuleTest {
-  id: string;
-  tests_name: string;
-  test: { serial_no: string; name: string }[];
-}
-
-interface RawStepResult {
-  id: string;
-  status: "pass" | "fail" | "pending";
-  test_steps_id: string;
-  step: {
-    id: string;
-    is_divider: boolean;
-    tests_name: string;
-    serial_no: number | null;
-    action: string | null;
-    expected_result: string | null;
-  }[];
 }
 
 const ModuleDashboard: React.FC<Props> = ({
@@ -239,20 +225,15 @@ const ModuleDashboard: React.FC<Props> = ({
           return;
         }
 
-        // Normalize PostgREST array joins → single objects
-        const normalizedMts: SupabaseModuleTest[] = (
-          (mtRes.data ?? []) as RawModuleTest[]
-        ).map((mt) => ({
-          ...mt,
-          test: mt.test?.[0] ?? null,
-        }));
+        // unwrapOne handles both object and single-element array shapes that
+        // PostgREST / Supabase client may return for to-one FK joins.
+        const normalizedMts: SupabaseModuleTest[] = (mtRes.data ?? []).map(
+          (mt: any) => ({ ...mt, test: unwrapOne(mt.test) })
+        );
 
-        const normalizedSrs: SupabaseStepResult[] = (
-          (srRes.data ?? []) as RawStepResult[]
-        ).map((sr) => ({
-          ...sr,
-          step: sr.step?.[0] ?? null,
-        }));
+        const normalizedSrs: SupabaseStepResult[] = (srRes.data ?? []).map(
+          (sr: any) => ({ ...sr, step: unwrapOne(sr.step) })
+        );
 
         const moduleTestIds = normalizedMts.map((mt) => mt.id);
         const lockRes =
@@ -289,17 +270,17 @@ const ModuleDashboard: React.FC<Props> = ({
         }, {});
 
         const joined = normalizedMts
-          .map((mt: SupabaseModuleTest) => ({
+          .map((mt) => ({
             ...mt,
             step_results: srByTestsName[mt.tests_name] ?? [],
           }))
-          .sort((a: ModuleTestRow, b: ModuleTestRow) => {
+          .sort((a, b) => {
             const aNum = parseInt(a.test?.serial_no ?? "0", 10) || 0;
             const bNum = parseInt(b.test?.serial_no ?? "0", 10) || 0;
             return aNum - bNum;
           });
 
-        setmodule_tests(joined);
+        setmodule_tests(joined as ModuleTestRow[]);
         setError(null);
       } catch (e: any) {
         if (e.name === "AbortError") return;

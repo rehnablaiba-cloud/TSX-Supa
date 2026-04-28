@@ -42,13 +42,47 @@ import RAreaChart from "../ModuleDashboard/charts/RAreaChart";
 import RLineChart from "../ModuleDashboard/charts/RLineChart";
 import RRadarChart from "../ModuleDashboard/charts/RRadarChart";
 
+const ANIM_STYLE = `
+@keyframes neonPulse {
+  0%,100% { box-shadow: 0 0 0 1.5px rgba(var(--neon-cyan),0.45), 0 0 12px 2px rgba(var(--neon-cyan),0.18); }
+  50%      { box-shadow: 0 0 0 1.5px rgba(var(--neon-cyan),0.45), 0 0 22px 6px rgba(var(--neon-cyan),0.32); }
+}
+@keyframes amberPulse {
+  0%,100% { box-shadow: 0 0 0 1.5px rgba(var(--neon-amber),0.45), 0 0 12px 2px rgba(var(--neon-amber),0.18); }
+  50%      { box-shadow: 0 0 0 1.5px rgba(var(--neon-amber),0.45), 0 0 22px 6px rgba(var(--neon-amber),0.32); }
+}
+@keyframes dualPulse {
+  0%,100% {
+    box-shadow:
+      0 0 0 1.5px rgba(var(--neon-cyan),0.5), 0 0 0 3px rgba(var(--neon-amber),0.35),
+      0 0 14px 3px rgba(var(--neon-cyan),0.2), 0 0 22px 6px rgba(var(--neon-amber),0.15);
+  }
+  50% {
+    box-shadow:
+      0 0 0 1.5px rgba(var(--neon-cyan),0.6), 0 0 0 3px rgba(var(--neon-amber),0.45),
+      0 0 22px 6px rgba(var(--neon-cyan),0.32), 0 0 32px 10px rgba(var(--neon-amber),0.25);
+  }
+}
+`;
+
+function useInjectStyle() {
+  useEffect(() => {
+    const el = document.createElement("style");
+    el.textContent = ANIM_STYLE;
+    document.head.appendChild(el);
+    return () => {
+      document.head.removeChild(el);
+    };
+  }, []);
+}
+
 interface Props {
   onNavigate: (page: string, module_name?: string) => void;
 }
 
 type ChartTab = "bar" | "area" | "line" | "radar" | "pie";
 
-/* ── Simple Error Boundary for charts ── */
+/* ── FIX 1: ChartErrorBoundary restored from v1 ── */
 class ChartErrorBoundary extends React.Component<
   { children: React.ReactNode },
   { hasError: boolean }
@@ -70,6 +104,8 @@ class ChartErrorBoundary extends React.Component<
 }
 
 const Dashboard: React.FC<Props> = ({ onNavigate }) => {
+  useInjectStyle();
+
   const { theme } = useTheme();
   const [showExportModal, setShowExportModal] = useState(false);
   const [modules, setModules] = useState<DashboardModule[]>([]);
@@ -82,7 +118,14 @@ const Dashboard: React.FC<Props> = ({ onNavigate }) => {
   >(new Map());
 
   const gridRef = useRef<HTMLDivElement>(null);
-  const hasAnimated = useRef(false);
+  const mountedRef = useRef(true);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
 
   const fetchActiveLocksData = useCallback(async () => {
     try {
@@ -90,6 +133,7 @@ const Dashboard: React.FC<Props> = ({ onNavigate }) => {
         fetchActiveLocks(),
         fetchOtherActiveLockModules(),
       ]);
+      if (!mountedRef.current) return;
       setActiveLocks(locks);
       setOtherLockedModules(otherModules);
     } catch {
@@ -100,12 +144,14 @@ const Dashboard: React.FC<Props> = ({ onNavigate }) => {
   const fetchModules = useCallback(async (isInitial = false) => {
     try {
       const data = await fetchDashboardModules();
+      if (!mountedRef.current) return;
       setModules(data);
       setError(null);
     } catch (e: any) {
+      if (!mountedRef.current) return;
       setError(e?.message ?? "Failed to load modules");
     } finally {
-      if (isInitial) setInitialLoad(false);
+      if (isInitial && mountedRef.current) setInitialLoad(false);
     }
   }, []);
 
@@ -115,7 +161,7 @@ const Dashboard: React.FC<Props> = ({ onNavigate }) => {
 
   useEffect(() => {
     const channel = supabase
-      .channel(`dashboard-live-${Date.now()}`)
+      .channel("dashboard-live")
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "step_results" },
@@ -140,11 +186,9 @@ const Dashboard: React.FC<Props> = ({ onNavigate }) => {
   useLayoutEffect(() => {
     if (
       !initialLoad &&
-      !hasAnimated.current &&
       gridRef.current &&
       gridRef.current.children.length > 0
     ) {
-      hasAnimated.current = true;
       const ctx = gsap.context(() => {
         gsap.fromTo(
           gridRef.current!.children,
@@ -161,7 +205,7 @@ const Dashboard: React.FC<Props> = ({ onNavigate }) => {
       });
       return () => ctx.revert();
     }
-  }, [initialLoad]);
+  }, [initialLoad, modules.length]);
 
   const summaries = useMemo(() => buildSummaries(modules), [modules]);
 
@@ -224,7 +268,7 @@ const Dashboard: React.FC<Props> = ({ onNavigate }) => {
     });
   }, [summaries, modules]);
 
-  // Memoized export handlers to prevent ExportModal re-renders
+  /* ── FIX 2: Memoized export handlers restored from v1 ── */
   const handleExportCSV = useCallback(() => {
     exportDashboardCSV(summaries);
   }, [summaries]);
@@ -267,7 +311,7 @@ const Dashboard: React.FC<Props> = ({ onNavigate }) => {
 
   return (
     <div className="p-6 flex flex-col gap-6 pb-24 md:pb-6">
-      {/* ── Export Modal ─────────────────────────────────────────────────── */}
+      {/* ── Export Modal ── */}
       <ExportModal
         isOpen={showExportModal}
         onClose={() => setShowExportModal(false)}
@@ -348,11 +392,12 @@ const Dashboard: React.FC<Props> = ({ onNavigate }) => {
                 <button
                   key={tab.key}
                   onClick={() => setActiveChart(tab.key)}
-                  className={`px-3 py-1 text-xs font-semibold rounded-md transition-all ${
+                  className="px-3 py-1 text-xs font-semibold rounded-md transition-all"
+                  style={
                     activeChart === tab.key
-                      ? "bg-c-brand text-white"
-                      : "text-t-muted hover:text-t-primary"
-                  }`}
+                      ? { background: "var(--color-brand)", color: "#fff" }
+                      : { color: "var(--text-muted)" }
+                  }
                 >
                   {tab.label}
                 </button>
@@ -360,6 +405,7 @@ const Dashboard: React.FC<Props> = ({ onNavigate }) => {
             </div>
           </div>
 
+          {/* ── FIX 1: ChartErrorBoundary wrapping chart area ── */}
           <ChartErrorBoundary>
             {activeChart === "pie" ? (
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-center">
@@ -367,6 +413,7 @@ const Dashboard: React.FC<Props> = ({ onNavigate }) => {
                   <p className="text-xs text-t-muted mb-2 self-start">
                     Fleet Total Distribution
                   </p>
+                  {/* ── FIX 3: key prop restored ── */}
                   <RPieChart
                     key="pie-chart"
                     data={chartData}
@@ -423,6 +470,7 @@ const Dashboard: React.FC<Props> = ({ onNavigate }) => {
               </div>
             ) : (
               <div className="w-full">
+                {/* ── FIX 3: key props restored on all chart variants ── */}
                 {activeChart === "bar" && (
                   <RBarChart key="bar-chart" data={chartData} ct={chartTheme} />
                 )}
@@ -456,7 +504,7 @@ const Dashboard: React.FC<Props> = ({ onNavigate }) => {
       {/* Module grid */}
       {initialLoad ? (
         <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
-          {Array.from({ length: 3 }).map((_, i) => (
+          {Array.from({ length: 6 }).map((_, i) => (
             <SkeletonCard key={i} />
           ))}
         </div>
@@ -494,10 +542,7 @@ const Dashboard: React.FC<Props> = ({ onNavigate }) => {
             const otherOnly = otherLockCount > 0 && myLockCount === 0;
 
             const cardStyle: React.CSSProperties = hasBoth
-              ? {
-                  animation: "dualPulse 2.6s ease-in-out infinite",
-                  border: "1.5px solid rgba(var(--neon-cyan), 0.55)",
-                }
+              ? { animation: "dualPulse 2.6s ease-in-out infinite" }
               : myOnly
               ? {
                   border: "1.5px solid rgba(var(--neon-cyan), 0.55)",
@@ -506,12 +551,7 @@ const Dashboard: React.FC<Props> = ({ onNavigate }) => {
                   animation: "neonPulse 2.6s ease-in-out infinite",
                 }
               : otherOnly
-              ? {
-                  border: "1.5px solid rgba(var(--neon-amber), 0.55)",
-                  background:
-                    "linear-gradient(135deg, rgba(var(--neon-amber), 0.07) 0%, transparent 60%)",
-                  animation: "amberPulse 2.6s ease-in-out infinite",
-                }
+              ? { animation: "amberPulse 2.6s ease-in-out infinite" }
               : {};
 
             return (
