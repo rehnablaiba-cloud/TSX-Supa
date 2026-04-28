@@ -80,12 +80,18 @@ const RPieChart: React.FC<Props> = ({
                 const cy = viewBox?.cy ?? 0;
                 return (
                   <g>
+                    {/* Use CSS vars directly — immune to stale closure when
+                        recharts skips re-invoking content() on prop change */}
                     <text
                       x={cx}
                       y={cy - 7}
                       textAnchor="middle"
                       dominantBaseline="central"
-                      style={{ fontSize: 18, fontWeight: 700, fill: ct.text }}
+                      style={{
+                        fontSize: 18,
+                        fontWeight: 700,
+                        fill: "var(--text-primary)",
+                      }}
                     >
                       {passRate}%
                     </text>
@@ -94,7 +100,7 @@ const RPieChart: React.FC<Props> = ({
                       y={cy + 11}
                       textAnchor="middle"
                       dominantBaseline="central"
-                      style={{ fontSize: 10, fill: ct.muted }}
+                      style={{ fontSize: 10, fill: "var(--text-muted)" }}
                     >
                       pass
                     </text>
