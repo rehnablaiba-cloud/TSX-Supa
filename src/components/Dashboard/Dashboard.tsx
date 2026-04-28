@@ -42,49 +42,34 @@ import RAreaChart from "../ModuleDashboard/charts/RAreaChart";
 import RLineChart from "../ModuleDashboard/charts/RLineChart";
 import RRadarChart from "../ModuleDashboard/charts/RRadarChart";
 
-const ANIM_STYLE = `
-@keyframes neonPulse {
-  0%,100% { box-shadow: 0 0 0 1.5px rgba(var(--neon-cyan),0.45), 0 0 12px 2px rgba(var(--neon-cyan),0.18); }
-  50%      { box-shadow: 0 0 0 1.5px rgba(var(--neon-cyan),0.45), 0 0 22px 6px rgba(var(--neon-cyan),0.32); }
-}
-@keyframes amberPulse {
-  0%,100% { box-shadow: 0 0 0 1.5px rgba(var(--neon-amber),0.45), 0 0 12px 2px rgba(var(--neon-amber),0.18); }
-  50%      { box-shadow: 0 0 0 1.5px rgba(var(--neon-amber),0.45), 0 0 22px 6px rgba(var(--neon-amber),0.32); }
-}
-@keyframes dualPulse {
-  0%,100% {
-    box-shadow:
-      0 0 0 1.5px rgba(var(--neon-cyan),0.5), 0 0 0 3px rgba(var(--neon-amber),0.35),
-      0 0 14px 3px rgba(var(--neon-cyan),0.2), 0 0 22px 6px rgba(var(--neon-amber),0.15);
-  }
-  50% {
-    box-shadow:
-      0 0 0 1.5px rgba(var(--neon-cyan),0.6), 0 0 0 3px rgba(var(--neon-amber),0.45),
-      0 0 22px 6px rgba(var(--neon-cyan),0.32), 0 0 32px 10px rgba(var(--neon-amber),0.25);
-  }
-}
-`;
-
-function useInjectStyle() {
-  useEffect(() => {
-    const el = document.createElement("style");
-    el.textContent = ANIM_STYLE;
-    document.head.appendChild(el);
-    return () => {
-      document.head.removeChild(el);
-    };
-  }, []);
-}
-
 interface Props {
   onNavigate: (page: string, module_name?: string) => void;
 }
 
 type ChartTab = "bar" | "area" | "line" | "radar" | "pie";
 
-const Dashboard: React.FC<Props> = ({ onNavigate }) => {
-  useInjectStyle();
+/* ── Simple Error Boundary for charts ── */
+class ChartErrorBoundary extends React.Component<
+  { children: React.ReactNode },
+  { hasError: boolean }
+> {
+  state = { hasError: false };
+  static getDerivedStateFromError() {
+    return { hasError: true };
+  }
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="text-t-muted text-sm text-center py-8">
+          Chart unavailable — try refreshing the page
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
 
+const Dashboard: React.FC<Props> = ({ onNavigate }) => {
   const { theme } = useTheme();
   const [showExportModal, setShowExportModal] = useState(false);
   const [modules, setModules] = useState<DashboardModule[]>([]);
@@ -97,14 +82,7 @@ const Dashboard: React.FC<Props> = ({ onNavigate }) => {
   >(new Map());
 
   const gridRef = useRef<HTMLDivElement>(null);
-  const mountedRef = useRef(true);
-
-  useEffect(() => {
-    mountedRef.current = true;
-    return () => {
-      mountedRef.current = false;
-    };
-  }, []);
+  const hasAnimated = useRef(false);
 
   const fetchActiveLocksData = useCallback(async () => {
     try {
@@ -112,7 +90,6 @@ const Dashboard: React.FC<Props> = ({ onNavigate }) => {
         fetchActiveLocks(),
         fetchOtherActiveLockModules(),
       ]);
-      if (!mountedRef.current) return;
       setActiveLocks(locks);
       setOtherLockedModules(otherModules);
     } catch {
@@ -123,14 +100,12 @@ const Dashboard: React.FC<Props> = ({ onNavigate }) => {
   const fetchModules = useCallback(async (isInitial = false) => {
     try {
       const data = await fetchDashboardModules();
-      if (!mountedRef.current) return;
       setModules(data);
       setError(null);
     } catch (e: any) {
-      if (!mountedRef.current) return;
       setError(e?.message ?? "Failed to load modules");
     } finally {
-      if (isInitial && mountedRef.current) setInitialLoad(false);
+      if (isInitial) setInitialLoad(false);
     }
   }, []);
 
@@ -140,7 +115,7 @@ const Dashboard: React.FC<Props> = ({ onNavigate }) => {
 
   useEffect(() => {
     const channel = supabase
-      .channel("dashboard-live")
+      .channel(`dashboard-live-${Date.now()}`)
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "step_results" },
@@ -165,9 +140,11 @@ const Dashboard: React.FC<Props> = ({ onNavigate }) => {
   useLayoutEffect(() => {
     if (
       !initialLoad &&
+      !hasAnimated.current &&
       gridRef.current &&
       gridRef.current.children.length > 0
     ) {
+      hasAnimated.current = true;
       const ctx = gsap.context(() => {
         gsap.fromTo(
           gridRef.current!.children,
@@ -184,7 +161,7 @@ const Dashboard: React.FC<Props> = ({ onNavigate }) => {
       });
       return () => ctx.revert();
     }
-  }, [initialLoad, modules.length]);
+  }, [initialLoad]);
 
   const summaries = useMemo(() => buildSummaries(modules), [modules]);
 
@@ -247,6 +224,19 @@ const Dashboard: React.FC<Props> = ({ onNavigate }) => {
     });
   }, [summaries, modules]);
 
+  // Memoized export handlers to prevent ExportModal re-renders
+  const handleExportCSV = useCallback(() => {
+    exportDashboardCSV(summaries);
+  }, [summaries]);
+
+  const handleExportPDF = useCallback(() => {
+    exportDashboardPDF(buildSummariesWithTests());
+  }, [buildSummariesWithTests]);
+
+  const handleExportDOCX = useCallback(() => {
+    exportDashboardDocx(buildSummariesWithTests());
+  }, [buildSummariesWithTests]);
+
   if (error)
     return (
       <div className="p-6">
@@ -277,7 +267,7 @@ const Dashboard: React.FC<Props> = ({ onNavigate }) => {
 
   return (
     <div className="p-6 flex flex-col gap-6 pb-24 md:pb-6">
-      {/* ── Export Modal — uniform theme-aware buttons ─────────────────────── */}
+      {/* ── Export Modal ─────────────────────────────────────────────────── */}
       <ExportModal
         isOpen={showExportModal}
         onClose={() => setShowExportModal(false)}
@@ -290,27 +280,24 @@ const Dashboard: React.FC<Props> = ({ onNavigate }) => {
             icon: <FileSpreadsheet size={16} />,
             color:
               "bg-(--bg-card) border border-(--border-color) text-(--text-primary)",
-            hoverColor:
-              "hover:bg-(--bg-surface) hover:border-(--color-brand)",
-            onConfirm: () => exportDashboardCSV(summaries),
+            hoverColor: "hover:bg-(--bg-surface) hover:border-(--color-brand)",
+            onConfirm: handleExportCSV,
           },
           {
             label: "PDF",
             icon: <FileText size={16} />,
             color:
               "bg-(--bg-card) border border-(--border-color) text-(--text-primary)",
-            hoverColor:
-              "hover:bg-(--bg-surface) hover:border-(--color-brand)",
-            onConfirm: () => exportDashboardPDF(buildSummariesWithTests()),
+            hoverColor: "hover:bg-(--bg-surface) hover:border-(--color-brand)",
+            onConfirm: handleExportPDF,
           },
           {
             label: "DOCX",
             icon: <FileDown size={16} />,
             color:
               "bg-(--bg-card) border border-(--border-color) text-(--text-primary)",
-            hoverColor:
-              "hover:bg-(--bg-surface) hover:border-(--color-brand)",
-            onConfirm: () => exportDashboardDocx(buildSummariesWithTests()),
+            hoverColor: "hover:bg-(--bg-surface) hover:border-(--color-brand)",
+            onConfirm: handleExportDOCX,
           },
         ]}
       />
@@ -361,12 +348,11 @@ const Dashboard: React.FC<Props> = ({ onNavigate }) => {
                 <button
                   key={tab.key}
                   onClick={() => setActiveChart(tab.key)}
-                  className="px-3 py-1 text-xs font-semibold rounded-md transition-all"
-                  style={
+                  className={`px-3 py-1 text-xs font-semibold rounded-md transition-all ${
                     activeChart === tab.key
-                      ? { background: "var(--color-brand)", color: "#fff" }
-                      : { color: "var(--text-muted)" }
-                  }
+                      ? "bg-c-brand text-white"
+                      : "text-t-muted hover:text-t-primary"
+                  }`}
                 >
                   {tab.label}
                 </button>
@@ -374,86 +360,103 @@ const Dashboard: React.FC<Props> = ({ onNavigate }) => {
             </div>
           </div>
 
-          {activeChart === "pie" ? (
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-center">
-              <div className="flex flex-col items-center justify-center">
-                <p className="text-xs text-t-muted mb-2 self-start">
-                  Fleet Total Distribution
-                </p>
-                <RPieChart
-                  data={chartData}
-                  ct={chartTheme}
-                  height={260}
-                  showLabel
-                />
-              </div>
-              <div className="flex flex-col gap-3">
-                {[
-                  {
-                    label: "Total Steps",
-                    value: globalStats[0].value,
-                    color: "var(--color-brand)",
-                  },
-                  {
-                    label: "Pass",
-                    value: globalStats[1].value,
-                    color: "var(--color-pass)",
-                  },
-                  {
-                    label: "Fail",
-                    value: globalStats[2].value,
-                    color: "var(--color-fail)",
-                  },
-                  {
-                    label: "Pending",
-                    value:
-                      globalStats[0].value -
-                      globalStats[1].value -
-                      globalStats[2].value,
-                    color: "var(--text-muted)",
-                  },
-                ].map((stat) => (
-                  <div
-                    key={stat.label}
-                    className="flex items-center justify-between px-4 py-3 rounded-xl border border-(--border-color) bg-bg-surface"
-                  >
-                    <div className="flex items-center gap-2">
-                      <span
-                        className="w-2.5 h-2.5 rounded-full shrink-0"
-                        style={{ background: stat.color }}
-                      />
-                      <span className="text-sm text-t-muted">{stat.label}</span>
+          <ChartErrorBoundary>
+            {activeChart === "pie" ? (
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-center">
+                <div className="flex flex-col items-center justify-center">
+                  <p className="text-xs text-t-muted mb-2 self-start">
+                    Fleet Total Distribution
+                  </p>
+                  <RPieChart
+                    key="pie-chart"
+                    data={chartData}
+                    ct={chartTheme}
+                    height={260}
+                    showLabel
+                  />
+                </div>
+                <div className="flex flex-col gap-3">
+                  {[
+                    {
+                      label: "Total Steps",
+                      value: globalStats[0].value,
+                      color: "var(--color-brand)",
+                    },
+                    {
+                      label: "Pass",
+                      value: globalStats[1].value,
+                      color: "var(--color-pass)",
+                    },
+                    {
+                      label: "Fail",
+                      value: globalStats[2].value,
+                      color: "var(--color-fail)",
+                    },
+                    {
+                      label: "Pending",
+                      value:
+                        globalStats[0].value -
+                        globalStats[1].value -
+                        globalStats[2].value,
+                      color: "var(--text-muted)",
+                    },
+                  ].map((stat) => (
+                    <div
+                      key={stat.label}
+                      className="flex items-center justify-between px-4 py-3 rounded-xl border border-(--border-color) bg-bg-surface"
+                    >
+                      <div className="flex items-center gap-2">
+                        <span
+                          className="w-2.5 h-2.5 rounded-full shrink-0"
+                          style={{ background: stat.color }}
+                        />
+                        <span className="text-sm text-t-muted">
+                          {stat.label}
+                        </span>
+                      </div>
+                      <span className="text-sm font-bold text-t-primary">
+                        {stat.value}
+                      </span>
                     </div>
-                    <span className="text-sm font-bold text-t-primary">
-                      {stat.value}
-                    </span>
-                  </div>
-                ))}
+                  ))}
+                </div>
               </div>
-            </div>
-          ) : (
-            <div className="w-full">
-              {activeChart === "bar" && (
-                <RBarChart data={chartData} ct={chartTheme} />
-              )}
-              {activeChart === "area" && (
-                <RAreaChart data={chartData} ct={chartTheme} />
-              )}
-              {activeChart === "line" && (
-                <RLineChart data={chartData} ct={chartTheme} />
-              )}
-              {activeChart === "radar" && (
-                <RRadarChart data={chartData} ct={chartTheme} />
-              )}
-            </div>
-          )}
+            ) : (
+              <div className="w-full">
+                {activeChart === "bar" && (
+                  <RBarChart key="bar-chart" data={chartData} ct={chartTheme} />
+                )}
+                {activeChart === "area" && (
+                  <RAreaChart
+                    key="area-chart"
+                    data={chartData}
+                    ct={chartTheme}
+                  />
+                )}
+                {activeChart === "line" && (
+                  <RLineChart
+                    key="line-chart"
+                    data={chartData}
+                    ct={chartTheme}
+                  />
+                )}
+                {activeChart === "radar" && (
+                  <RRadarChart
+                    key="radar-chart"
+                    data={chartData}
+                    ct={chartTheme}
+                  />
+                )}
+              </div>
+            )}
+          </ChartErrorBoundary>
         </div>
       )}
 
       {/* Module grid */}
       {initialLoad ? (
         <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
-          {Array.from({ length: 6 }).map((_, i) => (
+          {Array.from({ length: 3 }).map((_, i) => (
             <SkeletonCard key={i} />
           ))}
         </div>
@@ -491,7 +494,10 @@ const Dashboard: React.FC<Props> = ({ onNavigate }) => {
             const otherOnly = otherLockCount > 0 && myLockCount === 0;
 
             const cardStyle: React.CSSProperties = hasBoth
-              ? { animation: "dualPulse 2.6s ease-in-out infinite" }
+              ? {
+                  animation: "dualPulse 2.6s ease-in-out infinite",
+                  border: "1.5px solid rgba(var(--neon-cyan), 0.55)",
+                }
               : myOnly
               ? {
                   border: "1.5px solid rgba(var(--neon-cyan), 0.55)",
@@ -500,7 +506,12 @@ const Dashboard: React.FC<Props> = ({ onNavigate }) => {
                   animation: "neonPulse 2.6s ease-in-out infinite",
                 }
               : otherOnly
-              ? { animation: "amberPulse 2.6s ease-in-out infinite" }
+              ? {
+                  border: "1.5px solid rgba(var(--neon-amber), 0.55)",
+                  background:
+                    "linear-gradient(135deg, rgba(var(--neon-amber), 0.07) 0%, transparent 60%)",
+                  animation: "amberPulse 2.6s ease-in-out infinite",
+                }
               : {};
 
             return (
