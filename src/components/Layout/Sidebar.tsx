@@ -39,9 +39,14 @@ const Sidebar: React.FC<Props> = ({ activePage, onNavigate, modules }) => {
 
   const navItems = isAdmin ? [...BASE_NAV, ...ADMIN_NAV] : BASE_NAV;
 
-  const filtered = modules.filter((m) =>
-    m.name.toLowerCase().includes(search.toLowerCase())
-  );
+  const filtered = modules
+    .filter((m) => m.name.toLowerCase().includes(search.toLowerCase()))
+    .sort((a, b) =>
+      a.name.localeCompare(b.name, undefined, {
+        numeric: true,
+        sensitivity: "base",
+      })
+    );
 
   // Release test lock then sign out
   const handleSignOut = async () => {
