@@ -207,7 +207,6 @@ const MobileNav: React.FC<Props> = ({ activePage, onNavigate }) => {
         onClick={(e) => e.stopPropagation()}
       >
         {/* Scoped backdrop — fills tray exactly */}
-        <div className="absolute inset-0 rounded-2xl backdrop-dim -z-10" />
 
         <div className="flex flex-wrap justify-center gap-x-2 gap-y-3">
           <button
@@ -443,9 +442,6 @@ const MobileNav: React.FC<Props> = ({ activePage, onNavigate }) => {
           display: activeModal !== null ? "none" : undefined,
         }}
       >
-        {/* Scoped backdrop — fills nav exactly */}
-        <div className="absolute inset-0 rounded-[26px] backdrop-dim -z-10" />
-
         {allNavItems.map((item, i) => {
           const isActive =
             item.id === activePage ||
