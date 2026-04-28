@@ -1,5 +1,6 @@
 import React, {
   useEffect,
+  useLayoutEffect,
   useRef,
   useState,
   useMemo,
@@ -11,7 +12,6 @@ import Topbar from "../Layout/Topbar";
 import ExportModal from "../UI/ExportModal";
 import { useAuth } from "../../context/AuthContext";
 import { useTheme } from "../../context/ThemeContext";
-import SegmentedBar from "../UI/SegmentedBar";
 import {
   Lock,
   Unlock,
@@ -63,7 +63,6 @@ const StaggerRow: React.FC<{ index: number; children: React.ReactNode }> = ({
   </div>
 );
 
-// ── Strip all leading non-alphanumeric chars from divider labels ─────────────
 const cleanDividerLabel = (action: string): string =>
   action.replace(/^[^a-zA-Z0-9]+/, "");
 
@@ -110,6 +109,7 @@ interface ModuleTestRow {
   step_results: TrimmedStepResult[];
 }
 
+// Normalized (post-processing) types — single object, not array
 interface SupabaseModuleTest {
   id: string;
   tests_name: string;
@@ -128,6 +128,27 @@ interface SupabaseStepResult {
     action: string | null;
     expected_result: string | null;
   } | null;
+}
+
+// Raw types as PostgREST actually returns them — joins come back as arrays
+interface RawModuleTest {
+  id: string;
+  tests_name: string;
+  test: { serial_no: string; name: string }[];
+}
+
+interface RawStepResult {
+  id: string;
+  status: "pass" | "fail" | "pending";
+  test_steps_id: string;
+  step: {
+    id: string;
+    is_divider: boolean;
+    tests_name: string;
+    serial_no: number | null;
+    action: string | null;
+    expected_result: string | null;
+  }[];
 }
 
 const ModuleDashboard: React.FC<Props> = ({
@@ -149,10 +170,8 @@ const ModuleDashboard: React.FC<Props> = ({
   const [showExportModal, setShowExportModal] = useState(false);
   const [releaseError, setReleaseError] = useState<string | null>(null);
 
-  // Track abort controllers for cleanup
   const abortControllerRef = useRef<AbortController | null>(null);
 
-  // Read chart theme after layout to ensure CSS vars are applied
   const [ct, setCt] = useState<ChartTheme>({
     panel: "#ffffff",
     text: "#1e293b",
@@ -220,9 +239,22 @@ const ModuleDashboard: React.FC<Props> = ({
           return;
         }
 
-        const moduleTestIds = (mtRes.data ?? []).map(
-          (mt: SupabaseModuleTest) => mt.id
-        );
+        // Normalize PostgREST array joins → single objects
+        const normalizedMts: SupabaseModuleTest[] = (
+          (mtRes.data ?? []) as RawModuleTest[]
+        ).map((mt) => ({
+          ...mt,
+          test: mt.test?.[0] ?? null,
+        }));
+
+        const normalizedSrs: SupabaseStepResult[] = (
+          (srRes.data ?? []) as RawStepResult[]
+        ).map((sr) => ({
+          ...sr,
+          step: sr.step?.[0] ?? null,
+        }));
+
+        const moduleTestIds = normalizedMts.map((mt) => mt.id);
         const lockRes =
           moduleTestIds.length > 0
             ? await supabase
@@ -246,7 +278,7 @@ const ModuleDashboard: React.FC<Props> = ({
             : {};
         setLocks(lockMap);
 
-        const srByTestsName = (srRes.data ?? []).reduce<
+        const srByTestsName = normalizedSrs.reduce<
           Record<string, SupabaseStepResult[]>
         >((acc, sr) => {
           const key = sr.step?.tests_name;
@@ -256,8 +288,7 @@ const ModuleDashboard: React.FC<Props> = ({
           return acc;
         }, {});
 
-        // ── Sort by numeric serial_no ─────────────────────────────────
-        const joined = (mtRes.data ?? [])
+        const joined = normalizedMts
           .map((mt: SupabaseModuleTest) => ({
             ...mt,
             step_results: srByTestsName[mt.tests_name] ?? [],
@@ -377,7 +408,6 @@ const ModuleDashboard: React.FC<Props> = ({
     };
   }, [chartData]);
 
-  // ── Build export data — sorted + divider labels cleaned ──────────────────
   const buildFlatData = useCallback((): FlatData[] => {
     return module_tests.flatMap((mt) =>
       mt.step_results
@@ -402,7 +432,6 @@ const ModuleDashboard: React.FC<Props> = ({
     );
   }, [module_tests, module_name]);
 
-  // ── Export stats for modal ────────────────────────────────────────────────
   const exportStats = useMemo(() => {
     const flat = buildFlatData();
     const nd = flat.filter((d) => !d.isdivider);
@@ -454,7 +483,6 @@ const ModuleDashboard: React.FC<Props> = ({
 
   return (
     <div className="flex-1 flex flex-col">
-      {/* ── Export Modal ─────────────────────────────────────────────────── */}
       <ExportModal
         isOpen={showExportModal}
         onClose={() => setShowExportModal(false)}

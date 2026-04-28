@@ -1621,7 +1621,7 @@ const TestExecution: React.FC<Props> = ({
       <MassImageUploadModal
         isOpen={showMassImageUpload}
         onClose={() => setShowMassImageUpload(false)}
-        moduleName={module_name}
+        module_Name={module_name}
         moduleTestId={currentMtId}
       />
 
