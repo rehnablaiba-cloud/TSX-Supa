@@ -53,7 +53,7 @@ const ImportStepsManualModal: React.FC<Props> = ({ onClose, onBack }) => {
   useEffect(() => {
     supabase.from("tests").select("id, name").order("name")
       .then(({ data }) => setTests((data ?? []) as { id: string; name: string }[]));
-
+ }, []);
   const handleBack = () => {
     switch (stage) {
       case "selectop":
