@@ -63,10 +63,12 @@ const Sidebar: React.FC<Props> = ({ activePage, onNavigate, modules }) => {
   return (
     <aside
       className={`hidden md:flex flex-col
-      bg-bg-nav border-r border-(--border-color)
-      transition-all duration-300 ${
-        collapsed ? "w-16" : "w-64"
-      } h-screen sticky top-0 shrink-0`}
+        bg-bg-nav border-r border-(--border-color)
+        [backdrop-filter:blur(var(--glass-blur))_saturate(var(--glass-saturation))_brightness(var(--glass-brightness))]
+        [-webkit-backdrop-filter:blur(var(--glass-blur))_saturate(var(--glass-saturation))_brightness(var(--glass-brightness))]
+        transition-all duration-300 ${
+          collapsed ? "w-16" : "w-64"
+        } h-screen sticky top-0 shrink-0`}
     >
       {/* Header */}
       <div
@@ -100,7 +102,7 @@ const Sidebar: React.FC<Props> = ({ activePage, onNavigate, modules }) => {
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Search modules…"
-            className="input text-sm py-2 pl-8"
+            className="input text-sm pl-8"
           />
         </div>
       )}
@@ -151,7 +153,8 @@ const Sidebar: React.FC<Props> = ({ activePage, onNavigate, modules }) => {
                   text-t-secondary hover:bg-bg-card hover:text-t-primary
                   transition-colors w-full text-left shrink-0"
               >
-                <span className="w-2 h-2 rounded-full shrink-0 bg-(--color-brand)" />
+                {/* ✅ Use mapped Tailwind token, not raw CSS var */}
+                <span className="w-2 h-2 rounded-full shrink-0 bg-c-brand" />
                 <span className="truncate">{m.name}</span>
               </button>
             ))}
