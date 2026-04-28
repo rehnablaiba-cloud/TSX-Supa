@@ -17,7 +17,7 @@ import AuditLog from "./components/AuditLog/AuditLog";
 import Spinner from "./components/UI/Spinner";
 import { supabase } from "./supabase";
 import { Module } from "./types";
-import { Analytics } from "@vercel/analytics/next"
+import { Analytics } from "@vercel/analytics/react";
 type Page =
   | "dashboard"
   | "module"
@@ -250,16 +250,17 @@ const AppInner: React.FC = () => {
 };
 
 // ─── Root ─────────────────────────────────────────────────────────────────────
-
+// ✅ Fixed
 const App: React.FC = () => (
-  <ThemeProvider>
-    <SessionLogProvider>
-      <ActiveLockProvider>
-        <AppInner />
-      </ActiveLockProvider>
-    </SessionLogProvider>
-  </ThemeProvider>
-  <Analytics>
+  <>
+    <ThemeProvider>
+      <SessionLogProvider>
+        <ActiveLockProvider>
+          <AppInner />
+        </ActiveLockProvider>
+      </SessionLogProvider>
+    </ThemeProvider>
+    <Analytics />
+  </>
 );
-
 export default App;
