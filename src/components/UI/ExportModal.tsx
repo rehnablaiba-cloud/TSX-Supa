@@ -1,4 +1,5 @@
-import React from "react";
+import React, { useEffect } from "react";
+import { createPortal } from "react-dom";
 
 interface ExportOption {
   label: string;
@@ -25,21 +26,31 @@ const ExportModal: React.FC<Props> = ({
   stats,
   options,
 }) => {
+  // Lock body scroll when open
+  useEffect(() => {
+    if (isOpen) {
+      document.body.style.overflow = "hidden";
+      return () => {
+        document.body.style.overflow = "";
+      };
+    }
+  }, [isOpen]);
+
   if (!isOpen) return null;
 
-  return (
-    <div className="fixed inset-0 z-50">
-      {/* Backdrop dimmer — sibling, not parent */}
+  const modal = (
+    <div className="fixed inset-0 z-[100]" style={{ isolation: "isolate" }}>
+      {/* Backdrop — fills viewport, no backdrop-filter */}
       <div
         className="absolute inset-0 backdrop-dim"
         onClick={onClose}
         aria-hidden="true"
       />
 
-      {/* Centered modal panel — blurs through the backdrop */}
-      <div className="absolute inset-0 flex items-center justify-center p-4 pointer-events-none">
+      {/* Centered panel — blurs through backdrop */}
+      <div className="absolute inset-0 flex items-center justify-center p-4">
         <div
-          className="relative isolate glass-frost w-full max-w-md p-6 flex flex-col gap-5 pointer-events-auto"
+          className="relative w-full max-w-md p-6 flex flex-col gap-5 glass-frost"
           onClick={(e) => e.stopPropagation()}
           role="dialog"
           aria-modal="true"
@@ -120,6 +131,8 @@ const ExportModal: React.FC<Props> = ({
       </div>
     </div>
   );
+
+  return createPortal(modal, document.body);
 };
 
 export default ExportModal;
