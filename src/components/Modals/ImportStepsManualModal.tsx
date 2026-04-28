@@ -210,10 +210,10 @@ const ImportStepsManualModal: React.FC<Props> = ({ onClose, onBack }) => {
             </p>
           )}
           {tests.map((t) => (
-            <button key={t.id} onClick={() => handleTestSelect(t.tests_name)}
+            <button key={t.id} onClick={() => handleTestSelect(t.name)}
               className="text-left px-3 py-2 rounded-xl border border-(--border-color)
                 bg-bg-card hover:bg-bg-base text-sm text-t-primary">
-              {t.tests_name}
+              {t.name}
             </button>
           ))}
         </div>
