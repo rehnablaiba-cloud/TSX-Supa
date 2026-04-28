@@ -86,7 +86,7 @@ interface ImagePreviewState {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Divider configs  —  now driven by CSS custom properties
+// Divider configs  —  driven by CSS custom properties
 // ─────────────────────────────────────────────────────────────────────────────
 
 const DIVIDER_LEVELS: Record<
@@ -455,6 +455,7 @@ const TesterBadge: React.FC<{
 
 const TableStepRow: React.FC<{
   step: ExecutionStep;
+  initialRemarks: string;
   signedImageUrls: Record<string, string>;
   isFocused: boolean;
   isUpdating?: boolean;
@@ -469,6 +470,7 @@ const TableStepRow: React.FC<{
   rowRef?: (el: HTMLTableRowElement | null) => void;
 }> = ({
   step,
+  initialRemarks,
   signedImageUrls,
   isFocused,
   isUpdating = false,
@@ -478,8 +480,12 @@ const TableStepRow: React.FC<{
   onImageClick,
   rowRef,
 }) => {
-  // LOW FIX: fully controlled textarea using lifted draft state
-  const remarks = remarksMap.current[step.stepId] ?? step.remarks ?? "";
+  const [remarks, setRemarks] = useState(initialRemarks);
+
+  // Sync if the parent resets remarks (e.g. Undo All)
+  useEffect(() => {
+    setRemarks(initialRemarks);
+  }, [initialRemarks]);
 
   const rowBg =
     step.status === "pass"
@@ -551,6 +557,7 @@ const TableStepRow: React.FC<{
         <textarea
           value={remarks}
           onChange={(e) => {
+            setRemarks(e.target.value);
             onRemarksChange(e.target.value);
           }}
           onFocus={onFocus}
@@ -637,6 +644,7 @@ const TableStepRow: React.FC<{
 
 const MobileStepCard: React.FC<{
   step: ExecutionStep;
+  initialRemarks: string;
   signedImageUrls: Record<string, string>;
   isFocused: boolean;
   isUpdating?: boolean;
@@ -651,6 +659,7 @@ const MobileStepCard: React.FC<{
   cardRef?: (el: HTMLDivElement | null) => void;
 }> = ({
   step,
+  initialRemarks,
   signedImageUrls,
   isFocused,
   isUpdating = false,
@@ -660,25 +669,31 @@ const MobileStepCard: React.FC<{
   onImageClick,
   cardRef,
 }) => {
-  // LOW FIX: fully controlled using lifted draft state
-  const remarks = remarksMap.current[step.stepId] ?? step.remarks ?? "";
+  const [remarks, setRemarks] = useState(initialRemarks);
   const [showRemarksDialog, setShowRemarksDialog] = useState(false);
-  const [draftRemarks, setDraftRemarks] = useState(remarks);
+  const [draftRemarks, setDraftRemarks] = useState(initialRemarks);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  // Sync if the parent resets remarks (e.g. Undo All)
+  useEffect(() => {
+    setRemarks(initialRemarks);
+  }, [initialRemarks]);
 
   const openDialog = (e: React.MouseEvent) => {
     e.stopPropagation();
     setDraftRemarks(remarks);
     setShowRemarksDialog(true);
-    // LOW FIX: requestAnimationFrame instead of magic timeout
     requestAnimationFrame(() => {
       textareaRef.current?.focus();
     });
   };
+
   const saveRemarks = () => {
+    setRemarks(draftRemarks);
     onRemarksChange(draftRemarks);
     setShowRemarksDialog(false);
   };
+
   const discardRemarks = () => {
     setDraftRemarks(remarks);
     setShowRemarksDialog(false);
@@ -993,6 +1008,9 @@ const TestExecution: React.FC<Props> = ({
   const cardRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const scrollContainerRef = useRef<HTMLDivElement>(null);
 
+  // ── Derived state — declared early so effects below can reference it ──────
+  const isLockedByOther = !!(lock && lock.user_id !== user?.id);
+
   const openImagePreview = useCallback(
     (paths: string[], clickedIdx: number, label: string) => {
       const urls: string[] = [];
@@ -1266,6 +1284,72 @@ const TestExecution: React.FC<Props> = ({
     };
   }, [scrollTarget, loading]);
 
+  // ── Update step ───────────────────────────────────────────────────────────
+  // Declared before the keyboard effect so the effect can reference it safely.
+  const handleStepUpdate = useCallback(
+    async (
+      stepId: string,
+      status: "pass" | "fail" | "pending",
+      remarks: string
+    ) => {
+      if (isLockedByOther) return;
+      if (updatingStepIds.has(stepId)) return;
+
+      setUpdatingStepIds((prev) => new Set(prev).add(stepId));
+
+      const idx = steps.findIndex((s) => s.stepId === stepId);
+      const nextPending = steps
+        .slice(idx + 1)
+        .find((s) => !s.is_divider && s.status === "pending");
+      const display_name = user?.display_name ?? user?.email ?? "User";
+
+      setSteps((prev) =>
+        prev.map((s) =>
+          s.stepId === stepId ? { ...s, status, remarks, display_name } : s
+        )
+      );
+
+      if (status !== "pending") {
+        if (nextPending) {
+          setFocusedStepId(nextPending.stepId);
+          setScrollTarget(nextPending.stepId);
+        } else {
+          setFocusedStepId(null);
+        }
+      } else {
+        setFocusedStepId(stepId);
+        setScrollTarget(stepId);
+      }
+
+      try {
+        const { error } = await supabase
+          .from("step_results")
+          .update({ status, remarks, display_name })
+          .eq("test_steps_id", stepId)
+          .eq("module_name", module_name);
+        if (error) throw error;
+      } catch {
+        setSteps((prev) =>
+          prev.map((s) => {
+            if (s.stepId !== stepId) return s;
+            const original = steps.find((os) => os.stepId === stepId);
+            return original
+              ? { ...s, status: original.status, remarks: original.remarks }
+              : s;
+          })
+        );
+        addToast("Failed to save step result. Please try again.", "error");
+      } finally {
+        setUpdatingStepIds((prev) => {
+          const next = new Set(prev);
+          next.delete(stepId);
+          return next;
+        });
+      }
+    },
+    [steps, module_name, user, addToast, isLockedByOther, updatingStepIds]
+  );
+
   // ── Keyboard shortcuts ────────────────────────────────────────────────────
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
@@ -1293,72 +1377,6 @@ const TestExecution: React.FC<Props> = ({
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);
   }, [focusedStepId, steps, isLockedByOther, handleStepUpdate]);
-
-  // ── Update step ───────────────────────────────────────────────────────────
-  const handleStepUpdate = useCallback(
-    async (
-      stepId: string,
-      status: "pass" | "fail" | "pending",
-      remarks: string
-    ) => {
-      if (isLockedByOther) return;
-      if (updatingStepIds.has(stepId)) return;
-
-      setUpdatingStepIds((prev) => new Set(prev).add(stepId));
-
-      const idx = steps.findIndex((s) => s.stepId === stepId);
-      const nextPending = steps
-        .slice(idx + 1)
-        .find((s) => !s.is_divider && s.status === "pending");
-      const display_name = user?.display_name ?? user?.email ?? "User";
-
-      // LOW FIX: use functional update for rollback instead of captured snapshot
-      setSteps((prev) =>
-        prev.map((s) =>
-          s.stepId === stepId ? { ...s, status, remarks, display_name } : s
-        )
-      );
-
-      if (status !== "pending") {
-        if (nextPending) {
-          setFocusedStepId(nextPending.stepId);
-          setScrollTarget(nextPending.stepId);
-        } else setFocusedStepId(null);
-      } else {
-        setFocusedStepId(stepId);
-        setScrollTarget(stepId);
-      }
-
-      try {
-        const { error } = await supabase
-          .from("step_results")
-          .update({ status, remarks, display_name })
-          .eq("test_steps_id", stepId)
-          .eq("module_name", module_name);
-        if (error) throw error;
-      } catch {
-        // LOW FIX: functional rollback reads latest state
-        setSteps((prev) =>
-          prev.map((s) => {
-            if (s.stepId !== stepId) return s;
-            // Find the original step from current steps array
-            const original = steps.find((os) => os.stepId === stepId);
-            return original
-              ? { ...s, status: original.status, remarks: original.remarks }
-              : s;
-          })
-        );
-        addToast("Failed to save step result. Please try again.", "error");
-      } finally {
-        setUpdatingStepIds((prev) => {
-          const next = new Set(prev);
-          next.delete(stepId);
-          return next;
-        });
-      }
-    },
-    [steps, module_name, user, addToast, isLockedByOther, updatingStepIds]
-  );
 
   // ── Reset all ─────────────────────────────────────────────────────────────
   const handleUndoAll = useCallback(async () => {
@@ -1393,7 +1411,6 @@ const TestExecution: React.FC<Props> = ({
       addToast("All steps reset to pending.", "info");
       log("Undo all steps");
     } catch {
-      // LOW FIX: functional rollback
       setSteps((prev) =>
         prev.map((s) => {
           if (s.is_divider) return s;
@@ -1429,8 +1446,7 @@ const TestExecution: React.FC<Props> = ({
     onBack();
   };
 
-  // ── Derived state ─────────────────────────────────────────────────────────
-  const isLockedByOther = !!(lock && lock.user_id !== user?.id);
+  // ── Further derived state ─────────────────────────────────────────────────
   const currentMt = moduleTests.find((mt) => mt.id === currentMtId);
   const currentTest = currentMt?.test;
 
@@ -1602,7 +1618,6 @@ const TestExecution: React.FC<Props> = ({
         ]}
       />
 
-      {/* LOW FIX: pass context props to MassImageUploadModal */}
       <MassImageUploadModal
         isOpen={showMassImageUpload}
         onClose={() => setShowMassImageUpload(false)}
@@ -1610,6 +1625,7 @@ const TestExecution: React.FC<Props> = ({
         moduleTestId={currentMtId}
       />
 
+      {/* ── Fixed header ─────────────────────────────────────────────────── */}
       <div className="shrink-0">
         <Topbar
           title={
@@ -1629,7 +1645,6 @@ const TestExecution: React.FC<Props> = ({
                   Mass Upload Images
                 </button>
               )}
-              {/* LOW FIX: disable export only when no steps exist, not when filtered out */}
               <button
                 onClick={() => setShowExportModal(true)}
                 disabled={steps.length === 0}
@@ -1645,6 +1660,7 @@ const TestExecution: React.FC<Props> = ({
           }
         />
 
+        {/* Progress bar */}
         <div className="px-4 pt-3 pb-2">
           <div className="flex items-center justify-between mb-1.5">
             <div className="flex items-center gap-4 text-xs text-t-muted">
@@ -1706,6 +1722,7 @@ const TestExecution: React.FC<Props> = ({
           </div>
         </div>
 
+        {/* Filters */}
         <div className="flex flex-col border-b border-(--border-color)">
           <div className="flex items-center justify-end gap-1 px-4 py-2">
             {(["all", "pass", "fail", "pending"] as Filter[]).map((f) => (
@@ -1735,6 +1752,7 @@ const TestExecution: React.FC<Props> = ({
         </div>
       </div>
 
+      {/* ── Scroll container ─────────────────────────────────────────────── */}
       <div ref={scrollContainerRef} className="flex-1 min-h-0 overflow-y-auto">
         {loading ? (
           <div className="flex items-center justify-center py-20">
@@ -1746,10 +1764,11 @@ const TestExecution: React.FC<Props> = ({
           </div>
         ) : (
           <>
+            {/* Desktop table */}
             <table className="hidden md:table w-full text-sm border-collapse table-fixed">
               <thead className="sticky top-0 z-10">
                 <tr className="bg-bg-surface border-b border-(--border-color)">
-                  <th className="text-left px-2 py-2.5 text-xs font-semibold text-t-muted uppercase tracking-wider w-[6%]  border-r border-(--border-color)">
+                  <th className="text-left px-2 py-2.5 text-xs font-semibold text-t-muted uppercase tracking-wider w-[6%] border-r border-(--border-color)">
                     S.No
                   </th>
                   <th className="text-left px-4 py-2.5 text-xs font-semibold text-t-muted uppercase tracking-wider w-[28%] border-r border-(--border-color)">
@@ -1778,7 +1797,7 @@ const TestExecution: React.FC<Props> = ({
                       return (
                         <tr
                           key={step.stepId}
-                          className={`border-b border-(--border-color)`}
+                          className="border-b border-(--border-color)"
                           style={s.bgStyle}
                         >
                           <td
@@ -1805,6 +1824,9 @@ const TestExecution: React.FC<Props> = ({
                     <TableStepRow
                       key={step.stepId}
                       step={step}
+                      initialRemarks={
+                        remarksMap.current[step.stepId] ?? step.remarks ?? ""
+                      }
                       signedImageUrls={signedImageUrls}
                       isFocused={focusedStepId === step.stepId}
                       isUpdating={updatingStepIds.has(step.stepId)}
@@ -1823,6 +1845,7 @@ const TestExecution: React.FC<Props> = ({
               </tbody>
             </table>
 
+            {/* Mobile cards */}
             <div className="md:hidden flex flex-col">
               <div className="sticky top-0 z-10 grid grid-cols-[64px_1fr] border-b border-(--border-color) bg-bg-surface/80 backdrop-blur-md">
                 <div className="px-3 py-2 border-r border-(--border-color)">
@@ -1864,6 +1887,9 @@ const TestExecution: React.FC<Props> = ({
                     <MobileStepCard
                       key={step.stepId}
                       step={step}
+                      initialRemarks={
+                        remarksMap.current[step.stepId] ?? step.remarks ?? ""
+                      }
                       signedImageUrls={signedImageUrls}
                       isFocused={focusedStepId === step.stepId}
                       isUpdating={updatingStepIds.has(step.stepId)}
@@ -1882,6 +1908,7 @@ const TestExecution: React.FC<Props> = ({
               </div>
             </div>
 
+            {/* Undo All — admin only */}
             {isAdmin && doneCount > 0 && (
               <div className="flex items-center justify-center py-6 px-4">
                 <div className="flex items-center gap-3 px-4 py-3 rounded-xl border border-dashed border-[color-mix(in_srgb,var(--color-pend)_30%,transparent)] bg-[color-mix(in_srgb,var(--color-pend)_5%,transparent)]">
