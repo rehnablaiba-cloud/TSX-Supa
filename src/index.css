@@ -3,6 +3,7 @@
 @custom-variant dark (&:is(.dark *));
 
 @theme {
+  /* Direct hex values, no circular references */
   --color-bg-base: var(--bg-base);
   --color-bg-surface: var(--bg-surface);
   --color-bg-card: var(--bg-card);
@@ -10,32 +11,32 @@
   --color-t-primary: var(--text-primary);
   --color-t-secondary: var(--text-secondary);
   --color-t-muted: var(--text-muted);
-  --color-c-brand: var(--color-brand);
-  --color-c-brand-hover: var(--color-brand-hover);
-  --color-c-brand-bg: var(--color-brand-bg);
+  --color-c-brand: #2563eb;
+  --color-c-brand-hover: #3b82f6;
+  --color-c-brand-bg: rgba(37, 99, 235, 0.1);
 
-  --color-brand-50: var(--brand-50);
-  --color-brand-100: var(--brand-100);
-  --color-brand-200: var(--brand-200);
-  --color-brand-300: var(--brand-300);
-  --color-brand-400: var(--brand-400);
-  --color-brand-500: var(--brand-500);
-  --color-brand-600: var(--brand-600);
-  --color-brand-700: var(--brand-700);
-  --color-brand-800: var(--brand-800);
-  --color-brand-900: var(--brand-900);
+  --color-brand-50: #eff6ff;
+  --color-brand-100: #dbeafe;
+  --color-brand-200: #bfdbfe;
+  --color-brand-300: #93c5fd;
+  --color-brand-400: #60a5fa;
+  --color-brand-500: #3b82f6;
+  --color-brand-600: #2563eb;
+  --color-brand-700: #1d4ed8;
+  --color-brand-800: #1e40af;
+  --color-brand-900: #1e3a8a;
 
-  --color-pass: var(--color-pass, #22c55e);
-  --color-fail: var(--color-fail, #ef4444);
-  --color-pend: var(--color-pend, #94a3b8);
-  --color-divider-1: var(--color-divider-1, #14b8a6);
-  --color-divider-2: var(--color-divider-2, #f59e0b);
-  --color-divider-3: var(--color-divider-3, #0ea5e9);
-  --color-log-auth-bg: var(--log-auth-bg, rgba(59, 130, 246, 0.15));
-  --color-log-auth-text: var(--log-auth-text, #3b82f6);
-  --color-log-info: var(--log-level-info, #3b82f6);
-  --color-log-warn: var(--log-level-warn, #f59e0b);
-  --color-log-error: var(--log-level-error, #ef4444);
+  --color-pass: #22c55e;
+  --color-fail: #ef4444;
+  --color-pend: #94a3b8;
+  --color-divider-1: #14b8a6;
+  --color-divider-2: #f59e0b;
+  --color-divider-3: #0ea5e9;
+  --color-log-auth-bg: rgba(59, 130, 246, 0.15);
+  --color-log-auth-text: #3b82f6;
+  --color-log-info: #3b82f6;
+  --color-log-warn: #f59e0b;
+  --color-log-error: #ef4444;
 }
 
 /*
@@ -66,7 +67,9 @@
       var(--border-color) var(--glass-card-border-opacity),
       transparent
     );
-  @apply backdrop-blur-md rounded-2xl;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border-radius: 1rem;
   transition: background-color 0.3s ease, border-color 0.3s ease;
 }
 
@@ -83,7 +86,7 @@
       var(--border-color) var(--glass-border-opacity),
       transparent
     );
-  @apply rounded-2xl;
+  border-radius: 1rem;
   box-shadow: 0 8px 32px color-mix(in srgb, var(--bg-base) 40%, transparent),
     inset 0 1px 0 color-mix(in srgb, var(--text-primary) 6%, transparent);
   backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturation))
@@ -112,7 +115,7 @@
       var(--border-color) var(--glass-border-opacity),
       transparent
     );
-  @apply rounded-2xl;
+  border-radius: 1rem;
   box-shadow: 0 8px 32px color-mix(in srgb, var(--bg-base) 40%, transparent),
     inset 0 1px 0 color-mix(in srgb, var(--text-primary) 6%, transparent);
   backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturation))
@@ -136,7 +139,7 @@
       var(--border-color) var(--glass-border-opacity),
       transparent
     );
-  @apply rounded-3xl;
+  border-radius: 1.5rem;
   box-shadow: 0 8px 32px color-mix(in srgb, var(--bg-base) 35%, transparent),
     inset 0 1px 0 color-mix(in srgb, var(--text-primary) 8%, transparent);
   backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturation))
@@ -159,7 +162,8 @@
     var(--bg-base) var(--backdrop-dim-opacity),
     transparent
   );
-  @apply backdrop-blur-xs;
+  backdrop-filter: blur(2px);
+  -webkit-backdrop-filter: blur(2px);
   transition: background-color 0.3s ease;
 }
 
@@ -488,5 +492,17 @@
         0 0 32px 10px
           color-mix(in oklab, rgb(var(--neon-amber)) 25%, transparent);
     }
+  }
+}
+
+/* ── Accessibility: Respect user motion preferences ── */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
   }
 }
