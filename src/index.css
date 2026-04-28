@@ -66,22 +66,12 @@
       var(--border-color) var(--glass-card-border-opacity),
       transparent
     );
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  border-radius: 1rem;
+  @apply backdrop-blur-md rounded-2xl;
   transition: background-color 0.3s ease, border-color 0.3s ease;
 }
 
 @utility glass-frost {
-  /*
-   * ── Heavy frost (modals, overlays that sit ON content) ──
-   * FIX: Added isolation: isolate so this element owns its compositing
-   * layer cleanly in all browsers (especially Safari).
-   * The backdrop-filter here blurs the real page content behind the modal
-   * ONLY because backdrop-dim no longer sets its own backdrop-filter
-   * (which would create a parent compositing context and break child blurs).
-   */
-  isolation: isolate;
+  /* ── Heavy frost (modals, overlays that sit ON content) ── */
   background: color-mix(
     in srgb,
     var(--bg-surface) var(--glass-bg-opacity),
@@ -93,7 +83,7 @@
       var(--border-color) var(--glass-border-opacity),
       transparent
     );
-  border-radius: 1rem;
+  @apply rounded-2xl;
   box-shadow: 0 8px 32px color-mix(in srgb, var(--bg-base) 40%, transparent),
     inset 0 1px 0 color-mix(in srgb, var(--text-primary) 6%, transparent);
   backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturation))
@@ -122,7 +112,7 @@
       var(--border-color) var(--glass-border-opacity),
       transparent
     );
-  border-radius: 1rem;
+  @apply rounded-2xl;
   box-shadow: 0 8px 32px color-mix(in srgb, var(--bg-base) 40%, transparent),
     inset 0 1px 0 color-mix(in srgb, var(--text-primary) 6%, transparent);
   backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturation))
@@ -146,7 +136,7 @@
       var(--border-color) var(--glass-border-opacity),
       transparent
     );
-  border-radius: 1.5rem;
+  @apply rounded-3xl;
   box-shadow: 0 8px 32px color-mix(in srgb, var(--bg-base) 35%, transparent),
     inset 0 1px 0 color-mix(in srgb, var(--text-primary) 8%, transparent);
   backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturation))
@@ -163,20 +153,13 @@
 }
 
 @utility backdrop-dim {
-  /*
-   * ── Modal backdrop (theme-aware dimming, not hardcoded black) ──
-   *
-   * FIX: REMOVED backdrop-filter: blur(2px) that was here before.
-   * Setting backdrop-filter on this full-screen overlay created a new
-   * compositing context, which meant the child glass-frost panel could
-   * only blur the already-dimmed scrim — not the real dashboard content.
-   * The frost blur now correctly blurs the live page through this overlay.
-   */
+  /* ── Modal backdrop (theme-aware dimming, not hardcoded black) ── */
   background: color-mix(
     in srgb,
     var(--bg-base) var(--backdrop-dim-opacity),
     transparent
   );
+  @apply backdrop-blur-xs;
   transition: background-color 0.3s ease;
 }
 
@@ -384,26 +367,18 @@
      *  any user customisation is loaded.
      *
      *  Surface guide:
-     *    glass-frost     → modals/overlays that sit ON content  → --glass-bg-opacity (58%)
+     *    glass-frost     → modals/overlays that sit ON content  → --glass-bg-opacity (40%)
      *    glass-surface   → nav bar / more tray on live content  → --glass-surface-bg-opacity (88%)
      *    glass (card)    → standard cards                        → --glass-card-bg-opacity (86%)
-     *    backdrop-dim    → modal scrim                           → --backdrop-dim-opacity (28%)
-     *
-     *  FIX NOTES:
-     *    • --glass-blur reduced 40px → 24px: browsers (esp. mobile WebKit)
-     *      cap blur ~20-30px; 40px was wasted and unreliable cross-browser.
-     *    • --glass-bg-opacity raised 40% → 58%: dark --bg-surface at 40%
-     *      was nearly invisible against the scrim, killing frost contrast.
-     *    • --backdrop-dim-opacity lowered 55% → 28%: heavy scrim was
-     *      swallowing the modal panel — no visual separation visible.
+     *    backdrop-dim    → modal scrim                           → --backdrop-dim-opacity (55%)
      */
-    --glass-blur: 24px;
+    --glass-blur: 40px;
     --glass-saturation: 180%;
-    --glass-brightness: 1.18;
+    --glass-brightness: 1.06;
 
     /* glass-frost (overlays on content) */
-    --glass-bg-opacity: 22%;
-    --glass-border-opacity: 75%;
+    --glass-bg-opacity: 40%;
+    --glass-border-opacity: 55%;
 
     /* glass-surface (nav bar + more tray floating over live content) */
     --glass-surface-bg-opacity: 88%;
@@ -413,7 +388,7 @@
     --glass-card-border-opacity: 80%;
 
     /* backdrop-dim scrim */
-    --backdrop-dim-opacity: 28%;
+    --backdrop-dim-opacity: 55%;
   }
 }
 
@@ -513,39 +488,5 @@
         0 0 32px 10px
           color-mix(in oklab, rgb(var(--neon-amber)) 25%, transparent);
     }
-  }
-
-  @keyframes fadeSlideIn {
-    from {
-      opacity: 0;
-      transform: translateY(6px);
-    }
-    to {
-      opacity: 1;
-      transform: translateY(0);
-    }
-  }
-
-  @keyframes fadeSlideInRow {
-    from {
-      opacity: 0;
-      transform: translateY(8px);
-    }
-    to {
-      opacity: 1;
-      transform: translateY(0);
-    }
-  }
-}
-
-/* ── Accessibility: Respect user motion preferences ── */
-@media (prefers-reduced-motion: reduce) {
-  *,
-  *::before,
-  *::after {
-    animation-duration: 0.01ms !important;
-    animation-iteration-count: 1 !important;
-    transition-duration: 0.01ms !important;
-    scroll-behavior: auto !important;
   }
 }
