@@ -269,18 +269,19 @@ const ModuleDashboard: React.FC<Props> = ({
           return acc;
         }, {});
 
-        const joined = normalizedMts
-          .map((mt) => ({
-            ...mt,
-            step_results: srByTestsName[mt.tests_name] ?? [],
-          }))
-         // In fetchData, replace the .sort():
-.sort((a, b) => {
-  const aSerial = a.test?.serial_no ?? "";
-  const bSerial = b.test?.serial_no ?? "";
-  return aSerial.localeCompare(bSerial, undefined, { numeric: true, sensitivity: "base" });
-});
+        const joined = normalizedMts.map((mt) => ({
+          ...mt,
+          step_results: srByTestsName[mt.tests_name] ?? [],
+        }));
+        // In fetchData, replace the .sort():
+        .sort((a, b) => {
+          const aSerial = a.test?.serial_no ?? "";
+          const bSerial = b.test?.serial_no ?? "";
+          return aSerial.localeCompare(bSerial, undefined, {
+            numeric: true,
+            sensitivity: "base",
           });
+        });
 
         setmodule_tests(joined as ModuleTestRow[]);
         setError(null);
