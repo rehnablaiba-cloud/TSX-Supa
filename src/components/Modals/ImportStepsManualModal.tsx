@@ -39,7 +39,7 @@ interface Props {
 const ImportStepsManualModal: React.FC<Props> = ({ onClose, onBack }) => {
   const [stage, setStage] = useState<Stage>("selectop");
   const [op, setOp] = useState<StepOp>("create");
-  const [tests, setTests] = useState<{ id: string; tests_name: string }[]>([]);
+  const [tests, setTests] = useState<{ id: string; name: string }[]>([]);
   const [steps, setSteps] = useState<ExistingStep[]>([]);
   const [loadingSteps, setLoadingSteps] = useState(false);
   const [selTest, setSelTest] = useState("");
@@ -51,14 +51,8 @@ const ImportStepsManualModal: React.FC<Props> = ({ onClose, onBack }) => {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    supabase
-      .from("tests")
-      .select("id, tests_name")
-      .order("tests_name")
-      .then(({ data }) =>
-        setTests((data ?? []) as { id: string; tests_name: string }[])
-      );
-  }, []);
+    supabase.from("tests").select("id, name").order("name")
+      .then(({ data }) => setTests((data ?? []) as { id: string; name: string }[]));
 
   const handleBack = () => {
     switch (stage) {
@@ -216,12 +210,9 @@ const ImportStepsManualModal: React.FC<Props> = ({ onClose, onBack }) => {
             </p>
           )}
           {tests.map((t) => (
-            <button
-              key={t.id}
-              onClick={() => handleTestSelect(t.tests_name)}
+            <button key={t.id} onClick={() => handleTestSelect(t.tests_name)}
               className="text-left px-3 py-2 rounded-xl border border-(--border-color)
-                bg-bg-card hover:bg-bg-base text-sm text-t-primary"
-            >
+                bg-bg-card hover:bg-bg-base text-sm text-t-primary">
               {t.tests_name}
             </button>
           ))}
