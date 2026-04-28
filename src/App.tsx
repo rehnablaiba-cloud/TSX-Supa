@@ -259,7 +259,7 @@ const App: React.FC = () => (
       </ActiveLockProvider>
     </SessionLogProvider>
   </ThemeProvider>
-  </Analytics>
+  <Analytics>
 );
 
 export default App;
