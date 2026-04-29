@@ -65,7 +65,7 @@ export interface SessionStepEntry {
 
 export interface SessionTestGroup {
   module_name: string;
-  tests_name: string;
+  tests_serial_no: string;
   steps: SessionStepEntry[];
   pass: number;
   fail: number;
