@@ -24,7 +24,7 @@ export interface ReportStepResult {
     action: string;
     expected_result: string;
     is_divider: boolean;
-    tests_name: string;
+    tests_serial_no: string; // ← was tests_name
   } | null;
 }
 
@@ -60,7 +60,7 @@ export interface SessionStepEntry {
   expected_result: string;
   serial_no: number;
   is_divider: boolean;
-  tests_name: string;
+  tests_serial_no: string; // ← was tests_name
 }
 
 export interface SessionTestGroup {
@@ -69,7 +69,7 @@ export interface SessionTestGroup {
   steps: SessionStepEntry[];
   pass: number;
   fail: number;
-  undo: number; // status === "pending"
+  undo: number;
   total: number;
 }
 
@@ -101,9 +101,9 @@ export async function fetchTestReportData(
       `
       id, status, remarks, display_name,
       step:test_steps!step_results_test_steps_id_fkey(
-        id, serial_no, action, expected_result, is_divider, tests_name
+        id, serial_no, action, expected_result, is_divider, tests_serial_no
       )
-    `
+    ` // ← tests_name → tests_serial_no
     )
     .eq("module_name", meta.module_name)
     .order("id");
@@ -125,9 +125,9 @@ export async function fetchReportStepResults(
       `
       id, status, remarks, display_name,
       step:test_steps!step_results_test_steps_id_fkey(
-        id, serial_no, action, expected_result, is_divider, tests_name
+        id, serial_no, action, expected_result, is_divider, tests_serial_no
       )
-    `
+    ` // ← tests_name → tests_serial_no
     )
     .eq("module_name", module_name)
     .order("id");
@@ -159,11 +159,11 @@ export async function fetchModuleReports(
       ),
       step_results:step_results!module_name(
         id, status, remarks, display_name,
-        step:test_steps!test_steps_id(
-          id, serial_no, action, expected_result, is_divider, tests_name
+        step:test_steps!step_results_test_steps_id_fkey(
+          id, serial_no, action, expected_result, is_divider, tests_serial_no
         )
       )
-    `
+    ` // ← tests_name → tests_serial_no in step join
     )
     .order("name", { ascending: true });
 
@@ -187,8 +187,8 @@ export async function fetchSessionSteps(
     .select(
       `id, test_steps_id, module_name, status, remarks, updated_at,
        test_steps:test_steps_id (
-         action, expected_result, serial_no, is_divider, tests_name
-       )`
+         action, expected_result, serial_no, is_divider, tests_serial_no
+       )` // ← tests_name → tests_serial_no
     )
     .eq("display_name", username)
     .gte("updated_at", sessionStart)
@@ -207,6 +207,6 @@ export async function fetchSessionSteps(
     expected_result: r.test_steps?.expected_result ?? "",
     serial_no: r.test_steps?.serial_no ?? 0,
     is_divider: r.test_steps?.is_divider ?? false,
-    tests_name: r.test_steps?.tests_name ?? "",
+    tests_serial_no: r.test_steps?.tests_serial_no ?? "", // ← was tests_name
   }));
 }

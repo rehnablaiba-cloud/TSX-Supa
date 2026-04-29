@@ -79,10 +79,15 @@ export async function findStepByserial_no(
   tests_name: string,
   serial_no: number
 ): Promise<{ id: string } | null> {
+  // Resolve tests_name → serial_no first
+  const { data: t, error: tErr } = await supabase
+    .from("tests").select("serial_no").eq("name", tests_name).single();
+  if (tErr) throw tErr;
+
   const { data, error } = await supabase
     .from("test_steps")
     .select("id")
-    .eq("tests_name", tests_name)
+    .eq("tests_serial_no", (t as any).serial_no)  // ← was .eq("tests_name", tests_name)
     .eq("serial_no", serial_no)
     .maybeSingle();
   if (error) throw error;
@@ -93,7 +98,14 @@ export async function bulkCreateSteps(
   tests_name: string,
   rows: Record<string, unknown>[]
 ): Promise<{ written: number; errors: string[] }> {
-  const payload = rows.map((r) => ({ ...r, tests_name }));
+  // Resolve tests_name → serial_no
+  const { data: t, error: tErr } = await supabase
+    .from("tests").select("serial_no").eq("name", tests_name).single();
+  if (tErr) return { written: 0, errors: [tErr.message] };
+
+  const payload = rows.map((r) => ({ ...r, tests_serial_no: (t as any).serial_no }));
+  // ← was { ...r, tests_name }
+
   const { error } = await supabase.from("test_steps").insert(payload);
   if (error) return { written: 0, errors: [error.message] };
   return { written: rows.length, errors: [] };

@@ -3,7 +3,7 @@
  * All supabase data calls extracted from ModuleDashboard.tsx
  */
 
-import {supabase} from "../../supabase";
+import { supabase } from "../../supabase";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -41,7 +41,7 @@ export interface RawStep {
   action_image_urls: string[];
   expected_image_urls: string[];
   is_divider: boolean;
-  tests_name: string;
+  tests_serial_no: string; // ← was tests_name
 }
 
 export interface ModuleDashboardData {
@@ -60,36 +60,41 @@ export async function fetchModuleDashboard(
   const [mtRes, srRes, locksRes] = await Promise.all([
     supabase
       .from("module_tests")
-      .select('id, tests_name, test:tests!module_tests_tests_name_fkey(serial_no, name, description)')
+      .select(
+        "id, tests_name, test:tests!module_tests_tests_name_fkey(serial_no, name, description)"
+      )
       .eq("module_name", module_name)
       .order("id"),
-    supabase
-      .rpc("getstep_resultsformodule", { p_module_name: module_name }),
+    supabase.rpc("getstep_resultsformodule", { p_module_name: module_name }),
     supabase
       .from("test_locks")
       .select("module_test_id, user_id, locked_by_name"),
   ]);
 
-  if (mtRes.error)    throw new Error(mtRes.error.message);
-  if (srRes.error)    throw new Error(srRes.error.message);
+  if (mtRes.error) throw new Error(mtRes.error.message);
+  if (srRes.error) throw new Error(srRes.error.message);
 
-  const rawMts   = (mtRes.data ?? []) as unknown as RawModuleTest[];
-  const rawSrs   = (srRes.data ?? []) as RawStepResultMD[];
+  const rawMts = (mtRes.data ?? []) as unknown as RawModuleTest[];
+  const rawSrs = (srRes.data ?? []) as RawStepResultMD[];
 
-  const test_names = Array.from(new Set(rawMts.map(m => m.tests_name)));
+  const test_names = Array.from(new Set(rawMts.map((m) => m.tests_name)));
   const testsMap: Record<string, RawTest> = {};
   if (test_names.length > 0) {
-    const testsRes = await supabase.rpc("gettestsbynames", { p_names: test_names });
-    ((testsRes.data ?? []) as (RawTest & { name: string })[]).forEach(t => {
+    const testsRes = await supabase.rpc("gettestsbynames", {
+      p_names: test_names,
+    });
+    ((testsRes.data ?? []) as (RawTest & { name: string })[]).forEach((t) => {
       testsMap[t.name] = t;
     });
   }
 
-  const stepIds = rawSrs.map(sr => sr.test_stepsid);
+  const stepIds = rawSrs.map((sr) => sr.test_stepsid);
   const stepsMap: Record<string, RawStep> = {};
   if (stepIds.length > 0) {
-    const stepsRes = await supabase.rpc("gettest_stepsbyids", { p_ids: stepIds });
-    ((stepsRes.data ?? []) as RawStep[]).forEach(s => {
+    const stepsRes = await supabase.rpc("gettest_stepsbyids", {
+      p_ids: stepIds,
+    });
+    ((stepsRes.data ?? []) as RawStep[]).forEach((s) => {
       stepsMap[s.id] = s;
     });
   }
@@ -97,9 +102,9 @@ export async function fetchModuleDashboard(
   return {
     module_tests: rawMts,
     step_results: rawSrs,
-    locks:       (locksRes.data ?? []) as RawLock[],
-    tests:       testsMap,
-    steps:       stepsMap,
+    locks: (locksRes.data ?? []) as RawLock[],
+    tests: testsMap,
+    steps: stepsMap,
   };
 }
 
@@ -123,9 +128,9 @@ export async function acquireModuleLock(
     .upsert(
       {
         module_test_id: module_test_id,
-        user_id:       user_id,
+        user_id: user_id,
         locked_by_name: display_name,
-        locked_at:     new Date().toISOString(),
+        locked_at: new Date().toISOString(),
       },
       { onConflict: "module_test_id", ignoreDuplicates: true }
     );
@@ -154,7 +159,9 @@ export async function releaseModuleLock(
 }
 
 // ─── forceReleaseModuleLock ───────────────────────────────────────────────────
-export async function forceReleaseModuleLock(module_test_id: string): Promise<void> {
+export async function forceReleaseModuleLock(
+  module_test_id: string
+): Promise<void> {
   const { error } = await supabase
     .from("test_locks")
     .delete()
@@ -176,66 +183,86 @@ export async function heartbeatModuleLock(
 
 // ─── updateModuleStepResult ───────────────────────────────────────────────────
 export async function updateModuleStepResult(params: {
-  module_name:   string;
-  stepId:       string;
-  status:       "pass" | "fail" | "pending";
-  remarks:      string;
-  display_name:  string;
+  module_name: string;
+  stepId: string;
+  status: "pass" | "fail" | "pending";
+  remarks: string;
+  display_name: string;
 }): Promise<void> {
   const { error } = await supabase.rpc("updatestepresult", {
-    p_module_name:   params.module_name,
-    p_test_stepsid:  params.stepId,
-    p_status:       params.status,
-    p_remarks:      params.remarks,
-    p_display_name:  params.display_name,
+    p_module_name: params.module_name,
+    p_test_stepsid: params.stepId,
+    p_status: params.status,
+    p_remarks: params.remarks,
+    p_display_name: params.display_name,
   });
   if (error) throw error;
 }
 
 // ─── resetAllModulestep_results ────────────────────────────────────────────────
 export async function resetAllModulestep_results(params: {
-  module_name:  string;
-  steps:       { stepId: string }[];
+  module_name: string;
+  steps: { stepId: string }[];
   display_name: string;
 }): Promise<void> {
   const results = await Promise.all(
-    params.steps.map(s =>
+    params.steps.map((s) =>
       supabase.rpc("updatestepresult", {
-        p_module_name:   params.module_name,
-        p_test_stepsid:  s.stepId,
-        p_status:       "pending",
-        p_remarks:      "",
-        p_display_name:  params.display_name,
+        p_module_name: params.module_name,
+        p_test_stepsid: s.stepId,
+        p_status: "pending",
+        p_remarks: "",
+        p_display_name: params.display_name,
       })
     )
   );
-  const failed = results.find(r => r.error);
+  const failed = results.find((r) => r.error);
   if (failed) throw failed.error;
 }
 
 // ─── fetchExportStepData ──────────────────────────────────────────────────────
 export async function fetchExportStepData(module_name: string): Promise<{
-  steps:   { id: string; serial_no: number; action: string; expected_result: string; is_divider: boolean; tests_name: string }[];
+  steps: {
+    id: string;
+    serial_no: number;
+    action: string;
+    expected_result: string;
+    is_divider: boolean;
+    tests_serial_no: string; // ← was tests_name
+  }[];
   results: { test_stepsid: string; status: string; remarks: string }[];
 }> {
-  const [stepsRes, resultsRes] = await Promise.all([
-    supabase
-      .from("test_steps")
-      .select("id, serial_no, action, expected_result, is_divider, tests_name")
-      .eq("module_name", module_name)
-      .order("serial_no"),
-    supabase
-      .from("step_results")
-      .select("test_stepsid, status, remarks")
-      .eq("module_name", module_name),
-  ]);
+  // Fetch step_results first to get the step IDs for this module
+  const resultsRes = await supabase
+    .from("step_results")
+    .select("test_steps_id, status, remarks")
+    .eq("module_name", module_name);
 
-  if (stepsRes.error)   throw new Error(stepsRes.error.message);
   if (resultsRes.error) throw new Error(resultsRes.error.message);
 
+  const stepIds = (resultsRes.data ?? []).map((r: any) => r.test_steps_id);
+
+  // Now fetch test_steps by those IDs (test_steps has no module_name column)
+  const stepsRes =
+    stepIds.length > 0
+      ? await supabase
+          .from("test_steps")
+          .select(
+            "id, serial_no, action, expected_result, is_divider, tests_serial_no"
+          ) // ← was tests_name
+          .in("id", stepIds)
+          .order("serial_no")
+      : { data: [], error: null };
+
+  if (stepsRes.error) throw new Error(stepsRes.error.message);
+
   return {
-    steps:   stepsRes.data   ?? [],
-    results: resultsRes.data ?? [],
+    steps: stepsRes.data ?? [],
+    results: (resultsRes.data ?? []).map((r: any) => ({
+      test_stepsid: r.test_steps_id,
+      status: r.status,
+      remarks: r.remarks,
+    })),
   };
 }
 
@@ -247,7 +274,7 @@ export async function fetchModuleSignedUrls(
   if (!unique.length) return {};
 
   const results = await Promise.all(
-    unique.map(async path => {
+    unique.map(async (path) => {
       const { data, error } = await supabase.storage
         .from("test_steps")
         .createSignedUrl(path, 60 * 60);

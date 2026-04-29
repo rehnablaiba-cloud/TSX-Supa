@@ -97,13 +97,14 @@ interface LockRow {
   locked_at: string;
 }
 
+// ── FIXED: tests_name → tests_serial_no ──────────────────────────────────────
 interface TrimmedStepResult {
   id: string;
   status: "pass" | "fail" | "pending";
   step: {
     id: string;
     is_divider: boolean;
-    tests_name: string;
+    tests_serial_no: string; // ← was tests_name
     serial_no: number | null;
     action: string | null;
     expected_result: string | null;
@@ -130,12 +131,13 @@ interface SupabaseStepResult {
   step: {
     id: string;
     is_divider: boolean;
-    tests_name: string;
+    tests_serial_no: string; // ← was tests_name
     serial_no: number | null;
     action: string | null;
     expected_result: string | null;
   } | null;
 }
+// ─────────────────────────────────────────────────────────────────────────────
 
 const ModuleDashboard: React.FC<Props> = ({
   module_name,
@@ -204,7 +206,8 @@ const ModuleDashboard: React.FC<Props> = ({
           supabase
             .from("step_results")
             .select(
-              "id, status, test_steps_id, step:test_steps!step_results_test_steps_id_fkey(id, is_divider, tests_name, serial_no, action, expected_result)"
+              // ── FIXED: tests_name → tests_serial_no in the joined columns ──
+              "id, status, test_steps_id, step:test_steps!step_results_test_steps_id_fkey(id, is_divider, tests_serial_no, serial_no, action, expected_result)"
             )
             .eq("module_name", module_name)
             .abortSignal(signal!),
@@ -225,8 +228,6 @@ const ModuleDashboard: React.FC<Props> = ({
           return;
         }
 
-        // unwrapOne handles both object and single-element array shapes that
-        // PostgREST / Supabase client may return for to-one FK joins.
         const normalizedMts: SupabaseModuleTest[] = (mtRes.data ?? []).map(
           (mt: any) => ({ ...mt, test: unwrapOne(mt.test) })
         );
@@ -259,10 +260,11 @@ const ModuleDashboard: React.FC<Props> = ({
             : {};
         setLocks(lockMap);
 
-        const srByTestsName = normalizedSrs.reduce<
+        // ── FIXED: group by tests_serial_no, join on mt.test.serial_no ────────
+        const srByTestsSerialNo = normalizedSrs.reduce<
           Record<string, SupabaseStepResult[]>
         >((acc, sr) => {
-          const key = sr.step?.tests_name;
+          const key = sr.step?.tests_serial_no;
           if (!key) return acc;
           if (!acc[key]) acc[key] = [];
           acc[key].push(sr);
@@ -272,9 +274,8 @@ const ModuleDashboard: React.FC<Props> = ({
         const joined = normalizedMts
           .map((mt) => ({
             ...mt,
-            step_results: srByTestsName[mt.tests_name] ?? [],
+            step_results: srByTestsSerialNo[mt.test?.serial_no ?? ""] ?? [],
           }))
-
           .sort((a, b) => {
             const aSerial = a.test?.serial_no ?? "";
             const bSerial = b.test?.serial_no ?? "";
@@ -283,6 +284,7 @@ const ModuleDashboard: React.FC<Props> = ({
               sensitivity: "base",
             });
           });
+        // ─────────────────────────────────────────────────────────────────────
 
         setmodule_tests(joined as ModuleTestRow[]);
         setError(null);

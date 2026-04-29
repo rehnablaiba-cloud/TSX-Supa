@@ -15,7 +15,7 @@ export interface DashboardModule {
   }[];
   step_results: {
     status: string;
-    step: { is_divider: boolean; tests_name: string | null } | null;
+    step: { is_divider: boolean; tests_serial_no: string | null } | null; // ← tests_name → tests_serial_no
   }[];
 }
 
@@ -37,7 +37,7 @@ export async function fetchDashboardModules(): Promise<DashboardModule[]> {
       ),
       step_results:step_results!module_name(
         status,
-        step:test_steps!step_results_test_steps_id_fkey(is_divider, tests_name)
+        step:test_steps!step_results_test_steps_id_fkey(is_divider, tests_serial_no)
       )
     `
     )

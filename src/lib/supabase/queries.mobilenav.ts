@@ -1,6 +1,6 @@
 /**
  * queries.mobilenav.ts
- * All supabase data calls extracted from MobileNav.tsx (admin modals).
+ * Supabase data calls extracted from MobileNav.tsx (admin modals).
  */
 
 import { supabase } from "../../supabase";
@@ -29,20 +29,20 @@ export interface TestOption {
 export interface StepOption {
   id: string;
   serial_no: number;
-  tests_name: string;
+  tests_serial_no: string; // ← was tests_name
   action: string;
   expected_result: string;
   is_divider: boolean;
 }
 export interface CsvStepRow {
-  tests_name: string;
+  tests_serial_no: string; // ← was tests_name
   serial_no: number;
   action: string;
   expected_result: string;
   is_divider: boolean;
 }
 export interface ManualStepPayload {
-  tests_name: string;
+  tests_serial_no: string; // ← was tests_name
   serial_no: number;
   action: string;
   expected_result: string;
@@ -51,10 +51,6 @@ export interface ManualStepPayload {
 
 // ─── Admin guard ──────────────────────────────────────────────────────────────
 
-/**
- * Throws if the current session user is not an admin.
- * Call this at the top of every mutation and sensitive fetch.
- */
 async function assertAdmin(): Promise<void> {
   const { data, error } = await supabase.rpc("is_admin");
   if (error) throw new Error(`Admin check failed: ${error.message}`);
@@ -149,14 +145,6 @@ export async function createTest(
   if (error) throw error;
 }
 
-/**
- * Update a test's name and/or serial_no.
- *
- * ON UPDATE CASCADE on all FK constraints propagates the name change
- * down to module_tests.tests_name and test_steps.tests_name automatically.
- * BEFORE UPDATE triggers on each child table then recompute the baked
- * composite id PKs. No manual child updates needed here.
- */
 export async function updateTest(
   oldName: string,
   newName: string,
@@ -173,17 +161,26 @@ export async function updateTest(
 /**
  * Fully delete a test and all child rows in FK dependency order:
  *  1. step_results  (FK → test_steps)
- *  2. test_steps    (FK → tests)
- *  3. module_tests  (FK → tests)
+ *  2. test_steps    (FK → tests via tests_serial_no)
+ *  3. module_tests  (FK → tests via tests_name)
  *  4. tests
  */
 export async function deleteTestCascade(name: string): Promise<void> {
   await assertAdmin();
 
+  // Resolve tests_name → serial_no first
+  const { data: testRow, error: testErr } = await supabase
+    .from("tests")
+    .select("serial_no")
+    .eq("name", name)
+    .single();
+  if (testErr) throw new Error(`Test lookup failed: ${testErr.message}`);
+  const serial_no = (testRow as any).serial_no;
+
   const { data: steps, error: stepsErr } = await supabase
     .from("test_steps")
     .select("id")
-    .eq("tests_name", name);
+    .eq("tests_serial_no", serial_no); // ← was .eq("tests_name", name)
   if (stepsErr) throw new Error(`Step fetch failed: ${stepsErr.message}`);
 
   const stepIds = (steps ?? []).map((s: any) => s.id);
@@ -199,13 +196,13 @@ export async function deleteTestCascade(name: string): Promise<void> {
   const { error: tsErr } = await supabase
     .from("test_steps")
     .delete()
-    .eq("tests_name", name);
+    .eq("tests_serial_no", serial_no); // ← was .eq("tests_name", name)
   if (tsErr) throw new Error(`test_steps cleanup failed: ${tsErr.message}`);
 
   const { error: mtErr } = await supabase
     .from("module_tests")
     .delete()
-    .eq("tests_name", name);
+    .eq("tests_name", name); // stays: module_tests still uses tests_name
   if (mtErr) throw new Error(`module_tests cleanup failed: ${mtErr.message}`);
 
   const { error } = await supabase.from("tests").delete().eq("name", name);
@@ -230,15 +227,22 @@ export async function fetchStepsByTest(
 
 /**
  * Fetch steps for a test — direct query variant.
- * Use fetchStepsByTest (RPC) when test names may contain spaces.
+ * Resolves tests_name → serial_no first since test_steps uses tests_serial_no.
  */
 export async function fetchStepOptions(
   tests_name: string
 ): Promise<StepOption[]> {
+  const { data: t, error: tErr } = await supabase
+    .from("tests")
+    .select("serial_no")
+    .eq("name", tests_name)
+    .single();
+  if (tErr) throw new Error(tErr.message);
+
   const { data, error } = await supabase
     .from("test_steps")
-    .select("id, serial_no, tests_name, action, expected_result, is_divider")
-    .eq("tests_name", tests_name)
+    .select("id, serial_no, tests_serial_no, action, expected_result, is_divider")
+    .eq("tests_serial_no", (t as any).serial_no) // ← was .eq("tests_name", tests_name)
     .order("serial_no", { ascending: true });
   if (error) throw new Error(error.message);
   return (data ?? []) as StepOption[];
@@ -271,14 +275,22 @@ export async function fetchTestsForModule(
 
 /**
  * Fetch existing steps for a test — used for diff/preview in CSV import.
+ * Resolves tests_name → serial_no first.
  */
 export async function fetchStepsForTest(
   tests_name: string
 ): Promise<StepOption[]> {
+  const { data: t, error: tErr } = await supabase
+    .from("tests")
+    .select("serial_no")
+    .eq("name", tests_name)
+    .single();
+  if (tErr) throw new Error(tErr.message);
+
   const { data, error } = await supabase
     .from("test_steps")
-    .select("id, serial_no, tests_name, action, expected_result, is_divider")
-    .eq("tests_name", tests_name)
+    .select("id, serial_no, tests_serial_no, action, expected_result, is_divider")
+    .eq("tests_serial_no", (t as any).serial_no) // ← was .eq("tests_name", tests_name)
     .order("serial_no", { ascending: true });
   if (error) throw new Error(error.message);
   return (data ?? []) as StepOption[];
@@ -288,14 +300,22 @@ export async function fetchStepsForTest(
 
 export async function replaceCsvSteps(
   tests_name: string,
-  rows: CsvStepRow[]
+  rows: CsvStepRow[] // CsvStepRow now carries tests_serial_no
 ): Promise<void> {
   await assertAdmin();
+
+  // Resolve tests_name → serial_no
+  const { data: t, error: tErr } = await supabase
+    .from("tests")
+    .select("serial_no")
+    .eq("name", tests_name)
+    .single();
+  if (tErr) throw new Error(tErr.message);
 
   const { error: delErr } = await supabase
     .from("test_steps")
     .delete()
-    .eq("tests_name", tests_name);
+    .eq("tests_serial_no", (t as any).serial_no); // ← was .eq("tests_name", tests_name)
   if (delErr) throw delErr;
 
   if (rows.length === 0) return;
