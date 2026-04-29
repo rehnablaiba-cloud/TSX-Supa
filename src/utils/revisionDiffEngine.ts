@@ -92,23 +92,25 @@ export interface DiffResult {
 
 export interface RevisionMeta {
   id: string;
-  test_id: string; // FK → tests.name
+  test_id: string; 
   status: "draft";
   step_order: string[]; // ordered array of test_steps.id
   created_by: string; // user UUID
   notes: string;
 }
 
+// ── Revision payload ──────────────────────────────────────────────────────────
+
 export interface NewStepRow {
   id: string;
-  tests_name: string; // FK → tests.name  (v4 revision schema)
+  tests_serial_no: string;
+  serial_no: number;            // ← ADD: needed by the DB trigger that mints id
   action: string;
   expected_result: string;
   is_divider: boolean;
   introduced_in_rev: string;
   origin_step_id: string | null;
 }
-
 export interface RevisionPayload {
   revision: RevisionMeta;
   /** Only the NEW rows to INSERT into test_steps. Unchanged steps are not repeated. */
@@ -385,12 +387,12 @@ export function getSuffixOptions(existingIds: string[], prefix: string): number[
   const all = [...new Set([...suffixes, ...(next ? [next] : [])])].sort((a, b) => a - b);
   return all;
 }
-
-// ─── ID minter ────────────────────────────────────────────────────────────────
-
-function minter(revId: string): () => string {
-  let seq = 0;
-  return () => `${revId}-${String(++seq).padStart(3, "0")}`;
+export function makeStepId(
+  testsSerialNo: string,
+  serialNo:      number,
+  isDivider:     boolean
+): string {
+  return `${testsSerialNo}-${serialNo}-${isDivider}`;
 }
 
 // ─── Payload Builders ─────────────────────────────────────────────────────────
@@ -400,21 +402,21 @@ function minter(revId: string): () => string {
  * All CSV rows become brand-new step rows.
  */
 export function buildFirstRevisionPayload(
-  rows:        CsvRow[],
-  revId:       string,
-  testName:    string,
-  createdBy:   string,
-  notes:       string = ""
+  rows:      CsvRow[],
+  revId:     string,   // just the revision code, e.g. "R0-1"
+  testName:  string,
+  createdBy: string,
+  notes:     string = ""
 ): RevisionPayload {
-  const mint      = minter(revId);
   const newSteps: NewStepRow[] = [];
   const stepOrder: string[]    = [];
 
   for (const r of rows) {
-    const id = mint();
+    const id = makeStepId(testName, r.serial_no, r.is_divider); // ← no minter
     newSteps.push({
       id,
-      tests_name:        testName,
+      tests_serial_no:   testName,
+      serial_no:         r.serial_no,
       action:            r.action,
       expected_result:   r.expected_result,
       is_divider:        r.is_divider,
@@ -425,61 +427,49 @@ export function buildFirstRevisionPayload(
   }
 
   return {
-    revision: {
-      id:         revId,
-      test_id:    testName,
-      status:     "draft",
-      step_order: stepOrder,
-      created_by: createdBy,
-      notes,
-    },
+    revision: { id: revId, test_id: testName, status: "draft",
+                step_order: stepOrder, created_by: createdBy, notes },
     newSteps,
   };
 }
 
-/**
- * Build the DB payload for a new revision based on a diff result.
- *
- * UNCHANGED steps → reuse existing step ID in step_order (no new DB row).
- * EDIT steps      → new step row with origin_step_id pointing to the old row.
- * INSERT steps    → new step row with origin_step_id = null.
- * DELETE steps    → no new row; old step row is kept (immutable) but absent from step_order.
- */
-export function buildDiffRevisionPayload(
+
+ export function buildDiffRevisionPayload(
   diff:      DiffResult,
   revId:     string,
   testName:  string,
   createdBy: string,
   notes:     string = ""
 ): RevisionPayload {
-  const mint      = minter(revId);
   const newSteps: NewStepRow[] = [];
   const stepOrder: string[]    = [];
 
   for (const it of diff.items) {
-    if (it.type === "DELETE") continue; // not in output; old row persists untouched
+    if (it.type === "DELETE") continue;
 
     if (it.type === "UNCHANGED") {
-      stepOrder.push(it.step.id);                  // carry forward existing ID
+      stepOrder.push(it.step.id);
 
     } else if (it.type === "EDIT") {
-      const id = mint();
+      const id = makeStepId(testName, it.serialNo, it.new.is_divider); // ← no minter
       newSteps.push({
         id,
-        tests_name:        testName,
+        tests_serial_no:   testName,
+        serial_no:         it.serialNo,
         action:            it.new.action,
         expected_result:   it.new.expected_result,
         is_divider:        it.new.is_divider,
         introduced_in_rev: revId,
-        origin_step_id:    it.originStepId,         // points to superseded row
+        origin_step_id:    it.originStepId,
       });
       stepOrder.push(id);
 
     } else if (it.type === "INSERT") {
-      const id = mint();
+      const id = makeStepId(testName, it.serialNo, it.row.is_divider); // ← no minter
       newSteps.push({
         id,
-        tests_name:        testName,
+        tests_serial_no:   testName,
+        serial_no:         it.serialNo,
         action:            it.row.action,
         expected_result:   it.row.expected_result,
         is_divider:        it.row.is_divider,
@@ -491,14 +481,8 @@ export function buildDiffRevisionPayload(
   }
 
   return {
-    revision: {
-      id:         revId,
-      test_id:    testName,
-      status:     "draft",
-      step_order: stepOrder,
-      created_by: createdBy,
-      notes,
-    },
+    revision: { id: revId, test_id: testName, status: "draft",
+                step_order: stepOrder, created_by: createdBy, notes },
     newSteps,
   };
 }

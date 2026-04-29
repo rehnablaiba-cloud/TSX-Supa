@@ -29,20 +29,20 @@ export interface TestOption {
 export interface StepOption {
   id: string;
   serial_no: number;
-  tests_serial_no: string; // ← was tests_name
+  tests_serial_no: string;
   action: string;
   expected_result: string;
   is_divider: boolean;
 }
 export interface CsvStepRow {
-  tests_serial_no: string; // ← was tests_name
+  tests_serial_no: string;
   serial_no: number;
   action: string;
   expected_result: string;
   is_divider: boolean;
 }
 export interface ManualStepPayload {
-  tests_serial_no: string; // ← was tests_name
+  tests_serial_no: string;
   serial_no: number;
   action: string;
   expected_result: string;
@@ -141,6 +141,7 @@ export async function createTest(
   name: string
 ): Promise<void> {
   await assertAdmin();
+  // The AFTER INSERT trigger on tests auto-creates a default R0 draft revision
   const { error } = await supabase.from("tests").insert({ serial_no, name });
   if (error) throw error;
 }
@@ -159,32 +160,41 @@ export async function updateTest(
 }
 
 /**
- * Fully delete a test and all child rows in FK dependency order:
- *  1. step_results  (FK → test_steps)
- *  2. test_steps    (FK → tests via tests_serial_no)
- *  3. module_tests  (FK → tests via tests_name)
- *  4. tests
+ * Fully delete a test and all child rows in FK dependency order.
+ *
+ * Deletion order:
+ *  1. step_results       (FK → test_steps.id via test_steps_id)
+ *  2. test_revisions     (FK → tests.serial_no via tests_serial_no)
+ *     — step_order JSONB refs become orphaned but test_steps rows stay per invariant
+ *  3. test_steps         (FK → tests.serial_no via tests_serial_no)
+ *     NOTE: deleting test_steps violates the append-only invariant in production;
+ *     this is only appropriate for admin purge of test definitions.
+ *  4. module_tests       (FK → tests.serial_no via test_name)
+ *  5. test_locks         (FK → tests.serial_no via test_name)
+ *  6. tests
  */
 export async function deleteTestCascade(name: string): Promise<void> {
   await assertAdmin();
 
-  // Resolve tests_name → serial_no first
+  // Resolve display name → serial_no (the actual PK / FK key)
   const { data: testRow, error: testErr } = await supabase
     .from("tests")
     .select("serial_no")
     .eq("name", name)
     .single();
   if (testErr) throw new Error(`Test lookup failed: ${testErr.message}`);
-  const serial_no = (testRow as any).serial_no;
+  const serial_no = (testRow as any).serial_no as string;
 
+  // 1. Collect all step ids for this test (needed to delete step_results)
   const { data: steps, error: stepsErr } = await supabase
     .from("test_steps")
     .select("id")
-    .eq("tests_serial_no", serial_no); // ← was .eq("tests_name", name)
+    .eq("tests_serial_no", serial_no);
   if (stepsErr) throw new Error(`Step fetch failed: ${stepsErr.message}`);
 
   const stepIds = (steps ?? []).map((s: any) => s.id);
 
+  // 2. Delete step_results for those steps
   if (stepIds.length > 0) {
     const { error: srErr } = await supabase
       .from("step_results")
@@ -193,18 +203,35 @@ export async function deleteTestCascade(name: string): Promise<void> {
     if (srErr) throw new Error(`step_results cleanup failed: ${srErr.message}`);
   }
 
+  // 3. Delete test_revisions (FK: tests_serial_no → tests.serial_no)
+  const { error: trErr } = await supabase
+    .from("test_revisions")
+    .delete()
+    .eq("tests_serial_no", serial_no);
+  if (trErr) throw new Error(`test_revisions cleanup failed: ${trErr.message}`);
+
+  // 4. Delete test_steps (FK: tests_serial_no → tests.serial_no)
   const { error: tsErr } = await supabase
     .from("test_steps")
     .delete()
-    .eq("tests_serial_no", serial_no); // ← was .eq("tests_name", name)
+    .eq("tests_serial_no", serial_no);
   if (tsErr) throw new Error(`test_steps cleanup failed: ${tsErr.message}`);
 
+  // 5. Delete module_tests (FK: test_name → tests.serial_no — value is serial_no)
   const { error: mtErr } = await supabase
     .from("module_tests")
     .delete()
-    .eq("tests_name", name); // stays: module_tests still uses tests_name
+    .eq("test_name", serial_no);
   if (mtErr) throw new Error(`module_tests cleanup failed: ${mtErr.message}`);
 
+  // 6. Delete test_locks (FK: test_name → tests.serial_no — value is serial_no)
+  const { error: tlErr } = await supabase
+    .from("test_locks")
+    .delete()
+    .eq("test_name", serial_no);
+  if (tlErr) throw new Error(`test_locks cleanup failed: ${tlErr.message}`);
+
+  // 7. Delete the test itself
   const { error } = await supabase.from("tests").delete().eq("name", name);
   if (error) throw new Error(error.message);
 }
@@ -213,7 +240,7 @@ export async function deleteTestCascade(name: string): Promise<void> {
 
 /**
  * Fetch steps for a test via RPC.
- * Avoids PostgREST URL-encoding bug when test names contain spaces.
+ * Avoids PostgREST URL-encoding issues when test names contain spaces.
  */
 export async function fetchStepsByTest(
   tests_name: string
@@ -227,7 +254,7 @@ export async function fetchStepsByTest(
 
 /**
  * Fetch steps for a test — direct query variant.
- * Resolves tests_name → serial_no first since test_steps uses tests_serial_no.
+ * Resolves display name → serial_no first since test_steps uses tests_serial_no.
  */
 export async function fetchStepOptions(
   tests_name: string
@@ -242,7 +269,7 @@ export async function fetchStepOptions(
   const { data, error } = await supabase
     .from("test_steps")
     .select("id, serial_no, tests_serial_no, action, expected_result, is_divider")
-    .eq("tests_serial_no", (t as any).serial_no) // ← was .eq("tests_name", tests_name)
+    .eq("tests_serial_no", (t as any).serial_no)
     .order("serial_no", { ascending: true });
   if (error) throw new Error(error.message);
   return (data ?? []) as StepOption[];
@@ -250,13 +277,15 @@ export async function fetchStepOptions(
 
 /**
  * Fetch tests that belong to a given module.
+ * module_tests schema: { module_name, test_name }
+ *   test_name is FK → tests.serial_no
  */
 export async function fetchTestsForModule(
   module_name: string
 ): Promise<TestOption[]> {
   const { data, error } = await supabase
     .from("module_tests")
-    .select("tests_name, tests(serial_no, name)")
+    .select("test_name, tests(serial_no, name)")
     .eq("module_name", module_name);
   if (error) throw new Error(error.message);
 
@@ -275,7 +304,7 @@ export async function fetchTestsForModule(
 
 /**
  * Fetch existing steps for a test — used for diff/preview in CSV import.
- * Resolves tests_name → serial_no first.
+ * Resolves display name → serial_no first.
  */
 export async function fetchStepsForTest(
   tests_name: string
@@ -290,7 +319,7 @@ export async function fetchStepsForTest(
   const { data, error } = await supabase
     .from("test_steps")
     .select("id, serial_no, tests_serial_no, action, expected_result, is_divider")
-    .eq("tests_serial_no", (t as any).serial_no) // ← was .eq("tests_name", tests_name)
+    .eq("tests_serial_no", (t as any).serial_no)
     .order("serial_no", { ascending: true });
   if (error) throw new Error(error.message);
   return (data ?? []) as StepOption[];
@@ -298,13 +327,19 @@ export async function fetchStepsForTest(
 
 // ─── Steps — CSV bulk import ──────────────────────────────────────────────────
 
+/**
+ * @deprecated Schema invariant: test_steps rows are append-only and must never
+ * be deleted. This function performs a full DELETE+INSERT which destroys
+ * historical step references. Use the revision-based import flow
+ * (ImportStepsModal → buildFirstRevisionPayload / buildDiffRevisionPayload)
+ * instead.
+ */
 export async function replaceCsvSteps(
   tests_name: string,
-  rows: CsvStepRow[] // CsvStepRow now carries tests_serial_no
+  rows: CsvStepRow[]
 ): Promise<void> {
   await assertAdmin();
 
-  // Resolve tests_name → serial_no
   const { data: t, error: tErr } = await supabase
     .from("tests")
     .select("serial_no")
@@ -315,7 +350,7 @@ export async function replaceCsvSteps(
   const { error: delErr } = await supabase
     .from("test_steps")
     .delete()
-    .eq("tests_serial_no", (t as any).serial_no); // ← was .eq("tests_name", tests_name)
+    .eq("tests_serial_no", (t as any).serial_no);
   if (delErr) throw delErr;
 
   if (rows.length === 0) return;
@@ -332,6 +367,11 @@ export async function createStep(payload: ManualStepPayload): Promise<void> {
   if (error) throw error;
 }
 
+/**
+ * @deprecated Schema invariant: test_steps rows are append-only and must never
+ * be updated in-place. To edit a step, insert a new row with origin_step_id
+ * pointing to the old row and update the parent revision's step_order JSONB.
+ */
 export async function updateStep(
   id: string,
   patch: { action: string; expected_result: string; is_divider: boolean }
@@ -344,6 +384,11 @@ export async function updateStep(
   if (error) throw error;
 }
 
+/**
+ * @deprecated Schema invariant: test_steps rows are append-only and must never
+ * be deleted. To remove a step from a revision, remove its id from the
+ * revision's step_order JSONB — the row stays forever.
+ */
 export async function deleteStep(id: string): Promise<void> {
   await assertAdmin();
   const { error } = await supabase.from("test_steps").delete().eq("id", id);
@@ -351,8 +396,9 @@ export async function deleteStep(id: string): Promise<void> {
 }
 
 /**
- * Delete a step AND its associated step_results.
- * step_results has a FK → test_steps so children must be removed first.
+ * @deprecated See deleteStep — step rows must not be deleted per schema invariant.
+ * Removing step_results is acceptable for a test purge (deleteTestCascade) but
+ * should not be done on an individual step during normal test execution lifecycle.
  */
 export async function deleteStepWithResults(id: string): Promise<void> {
   await assertAdmin();
@@ -373,6 +419,7 @@ export async function releaseLocksAndSignOut(
   user_id: string,
   signOut: () => Promise<void>
 ): Promise<void> {
-  await supabase.from("test_locks").delete().eq("user_id", user_id);
+  // test_locks uses locked_by (uuid), not user_id
+  await supabase.from("test_locks").delete().eq("locked_by", user_id);
   await signOut();
 }

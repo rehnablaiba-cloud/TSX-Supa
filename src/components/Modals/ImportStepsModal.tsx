@@ -10,12 +10,10 @@ import {
   Upload,
   AlertCircle,
   Info,
-  RotateCcw,
-  History,
   Play,
 } from "lucide-react";
 import ModalShell from "../UI/ModalShell";
-import { Row, DiffRow } from "../UI/ReviewRow";
+import { Row } from "../UI/ReviewRow";
 import { supabase } from "../../supabase";
 
 import {
@@ -224,8 +222,9 @@ const ImportStepsModal: React.FC<Props> = ({ onClose, onBack }) => {
 
   // ── Shared state ──────────────────────────────────────────────────────────────
   const [stage,   setStage]   = useState<Stage>("selecttest");
-  const [tests,   setTests]   = useState<{ id: string; name: string }[]>([]);
-  const [selTest, setSelTest] = useState("");
+  // tests: keyed by serial_no (the PK / FK used throughout DB queries)
+  const [tests,   setTests]   = useState<{ serial_no: string; name: string }[]>([]);
+  const [selTest, setSelTest] = useState(""); // stores tests.serial_no
   const [error,   setError]   = useState<string | null>(null);
 
   // ── Revision control state ────────────────────────────────────────────────────
@@ -246,13 +245,14 @@ const ImportStepsModal: React.FC<Props> = ({ onClose, onBack }) => {
   const fileRef = useRef<HTMLInputElement>(null);
 
   // ── Load test list ────────────────────────────────────────────────────────────
+  // tests PK is serial_no — there is no "id" column
   useEffect(() => {
     supabase
       .from("tests")
-      .select("id, name")
-      .order("name")
+      .select("serial_no, name")
+      .order("serial_no")
       .then(({ data }) =>
-        setTests((data ?? []) as { id: string; name: string }[])
+        setTests((data ?? []) as { serial_no: string; name: string }[])
       );
   }, []);
 
@@ -270,16 +270,16 @@ const ImportStepsModal: React.FC<Props> = ({ onClose, onBack }) => {
   };
 
   // ─── Test selection ───────────────────────────────────────────────────────────
-
-  const handleTestSelect = async (testName: string) => {
-    setSelTest(testName);
+  // Receives tests.serial_no — the FK used in test_revisions.tests_serial_no
+  const handleTestSelect = async (testSerialNo: string) => {
+    setSelTest(testSerialNo);
     setError(null);
-    await loadRevisionControl(testName);
+    await loadRevisionControl(testSerialNo);
   };
 
   // ─── Load revision control / activator ────────────────────────────────────────
 
-  const loadRevisionControl = async (testName: string) => {
+  const loadRevisionControl = async (testSerialNo: string) => {
     setRevLoading(true);
     setStage("rev-control");
     setActiveRev(null);
@@ -289,18 +289,20 @@ const ImportStepsModal: React.FC<Props> = ({ onClose, onBack }) => {
     setError(null);
 
     try {
-      // All revisions ordered by creation time
+      // test_revisions FK column is tests_serial_no (not test_id)
       const { data: revRows, error: revsErr } = await supabase
         .from("test_revisions")
         .select("id, status, step_order, created_at, notes")
-        .eq("test_id", testName)
+        .eq("tests_serial_no", testSerialNo)
         .order("created_at", { ascending: true });
       if (revsErr) throw new Error(revsErr.message);
 
       const allRevs = (revRows ?? []) as ActiveRevInfo[];
-      const ids = allRevs.map(r => r.id);
-      setExistingRevIds(ids);
-      setNewRevId(getNextRevisionId(ids, "iterate"));
+      const ids   = allRevs.map(r => r.id);
+const codes = ids.map(id =>
+  id.startsWith(testSerialNo + "-") ? id.slice(testSerialNo.length + 1) : id);
+setExistingRevIds(codes);                              
+setNewRevId(getNextRevisionId(codes, "iterate"));
 
       const active = allRevs.find(r => r.status === "active") ?? null;
       setActiveRev(active);
@@ -404,54 +406,59 @@ const ImportStepsModal: React.FC<Props> = ({ onClose, onBack }) => {
 
   // ─── Build payload ────────────────────────────────────────────────────────────
 
+  // ─── Build payload ────────────────────────────────────────────────────────────
+
   const handleBuildPayload = async () => {
     setError(null);
     const { data: { user } } = await supabase.auth.getUser();
     const userId  = user?.id ?? "unknown";
     const isFirst = !activeRev || baseSteps.length === 0;
-
+  
+    // ← newRevId is already just the code ("R0-1", "RA-1") — no selTest prefix
     const payload = isFirst
       ? buildFirstRevisionPayload(parseResult!.rows, newRevId, selTest, userId, revNotes)
       : buildDiffRevisionPayload(diffResult!, newRevId, selTest, userId, revNotes);
-
+  
     setRevPayload(payload);
     setStage("rev-confirm");
   };
-
   // ─── Submit revision to DB ────────────────────────────────────────────────────
+// ─── Submit revision to DB ────────────────────────────────────────────────────
 
-  const handleRevisionSubmit = async () => {
-    if (!revPayload) return;
-    setStage("submitting");
-    setError(null);
+const handleRevisionSubmit = async () => {
+  if (!revPayload) return;
+  setStage("submitting");
+  setError(null);
 
-    try {
-      // 1. Insert new step rows (append-only — never UPDATE)
-      if (revPayload.newSteps.length > 0) {
-        const { error: stepsErr } = await supabase
-          .from("test_steps")
-          .insert(revPayload.newSteps);
-        if (stepsErr) throw new Error(`test_steps: ${stepsErr.message}`);
-      }
+  try {
+    // 1. Insert revision FIRST — if this is a retry, the unique constraint
+    //    on test_revisions.id fires here cleanly before we touch steps.
+    const { error: revErr } = await supabase.from("test_revisions").insert({
+      tests_serial_no: selTest,
+      revision:        newRevId,     
+      status:          "draft",
+      step_order:      JSON.stringify(revPayload.revision.step_order),
+      created_by:      revPayload.revision.created_by,
+      notes:           revPayload.revision.notes || null,
+      created_at:      new Date().toISOString(),
+    });
+    if (revErr) throw new Error(`test_revisions: ${revErr.message}`);
 
-      // 2. Insert the revision shell
-      const { error: revErr } = await supabase.from("test_revisions").insert({
-        id:         revPayload.revision.id,
-        test_id:    revPayload.revision.test_id,
-        status:     "draft",
-        step_order: JSON.stringify(revPayload.revision.step_order),
-        created_by: revPayload.revision.created_by,
-        notes:      revPayload.revision.notes || null,
-        created_at: new Date().toISOString(),
-      });
-      if (revErr) throw new Error(`test_revisions: ${revErr.message}`);
-
-      setStage("done");
-    } catch (e: any) {
-      setError(e.message);
-      setStage("rev-confirm");
+    // 2. Upsert steps — ignoreDuplicates makes retries safe.
+    //    Steps are append-only/immutable so skipping an existing row is correct.
+    if (revPayload.newSteps.length > 0) {
+      const { error: stepsErr } = await supabase
+        .from("test_steps")
+        .upsert(revPayload.newSteps, { onConflict: "id", ignoreDuplicates: true });
+      if (stepsErr) throw new Error(`test_steps: ${stepsErr.message}`);
     }
-  };
+
+    setStage("done");
+  } catch (e: any) {
+    setError(e.message);
+    setStage("rev-confirm");
+  }
+};
 
   // ─── Revision mode toggle ─────────────────────────────────────────────────────
 
@@ -506,11 +513,12 @@ const ImportStepsModal: React.FC<Props> = ({ onClose, onBack }) => {
           )}
           {tests.map(t => (
             <button
-              key={t.id}
-              onClick={() => handleTestSelect(t.name)}
+              key={t.serial_no}
+              onClick={() => handleTestSelect(t.serial_no)}
               className="text-left px-3 py-2 rounded-xl border border-(--border-color)
                 bg-bg-card hover:bg-bg-base text-sm text-t-primary"
             >
+              <span className="font-mono text-t-muted text-xs mr-2">{t.serial_no}</span>
               {t.name}
             </button>
           ))}
@@ -583,8 +591,8 @@ const ImportStepsModal: React.FC<Props> = ({ onClose, onBack }) => {
                         <div
                           key={rev.id}
                           className={`flex items-center justify-between px-3 py-2.5 rounded-xl border
-                            ${isActive 
-                              ? "bg-green-500/5 border-green-500/20" 
+                            ${isActive
+                              ? "bg-green-500/5 border-green-500/20"
                               : "bg-bg-card border-(--border-color)"
                             }`}
                         >
@@ -657,7 +665,7 @@ const ImportStepsModal: React.FC<Props> = ({ onClose, onBack }) => {
             ) : (
               <div className="flex items-center gap-2 text-xs text-amber-400">
                 <Info size={13} />
-                <span>No active revision — this CSV will create the initial <strong>R0-1</strong>.</span>
+                <span>No active revision — this CSV will create the first draft.</span>
               </div>
             )}
           </div>
@@ -687,7 +695,9 @@ const ImportStepsModal: React.FC<Props> = ({ onClose, onBack }) => {
             )}
 
             <div>
-              <label className="block text-[10px] text-t-muted mb-1">Revision ID</label>
+              <label className="block text-[10px] text-t-muted mb-1">
+                Revision code (e.g. R0, RA-1, RB-2)
+              </label>
               <input
                 value={newRevId}
                 onChange={e => setNewRevId(e.target.value.toUpperCase())}
@@ -788,7 +798,7 @@ const ImportStepsModal: React.FC<Props> = ({ onClose, onBack }) => {
               <div className="text-xs font-semibold text-c-brand
                 bg-c-brand/8 border border-c-brand/20 rounded-lg px-3 py-2.5">
                 ⇄ Diff: <span className="font-mono">{activeRev?.id}</span>
-                &nbsp;→&nbsp;<span className="font-mono">{newRevId}</span>
+                &nbsp;→&nbsp;<span className="font-mono">{selTest}-{newRevId}</span>
                 &nbsp;·&nbsp;{diffResult.summary.total} items
               </div>
               <DiffStats summary={diffResult.summary} />
@@ -842,8 +852,8 @@ const ImportStepsModal: React.FC<Props> = ({ onClose, onBack }) => {
           {/* Summary */}
           <div className="rounded-xl border border-(--border-color) bg-bg-card p-3
             flex flex-col gap-1.5 text-xs">
-            <Row label="Revision ID"    value={revPayload.revision.id} brand />
-            <Row label="Test"           value={revPayload.revision.test_id} />
+            <Row label="Revision ID"    value={`${selTest}-${newRevId}`} brand />
+            <Row label="Test serial"    value={selTest} mono />
             <Row label="Status"         value="draft" />
             <Row label="Steps in order" value={String(revPayload.revision.step_order.length)} mono />
             <Row label="New step rows"  value={String(revPayload.newSteps.length)} mono />
@@ -929,7 +939,7 @@ const ImportStepsModal: React.FC<Props> = ({ onClose, onBack }) => {
         <div className="flex flex-col items-center gap-3 py-6">
           <CheckCircle size={32} className="text-green-400" />
           <p className="text-sm font-semibold text-t-primary">
-            {`Revision ${revPayload?.revision.id ?? ""} created as draft`}
+            {`Revision ${selTest}-${newRevId} created as draft`}
           </p>
           <p className="text-xs text-t-muted text-center max-w-48">
             Activate it from Revision Control when you're ready to use it.
