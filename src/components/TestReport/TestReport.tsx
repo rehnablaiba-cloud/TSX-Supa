@@ -68,9 +68,7 @@ type ViewMode = "table" | "chart";
 
 // ─── Constants ─────────────────────────────────────────────────────────────────
 const STATUS_ICON: Record<string, React.ReactNode> = {
-  pass: (
-    <CheckCircle2 size={13} className="text-pass shrink-0" />
-  ),
+  pass: <CheckCircle2 size={13} className="text-pass shrink-0" />,
   fail: <XCircle size={13} className="text-fail shrink-0" />,
   pending: <Clock size={13} className="text-pend shrink-0" />,
 };
@@ -116,11 +114,13 @@ function clearSessionStart() {
 // ─── Session Step Detail Modal ─────────────────────────────────────────────────
 interface SessionModalProps {
   group: SessionTestGroup;
+  displayName: string; // resolved test name (or serial_no fallback)
   onClose: () => void;
 }
 
 const SessionDetailModal: React.FC<SessionModalProps> = ({
   group,
+  displayName,
   onClose,
 }) => {
   const sorted = useMemo(
@@ -145,9 +145,8 @@ const SessionDetailModal: React.FC<SessionModalProps> = ({
         {/* Header */}
         <div className="flex items-start justify-between gap-3 px-5 py-4 border-b border-(--border-color)">
           <div className="flex flex-col gap-0.5">
-            <p className="text-sm font-bold text-t-primary">
-              {group.tests_name}
-            </p>
+            {/* ── FIXED: use resolved displayName instead of group.tests_name ── */}
+            <p className="text-sm font-bold text-t-primary">{displayName}</p>
             <p className="text-xs text-t-muted">{group.module_name}</p>
           </div>
           <div className="flex items-center gap-2">
@@ -312,18 +311,34 @@ const TestReport: React.FC<Props> = ({ module_test_id, onBack }) => {
     }
   }, [user]);
 
+  // ── serial_no → test display name map (built from loaded modules) ─────────
+  // FIXED: replaces testSerialMap (name→serial) with serialToNameMap (serial→name)
+  const serialToNameMap = useMemo(() => {
+    const map = new Map<string, string>();
+    modules.forEach((m) => {
+      m.module_tests?.forEach((mt) => {
+        if (mt.test?.serial_no && mt.test?.name) {
+          map.set(String(mt.test.serial_no), mt.test.name);
+        }
+      });
+    });
+    return map;
+  }, [modules]);
+
   // ── Session groups (derived) ──────────────────────────────────────────────
+  // FIXED: group by tests_serial_no (was tests_name)
   const sessionGroups = useMemo<SessionTestGroup[]>(() => {
     if (!sessionSteps.length) return [];
     const map = new Map<string, SessionTestGroup>();
     sessionSteps
       .filter((s) => !s.is_divider)
       .forEach((s) => {
-        const key = `${s.module_name}::${s.tests_name}`;
+        // ── FIXED: key on tests_serial_no ──
+        const key = `${s.module_name}::${s.tests_serial_no}`;
         if (!map.has(key)) {
           map.set(key, {
             module_name: s.module_name,
-            tests_name: s.tests_name,
+            tests_serial_no: s.tests_serial_no, // ← was tests_name
             steps: [],
             pass: 0,
             fail: 0,
@@ -458,25 +473,14 @@ const TestReport: React.FC<Props> = ({ module_test_id, onBack }) => {
     [displayModules]
   );
 
-  // ── Lookup map: tests_name → tests.serial_no ──────────────────────────────
-  const testSerialMap = useMemo(() => {
-    const map = new Map<string, string>();
-    modules.forEach((m) => {
-      m.module_tests?.forEach((mt) => {
-        if (mt.tests_name && mt.test?.serial_no) {
-          map.set(mt.tests_name, mt.test.serial_no);
-        }
-      });
-    });
-    return map;
-  }, [modules]);
-
   // ── Session data formatted as FlatData for export ─────────────────────────
+  // FIXED: use tests_serial_no; resolve display name via serialToNameMap
   const sessionFlatData = useMemo<FlatData[]>(() => {
     return sessionSteps.map((s) => ({
       module: s.module_name,
-      test: s.tests_name,
-      test_serial_no: testSerialMap.get(s.tests_name) ?? "",
+      // ── FIXED: resolve name from serial map; fall back to serial_no ──
+      test: serialToNameMap.get(String(s.tests_serial_no)) ?? s.tests_serial_no,
+      test_serial_no: s.tests_serial_no, // ← was testSerialMap.get(s.tests_name)
       serial: s.serial_no,
       action: s.action || "",
       expected: s.expected_result || "",
@@ -484,7 +488,7 @@ const TestReport: React.FC<Props> = ({ module_test_id, onBack }) => {
       status: s.status,
       isdivider: s.is_divider,
     }));
-  }, [sessionSteps, testSerialMap]);
+  }, [sessionSteps, serialToNameMap]);
 
   // ── Export helpers ────────────────────────────────────────────────────────
   const toFlatData = (): FlatData[] =>
@@ -514,10 +518,14 @@ const TestReport: React.FC<Props> = ({ module_test_id, onBack }) => {
         .forEach((mt) => {
           (m.step_results ?? [])
             .filter(
+              // ── FIXED: compare serial_no values instead of tests_name ──
               (sr) =>
-                sr.step?.tests_name === mt.tests_name && !sr.step?.is_divider
+                sr.step?.tests_serial_no === mt.test?.serial_no &&
+                !sr.step?.is_divider
             )
-            .sort((a, b) => (a.step?.serial_no ?? 0) - (b.step?.serial_no ?? 0))
+            .sort(
+              (a, b) => (a.step?.serial_no ?? 0) - (b.step?.serial_no ?? 0)
+            )
             .forEach((sr) => {
               flat.push({
                 module: m.name,
@@ -653,64 +661,71 @@ const TestReport: React.FC<Props> = ({ module_test_id, onBack }) => {
 
         {/* Test rows — click to open detail popup */}
         <div className="flex flex-col gap-1 pt-1 border-t border-(--border-color)">
-          {sessionGroups.map((g) => (
-            <button
-              key={`${g.module_name}::${g.tests_name}`}
-              onClick={() => setActiveSessionGroup(g)}
-              className="flex items-center gap-3 px-3 py-2.5 rounded-lg
-                bg-bg-base hover:bg-bg-surface border border-(--border-color)
-                transition-colors text-left group"
-            >
-              {/* Module tag */}
-              <span
-                className="text-[11px] font-bold px-2 py-0.5 rounded-md
-                bg-c-brand-bg text-c-brand shrink-0"
+          {sessionGroups.map((g) => {
+            // ── FIXED: resolve display name from serial map ──
+            const testDisplayName =
+              serialToNameMap.get(String(g.tests_serial_no)) ??
+              g.tests_serial_no;
+
+            return (
+              <button
+                key={`${g.module_name}::${g.tests_serial_no}`}
+                onClick={() => setActiveSessionGroup(g)}
+                className="flex items-center gap-3 px-3 py-2.5 rounded-lg
+                  bg-bg-base hover:bg-bg-surface border border-(--border-color)
+                  transition-colors text-left group"
               >
-                {g.module_name}
-              </span>
-
-              {/* Test name */}
-              <span className="flex-1 text-xs font-semibold text-t-primary truncate">
-                {g.tests_name}
-              </span>
-
-              {/* Counts */}
-              <span className="flex items-center gap-1.5 shrink-0">
-                <span className="text-[11px] font-bold text-t-muted">
-                  {g.total}
+                {/* Module tag */}
+                <span
+                  className="text-[11px] font-bold px-2 py-0.5 rounded-md
+                  bg-c-brand-bg text-c-brand shrink-0"
+                >
+                  {g.module_name}
                 </span>
-                {g.pass > 0 && (
-                  <span
-                    className="text-[11px] font-bold"
-                    style={{ color: "var(--color-pass)" }}
-                  >
-                    {g.pass}✓
-                  </span>
-                )}
-                {g.fail > 0 && (
-                  <span
-                    className="text-[11px] font-bold"
-                    style={{ color: "var(--color-fail)" }}
-                  >
-                    {g.fail}✗
-                  </span>
-                )}
-                {g.undo > 0 && (
-                  <span
-                    className="text-[11px] font-bold"
-                    style={{ color: "var(--color-pend)" }}
-                  >
-                    {g.undo}↩
-                  </span>
-                )}
-              </span>
 
-              <ChevronRight
-                size={13}
-                className="text-t-muted group-hover:text-t-primary transition-colors shrink-0"
-              />
-            </button>
-          ))}
+                {/* Test name */}
+                <span className="flex-1 text-xs font-semibold text-t-primary truncate">
+                  {testDisplayName}
+                </span>
+
+                {/* Counts */}
+                <span className="flex items-center gap-1.5 shrink-0">
+                  <span className="text-[11px] font-bold text-t-muted">
+                    {g.total}
+                  </span>
+                  {g.pass > 0 && (
+                    <span
+                      className="text-[11px] font-bold"
+                      style={{ color: "var(--color-pass)" }}
+                    >
+                      {g.pass}✓
+                    </span>
+                  )}
+                  {g.fail > 0 && (
+                    <span
+                      className="text-[11px] font-bold"
+                      style={{ color: "var(--color-fail)" }}
+                    >
+                      {g.fail}✗
+                    </span>
+                  )}
+                  {g.undo > 0 && (
+                    <span
+                      className="text-[11px] font-bold"
+                      style={{ color: "var(--color-pend)" }}
+                    >
+                      {g.undo}↩
+                    </span>
+                  )}
+                </span>
+
+                <ChevronRight
+                  size={13}
+                  className="text-t-muted group-hover:text-t-primary transition-colors shrink-0"
+                />
+              </button>
+            );
+          })}
         </div>
       </div>
     ) : null;
@@ -762,6 +777,11 @@ const TestReport: React.FC<Props> = ({ module_test_id, onBack }) => {
         {activeSessionGroup && (
           <SessionDetailModal
             group={activeSessionGroup}
+            displayName={
+              serialToNameMap.get(
+                String(activeSessionGroup.tests_serial_no)
+              ) ?? activeSessionGroup.tests_serial_no
+            }
             onClose={() => setActiveSessionGroup(null)}
           />
         )}
@@ -1019,6 +1039,11 @@ const TestReport: React.FC<Props> = ({ module_test_id, onBack }) => {
       {activeSessionGroup && (
         <SessionDetailModal
           group={activeSessionGroup}
+          displayName={
+            serialToNameMap.get(
+              String(activeSessionGroup.tests_serial_no)
+            ) ?? activeSessionGroup.tests_serial_no
+          }
           onClose={() => setActiveSessionGroup(null)}
         />
       )}
@@ -1051,8 +1076,7 @@ const TestReport: React.FC<Props> = ({ module_test_id, onBack }) => {
             icon: <FileSpreadsheet size={16} />,
             color:
               "bg-(--bg-card) border border-(--border-color) text-(--text-primary)",
-            hoverColor:
-              "hover:bg-(--bg-surface) hover:border-(--color-brand)",
+            hoverColor: "hover:bg-(--bg-surface) hover:border-(--color-brand)",
             onConfirm: () => exportReportCSV([], sessionFlatData),
           },
           {
@@ -1060,8 +1084,7 @@ const TestReport: React.FC<Props> = ({ module_test_id, onBack }) => {
             icon: <FileText size={16} />,
             color:
               "bg-(--bg-card) border border-(--border-color) text-(--text-primary)",
-            hoverColor:
-              "hover:bg-(--bg-surface) hover:border-(--color-brand)",
+            hoverColor: "hover:bg-(--bg-surface) hover:border-(--color-brand)",
             onConfirm: () => exportReportPDF([], sessionFlatData),
           },
         ]}

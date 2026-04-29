@@ -482,7 +482,6 @@ const TableStepRow: React.FC<{
 }) => {
   const [remarks, setRemarks] = useState(initialRemarks);
 
-  // Sync if the parent resets remarks (e.g. Undo All)
   useEffect(() => {
     setRemarks(initialRemarks);
   }, [initialRemarks]);
@@ -674,7 +673,6 @@ const MobileStepCard: React.FC<{
   const [draftRemarks, setDraftRemarks] = useState(initialRemarks);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-  // Sync if the parent resets remarks (e.g. Undo All)
   useEffect(() => {
     setRemarks(initialRemarks);
   }, [initialRemarks]);
@@ -972,6 +970,9 @@ const TestExecution: React.FC<Props> = ({
   const log = useAuditLog();
 
   const currentMtId = initialmodule_test_id;
+
+  // testsName is still derived from the module_test_id suffix (module_tests.id
+  // = module_name + '_' + tests_name, unchanged by migration).
   const testsName = useMemo(() => {
     const prefix = module_name + "_";
     if (!currentMtId.startsWith(prefix)) {
@@ -1008,7 +1009,6 @@ const TestExecution: React.FC<Props> = ({
   const cardRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const scrollContainerRef = useRef<HTMLDivElement>(null);
 
-  // ── Derived state — declared early so effects below can reference it ──────
   const isLockedByOther = !!(lock && lock.user_id !== user?.id);
 
   const openImagePreview = useCallback(
@@ -1048,8 +1048,9 @@ const TestExecution: React.FC<Props> = ({
           .select(
             `
             id, status, remarks, display_name,
-            step:test_steps(id, serial_no, action, expected_result, is_divider, action_image_urls, expected_image_urls, tests_name)
+            step:test_steps(id, serial_no, action, expected_result, is_divider, action_image_urls, expected_image_urls, tests_serial_no)
           `
+            // ── FIXED: was tests_name — column no longer exists after migration ──
           )
           .eq("module_name", module_name),
         supabase
@@ -1086,8 +1087,16 @@ const TestExecution: React.FC<Props> = ({
         }))
       );
 
+      // ── FIXED: resolve the serial_no for the current test, then filter
+      //           step_results by tests_serial_no instead of tests_name ──────
+      const currentTestSerial = testsMap[testsName]?.serial_no ?? null;
+
       const merged: ExecutionStep[] = rawSrs
-        .filter((sr) => sr.step && sr.step.tests_name === testsName)
+        .filter(
+          (sr) =>
+            sr.step && currentTestSerial !== null &&
+            sr.step.tests_serial_no === currentTestSerial
+        )
         .map((sr) => ({
           stepId: sr.step.id,
           stepResultId: sr.id,
@@ -1285,7 +1294,6 @@ const TestExecution: React.FC<Props> = ({
   }, [scrollTarget, loading]);
 
   // ── Update step ───────────────────────────────────────────────────────────
-  // Declared before the keyboard effect so the effect can reference it safely.
   const handleStepUpdate = useCallback(
     async (
       stepId: string,
@@ -1622,6 +1630,7 @@ const TestExecution: React.FC<Props> = ({
         isOpen={showMassImageUpload}
         onClose={() => setShowMassImageUpload(false)}
       />
+
       {/* ── Fixed header ─────────────────────────────────────────────────── */}
       <div className="shrink-0">
         <Topbar
@@ -1806,7 +1815,8 @@ const TestExecution: React.FC<Props> = ({
                                 className={`rounded-full ${s.dot} inline-block shrink-0`}
                                 style={{
                                   width: level === 1 ? 6 : level === 2 ? 5 : 4,
-                                  height: level === 1 ? 6 : level === 2 ? 5 : 4,
+                                  height:
+                                    level === 1 ? 6 : level === 2 ? 5 : 4,
                                 }}
                               />
                               <span className={`${s.size} ${s.text}`}>
