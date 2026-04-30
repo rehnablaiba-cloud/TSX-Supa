@@ -66,8 +66,6 @@ const StaggerRow: React.FC<{ index: number; children: React.ReactNode }> = ({
 const cleanDividerLabel = (action: string): string =>
   action.replace(/^[^a-zA-Z0-9]+/, "");
 
-// Safely unwrap a PostgREST join that may come back as an object OR a
-// single-element array depending on the Supabase client version / type gen.
 function unwrapOne<T>(val: T | T[] | null | undefined): T | null {
   if (val == null) return null;
   if (Array.isArray(val)) return val[0] ?? null;
@@ -97,14 +95,13 @@ interface LockRow {
   locked_at: string;
 }
 
-// ── FIXED: tests_name → tests_serial_no ──────────────────────────────────────
 interface TrimmedStepResult {
   id: string;
   status: "pass" | "fail" | "pending";
   step: {
     id: string;
     is_divider: boolean;
-    tests_serial_no: string; // ← was tests_name
+    tests_serial_no: string;
     serial_no: number | null;
     action: string | null;
     expected_result: string | null;
@@ -131,13 +128,19 @@ interface SupabaseStepResult {
   step: {
     id: string;
     is_divider: boolean;
-    tests_serial_no: string; // ← was tests_name
+    tests_serial_no: string;
     serial_no: number | null;
     action: string | null;
     expected_result: string | null;
   } | null;
 }
-// ─────────────────────────────────────────────────────────────────────────────
+
+interface ActiveRevision {
+  id: string;
+  revision: string;
+  is_visible: boolean;
+  step_order: string[];
+}
 
 const ModuleDashboard: React.FC<Props> = ({
   module_name,
@@ -151,6 +154,7 @@ const ModuleDashboard: React.FC<Props> = ({
 
   const [module_tests, setmodule_tests] = useState<ModuleTestRow[]>([]);
   const [locks, setLocks] = useState<Record<string, LockRow>>({});
+  const [revisions, setRevisions] = useState<Record<string, ActiveRevision>>({});
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -195,6 +199,7 @@ const ModuleDashboard: React.FC<Props> = ({
       setError(null);
 
       try {
+        // ── 1. Fetch module_tests + all step_results for this module ──────────
         const [mtRes, srRes] = await Promise.all([
           supabase
             .from("module_tests")
@@ -206,7 +211,6 @@ const ModuleDashboard: React.FC<Props> = ({
           supabase
             .from("step_results")
             .select(
-              // ── FIXED: tests_name → tests_serial_no in the joined columns ──
               "id, status, test_steps_id, step:test_steps!step_results_test_steps_id_fkey(id, is_divider, tests_serial_no, serial_no, action, expected_result)"
             )
             .eq("module_name", module_name)
@@ -214,19 +218,8 @@ const ModuleDashboard: React.FC<Props> = ({
         ]);
 
         if (signal?.aborted) return;
-
-        if (mtRes.error) {
-          setError(mtRes.error.message);
-          setLoading(false);
-          setRefreshing(false);
-          return;
-        }
-        if (srRes.error) {
-          setError(srRes.error.message);
-          setLoading(false);
-          setRefreshing(false);
-          return;
-        }
+        if (mtRes.error) { setError(mtRes.error.message); return; }
+        if (srRes.error) { setError(srRes.error.message); return; }
 
         const normalizedMts: SupabaseModuleTest[] = (mtRes.data ?? []).map(
           (mt: any) => ({ ...mt, test: unwrapOne(mt.test) })
@@ -236,6 +229,55 @@ const ModuleDashboard: React.FC<Props> = ({
           (sr: any) => ({ ...sr, step: unwrapOne(sr.step) })
         );
 
+        // ── 2. Fetch active revisions (with step_order) for all tests ─────────
+        const serialNos = normalizedMts
+          .map((mt) => mt.test?.serial_no)
+          .filter((s): s is string => !!s);
+
+        const revBySerial: Record<string, ActiveRevision> = {};
+
+        if (serialNos.length > 0) {
+          const { data: revData } = await supabase
+            .from("test_revisions")
+            .select("id, revision, is_visible, tests_serial_no, step_order")
+            .eq("status", "active")
+            .in("tests_serial_no", serialNos);
+
+          ((revData ?? []) as any[]).forEach((r) => {
+            revBySerial[r.tests_serial_no] = {
+              id: r.id,
+              revision: r.revision,
+              is_visible: r.is_visible,
+              step_order: Array.isArray(r.step_order) ? r.step_order : [],
+            };
+          });
+        }
+
+        if (signal?.aborted) return;
+        setRevisions(revBySerial);
+
+        // ── 3. Build in-scope step ID sets per serial_no ──────────────────────
+        // For revised tests: only step IDs listed in step_order are shown.
+        // For legacy tests (no active revision): all steps pass through.
+        const inScopeIds = new Set<string>(
+          Object.values(revBySerial).flatMap((r) => r.step_order)
+        );
+        const serialNosWithRevision = new Set(Object.keys(revBySerial));
+
+        // ── 4. Filter step_results ────────────────────────────────────────────
+        const filteredSrs = normalizedSrs.filter((sr) => {
+          const stepSerialNo = sr.step?.tests_serial_no;
+          if (!stepSerialNo) return false;
+
+          if (serialNosWithRevision.has(stepSerialNo)) {
+            // Revised path: only steps in the active revision's step_order
+            return inScopeIds.has(sr.test_steps_id);
+          }
+          // Legacy path: no active revision → keep all
+          return true;
+        });
+
+        // ── 5. Fetch locks ────────────────────────────────────────────────────
         const moduleTestIds = normalizedMts.map((mt) => mt.id);
         const lockRes =
           moduleTestIds.length > 0
@@ -251,17 +293,14 @@ const ModuleDashboard: React.FC<Props> = ({
         const lockMap =
           !lockRes.error && lockRes.data
             ? (lockRes.data as LockRow[]).reduce<Record<string, LockRow>>(
-                (acc, l) => {
-                  acc[l.module_test_id] = l;
-                  return acc;
-                },
+                (acc, l) => { acc[l.module_test_id] = l; return acc; },
                 {}
               )
             : {};
         setLocks(lockMap);
 
-        // ── FIXED: group by tests_serial_no, join on mt.test.serial_no ────────
-        const srByTestsSerialNo = normalizedSrs.reduce<
+        // ── 6. Group filtered step_results by tests_serial_no, join to tests ──
+        const srBySerial = filteredSrs.reduce<
           Record<string, SupabaseStepResult[]>
         >((acc, sr) => {
           const key = sr.step?.tests_serial_no;
@@ -274,7 +313,7 @@ const ModuleDashboard: React.FC<Props> = ({
         const joined = normalizedMts
           .map((mt) => ({
             ...mt,
-            step_results: srByTestsSerialNo[mt.test?.serial_no ?? ""] ?? [],
+            step_results: srBySerial[mt.test?.serial_no ?? ""] ?? [],
           }))
           .sort((a, b) => {
             const aSerial = a.test?.serial_no ?? "";
@@ -284,7 +323,6 @@ const ModuleDashboard: React.FC<Props> = ({
               sensitivity: "base",
             });
           });
-        // ─────────────────────────────────────────────────────────────────────
 
         setmodule_tests(joined as ModuleTestRow[]);
         setError(null);
@@ -636,6 +674,11 @@ const ModuleDashboard: React.FC<Props> = ({
             const isMyLock = !!lock && lock.user_id === user?.id;
             const isOtherLock = !!lock && !isMyLock;
 
+            // Active revision for this test (if any)
+            const activeRev = mt.test?.serial_no
+              ? revisions[mt.test.serial_no] ?? null
+              : null;
+
             const cardStyle: React.CSSProperties = isMyLock
               ? {
                   border: "1.5px solid rgba(var(--neon-cyan), 0.55)",
@@ -703,6 +746,7 @@ const ModuleDashboard: React.FC<Props> = ({
 
                   <div className="flex items-start justify-between gap-2">
                     <div className="flex items-center gap-2 flex-wrap min-w-0">
+                      {/* Serial No */}
                       <span
                         className="font-mono text-xs font-bold shrink-0"
                         style={{
@@ -713,6 +757,21 @@ const ModuleDashboard: React.FC<Props> = ({
                       >
                         {mt.test?.serial_no}
                       </span>
+
+                      {/* Active Revision badge */}
+                      {activeRev && (
+                        <span
+                          className="font-mono text-[10px] font-bold px-1.5 py-0.5 rounded shrink-0"
+                          style={{
+                            color: "var(--color-warn)",
+                            background: "color-mix(in srgb, var(--color-warn) 10%, transparent)",
+                            border: "1px solid color-mix(in srgb, var(--color-warn) 35%, transparent)",
+                          }}
+                        >
+                          {activeRev.revision}
+                        </span>
+                      )}
+
                       <h3 className="font-semibold text-t-primary text-sm truncate">
                         {mt.test?.name ?? mt.tests_name ?? "Unnamed Test"}
                       </h3>
