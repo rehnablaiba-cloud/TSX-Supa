@@ -192,11 +192,11 @@ export async function fetchTestExecution(
   const current_revision = activeRevisions[currentSerialNo] ?? null;
 
   // ✅ FIX: snapshot let into const AFTER all awaits — prevents TS narrowing reset
-  const resolvedStepOrder: string[] | null = stepOrder;
+  const resolvedStepOrder = stepOrder as string[] | null;
 
 
   // ── 4a. Revision path ─────────────────────────────────────────────────────
-  if (resolvedStepOrder && resolvedStepOrder.length > 0) {
+  if (resolvedStepOrder !== null && resolvedStepOrder.length > 0) {
     const orderedIds: string[] = resolvedStepOrder;
 
     const [stepsRes, srRes] = await Promise.all([
