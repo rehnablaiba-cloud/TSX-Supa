@@ -16,9 +16,11 @@
  */
 import { supabase } from "../../supabase";
 
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Types
 // ─────────────────────────────────────────────────────────────────────────────
+
 
 export interface RawStepResult {
   id: string;
@@ -37,11 +39,13 @@ export interface RawStepResult {
   } | null;
 }
 
+
 export interface RawModuleTestItem {
   id: string;
   tests_name: string;
   test: { serial_no: string; name: string } | null;
 }
+
 
 /** One active revision entry returned alongside execution data. */
 export interface ActiveRevision {
@@ -54,6 +58,7 @@ export interface ActiveRevision {
   /** FK → tests.serial_no */
   tests_serial_no: string;
 }
+
 
 export interface TestExecutionData {
   module_name: string;
@@ -76,14 +81,18 @@ export interface TestExecutionData {
   current_revision: ActiveRevision | null;
 }
 
+
 // ─────────────────────────────────────────────────────────────────────────────
 // helpers
 // ─────────────────────────────────────────────────────────────────────────────
 
+
 const STEP_SELECT =
   "id, serial_no, action, expected_result, is_divider, action_image_urls, expected_image_urls, tests_serial_no";
 
+
 const SR_SELECT = "id, status, remarks, display_name, test_steps_id";
+
 
 function buildStepResult(
   step: any,
@@ -107,9 +116,11 @@ function buildStepResult(
   };
 }
 
+
 // ─────────────────────────────────────────────────────────────────────────────
 // fetchTestExecution
 // ─────────────────────────────────────────────────────────────────────────────
+
 
 export async function fetchTestExecution(
   module_test_id: string
@@ -124,8 +135,10 @@ export async function fetchTestExecution(
     .single();
   if (mtErr) throw mtErr;
 
+
   const module_name: string = (mtData as any)?.module_name ?? "";
   const currentSerialNo: string = (mtData as any)?.test?.serial_no ?? "";
+
 
   // ── 2. All module_tests in the module ────────────────────────────────────
   const allMtRes = await supabase
@@ -137,15 +150,17 @@ export async function fetchTestExecution(
     .order("tests_name");
   if (allMtRes.error) throw allMtRes.error;
 
+
   const allMts = (allMtRes.data ?? []) as unknown as RawModuleTestItem[];
   const serialNos: string[] = allMts
     .map((mt) => (mt as any).test?.serial_no as string | undefined)
     .filter((s): s is string => !!s);
 
+
   // ── 3. Active revisions for all tests in the module ──────────────────────
   const activeRevisions: Record<string, ActiveRevision> = {};
-  // step_order for the current test (null = no active revision)
   let stepOrder: string[] | null = null;
+
 
   if (serialNos.length > 0) {
     const { data: revData, error: revErr } = await supabase
@@ -154,6 +169,7 @@ export async function fetchTestExecution(
       .eq("status", "active")
       .in("tests_serial_no", serialNos);
     if (revErr) throw revErr;
+
 
     ((revData ?? []) as any[]).forEach((r) => {
       activeRevisions[r.tests_serial_no] = {
@@ -172,44 +188,50 @@ export async function fetchTestExecution(
     });
   }
 
+
   const current_revision = activeRevisions[currentSerialNo] ?? null;
 
+
   // ── 4a. Revision path ─────────────────────────────────────────────────────
-  //  step_order is the authoritative ordered list of test_steps IDs.
-  //  Fetch steps + step_results by those IDs; preserve step_order sequence.
+  // ✅ FIX: capture stepOrder into a const before await to preserve narrowing
   if (stepOrder && stepOrder.length > 0) {
+    const orderedIds: string[] = stepOrder;
+
     const [stepsRes, srRes] = await Promise.all([
       supabase
         .from("test_steps")
         .select(STEP_SELECT)
-        .in("id", stepOrder),
+        .in("id", orderedIds),
       supabase
         .from("step_results")
         .select(SR_SELECT)
         .eq("module_name", module_name)
-        .in("test_steps_id", stepOrder),
+        .in("test_steps_id", orderedIds),
     ]);
     if (stepsRes.error) throw stepsRes.error;
     if (srRes.error) throw srRes.error;
+
 
     const stepsById: Record<string, any> = {};
     ((stepsRes.data ?? []) as any[]).forEach((s) => {
       stepsById[s.id] = s;
     });
 
+
     const srByStepId: Record<string, any> = {};
     ((srRes.data ?? []) as any[]).forEach((sr) => {
       srByStepId[sr.test_steps_id] = sr;
     });
 
-    // Map preserving step_order sequence; skip IDs not found in DB
-    const step_results: RawStepResult[] = stepOrder
-      .map((stepId) => {
+
+    const step_results: RawStepResult[] = orderedIds
+      .map((stepId: string) => {
         const step = stepsById[stepId];
         if (!step) return null;
         return buildStepResult(step, srByStepId[stepId]);
       })
-      .filter((sr): sr is RawStepResult => sr !== null);
+      .filter((sr: RawStepResult | null): sr is RawStepResult => sr !== null);
+
 
     return {
       module_name,
@@ -220,8 +242,8 @@ export async function fetchTestExecution(
     };
   }
 
+
   // ── 4b. Fallback path — no active revision ────────────────────────────────
-  //  Fetch all steps for the test ordered by serial_no (legacy behaviour).
   if (!currentSerialNo) {
     return {
       module_name,
@@ -232,6 +254,7 @@ export async function fetchTestExecution(
     };
   }
 
+
   const { data: stepsData, error: stepsErr } = await supabase
     .from("test_steps")
     .select(STEP_SELECT)
@@ -239,7 +262,9 @@ export async function fetchTestExecution(
     .order("serial_no");
   if (stepsErr) throw stepsErr;
 
-  const fallbackStepIds = ((stepsData ?? []) as any[]).map((s) => s.id);
+
+  const fallbackStepIds = ((stepsData ?? []) as any[]).map((s) => s.id as string);
+
 
   if (!fallbackStepIds.length) {
     return {
@@ -251,6 +276,7 @@ export async function fetchTestExecution(
     };
   }
 
+
   const { data: srData, error: srErr } = await supabase
     .from("step_results")
     .select(SR_SELECT)
@@ -258,14 +284,17 @@ export async function fetchTestExecution(
     .in("test_steps_id", fallbackStepIds);
   if (srErr) throw srErr;
 
+
   const srByStepId: Record<string, any> = {};
   ((srData ?? []) as any[]).forEach((sr) => {
     srByStepId[sr.test_steps_id] = sr;
   });
 
+
   const step_results: RawStepResult[] = ((stepsData ?? []) as any[])
     .map((step) => buildStepResult(step, srByStepId[step.id]))
-    .filter((sr): sr is RawStepResult => sr !== null);
+    .filter((sr: RawStepResult | null): sr is RawStepResult => sr !== null);
+
 
   return {
     module_name,
@@ -276,9 +305,11 @@ export async function fetchTestExecution(
   };
 }
 
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Lock management
 // ─────────────────────────────────────────────────────────────────────────────
+
 
 export async function acquireLock(
   module_test_id: string,
@@ -291,9 +322,11 @@ export async function acquireLock(
     .eq("module_test_id", module_test_id)
     .maybeSingle();
 
+
   if (existing && (existing as any).user_id !== user_id) {
     return { success: false, holder: (existing as any).locked_by_name };
   }
+
 
   if (existing && (existing as any).user_id === user_id) {
     const { error } = await supabase
@@ -311,12 +344,14 @@ export async function acquireLock(
     return { success: true };
   }
 
+
   const { error } = await supabase.from("test_locks").insert({
     module_test_id,
     user_id,
     locked_by_name: display_name,
     locked_at: new Date().toISOString(),
   });
+
 
   if (error) {
     const { data: winner } = await supabase
@@ -329,8 +364,10 @@ export async function acquireLock(
     return { success: false, holder };
   }
 
+
   return { success: true };
 }
+
 
 export async function releaseLock(
   module_test_id: string,
@@ -344,6 +381,7 @@ export async function releaseLock(
   if (error) console.error("[releaseLock]", error.message);
 }
 
+
 export async function forceReleaseLock(module_test_id: string): Promise<void> {
   const { error } = await supabase
     .from("test_locks")
@@ -351,6 +389,7 @@ export async function forceReleaseLock(module_test_id: string): Promise<void> {
     .eq("module_test_id", module_test_id);
   if (error) console.error("[forceReleaseLock]", error.message);
 }
+
 
 /**
  * Refreshes locked_at timestamp to keep the lock alive.
@@ -368,9 +407,11 @@ export async function heartbeatLock(
   if (error) console.error("[heartbeatLock]", error.message);
 }
 
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Step results
 // ─────────────────────────────────────────────────────────────────────────────
+
 
 export async function upsertStepResult(payload: {
   test_steps_id: string;
@@ -391,6 +432,7 @@ export async function upsertStepResult(payload: {
   if (error) throw error;
 }
 
+
 /**
  * Resets all step results for a specific test within a module.
  * Accepts the step_result row IDs directly (already scoped by the caller).
@@ -408,15 +450,18 @@ export async function resetAllStepResults(
   if (error) throw error;
 }
 
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Signed image URLs
 // ─────────────────────────────────────────────────────────────────────────────
+
 
 export async function fetchSignedUrls(
   paths: string[]
 ): Promise<Record<string, string>> {
   const unique = Array.from(new Set(paths.filter(Boolean)));
   if (!unique.length) return {};
+
 
   const result: Record<string, string> = {};
   await Promise.all(
