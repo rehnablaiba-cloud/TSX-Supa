@@ -4,23 +4,23 @@
  * Pure TypeScript diff engine for TestPro revision control.
  * No framework or Supabase dependencies — can be unit-tested in isolation.
  *
- * Diff strategy: serial_no anchored
- *   • Same serial_no, identical action + expected_result  → UNCHANGED
- *   • Same serial_no, different action or expected_result → EDIT
- *   • serial_no present in CSV, absent in base            → INSERT
- *   • serial_no present in base, absent in CSV            → DELETE
+ * Diff strategy: composite key anchored (serial_no + is_divider)
+ *   • Same key, identical action + expected_result  → UNCHANGED
+ *   • Same key, different action or expected_result → EDIT
+ *   • key present in CSV, absent in base            → INSERT
+ *   • key present in base, absent in CSV            → DELETE
  *
- * Step ID format (v4 schema):  {revId}-{seq:003}
- *   e.g.  R0-001,  RA-003,  RB-012
+ * Step ID format (v4 schema):  {testSerialNo}-{revId}-{serialNo}-{isDivider}
+ *   e.g.  T001-R0-1-1-true,  T001-RA-1-3-false
  */
 
 // ─── Public types ─────────────────────────────────────────────────────────────
 
 /** A step row loaded from an active revision (step_order resolved + serial_no assigned). */
 export interface BaseStep {
-  /** e.g. "R0-001" */
+  /** e.g. "T001-R0-1-1-true" */
   id: string;
-  /** 1-based position derived from step_order array index */
+  /** Stored serial_no from DB (preferred over positional fallback) */
   serial_no: number;
   action: string;
   expected_result: string;
@@ -92,25 +92,24 @@ export interface DiffResult {
 
 export interface RevisionMeta {
   id: string;
-  test_id: string; 
+  test_id: string;
   status: "draft";
   step_order: string[]; // ordered array of test_steps.id
-  created_by: string; // user UUID
+  created_by: string;   // user UUID
   notes: string;
 }
-
-// ── Revision payload ──────────────────────────────────────────────────────────
 
 export interface NewStepRow {
   id: string;
   tests_serial_no: string;
-  serial_no: number;            // ← ADD: needed by the DB trigger that mints id
+  serial_no: number;
   action: string;
   expected_result: string;
   is_divider: boolean;
   introduced_in_rev: string;
   origin_step_id: string | null;
 }
+
 export interface RevisionPayload {
   revision: RevisionMeta;
   /** Only the NEW rows to INSERT into test_steps. Unchanged steps are not repeated. */
@@ -145,11 +144,11 @@ function tokenizeCsv(raw: string): string[][] {
       else if (ch === '"')          { inQ = false; }         // close quote
       else                          { cell += ch; }
     } else {
-      if      (ch === '"')               { inQ = true; }
-      else if (ch === ',')               { row.push(cell); cell = ""; }
-      else if (ch === '\r' && nx === '\n') { row.push(cell); rows.push(row); row = []; cell = ""; i++; }
-      else if (ch === '\n')              { row.push(cell); rows.push(row); row = []; cell = ""; }
-      else                               { cell += ch; }
+      if      (ch === '"')                     { inQ = true; }
+      else if (ch === ',')                     { row.push(cell); cell = ""; }
+      else if (ch === '\r' && nx === '\n')     { row.push(cell); rows.push(row); row = []; cell = ""; i++; }
+      else if (ch === '\n')                    { row.push(cell); rows.push(row); row = []; cell = ""; }
+      else                                     { cell += ch; }
     }
   }
   if (cell || row.length) { row.push(cell); rows.push(row); }
@@ -236,14 +235,17 @@ export function parseCsv(raw: string): ParseResult {
     });
   }
 
-  // ── Duplicate serial_no check ──
-  const seen = new Map<number, number>();
+  // ── Duplicate composite-key check ──
+  // Warn only when both serial_no AND is_divider are identical (true collision).
+  const seen = new Map<string, true>();
   for (const r of rows) {
-    const prev = seen.get(r.serial_no);
-    if (prev !== undefined) {
-      warnings.push(`Duplicate serial_no ${r.serial_no} found. Only the last occurrence will be used.`);
+    const k = `${r.serial_no}-${r.is_divider}`;
+    if (seen.has(k)) {
+      warnings.push(
+        `Duplicate serial_no ${r.serial_no} + is_divider=${r.is_divider} found. Only the last occurrence will be used.`
+      );
     }
-    seen.set(r.serial_no, r.serial_no);
+    seen.set(k, true);
   }
 
   return { rows, warnings, errors };
@@ -260,35 +262,50 @@ function contentEqual(step: BaseStep, row: CsvRow): boolean {
 }
 
 /**
- * Compute a serial_no-anchored diff between the current active revision's steps
- * and the incoming CSV rows.
+ * Composite map key: serial_no + is_divider.
  *
- * @param base  Ordered BaseStep[] — serial_no is 1-based position from step_order.
+ * This prevents false EDIT/INSERT/DELETE collisions when divider rows share
+ * a serial_no with the first content row in the same section (a common pattern
+ * in TestPro CSVs where each section header has is_divider=true and the same
+ * serial_no as the row below it with is_divider=false).
+ */
+const diffKey = (sn: number, div: boolean): string => `${sn}-${div}`;
+
+/**
+ * Compute a composite-key-anchored diff between the current active revision's
+ * steps and the incoming CSV rows.
+ *
+ * @param base  Ordered BaseStep[] — serial_no comes from the DB column.
  * @param csv   Parsed CsvRow[] from parseCsv().
  */
 export function computeDiff(base: BaseStep[], csv: CsvRow[]): DiffResult {
-  // Index base steps by serial_no for O(1) lookup
-  const baseMap = new Map<number, BaseStep>(base.map(s => [s.serial_no, s]));
+  // Index base steps by composite key for O(1) lookup
+  const baseMap = new Map<string, BaseStep>(
+    base.map(s => [diffKey(s.serial_no, s.is_divider), s])
+  );
 
-  // Index CSV rows by serial_no (last-write wins for duplicates)
-  const csvMap  = new Map<number, CsvRow>(csv.map(r => [r.serial_no, r]));
+  // Index CSV rows by composite key (last-write wins for true duplicates)
+  const csvMap = new Map<string, CsvRow>(
+    csv.map(r => [diffKey(r.serial_no, r.is_divider), r])
+  );
 
   const items: DiffItem[] = [];
   let pos = 0;
 
   // ── Walk CSV rows in order → defines output sequence ──
   for (const row of csv) {
-    const baseStep = baseMap.get(row.serial_no);
+    const k        = diffKey(row.serial_no, row.is_divider);
+    const baseStep = baseMap.get(k);
     pos++;
 
     if (!baseStep) {
-      // serial_no not in base → INSERT
+      // Key not in base → INSERT
       items.push({ type: "INSERT", position: pos, serialNo: row.serial_no, row });
     } else if (contentEqual(baseStep, row)) {
       // Exact match → UNCHANGED
       items.push({ type: "UNCHANGED", position: pos, serialNo: row.serial_no, step: baseStep });
     } else {
-      // Same serial_no, different content → EDIT
+      // Same key, different content → EDIT
       items.push({
         type:         "EDIT",
         position:     pos,
@@ -302,14 +319,16 @@ export function computeDiff(base: BaseStep[], csv: CsvRow[]): DiffResult {
 
   // ── Base steps absent from CSV → DELETE (shown after output items) ──
   for (const step of base) {
-    if (!csvMap.has(step.serial_no)) {
+    if (!csvMap.has(diffKey(step.serial_no, step.is_divider))) {
       pos++;
       items.push({ type: "DELETE", position: pos, serialNo: step.serial_no, step });
     }
   }
 
   // ── Summary ──
-  const summary: DiffSummary = { unchanged: 0, edited: 0, inserted: 0, deleted: 0, total: items.length };
+  const summary: DiffSummary = {
+    unchanged: 0, edited: 0, inserted: 0, deleted: 0, total: items.length,
+  };
   for (const it of items) {
     if      (it.type === "UNCHANGED") summary.unchanged++;
     else if (it.type === "EDIT")      summary.edited++;
@@ -387,12 +406,15 @@ export function getSuffixOptions(existingIds: string[], prefix: string): number[
   const all = [...new Set([...suffixes, ...(next ? [next] : [])])].sort((a, b) => a - b);
   return all;
 }
+
 export function makeStepId(
   testsSerialNo: string,
+  revId:         string,
   serialNo:      number,
   isDivider:     boolean
 ): string {
-  return `${testsSerialNo}-${serialNo}-${isDivider}`;
+  return `${testsSerialNo}-${revId}-${serialNo}-${isDivider}`;
+  // e.g. T001-RA-1-3-false
 }
 
 // ─── Payload Builders ─────────────────────────────────────────────────────────
@@ -412,7 +434,7 @@ export function buildFirstRevisionPayload(
   const stepOrder: string[]    = [];
 
   for (const r of rows) {
-    const id = makeStepId(testName, r.serial_no, r.is_divider); // ← no minter
+    const id = makeStepId(testName, revId, r.serial_no, r.is_divider);
     newSteps.push({
       id,
       tests_serial_no:   testName,
@@ -433,8 +455,7 @@ export function buildFirstRevisionPayload(
   };
 }
 
-
- export function buildDiffRevisionPayload(
+export function buildDiffRevisionPayload(
   diff:      DiffResult,
   revId:     string,
   testName:  string,
@@ -451,7 +472,7 @@ export function buildFirstRevisionPayload(
       stepOrder.push(it.step.id);
 
     } else if (it.type === "EDIT") {
-      const id = makeStepId(testName, it.serialNo, it.new.is_divider); // ← no minter
+      const id = makeStepId(testName, revId, it.serialNo, it.new.is_divider);
       newSteps.push({
         id,
         tests_serial_no:   testName,
@@ -465,7 +486,7 @@ export function buildFirstRevisionPayload(
       stepOrder.push(id);
 
     } else if (it.type === "INSERT") {
-      const id = makeStepId(testName, it.serialNo, it.row.is_divider); // ← no minter
+      const id = makeStepId(testName, revId, it.serialNo, it.row.is_divider);
       newSteps.push({
         id,
         tests_serial_no:   testName,
@@ -491,7 +512,8 @@ export function buildFirstRevisionPayload(
 
 /**
  * Given an ordered step_order array and a map of fetched step rows,
- * produce a BaseStep[] with 1-based serial_no matching array position.
+ * produce a BaseStep[] preserving the stored serial_no from the DB.
+ * Falls back to the 1-based positional index only for orphaned IDs.
  *
  * Usage:
  *   const stepMap = new Map(dbRows.map(r => [r.id, r]));
@@ -499,7 +521,7 @@ export function buildFirstRevisionPayload(
  */
 export function resolveBaseSteps(
   stepOrder: string[],
-  stepMap:   Map<string, Omit<BaseStep, "serial_no">>
+  stepMap:   Map<string, Omit<BaseStep, "serial_no"> & { serial_no?: number }>
 ): BaseStep[] {
   return stepOrder.map((id, i) => {
     const s = stepMap.get(id);
@@ -507,12 +529,13 @@ export function resolveBaseSteps(
       // Gracefully handle orphaned IDs (shouldn't happen in a healthy DB)
       return {
         id,
-        serial_no:     i + 1,
-        action:        `[missing step: ${id}]`,
+        serial_no:       i + 1,
+        action:          `[missing step: ${id}]`,
         expected_result: "",
-        is_divider:    false,
+        is_divider:      false,
       };
     }
-    return { ...s, serial_no: i + 1 };
+    // Prefer the stored DB serial_no; fall back to positional only if absent
+    return { ...s, id, serial_no: s.serial_no ?? i + 1 };
   });
 }

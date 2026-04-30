@@ -1,6 +1,12 @@
 /**
  * queries.moduledashboard.ts
- * All supabase data calls extracted from ModuleDashboard.tsx
+ *
+ * Revision-aware update (2025):
+ *  - fetchModuleDashboard now fetches the active revision for every test in the
+ *    module and exposes it via `revisions` (keyed by tests_serial_no).
+ *  - step_results from the RPC are already scoped to module_name; an additional
+ *    JS-side filter narrows them to rows whose revision_id matches the active
+ *    revision for each test, with a null-fallback for legacy data.
  */
 
 import { supabase } from "../../supabase";
@@ -41,7 +47,14 @@ export interface RawStep {
   action_image_urls: string[];
   expected_image_urls: string[];
   is_divider: boolean;
-  tests_serial_no: string; // ← was tests_name
+  tests_serial_no: string;
+}
+
+/** Active revision metadata surfaced to the dashboard per test. */
+export interface DashboardRevision {
+  id: string;
+  revision: string;
+  is_visible: boolean;
 }
 
 export interface ModuleDashboardData {
@@ -50,9 +63,15 @@ export interface ModuleDashboardData {
   locks: RawLock[];
   tests: Record<string, RawTest>;
   steps: Record<string, RawStep>;
+  /**
+   * Active revision per test, keyed by tests_serial_no.
+   * Present only for tests that have an activated revision.
+   */
+  revisions: Record<string, DashboardRevision>;
 }
 
 // ─── fetchModuleDashboard ─────────────────────────────────────────────────────
+
 export async function fetchModuleDashboard(
   module_name: string,
   currentMtId: string
@@ -77,7 +96,9 @@ export async function fetchModuleDashboard(
   const rawMts = (mtRes.data ?? []) as unknown as RawModuleTest[];
   const rawSrs = (srRes.data ?? []) as RawStepResultMD[];
 
+  // ── Collect test names + serial_nos ────────────────────────────────────────
   const test_names = Array.from(new Set(rawMts.map((m) => m.tests_name)));
+
   const testsMap: Record<string, RawTest> = {};
   if (test_names.length > 0) {
     const testsRes = await supabase.rpc("gettestsbynames", {
@@ -88,8 +109,35 @@ export async function fetchModuleDashboard(
     });
   }
 
+  // ── Fetch active revisions for all tests in this module ────────────────────
+  const serialNos: string[] = rawMts
+    .map((mt) => (mt.test as any)?.serial_no as string | undefined)
+    .filter((s): s is string => !!s);
+
+  const revisionsMap: Record<string, DashboardRevision> = {};
+
+  if (serialNos.length > 0) {
+    const { data: revData, error: revErr } = await supabase
+      .from("test_revisions")
+      .select("id, revision, is_visible, tests_serial_no")
+      .eq("status", "active")
+      .in("tests_serial_no", serialNos);
+
+    if (revErr) throw new Error(revErr.message);
+
+    ((revData ?? []) as any[]).forEach((r) => {
+      revisionsMap[r.tests_serial_no] = {
+        id: r.id,
+        revision: r.revision,
+        is_visible: r.is_visible,
+      };
+    });
+  }
+
+  // ── Fetch steps for the step_results returned by RPC ──────────────────────
   const stepIds = rawSrs.map((sr) => sr.test_stepsid);
   const stepsMap: Record<string, RawStep> = {};
+
   if (stepIds.length > 0) {
     const stepsRes = await supabase.rpc("gettest_stepsbyids", {
       p_ids: stepIds,
@@ -99,16 +147,63 @@ export async function fetchModuleDashboard(
     });
   }
 
+  // ── JS-side revision filter on step_results ────────────────────────────────
+  //
+  // The RPC returns ALL step_results for the module (no revision filter in SQL).
+  // We narrow the results here:
+  //  • If a step's parent test has an active revision → keep only results whose
+  //    step belongs to that revision's step_order.
+  //  • If no active revision for the test → keep results whose step does not
+  //    belong to any revision (legacy path, revision_id implicitly null).
+  //
+  // Build a set of step IDs that are "in scope" for each serial_no.
+  // For this we need the step_order from the active revision.
+
+  const inScopeStepIds = new Set<string>();
+  const testsWithoutRevision = new Set<string>(serialNos);
+
+  if (Object.keys(revisionsMap).length > 0) {
+    const revIds = Object.values(revisionsMap).map((r) => r.id);
+    const { data: revDetailData } = await supabase
+      .from("test_revisions")
+      .select("id, tests_serial_no, step_order")
+      .in("id", revIds);
+
+    ((revDetailData ?? []) as any[]).forEach((r) => {
+      const steps: string[] = Array.isArray(r.step_order) ? r.step_order : [];
+      steps.forEach((sid) => inScopeStepIds.add(sid));
+      testsWithoutRevision.delete(r.tests_serial_no);
+    });
+  }
+
+  // Build set of serial_nos that have no active revision (for fallback)
+  // Steps belonging to those tests remain unfiltered.
+  const filteredSrs = rawSrs.filter((sr) => {
+    const step = stepsMap[sr.test_stepsid];
+    if (!step) return false;
+
+    const serialNo = step.tests_serial_no;
+
+    if (testsWithoutRevision.has(serialNo)) {
+      // Legacy path: no active revision → show all
+      return true;
+    }
+    // Revision path: only show steps in scope
+    return inScopeStepIds.has(sr.test_stepsid);
+  });
+
   return {
     module_tests: rawMts,
-    step_results: rawSrs,
+    step_results: filteredSrs,
     locks: (locksRes.data ?? []) as RawLock[],
     tests: testsMap,
     steps: stepsMap,
+    revisions: revisionsMap,
   };
 }
 
 // ─── fetchModuleLocks ─────────────────────────────────────────────────────────
+
 export async function fetchModuleLocks(): Promise<RawLock[]> {
   const { data, error } = await supabase
     .from("test_locks")
@@ -118,6 +213,7 @@ export async function fetchModuleLocks(): Promise<RawLock[]> {
 }
 
 // ─── acquireModuleLock ────────────────────────────────────────────────────────
+
 export async function acquireModuleLock(
   module_test_id: string,
   user_id: string,
@@ -146,6 +242,7 @@ export async function acquireModuleLock(
 }
 
 // ─── releaseModuleLock ────────────────────────────────────────────────────────
+
 export async function releaseModuleLock(
   module_test_id: string,
   user_id: string
@@ -159,6 +256,7 @@ export async function releaseModuleLock(
 }
 
 // ─── forceReleaseModuleLock ───────────────────────────────────────────────────
+
 export async function forceReleaseModuleLock(
   module_test_id: string
 ): Promise<void> {
@@ -170,6 +268,7 @@ export async function forceReleaseModuleLock(
 }
 
 // ─── heartbeatModuleLock ──────────────────────────────────────────────────────
+
 export async function heartbeatModuleLock(
   module_test_id: string,
   user_id: string
@@ -182,6 +281,7 @@ export async function heartbeatModuleLock(
 }
 
 // ─── updateModuleStepResult ───────────────────────────────────────────────────
+
 export async function updateModuleStepResult(params: {
   module_name: string;
   stepId: string;
@@ -200,6 +300,7 @@ export async function updateModuleStepResult(params: {
 }
 
 // ─── resetAllModulestep_results ────────────────────────────────────────────────
+
 export async function resetAllModulestep_results(params: {
   module_name: string;
   steps: { stepId: string }[];
@@ -221,6 +322,7 @@ export async function resetAllModulestep_results(params: {
 }
 
 // ─── fetchExportStepData ──────────────────────────────────────────────────────
+
 export async function fetchExportStepData(module_name: string): Promise<{
   steps: {
     id: string;
@@ -228,11 +330,10 @@ export async function fetchExportStepData(module_name: string): Promise<{
     action: string;
     expected_result: string;
     is_divider: boolean;
-    tests_serial_no: string; // ← was tests_name
+    tests_serial_no: string;
   }[];
   results: { test_stepsid: string; status: string; remarks: string }[];
 }> {
-  // Fetch step_results first to get the step IDs for this module
   const resultsRes = await supabase
     .from("step_results")
     .select("test_steps_id, status, remarks")
@@ -242,14 +343,13 @@ export async function fetchExportStepData(module_name: string): Promise<{
 
   const stepIds = (resultsRes.data ?? []).map((r: any) => r.test_steps_id);
 
-  // Now fetch test_steps by those IDs (test_steps has no module_name column)
   const stepsRes =
     stepIds.length > 0
       ? await supabase
           .from("test_steps")
           .select(
             "id, serial_no, action, expected_result, is_divider, tests_serial_no"
-          ) // ← was tests_name
+          )
           .in("id", stepIds)
           .order("serial_no")
       : { data: [], error: null };
@@ -267,6 +367,7 @@ export async function fetchExportStepData(module_name: string): Promise<{
 }
 
 // ─── fetchModuleSignedUrls ────────────────────────────────────────────────────
+
 export async function fetchModuleSignedUrls(
   paths: string[]
 ): Promise<Record<string, string>> {

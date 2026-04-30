@@ -277,6 +277,11 @@ const ImportStepsModal: React.FC<Props> = ({ onClose, onBack }) => {
     await loadRevisionControl(testSerialNo);
   };
 
+  // ─── Normalize step_order from DB (may arrive as JSON string or array) ────────
+
+  const parseStepOrder = (so: any): string[] =>
+    typeof so === "string" ? JSON.parse(so) : (so ?? []);
+
   // ─── Load revision control / activator ────────────────────────────────────────
 
   const loadRevisionControl = async (testSerialNo: string) => {
@@ -298,40 +303,53 @@ const ImportStepsModal: React.FC<Props> = ({ onClose, onBack }) => {
       if (revsErr) throw new Error(revsErr.message);
 
       const allRevs = (revRows ?? []) as ActiveRevInfo[];
-      const ids   = allRevs.map(r => r.id);
-const codes = ids.map(id =>
-  id.startsWith(testSerialNo + "-") ? id.slice(testSerialNo.length + 1) : id);
-setExistingRevIds(codes);                              
-setNewRevId(getNextRevisionId(codes, "iterate"));
 
-      const active = allRevs.find(r => r.status === "active") ?? null;
+      // Strip the testSerialNo prefix from full revision IDs to get bare codes
+      const ids   = allRevs.map(r => r.id);
+      const codes = ids.map(id =>
+        id.startsWith(testSerialNo + "-") ? id.slice(testSerialNo.length + 1) : id);
+      setExistingRevIds(codes);
+      setNewRevId(getNextRevisionId(codes, "iterate"));
+
+      // Normalize step_order on the active revision before storing in state.
+      // Supabase may return a JSON string instead of a parsed array depending
+      // on the column type — parseStepOrder handles both so nothing downstream
+      // needs to guard against it again.
+      const activeRaw = allRevs.find(r => r.status === "active") ?? null;
+      const active    = activeRaw
+        ? { ...activeRaw, step_order: parseStepOrder(activeRaw.step_order) }
+        : null;
       setActiveRev(active);
 
       setAllRevisions(
         allRevs.map(r => ({
-          id: r.id,
-          status: r.status,
+          id:         r.id,
+          status:     r.status,
           created_at: r.created_at,
-          notes: r.notes,
-          step_count: (r.step_order ?? []).length,
+          notes:      r.notes,
+          // parseStepOrder fixes the "3559 steps" bug: step_order was arriving
+          // as a JSON string, so .length returned the character count, not the
+          // item count.
+          step_count: parseStepOrder(r.step_order).length,
         }))
       );
 
-      // Resolve base steps from the active revision's step_order
-      if (active) {
-        const stepOrder = (active.step_order ?? []) as string[];
-        if (stepOrder.length > 0) {
-          const { data: stepRows, error: stepsErr } = await supabase
-            .from("test_steps")
-            .select("id, action, expected_result, is_divider, introduced_in_rev, origin_step_id")
-            .in("id", stepOrder);
-          if (stepsErr) throw new Error(stepsErr.message);
+      // Resolve base steps from the active revision's step_order.
+      // step_order is already a clean string[] thanks to the normalisation above.
+      if (active && active.step_order.length > 0) {
+        const { data: stepRows, error: stepsErr } = await supabase
+          .from("test_steps")
+          // Include serial_no so resolveBaseSteps can use the stored DB value
+          // instead of falling back to the positional index. This is required
+          // for the composite-key diff to match divider rows correctly.
+          .select("id, serial_no, action, expected_result, is_divider, introduced_in_rev, origin_step_id")
+          .in("id", active.step_order);
+        if (stepsErr) throw new Error(stepsErr.message);
 
-          const stepMap = new Map(
-            ((stepRows ?? []) as any[]).map(s => [s.id, s])
-          );
-          setBaseSteps(resolveBaseSteps(stepOrder, stepMap as any));
-        }
+        const stepMap = new Map(
+          ((stepRows ?? []) as any[]).map(s => [s.id, s])
+        );
+        setBaseSteps(resolveBaseSteps(active.step_order, stepMap as any));
       }
     } catch (e: any) {
       setError(e.message);
@@ -406,59 +424,57 @@ setNewRevId(getNextRevisionId(codes, "iterate"));
 
   // ─── Build payload ────────────────────────────────────────────────────────────
 
-  // ─── Build payload ────────────────────────────────────────────────────────────
-
   const handleBuildPayload = async () => {
     setError(null);
     const { data: { user } } = await supabase.auth.getUser();
     const userId  = user?.id ?? "unknown";
     const isFirst = !activeRev || baseSteps.length === 0;
-  
-    // ← newRevId is already just the code ("R0-1", "RA-1") — no selTest prefix
+
+    // newRevId is already just the bare code ("R0-1", "RA-1") — no selTest prefix
     const payload = isFirst
       ? buildFirstRevisionPayload(parseResult!.rows, newRevId, selTest, userId, revNotes)
       : buildDiffRevisionPayload(diffResult!, newRevId, selTest, userId, revNotes);
-  
+
     setRevPayload(payload);
     setStage("rev-confirm");
   };
+
   // ─── Submit revision to DB ────────────────────────────────────────────────────
-// ─── Submit revision to DB ────────────────────────────────────────────────────
 
-const handleRevisionSubmit = async () => {
-  if (!revPayload) return;
-  setStage("submitting");
-  setError(null);
+  const handleRevisionSubmit = async () => {
+    if (!revPayload) return;
+    setStage("submitting");
+    setError(null);
 
-  try {
-    // 1. Insert revision FIRST — if this is a retry, the unique constraint
-    //    on test_revisions.id fires here cleanly before we touch steps.
-    const { error: revErr } = await supabase.from("test_revisions").insert({
-      tests_serial_no: selTest,
-      revision:        newRevId,     
-      status:          "draft",
-      step_order:      JSON.stringify(revPayload.revision.step_order),
-      created_by:      revPayload.revision.created_by,
-      notes:           revPayload.revision.notes || null,
-      created_at:      new Date().toISOString(),
-    });
-    if (revErr) throw new Error(`test_revisions: ${revErr.message}`);
+    try {
+      // 1. Insert revision FIRST — if this is a retry, the unique constraint
+      //    on test_revisions.id fires here cleanly before we touch steps.
+      const { error: revErr } = await supabase.from("test_revisions").insert({
+        tests_serial_no: selTest,
+        revision:        revPayload.revision.id,
+        status:          "draft",
+        step_order:      revPayload.revision.step_order,
+        created_by:      revPayload.revision.created_by,
+        notes:           revPayload.revision.notes || null,
+        created_at:      new Date().toISOString(),
+      });
+      if (revErr) throw new Error(`test_revisions: ${revErr.message}`);
 
-    // 2. Upsert steps — ignoreDuplicates makes retries safe.
-    //    Steps are append-only/immutable so skipping an existing row is correct.
-    if (revPayload.newSteps.length > 0) {
-      const { error: stepsErr } = await supabase
-        .from("test_steps")
-        .upsert(revPayload.newSteps, { onConflict: "id", ignoreDuplicates: true });
-      if (stepsErr) throw new Error(`test_steps: ${stepsErr.message}`);
+      // 2. Upsert steps — ignoreDuplicates makes retries safe.
+      //    Steps are append-only/immutable so skipping an existing row is correct.
+      if (revPayload.newSteps.length > 0) {
+        const { error: stepsErr } = await supabase
+          .from("test_steps")
+          .upsert(revPayload.newSteps, { onConflict: "id", ignoreDuplicates: true });
+        if (stepsErr) throw new Error(`test_steps: ${stepsErr.message}`);
+      }
+
+      setStage("done");
+    } catch (e: any) {
+      setError(e.message);
+      setStage("rev-confirm");
     }
-
-    setStage("done");
-  } catch (e: any) {
-    setError(e.message);
-    setStage("rev-confirm");
-  }
-};
+  };
 
   // ─── Revision mode toggle ─────────────────────────────────────────────────────
 

@@ -1,5 +1,14 @@
 /**
  * queries.testexecution.ts
+ *
+ * Revision-aware update (2025):
+ *  - fetchTestExecution now resolves the active revision for every test in the
+ *    module and filters step_results to those that belong to the active revision.
+ *    Falls back to revision_id IS NULL rows for tests that have no active revision
+ *    yet (legacy / pre-revision data).
+ *  - Returns `active_revisions` (all active revisions in the module) and
+ *    `current_revision` (the active revision for the module_test_id being opened).
+ *  - `current_revision.is_visible === false` means the UI must render read-only.
  */
 import { supabase } from "../../supabase";
 
@@ -20,7 +29,7 @@ export interface RawStepResult {
     is_divider: boolean;
     action_image_urls: string[];
     expected_image_urls: string[];
-    tests_serial_no: string; // ← was tests_name
+    tests_serial_no: string;
   } | null;
 }
 
@@ -30,55 +39,163 @@ export interface RawModuleTestItem {
   test: { serial_no: string; name: string } | null;
 }
 
+/** One active revision entry returned alongside execution data. */
+export interface ActiveRevision {
+  /** test_revisions.id  e.g. "TS-001-R2" */
+  id: string;
+  /** Human-readable label e.g. "R2" */
+  revision: string;
+  /** false → UI renders read-only, no pass/fail/undo allowed */
+  is_visible: boolean;
+  /** FK → tests.serial_no */
+  tests_serial_no: string;
+}
+
+export interface TestExecutionData {
+  module_name: string;
+  step_results: RawStepResult[];
+  module_tests: RawModuleTestItem[];
+  /**
+   * Active revision for every test in the module.
+   * Keyed by tests_serial_no for O(1) lookup.
+   */
+  active_revisions: Record<string, ActiveRevision>;
+  /**
+   * Active revision for the module_test_id that was opened.
+   * null when no revision has been activated for this test yet.
+   */
+  current_revision: ActiveRevision | null;
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // fetchTestExecution
 // ─────────────────────────────────────────────────────────────────────────────
 
-export async function fetchTestExecution(module_test_id: string): Promise<{
-  step_results: RawStepResult[];
-  module_tests: RawModuleTestItem[];
-  module_name: string;
-}> {
+export async function fetchTestExecution(
+  module_test_id: string
+): Promise<TestExecutionData> {
+  // ── 1. Resolve module_name + current test serial_no ──────────────────────
   const { data: mtData, error: mtErr } = await supabase
     .from("module_tests")
-    .select("module_name")
+    .select(
+      "module_name, tests_name, test:tests!module_tests_tests_name_fkey(serial_no, name)"
+    )
     .eq("id", module_test_id)
     .single();
 
   if (mtErr) throw mtErr;
 
   const module_name = (mtData as any)?.module_name ?? "";
+  const currentSerialNo: string =
+    (mtData as any)?.test?.serial_no ?? "";
 
-  const [srRes, allMtRes] = await Promise.all([
-    supabase
-      .from("step_results")
-      .select(
-        `
-        id, status, remarks, display_name,
-        step:test_steps!step_results_test_steps_id_fkey(
-          id, serial_no, action, expected_result, is_divider,
-          action_image_urls, expected_image_urls, tests_serial_no
-        )
-      ` // ← tests_name → tests_serial_no
-      )
-      .eq("module_name", module_name)
-      .order("id"),
-    supabase
-      .from("module_tests")
-      .select(
-        "id, tests_name, test:tests!module_tests_tests_name_fkey(serial_no, name)"
-      )
-      .eq("module_name", module_name)
-      .order("tests_name"),
-  ]);
+  // ── 2. All module_tests in the module ────────────────────────────────────
+  const allMtRes = await supabase
+    .from("module_tests")
+    .select(
+      "id, tests_name, test:tests!module_tests_tests_name_fkey(serial_no, name)"
+    )
+    .eq("module_name", module_name)
+    .order("tests_name");
 
-  if (srRes.error) throw srRes.error;
   if (allMtRes.error) throw allMtRes.error;
+
+  const allMts = (allMtRes.data ?? []) as unknown as RawModuleTestItem[];
+
+  // Collect every tests_serial_no present in this module
+  const serialNos: string[] = allMts
+    .map((mt) => (mt as any).test?.serial_no as string | undefined)
+    .filter((s): s is string => !!s);
+
+  // ── 3. Active revisions for every test in the module ────────────────────
+  const activeRevisions: Record<string, ActiveRevision> = {};
+
+  if (serialNos.length > 0) {
+    const { data: revData, error: revErr } = await supabase
+      .from("test_revisions")
+      .select("id, revision, is_visible, tests_serial_no")
+      .eq("status", "active")
+      .in("tests_serial_no", serialNos);
+
+    if (revErr) throw revErr;
+
+    ((revData ?? []) as ActiveRevision[]).forEach((r) => {
+      activeRevisions[r.tests_serial_no] = r;
+    });
+  }
+
+  const current_revision = activeRevisions[currentSerialNo] ?? null;
+
+  // ── 4. Fetch step_results filtered to active revision(s) ─────────────────
+  //
+  // Strategy:
+  //  a) If active revision IDs exist → fetch step_results WHERE revision_id
+  //     IN (those IDs). This is the "post-revision" path.
+  //  b) Also fetch step_results WHERE revision_id IS NULL for any test that
+  //     has no active revision yet (legacy / pre-revision fallback).
+  //
+  // Both sets are merged; de-duplication is not needed because a step_result
+  // row can only match one branch.
+
+  const activeRevisionIds = Object.values(activeRevisions).map((r) => r.id);
+
+  // serial_nos that have NO active revision → need null fallback
+  const serialNosWithRevision = new Set(Object.keys(activeRevisions));
+  const serialNosWithoutRevision = serialNos.filter(
+    (s) => !serialNosWithRevision.has(s)
+  );
+
+  const srSelect = `
+    id, status, remarks, display_name,
+    step:test_steps!step_results_test_steps_id_fkey(
+      id, serial_no, action, expected_result, is_divider,
+      action_image_urls, expected_image_urls, tests_serial_no
+    )
+  `;
+
+  const srPromises: Promise<{ data: unknown[] | null; error: unknown }>[] = [];
+
+  // Branch A: rows belonging to an active revision
+  if (activeRevisionIds.length > 0) {
+    srPromises.push(
+      supabase
+        .from("step_results")
+        .select(srSelect)
+        .eq("module_name", module_name)
+        .in("revision_id", activeRevisionIds)
+        .order("id") as any
+    );
+  }
+
+  // Branch B: legacy rows (revision_id IS NULL) for tests without a revision
+  if (serialNosWithoutRevision.length > 0) {
+    srPromises.push(
+      supabase
+        .from("step_results")
+        .select(srSelect)
+        .eq("module_name", module_name)
+        .is("revision_id", null)
+        .order("id") as any
+    );
+  }
+
+  // If neither branch applies (no tests in module), return empty
+  const srResults = await Promise.all(srPromises);
+
+  for (const res of srResults) {
+    if ((res as any).error) throw (res as any).error;
+  }
+
+  const step_results: RawStepResult[] = srResults.flatMap(
+    (r) => ((r as any).data ?? []) as RawStepResult[]
+  );
 
   return {
     module_name,
-    step_results: (srRes.data ?? []) as unknown as RawStepResult[],
-    module_tests: (allMtRes.data ?? []) as unknown as RawModuleTestItem[],
+    step_results,
+    module_tests: allMts,
+    active_revisions: activeRevisions,
+    current_revision,
   };
 }
 
@@ -205,7 +322,7 @@ export async function upsertStepResult(payload: {
 
 /**
  * Resets all step results for a specific test within a module.
- * Resolves tests_name → serial_no since test_steps now uses tests_serial_no.
+ * Scoped to the active revision's step IDs when a revision exists.
  */
 export async function resetAllStepResults(
   module_name: string,
@@ -219,13 +336,31 @@ export async function resetAllStepResults(
     .single();
   if (tErr) throw tErr;
 
-  const { data: steps, error: stepsErr } = await supabase
-    .from("test_steps")
-    .select("id")
-    .eq("tests_serial_no", (t as any).serial_no); // ← was .eq("tests_name", tests_name)
-  if (stepsErr) throw stepsErr;
+  const serial_no = (t as any).serial_no as string;
 
-  const stepIds = (steps ?? []).map((s: any) => s.id);
+  // Try to scope the reset to the active revision's steps only
+  const { data: revData } = await supabase
+    .from("test_revisions")
+    .select("id, step_order")
+    .eq("tests_serial_no", serial_no)
+    .eq("status", "active")
+    .maybeSingle();
+
+  let stepIds: string[] = [];
+
+  if (revData && Array.isArray((revData as any).step_order)) {
+    // Use the ordered step IDs from the active revision
+    stepIds = (revData as any).step_order as string[];
+  } else {
+    // Fallback: all steps for the test
+    const { data: steps, error: stepsErr } = await supabase
+      .from("test_steps")
+      .select("id")
+      .eq("tests_serial_no", serial_no);
+    if (stepsErr) throw stepsErr;
+    stepIds = (steps ?? []).map((s: any) => s.id);
+  }
+
   if (!stepIds.length) return;
 
   const { error } = await supabase
