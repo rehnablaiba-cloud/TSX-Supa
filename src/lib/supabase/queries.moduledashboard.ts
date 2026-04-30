@@ -1,14 +1,3 @@
-/**
- * queries.moduledashboard.ts
- *
- * Revision-aware update (2025):
- *  - fetchModuleDashboard now fetches the active revision for every test in the
- *    module and exposes it via `revisions` (keyed by tests_serial_no).
- *  - step_results from the RPC are already scoped to module_name; an additional
- *    JS-side filter narrows them to rows whose revision_id matches the active
- *    revision for each test, with a null-fallback for legacy data.
- */
-
 import { supabase } from "../../supabase";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -119,7 +108,7 @@ export async function fetchModuleDashboard(
   if (serialNos.length > 0) {
     const { data: revData, error: revErr } = await supabase
       .from("test_revisions")
-      .select("id, revision, is_visible, tests_serial_no", "step_order")
+      .select("id, revision, is_visible, tests_serial_no")
       .eq("status", "active")
       .in("tests_serial_no", serialNos);
 
@@ -161,7 +150,21 @@ export async function fetchModuleDashboard(
 
   const inScopeStepIds = new Set<string>();
   const testsWithoutRevision = new Set<string>(serialNos);
-  
+
+  if (Object.keys(revisionsMap).length > 0) {
+    const revIds = Object.values(revisionsMap).map((r) => r.id);
+    const { data: revDetailData } = await supabase
+      .from("test_revisions")
+      .select("id, tests_serial_no, step_order")
+      .in("id", revIds);
+
+    ((revDetailData ?? []) as any[]).forEach((r) => {
+      const steps: string[] = Array.isArray(r.step_order) ? r.step_order : [];
+      steps.forEach((sid) => inScopeStepIds.add(sid));
+      testsWithoutRevision.delete(r.tests_serial_no);
+    });
+  }
+
   // Build set of serial_nos that have no active revision (for fallback)
   // Steps belonging to those tests remain unfiltered.
   const filteredSrs = rawSrs.filter((sr) => {
