@@ -116,7 +116,7 @@ function sleep(ms: number) {
   return new Promise<void>(r => setTimeout(r, ms));
 }
 
-// ─── Progress Popup ───────────────────────────────────────────────────────────
+// ─── Inline Progress Bar ──────────────────────────────────────────────────────
 
 interface ProgressState {
   show: boolean;
@@ -124,23 +124,19 @@ interface ProgressState {
   message: string;
 }
 
-const ProgressPopup: React.FC<ProgressState> = ({ show, percent, message }) => {
+const InlineProgress: React.FC<ProgressState> = ({ show, percent, message }) => {
   if (!show) return null;
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 backdrop-blur-sm">
-      <div className="w-80 rounded-2xl border border-(--border-color) bg-bg-card p-6 shadow-2xl flex flex-col items-center gap-4">
-        <div className="w-full">
-          <div className="flex justify-between text-xs font-medium text-t-muted mb-2">
-            <span>{message}</span>
-            <span className="text-c-brand font-bold">{Math.round(percent)}%</span>
-          </div>
-          <div className="h-2.5 w-full rounded-full bg-bg-base overflow-hidden border border-(--border-color)">
-            <div
-              className="h-full rounded-full bg-c-brand transition-[width] duration-200 ease-out"
-              style={{ width: `${Math.min(percent, 100)}%` }}
-            />
-          </div>
-        </div>
+    <div className="w-full rounded-lg border border-(--border-color) bg-bg-card p-3 flex flex-col gap-2">
+      <div className="flex justify-between text-[11px] font-medium text-t-muted">
+        <span>{message}</span>
+        <span className="text-c-brand font-bold">{Math.round(percent)}%</span>
+      </div>
+      <div className="h-2 w-full rounded-full bg-bg-base overflow-hidden border border-(--border-color)">
+        <div
+          className="h-full rounded-full bg-c-brand transition-[width] duration-200 ease-out"
+          style={{ width: `${Math.min(percent, 100)}%` }}
+        />
       </div>
     </div>
   );
@@ -850,589 +846,587 @@ const ImportStepsModal: React.FC<Props> = ({ onClose, onBack }) => {
   // ─────────────────────────────────────────────────────────────────────────────
 
   return (
-    <>
-      <ModalShell
-        title="Steps"
-        icon={<Hash size={16} />}
-        subtitle={subtitle[stage]}
-        onClose={onClose}
-      >
-        {/* Back */}
-        {stage !== "submitting" && stage !== "done" && (
+    <ModalShell
+      title="Steps"
+      icon={<Hash size={16} />}
+      subtitle={subtitle[stage]}
+      onClose={onClose}
+    >
+      {/* Back */}
+      {stage !== "submitting" && stage !== "done" && (
+        <button
+          onClick={handleBack}
+          className="-mt-2 self-start flex items-center gap-1 text-xs text-t-muted
+            hover:text-t-primary transition-colors"
+        >
+          <ArrowLeft size={13} /> Back
+        </button>
+      )}
+
+      {/* Inline progress bar */}
+      <InlineProgress {...progress} />
+
+      {/* ══════════════════════════════════
+          selectaction
+      ══════════════════════════════════ */}
+      {stage === "selectaction" && (
+        <div className="flex flex-col gap-3">
           <button
-            onClick={handleBack}
-            className="-mt-2 self-start flex items-center gap-1 text-xs text-t-muted
-              hover:text-t-primary transition-colors"
+            onClick={() => setStage("revctrl-test")}
+            className="flex items-center gap-3 px-4 py-3 rounded-xl border
+              border-(--border-color) bg-bg-card hover:bg-bg-base text-left transition-all"
           >
-            <ArrowLeft size={13} /> Back
+            <span className="text-c-brand shrink-0"><GitBranch size={20} /></span>
+            <div className="min-w-0">
+              <p className="text-sm font-semibold text-t-primary">Revision Control</p>
+              <p className="text-[11px] text-t-muted mt-0.5 leading-snug">
+                Create, activate and manage revisions ·{" "}
+                <span className="font-mono">test_revisions</span>
+              </p>
+            </div>
+            <ChevronRight size={14} className="text-t-muted shrink-0 ml-auto" />
           </button>
-        )}
 
-        {/* ══════════════════════════════════
-            selectaction
-        ══════════════════════════════════ */}
-        {stage === "selectaction" && (
-          <div className="flex flex-col gap-3">
+          <button
+            onClick={handleVisibilityClick}
+            className="flex items-center gap-3 px-4 py-3 rounded-xl border
+              border-(--border-color) bg-bg-card hover:bg-bg-base text-left transition-all"
+          >
+            <span className="text-sky-400 shrink-0"><Eye size={20} /></span>
+            <div className="min-w-0">
+              <p className="text-sm font-semibold text-t-primary">Visibility</p>
+              <p className="text-[11px] text-t-muted mt-0.5 leading-snug">
+                Toggle execute / view-only per test in a module ·{" "}
+                <span className="font-mono">module_tests.is_visible</span>
+              </p>
+            </div>
+            <ChevronRight size={14} className="text-t-muted shrink-0 ml-auto" />
+          </button>
+        </div>
+      )}
+
+      {/* ══════════════════════════════════
+          revctrl-test
+      ══════════════════════════════════ */}
+      {stage === "revctrl-test" && (
+        <div className="flex flex-col gap-1.5 max-h-60 overflow-y-auto">
+          {tests.length === 0 && (
+            <p className="text-sm text-t-muted text-center py-4">No tests found.</p>
+          )}
+          {tests.map(t => (
             <button
-              onClick={() => setStage("revctrl-test")}
-              className="flex items-center gap-3 px-4 py-3 rounded-xl border
-                border-(--border-color) bg-bg-card hover:bg-bg-base text-left transition-all"
+              key={t.serial_no}
+              onClick={() => handleRevTestSelect(t.serial_no)}
+              className="text-left px-3 py-2 rounded-xl border border-(--border-color)
+                bg-bg-card hover:bg-bg-base text-sm text-t-primary transition-colors"
             >
-              <span className="text-c-brand shrink-0"><GitBranch size={20} /></span>
-              <div className="min-w-0">
-                <p className="text-sm font-semibold text-t-primary">Revision Control</p>
-                <p className="text-[11px] text-t-muted mt-0.5 leading-snug">
-                  Create, activate and manage revisions ·{" "}
-                  <span className="font-mono">test_revisions</span>
-                </p>
-              </div>
-              <ChevronRight size={14} className="text-t-muted shrink-0 ml-auto" />
+              <span className="font-mono text-t-muted text-xs mr-2">{t.serial_no}</span>
+              {t.name}
             </button>
+          ))}
+        </div>
+      )}
 
-            <button
-              onClick={handleVisibilityClick}
-              className="flex items-center gap-3 px-4 py-3 rounded-xl border
-                border-(--border-color) bg-bg-card hover:bg-bg-base text-left transition-all"
-            >
-              <span className="text-sky-400 shrink-0"><Eye size={20} /></span>
-              <div className="min-w-0">
-                <p className="text-sm font-semibold text-t-primary">Visibility</p>
-                <p className="text-[11px] text-t-muted mt-0.5 leading-snug">
-                  Toggle execute / view-only per test in a module ·{" "}
-                  <span className="font-mono">module_tests.is_visible</span>
+      {/* ══════════════════════════════════
+          rev-control
+      ══════════════════════════════════ */}
+      {stage === "rev-control" && (
+        <div className="flex flex-col gap-3">
+          {revLoading ? (
+            <div className="flex items-center justify-center py-8">
+              <div className="w-6 h-6 border-2 border-c-brand border-t-transparent rounded-full animate-spin" />
+            </div>
+          ) : (
+            <>
+              <div className="rounded-xl border border-(--border-color) bg-bg-card p-3">
+                <p className="text-[10px] font-bold uppercase tracking-wider text-t-muted mb-2">
+                  Currently Active
                 </p>
-              </div>
-              <ChevronRight size={14} className="text-t-muted shrink-0 ml-auto" />
-            </button>
-          </div>
-        )}
-
-        {/* ══════════════════════════════════
-            revctrl-test
-        ══════════════════════════════════ */}
-        {stage === "revctrl-test" && (
-          <div className="flex flex-col gap-1.5 max-h-60 overflow-y-auto">
-            {tests.length === 0 && (
-              <p className="text-sm text-t-muted text-center py-4">No tests found.</p>
-            )}
-            {tests.map(t => (
-              <button
-                key={t.serial_no}
-                onClick={() => handleRevTestSelect(t.serial_no)}
-                className="text-left px-3 py-2 rounded-xl border border-(--border-color)
-                  bg-bg-card hover:bg-bg-base text-sm text-t-primary transition-colors"
-              >
-                <span className="font-mono text-t-muted text-xs mr-2">{t.serial_no}</span>
-                {t.name}
-              </button>
-            ))}
-          </div>
-        )}
-
-        {/* ══════════════════════════════════
-            rev-control
-        ══════════════════════════════════ */}
-        {stage === "rev-control" && (
-          <div className="flex flex-col gap-3">
-            {revLoading ? (
-              <div className="flex items-center justify-center py-8">
-                <div className="w-6 h-6 border-2 border-c-brand border-t-transparent rounded-full animate-spin" />
-              </div>
-            ) : (
-              <>
-                <div className="rounded-xl border border-(--border-color) bg-bg-card p-3">
-                  <p className="text-[10px] font-bold uppercase tracking-wider text-t-muted mb-2">
-                    Currently Active
-                  </p>
-                  {activeRev ? (
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <span className="text-xs font-bold font-mono
-                          bg-green-500/15 text-green-400 border border-green-500/20
-                          px-2 py-0.5 rounded-full">
-                          {activeRev.id}
-                        </span>
-                        <span className="text-xs text-t-muted">{activeRev.step_order.length} steps</span>
-                      </div>
-                      <span className="text-[11px] text-t-muted">{formatDate(activeRev.created_at)}</span>
+                {activeRev ? (
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-bold font-mono
+                        bg-green-500/15 text-green-400 border border-green-500/20
+                        px-2 py-0.5 rounded-full">
+                        {activeRev.id}
+                      </span>
+                      <span className="text-xs text-t-muted">{activeRev.step_order.length} steps</span>
                     </div>
-                  ) : (
-                    <div className="flex items-center gap-2 text-xs text-amber-400">
-                      <Info size={13} />
-                      <span>No active revision for this test.</span>
-                    </div>
-                  )}
-                </div>
-
-                <button
-                  onClick={handleStartNewRevision}
-                  className="flex items-center gap-3 px-4 py-3 rounded-xl border border-(--border-color)
-                    bg-bg-card hover:bg-bg-base text-left transition-all"
-                >
-                  <span className="text-c-brand"><GitBranch size={20} /></span>
-                  <div className="min-w-0">
-                    <p className="text-sm font-semibold text-t-primary">Create New Revision</p>
-                    <p className="text-[11px] text-t-muted mt-0.5 leading-snug">
-                      Import CSV → create new immutable revision
-                    </p>
+                    <span className="text-[11px] text-t-muted">{formatDate(activeRev.created_at)}</span>
                   </div>
-                </button>
-
-                {allRevisions.length > 0 && (
-                  <div className="flex flex-col gap-1.5">
-                    <p className="text-[10px] font-bold uppercase tracking-wider text-t-muted">
-                      All Revisions
-                    </p>
-                    <div className="rounded-xl border border-(--border-color) overflow-hidden">
-                      <div className="max-h-64 overflow-y-auto">
-                        <table className="w-full text-left border-collapse">
-                          <thead className="sticky top-0 z-10 bg-bg-card">
-                            <tr className="border-b border-(--border-color)">
-                              <th className="px-3 py-2 text-[10px] font-bold uppercase tracking-wider text-t-muted">Revision</th>
-                              <th className="px-3 py-2 text-[10px] font-bold uppercase tracking-wider text-t-muted w-16 text-right">Steps</th>
-                              <th className="px-3 py-2 text-[10px] font-bold uppercase tracking-wider text-t-muted">Date</th>
-                              <th className="px-3 py-2 text-[10px] font-bold uppercase tracking-wider text-t-muted w-20 text-center">Status</th>
-                              <th className="w-20" />
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {allRevisions.map(rev => {
-                              const isActive = rev.status === "active";
-                              return (
-                                <tr
-                                  key={rev.id}
-                                  className={`border-b border-(--border-color) transition-colors ${
-                                    isActive ? "bg-green-500/5" : "hover:bg-bg-base/50"
-                                  }`}
-                                >
-                                  <td className="px-3 py-2.5">
-                                    <span className={`text-xs font-bold font-mono px-2 py-0.5 rounded-full ${
-                                      isActive
-                                        ? "bg-green-500/15 text-green-400 border border-green-500/20"
-                                        : "bg-bg-base text-t-muted border border-(--border-color)"
-                                    }`}>
-                                      {rev.id}
-                                    </span>
-                                  </td>
-                                  <td className="px-3 py-2.5 text-[11px] text-t-muted text-right">{rev.step_count}</td>
-                                  <td className="px-3 py-2.5 text-[11px] text-t-muted">{formatDate(rev.created_at)}</td>
-                                  <td className="px-3 py-2.5 text-center">
-                                    {isActive && (
-                                      <span className="text-[11px] font-medium text-green-400">Active</span>
-                                    )}
-                                    {rev.status === "draft" && (
-                                      <span className="text-[11px] font-medium text-amber-400">Draft</span>
-                                    )}
-                                    {rev.status === "archived" && (
-                                      <span className="text-[11px] font-medium text-t-muted">Archived</span>
-                                    )}
-                                  </td>
-                                  <td className="px-3 py-2.5 text-right">
-                                    {!isActive && (
-                                      <button
-                                        onClick={() => handleActivateRevision(rev.id)}
-                                        disabled={revLoading}
-                                        className="flex items-center gap-1 text-[11px] font-medium
-                                          text-c-brand hover:text-c-brand/80 transition-colors disabled:opacity-50 ml-auto"
-                                      >
-                                        <Play size={11} /> Activate
-                                      </button>
-                                    )}
-                                  </td>
-                                </tr>
-                              );
-                            })}
-                          </tbody>
-                        </table>
-                      </div>
-                    </div>
+                ) : (
+                  <div className="flex items-center gap-2 text-xs text-amber-400">
+                    <Info size={13} />
+                    <span>No active revision for this test.</span>
                   </div>
                 )}
+              </div>
 
-                {error && <p className="text-xs text-red-400">{error}</p>}
-              </>
-            )}
-          </div>
-        )}
-
-        {/* ══════════════════════════════════
-            rev-info
-        ══════════════════════════════════ */}
-        {stage === "rev-info" && (
-          <div className="flex flex-col gap-3">
-            <div className="rounded-xl border border-(--border-color) bg-bg-card p-3">
-              <p className="text-[10px] font-bold uppercase tracking-wider text-t-muted mb-2">
-                Current Active Revision
-              </p>
-              {activeRev ? (
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs font-bold font-mono bg-green-500/15 text-green-400
-                      border border-green-500/20 px-2 py-0.5 rounded-full">
-                      {activeRev.id}
-                    </span>
-                    <span className="text-xs text-t-muted">{baseSteps.length} steps</span>
-                  </div>
-                  <span className="text-[11px] text-t-muted">{formatDate(activeRev.created_at)}</span>
-                </div>
-              ) : (
-                <div className="flex items-center gap-2 text-xs text-amber-400">
-                  <Info size={13} />
-                  <span>No active revision — this CSV will create the first draft.</span>
-                </div>
-              )}
-            </div>
-
-            <div className="rounded-xl border border-(--border-color) bg-bg-card p-3 flex flex-col gap-2.5">
-              <p className="text-[10px] font-bold uppercase tracking-wider text-t-muted">New Revision</p>
-              {activeRev && (
-                <div className="flex gap-1.5">
-                  {(["iterate", "branch"] as const).map(m => (
-                    <button
-                      key={m}
-                      onClick={() => handleRevModeChange(m)}
-                      className={`flex-1 text-xs py-1.5 rounded-lg border transition-colors font-medium ${
-                        revMode === m
-                          ? "bg-c-brand/15 border-c-brand/40 text-c-brand"
-                          : "border-(--border-color) text-t-muted hover:text-t-primary"
-                      }`}
-                    >
-                      {m === "iterate" ? "Iterate" : "Branch"}
-                    </button>
-                  ))}
-                </div>
-              )}
-              <div>
-                <label className="block text-[10px] text-t-muted mb-1">
-                  Revision code (e.g. R0, RA-1, RB-2)
-                </label>
-                <input
-                  value={newRevId}
-                  onChange={e => setNewRevId(e.target.value.toUpperCase())}
-                  className="input text-sm font-mono"
-                  placeholder="e.g. RA-2"
-                />
-                {existingRevIds.length > 0 && (
-                  <p className="text-[10px] text-t-muted mt-1.5">
-                    Existing: {existingRevIds.join(" · ")}
+              <button
+                onClick={handleStartNewRevision}
+                className="flex items-center gap-3 px-4 py-3 rounded-xl border border-(--border-color)
+                  bg-bg-card hover:bg-bg-base text-left transition-all"
+              >
+                <span className="text-c-brand"><GitBranch size={20} /></span>
+                <div className="min-w-0">
+                  <p className="text-sm font-semibold text-t-primary">Create New Revision</p>
+                  <p className="text-[11px] text-t-muted mt-0.5 leading-snug">
+                    Import CSV → create new immutable revision
                   </p>
-                )}
-              </div>
-            </div>
-
-            <div className="rounded-xl border border-(--border-color) bg-bg-card p-3 flex flex-col gap-2">
-              <p className="text-[10px] font-bold uppercase tracking-wider text-t-muted">CSV Input</p>
-              <input
-                ref={fileRef}
-                type="file"
-                accept=".csv,text/csv"
-                className="hidden"
-                onChange={handleCsvFile}
-              />
-              <button
-                onClick={() => fileRef.current?.click()}
-                className="flex items-center justify-center gap-2 w-full py-2.5
-                  rounded-lg border border-dashed border-(--border-color)
-                  text-xs text-t-muted hover:text-t-primary hover:border-c-brand/40 transition-colors"
-              >
-                <Upload size={14} /> Select CSV file
-              </button>
-              <div className="flex items-center gap-2 text-[10px] text-t-muted">
-                <div className="flex-1 border-t border-(--border-color)" />
-                or paste
-                <div className="flex-1 border-t border-(--border-color)" />
-              </div>
-              <textarea
-                value={csvText}
-                onChange={e => setCsvText(e.target.value)}
-                className="input text-xs font-mono resize-none"
-                style={{ minHeight: "8rem" }}
-                spellCheck={false}
-                placeholder={"action,expected_result,is_divider\nClick login,Page loads,false"}
-              />
-              <p className="text-[10px] text-t-muted">
-                3-col (action, expected, divider) or 4-col (serial_no, action, expected, divider). Header optional.
-              </p>
-            </div>
-
-            {parseResult && parseResult.errors.length > 0 && (
-              <div className="flex flex-col gap-1">
-                {parseResult.errors.map((e, i) => (
-                  <div key={i} className="flex items-start gap-2 text-xs text-red-400
-                    bg-red-500/8 border border-red-500/20 rounded-lg px-3 py-2">
-                    <AlertCircle size={12} className="mt-0.5 shrink-0" />
-                    {e}
-                  </div>
-                ))}
-              </div>
-            )}
-
-            {error && <p className="text-xs text-red-400">{error}</p>}
-
-            <button
-              onClick={handleGenerateDiff}
-              disabled={!csvText.trim() || !newRevId.trim() || progress.show}
-              className="btn-primary text-sm disabled:opacity-50"
-            >
-              Generate Diff →
-            </button>
-          </div>
-        )}
-
-        {/* ══════════════════════════════════
-            rev-diff  — proper table
-        ══════════════════════════════════ */}
-        {stage === "rev-diff" && parseResult && (
-          <div className="flex flex-col gap-3">
-            {isFirst ? (
-              <div className="text-xs font-semibold text-green-400
-                bg-green-500/8 border border-green-500/20 rounded-lg px-3 py-2.5">
-                ✦ First import — {parseResult.rows.length} steps →&nbsp;
-                <span className="font-mono">{newRevId}</span>. All rows become new step records.
-              </div>
-            ) : diffResult ? (
-              <>
-                <div className="text-xs font-semibold text-c-brand
-                  bg-c-brand/8 border border-c-brand/20 rounded-lg px-3 py-2.5">
-                  ⇄ Diff: <span className="font-mono">{activeRev?.id}</span>
-                  &nbsp;→&nbsp;<span className="font-mono">{revSelTest}-{newRevId}</span>
-                  &nbsp;·&nbsp;{diffResult.summary.total} items
                 </div>
-                <DiffStats summary={diffResult.summary} />
-              </>
-            ) : null}
+              </button>
 
-            {/* ── TABLE VIEW ── */}
-            {isFirst
-              ? <FirstImportTable rows={parseResult.rows} />
-              : diffResult
-                ? <DiffTable items={diffResult.items} />
-                : null
-            }
-
-            {parseResult.warnings.length > 0 && (
-              <div className="flex flex-col gap-1">
-                {parseResult.warnings.map((w, i) => (
-                  <div key={i} className="text-[11px] text-amber-400
-                    bg-amber-500/8 border border-amber-500/20 rounded-lg px-3 py-1.5">
-                    ⚠ {w}
+              {allRevisions.length > 0 && (
+                <div className="flex flex-col gap-1.5">
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-t-muted">
+                    All Revisions
+                  </p>
+                  <div className="rounded-xl border border-(--border-color) overflow-hidden">
+                    <div className="max-h-64 overflow-y-auto">
+                      <table className="w-full text-left border-collapse">
+                        <thead className="sticky top-0 z-10 bg-bg-card">
+                          <tr className="border-b border-(--border-color)">
+                            <th className="px-3 py-2 text-[10px] font-bold uppercase tracking-wider text-t-muted">Revision</th>
+                            <th className="px-3 py-2 text-[10px] font-bold uppercase tracking-wider text-t-muted w-16 text-right">Steps</th>
+                            <th className="px-3 py-2 text-[10px] font-bold uppercase tracking-wider text-t-muted">Date</th>
+                            <th className="px-3 py-2 text-[10px] font-bold uppercase tracking-wider text-t-muted w-20 text-center">Status</th>
+                            <th className="w-20" />
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {allRevisions.map(rev => {
+                            const isActive = rev.status === "active";
+                            return (
+                              <tr
+                                key={rev.id}
+                                className={`border-b border-(--border-color) transition-colors ${
+                                  isActive ? "bg-green-500/5" : "hover:bg-bg-base/50"
+                                }`}
+                              >
+                                <td className="px-3 py-2.5">
+                                  <span className={`text-xs font-bold font-mono px-2 py-0.5 rounded-full ${
+                                    isActive
+                                      ? "bg-green-500/15 text-green-400 border border-green-500/20"
+                                      : "bg-bg-base text-t-muted border border-(--border-color)"
+                                  }`}>
+                                    {rev.id}
+                                  </span>
+                                </td>
+                                <td className="px-3 py-2.5 text-[11px] text-t-muted text-right">{rev.step_count}</td>
+                                <td className="px-3 py-2.5 text-[11px] text-t-muted">{formatDate(rev.created_at)}</td>
+                                <td className="px-3 py-2.5 text-center">
+                                  {isActive && (
+                                    <span className="text-[11px] font-medium text-green-400">Active</span>
+                                  )}
+                                  {rev.status === "draft" && (
+                                    <span className="text-[11px] font-medium text-amber-400">Draft</span>
+                                  )}
+                                  {rev.status === "archived" && (
+                                    <span className="text-[11px] font-medium text-t-muted">Archived</span>
+                                  )}
+                                </td>
+                                <td className="px-3 py-2.5 text-right">
+                                  {!isActive && (
+                                    <button
+                                      onClick={() => handleActivateRevision(rev.id)}
+                                      disabled={revLoading}
+                                      className="flex items-center gap-1 text-[11px] font-medium
+                                        text-c-brand hover:text-c-brand/80 transition-colors disabled:opacity-50 ml-auto"
+                                    >
+                                      <Play size={11} /> Activate
+                                    </button>
+                                  )}
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
                   </div>
-                ))}
+                </div>
+              )}
+
+              {error && <p className="text-xs text-red-400">{error}</p>}
+            </>
+          )}
+        </div>
+      )}
+
+      {/* ══════════════════════════════════
+          rev-info
+      ══════════════════════════════════ */}
+      {stage === "rev-info" && (
+        <div className="flex flex-col gap-3">
+          <div className="rounded-xl border border-(--border-color) bg-bg-card p-3">
+            <p className="text-[10px] font-bold uppercase tracking-wider text-t-muted mb-2">
+              Current Active Revision
+            </p>
+            {activeRev ? (
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-bold font-mono bg-green-500/15 text-green-400
+                    border border-green-500/20 px-2 py-0.5 rounded-full">
+                    {activeRev.id}
+                  </span>
+                  <span className="text-xs text-t-muted">{baseSteps.length} steps</span>
+                </div>
+                <span className="text-[11px] text-t-muted">{formatDate(activeRev.created_at)}</span>
+              </div>
+            ) : (
+              <div className="flex items-center gap-2 text-xs text-amber-400">
+                <Info size={13} />
+                <span>No active revision — this CSV will create the first draft.</span>
               </div>
             )}
-
-            <button
-              onClick={handleBuildPayload}
-              disabled={progress.show}
-              className="btn-primary text-sm disabled:opacity-50"
-            >
-              Continue →
-            </button>
           </div>
-        )}
 
-        {/* ══════════════════════════════════
-            rev-confirm  — proper step order table
-        ══════════════════════════════════ */}
-        {stage === "rev-confirm" && revPayload && (
-          <div className="flex flex-col gap-3">
-            {/* Summary card */}
-            <div className="rounded-xl border border-(--border-color) bg-bg-card p-3
-              flex flex-col gap-1.5 text-xs">
-              <Row label="Revision ID"    value={`${revSelTest}-${newRevId}`} brand />
-              <Row label="Test serial"    value={revSelTest} mono />
-              <Row label="Status"         value="draft" />
-              <Row label="Steps in order" value={String(revPayload.revision.step_order.length)} mono />
-              <Row label="New step rows"  value={String(revPayload.newSteps.length)} mono />
-              {!isFirst && diffResult && (
-                <>
-                  <Row label="Unchanged (reused)"  value={String(diffResult.summary.unchanged)} mono />
-                  <Row label="Edited (new rows)"   value={String(diffResult.summary.edited)}    mono />
-                  <Row label="Inserted (new rows)" value={String(diffResult.summary.inserted)}  mono />
-                  <Row label="Deleted from order"  value={String(diffResult.summary.deleted)}   mono />
-                </>
-              )}
-            </div>
-
-            {/* Step order — proper table with show-more */}
-            <div>
-              <p className="text-[10px] font-bold uppercase tracking-wider text-t-muted mb-2">
-                Step Order · {revPayload.revision.step_order.length} steps
-              </p>
-              <StepOrderTable
-                stepOrder={revPayload.revision.step_order}
-                newStepIds={newStepIdSet}
-              />
-            </div>
-
-            {/* Notes */}
-            <div>
-              <label className="block text-xs text-t-muted mb-1">Notes (optional)</label>
-              <textarea
-                value={revNotes}
-                onChange={e => setRevNotes(e.target.value)}
-                className="input text-sm resize-none"
-                rows={2}
-                placeholder="e.g. Updated 3DS flow, removed step 12"
-              />
-            </div>
-
-            {error && <p className="text-xs text-red-400">{error}</p>}
-
-            <div className="flex gap-2">
-              <button onClick={handleBack} className="flex-1 btn-ghost text-sm">Back</button>
-              <button
-                onClick={handleRevisionSubmit}
-                disabled={progress.show}
-                className="flex-1 btn-primary text-sm disabled:opacity-50"
-              >
-                Create Draft Revision
-              </button>
-            </div>
-          </div>
-        )}
-
-        {/* ══════════════════════════════════
-            submitting
-        ══════════════════════════════════ */}
-        {stage === "submitting" && (
-          <div className="flex items-center justify-center py-8">
-            <div className="w-8 h-8 border-4 border-c-brand border-t-transparent rounded-full animate-spin" />
-          </div>
-        )}
-
-        {/* ══════════════════════════════════
-            done
-        ══════════════════════════════════ */}
-        {stage === "done" && (
-          <div className="flex flex-col items-center gap-3 py-6">
-            <CheckCircle size={32} className="text-green-400" />
-            <p className="text-sm font-semibold text-t-primary">
-              {`Revision ${revSelTest}-${newRevId} created as draft`}
-            </p>
-            <p className="text-xs text-t-muted text-center max-w-48">
-              Activate it from Revision Control when you're ready to use it.
-            </p>
-            <button onClick={onClose} className="btn-primary text-sm px-6">Close</button>
-          </div>
-        )}
-
-        {/* ══════════════════════════════════
-            vis-module
-        ══════════════════════════════════ */}
-        {stage === "vis-module" && (
-          <div className="flex flex-col gap-2">
-            {visLoading ? (
-              <div className="flex items-center justify-center py-8">
-                <div className="w-6 h-6 border-2 border-c-brand border-t-transparent rounded-full animate-spin" />
-              </div>
-            ) : visModules.length === 0 ? (
-              <p className="text-sm text-t-muted text-center py-4">No modules found.</p>
-            ) : (
-              <div className="flex flex-col gap-1.5 max-h-60 overflow-y-auto">
-                {visModules.map(m => (
+          <div className="rounded-xl border border-(--border-color) bg-bg-card p-3 flex flex-col gap-2.5">
+            <p className="text-[10px] font-bold uppercase tracking-wider text-t-muted">New Revision</p>
+            {activeRev && (
+              <div className="flex gap-1.5">
+                {(["iterate", "branch"] as const).map(m => (
                   <button
-                    key={m.name}
-                    onClick={() => handleModuleSelect(m.name)}
-                    className="text-left px-3 py-2.5 rounded-xl border border-(--border-color)
-                      bg-bg-card hover:bg-bg-base text-sm text-t-primary transition-colors"
+                    key={m}
+                    onClick={() => handleRevModeChange(m)}
+                    className={`flex-1 text-xs py-1.5 rounded-lg border transition-colors font-medium ${
+                      revMode === m
+                        ? "bg-c-brand/15 border-c-brand/40 text-c-brand"
+                        : "border-(--border-color) text-t-muted hover:text-t-primary"
+                    }`}
                   >
-                    {m.name}
+                    {m === "iterate" ? "Iterate" : "Branch"}
                   </button>
                 ))}
               </div>
             )}
-            {error && <p className="text-xs text-red-400">{error}</p>}
+            <div>
+              <label className="block text-[10px] text-t-muted mb-1">
+                Revision code (e.g. R0, RA-1, RB-2)
+              </label>
+              <input
+                value={newRevId}
+                onChange={e => setNewRevId(e.target.value.toUpperCase())}
+                className="input text-sm font-mono"
+                placeholder="e.g. RA-2"
+              />
+              {existingRevIds.length > 0 && (
+                <p className="text-[10px] text-t-muted mt-1.5">
+                  Existing: {existingRevIds.join(" · ")}
+                </p>
+              )}
+            </div>
           </div>
-        )}
 
-        {/* ══════════════════════════════════
-            vis-list  — table layout
-        ══════════════════════════════════ */}
-        {stage === "vis-list" && (
-          <div className="flex flex-col gap-3">
-            {visLoading ? (
-              <div className="flex items-center justify-center py-8">
-                <div className="w-6 h-6 border-2 border-c-brand border-t-transparent rounded-full animate-spin" />
+          <div className="rounded-xl border border-(--border-color) bg-bg-card p-3 flex flex-col gap-2">
+            <p className="text-[10px] font-bold uppercase tracking-wider text-t-muted">CSV Input</p>
+            <input
+              ref={fileRef}
+              type="file"
+              accept=".csv,text/csv"
+              className="hidden"
+              onChange={handleCsvFile}
+            />
+            <button
+              onClick={() => fileRef.current?.click()}
+              className="flex items-center justify-center gap-2 w-full py-2.5
+                rounded-lg border border-dashed border-(--border-color)
+                text-xs text-t-muted hover:text-t-primary hover:border-c-brand/40 transition-colors"
+            >
+              <Upload size={14} /> Select CSV file
+            </button>
+            <div className="flex items-center gap-2 text-[10px] text-t-muted">
+              <div className="flex-1 border-t border-(--border-color)" />
+              or paste
+              <div className="flex-1 border-t border-(--border-color)" />
+            </div>
+            <textarea
+              value={csvText}
+              onChange={e => setCsvText(e.target.value)}
+              className="input text-xs font-mono resize-none"
+              style={{ minHeight: "8rem" }}
+              spellCheck={false}
+              placeholder={"action,expected_result,is_divider\nClick login,Page loads,false"}
+            />
+            <p className="text-[10px] text-t-muted">
+              3-col (action, expected, divider) or 4-col (serial_no, action, expected, divider). Header optional.
+            </p>
+          </div>
+
+          {parseResult && parseResult.errors.length > 0 && (
+            <div className="flex flex-col gap-1">
+              {parseResult.errors.map((e, i) => (
+                <div key={i} className="flex items-start gap-2 text-xs text-red-400
+                  bg-red-500/8 border border-red-500/20 rounded-lg px-3 py-2">
+                  <AlertCircle size={12} className="mt-0.5 shrink-0" />
+                  {e}
+                </div>
+              ))}
+            </div>
+          )}
+
+          {error && <p className="text-xs text-red-400">{error}</p>}
+
+          <button
+            onClick={handleGenerateDiff}
+            disabled={!csvText.trim() || !newRevId.trim() || progress.show}
+            className="btn-primary text-sm disabled:opacity-50"
+          >
+            Generate Diff →
+          </button>
+        </div>
+      )}
+
+      {/* ══════════════════════════════════
+          rev-diff  — proper table
+      ══════════════════════════════════ */}
+      {stage === "rev-diff" && parseResult && (
+        <div className="flex flex-col gap-3">
+          {isFirst ? (
+            <div className="text-xs font-semibold text-green-400
+              bg-green-500/8 border border-green-500/20 rounded-lg px-3 py-2.5">
+              ✦ First import — {parseResult.rows.length} steps →&nbsp;
+              <span className="font-mono">{newRevId}</span>. All rows become new step records.
+            </div>
+          ) : diffResult ? (
+            <>
+              <div className="text-xs font-semibold text-c-brand
+                bg-c-brand/8 border border-c-brand/20 rounded-lg px-3 py-2.5">
+                ⇄ Diff: <span className="font-mono">{activeRev?.id}</span>
+                &nbsp;→&nbsp;<span className="font-mono">{revSelTest}-{newRevId}</span>
+                &nbsp;·&nbsp;{diffResult.summary.total} items
               </div>
-            ) : visRows.length === 0 ? (
-              <p className="text-sm text-t-muted text-center py-8">
-                No tests found in this module.
-              </p>
-            ) : (
-              <>
-                <div className="rounded-xl border border-(--border-color) bg-bg-card px-3 py-2">
-                  <p className="text-[10px] font-bold uppercase tracking-wider text-t-muted mb-0.5">Module</p>
-                  <p className="text-sm font-semibold text-t-primary">{visSelModule}</p>
-                </div>
+              <DiffStats summary={diffResult.summary} />
+            </>
+          ) : null}
 
-                <div className="rounded-xl border border-(--border-color) overflow-hidden">
-                  <div className="overflow-y-auto" style={{ maxHeight: "420px" }}>
-                    <table className="w-full text-left border-collapse">
-                      <thead className="sticky top-0 z-10 bg-bg-card">
-                        <tr className="border-b border-(--border-color)">
-                          <th className="px-3 py-2 text-[10px] font-bold uppercase tracking-wider text-t-muted">Test</th>
-                          <th className="px-3 py-2 text-[10px] font-bold uppercase tracking-wider text-t-muted w-28 text-center">Visibility</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {visRows.map(row => (
-                          <tr key={row.id} className="border-b border-(--border-color) hover:bg-bg-base/50 transition-colors">
-                            <td className="px-3 py-2.5 text-sm text-t-primary font-medium">
-                              {row.tests_name}
-                            </td>
-                            <td className="px-3 py-2.5 w-28 text-center">
-                              {row.lockInfo ? (
-                                <div
-                                  title={`Locked by ${row.lockInfo.locked_by_name} — finish test to unlock`}
-                                  className="inline-flex items-center gap-1.5 text-[11px]
-                                    font-semibold px-2.5 py-1 rounded-lg border
-                                    text-amber-400 border-amber-500/30 bg-amber-500/8
-                                    cursor-not-allowed select-none"
-                                >
-                                  <Lock size={11} />
-                                  <span className="max-w-[70px] truncate">{row.lockInfo.locked_by_name}</span>
-                                </div>
-                              ) : (
-                                <button
-                                  onClick={() => handleToggleVisibility(row)}
-                                  disabled={visLoading}
-                                  title={
-                                    row.is_visible
-                                      ? "Execute mode — click to make view-only"
-                                      : "View-only — click to enable execution"
-                                  }
-                                  className={`inline-flex items-center gap-1.5 text-[11px]
-                                    font-semibold px-2.5 py-1 rounded-lg border transition-colors
-                                    disabled:opacity-50
-                                    ${row.is_visible
-                                      ? "text-sky-400 border-sky-500/30 bg-sky-500/8 hover:bg-sky-500/15"
-                                      : "text-t-muted border-(--border-color) bg-bg-base hover:text-t-primary"
-                                    }`}
-                                >
-                                  {row.is_visible
-                                    ? <><Pencil size={11} /> Execute</>
-                                    : <><Eye size={11} /> View Only</>
-                                  }
-                                </button>
-                              )}
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
+          {/* ── TABLE VIEW ── */}
+          {isFirst
+            ? <FirstImportTable rows={parseResult.rows} />
+            : diffResult
+              ? <DiffTable items={diffResult.items} />
+              : null
+          }
+
+          {parseResult.warnings.length > 0 && (
+            <div className="flex flex-col gap-1">
+              {parseResult.warnings.map((w, i) => (
+                <div key={i} className="text-[11px] text-amber-400
+                  bg-amber-500/8 border border-amber-500/20 rounded-lg px-3 py-1.5">
+                  ⚠ {w}
                 </div>
+              ))}
+            </div>
+          )}
+
+          <button
+            onClick={handleBuildPayload}
+            disabled={progress.show}
+            className="btn-primary text-sm disabled:opacity-50"
+          >
+            Continue →
+          </button>
+        </div>
+      )}
+
+      {/* ══════════════════════════════════
+          rev-confirm  — proper step order table
+      ══════════════════════════════════ */}
+      {stage === "rev-confirm" && revPayload && (
+        <div className="flex flex-col gap-3">
+          {/* Summary card */}
+          <div className="rounded-xl border border-(--border-color) bg-bg-card p-3
+            flex flex-col gap-1.5 text-xs">
+            <Row label="Revision ID"    value={`${revSelTest}-${newRevId}`} brand />
+            <Row label="Test serial"    value={revSelTest} mono />
+            <Row label="Status"         value="draft" />
+            <Row label="Steps in order" value={String(revPayload.revision.step_order.length)} mono />
+            <Row label="New step rows"  value={String(revPayload.newSteps.length)} mono />
+            {!isFirst && diffResult && (
+              <>
+                <Row label="Unchanged (reused)"  value={String(diffResult.summary.unchanged)} mono />
+                <Row label="Edited (new rows)"   value={String(diffResult.summary.edited)}    mono />
+                <Row label="Inserted (new rows)" value={String(diffResult.summary.inserted)}  mono />
+                <Row label="Deleted from order"  value={String(diffResult.summary.deleted)}   mono />
               </>
             )}
-            {error && <p className="text-xs text-red-400">{error}</p>}
           </div>
-        )}
-      </ModalShell>
 
-      {/* ── Global Progress Popup ─────────────────────────────── */}
-      <ProgressPopup {...progress} />
-    </>
+          {/* Step order — proper table with show-more */}
+          <div>
+            <p className="text-[10px] font-bold uppercase tracking-wider text-t-muted mb-2">
+              Step Order · {revPayload.revision.step_order.length} steps
+            </p>
+            <StepOrderTable
+              stepOrder={revPayload.revision.step_order}
+              newStepIds={newStepIdSet}
+            />
+          </div>
+
+          {/* Notes */}
+          <div>
+            <label className="block text-xs text-t-muted mb-1">Notes (optional)</label>
+            <textarea
+              value={revNotes}
+              onChange={e => setRevNotes(e.target.value)}
+              className="input text-sm resize-none"
+              rows={2}
+              placeholder="e.g. Updated 3DS flow, removed step 12"
+            />
+          </div>
+
+          {error && <p className="text-xs text-red-400">{error}</p>}
+
+          <div className="flex gap-2">
+            <button onClick={handleBack} className="flex-1 btn-ghost text-sm">Back</button>
+            <button
+              onClick={handleRevisionSubmit}
+              disabled={progress.show}
+              className="flex-1 btn-primary text-sm disabled:opacity-50"
+            >
+              Create Draft Revision
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ══════════════════════════════════
+          submitting
+      ══════════════════════════════════ */}
+      {stage === "submitting" && (
+        <div className="flex items-center justify-center py-8">
+          <div className="w-8 h-8 border-4 border-c-brand border-t-transparent rounded-full animate-spin" />
+        </div>
+      )}
+
+      {/* ══════════════════════════════════
+          done
+      ══════════════════════════════════ */}
+      {stage === "done" && (
+        <div className="flex flex-col items-center gap-3 py-6">
+          <CheckCircle size={32} className="text-green-400" />
+          <p className="text-sm font-semibold text-t-primary">
+            {`Revision ${revSelTest}-${newRevId} created as draft`}
+          </p>
+          <p className="text-xs text-t-muted text-center max-w-48">
+            Activate it from Revision Control when you're ready to use it.
+          </p>
+          <button onClick={onClose} className="btn-primary text-sm px-6">Close</button>
+        </div>
+      )}
+
+      {/* ══════════════════════════════════
+          vis-module
+      ══════════════════════════════════ */}
+      {stage === "vis-module" && (
+        <div className="flex flex-col gap-2">
+          {visLoading ? (
+            <div className="flex items-center justify-center py-8">
+              <div className="w-6 h-6 border-2 border-c-brand border-t-transparent rounded-full animate-spin" />
+            </div>
+          ) : visModules.length === 0 ? (
+            <p className="text-sm text-t-muted text-center py-4">No modules found.</p>
+          ) : (
+            <div className="flex flex-col gap-1.5 max-h-60 overflow-y-auto">
+              {visModules.map(m => (
+                <button
+                  key={m.name}
+                  onClick={() => handleModuleSelect(m.name)}
+                  className="text-left px-3 py-2.5 rounded-xl border border-(--border-color)
+                    bg-bg-card hover:bg-bg-base text-sm text-t-primary transition-colors"
+                >
+                  {m.name}
+                </button>
+              ))}
+            </div>
+          )}
+          {error && <p className="text-xs text-red-400">{error}</p>}
+        </div>
+      )}
+
+      {/* ══════════════════════════════════
+          vis-list  — table layout
+      ══════════════════════════════════ */}
+      {stage === "vis-list" && (
+        <div className="flex flex-col gap-3">
+          {visLoading ? (
+            <div className="flex items-center justify-center py-8">
+              <div className="w-6 h-6 border-2 border-c-brand border-t-transparent rounded-full animate-spin" />
+            </div>
+          ) : visRows.length === 0 ? (
+            <p className="text-sm text-t-muted text-center py-8">
+              No tests found in this module.
+            </p>
+          ) : (
+            <>
+              <div className="rounded-xl border border-(--border-color) bg-bg-card px-3 py-2">
+                <p className="text-[10px] font-bold uppercase tracking-wider text-t-muted mb-0.5">Module</p>
+                <p className="text-sm font-semibold text-t-primary">{visSelModule}</p>
+              </div>
+
+              <div className="rounded-xl border border-(--border-color) overflow-hidden">
+                <div className="overflow-y-auto" style={{ maxHeight: "420px" }}>
+                  <table className="w-full text-left border-collapse">
+                    <thead className="sticky top-0 z-10 bg-bg-card">
+                      <tr className="border-b border-(--border-color)">
+                        <th className="px-3 py-2 text-[10px] font-bold uppercase tracking-wider text-t-muted">Test</th>
+                        <th className="px-3 py-2 text-[10px] font-bold uppercase tracking-wider text-t-muted w-28 text-center">Visibility</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {visRows.map(row => (
+                        <tr key={row.id} className="border-b border-(--border-color) hover:bg-bg-base/50 transition-colors">
+                          <td className="px-3 py-2.5 text-sm text-t-primary font-medium">
+                            {row.tests_name}
+                          </td>
+                          <td className="px-3 py-2.5 w-28 text-center">
+                            {row.lockInfo ? (
+                              <div
+                                title={`Locked by ${row.lockInfo.locked_by_name} — finish test to unlock`}
+                                className="inline-flex items-center gap-1.5 text-[11px]
+                                  font-semibold px-2.5 py-1 rounded-lg border
+                                  text-amber-400 border-amber-500/30 bg-amber-500/8
+                                  cursor-not-allowed select-none"
+                              >
+                                <Lock size={11} />
+                                <span className="max-w-[70px] truncate">{row.lockInfo.locked_by_name}</span>
+                              </div>
+                            ) : (
+                              <button
+                                onClick={() => handleToggleVisibility(row)}
+                                disabled={visLoading}
+                                title={
+                                  row.is_visible
+                                    ? "Execute mode — click to make view-only"
+                                    : "View-only — click to enable execution"
+                                }
+                                className={`inline-flex items-center gap-1.5 text-[11px]
+                                  font-semibold px-2.5 py-1 rounded-lg border transition-colors
+                                  disabled:opacity-50
+                                  ${row.is_visible
+                                    ? "text-sky-400 border-sky-500/30 bg-sky-500/8 hover:bg-sky-500/15"
+                                    : "text-t-muted border-(--border-color) bg-bg-base hover:text-t-primary"
+                                  }`}
+                              >
+                                {row.is_visible
+                                  ? <><Pencil size={11} /> Execute</>
+                                  : <><Eye size={11} /> View Only</>
+                                }
+                              </button>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </>
+          )}
+          {error && <p className="text-xs text-red-400">{error}</p>}
+        </div>
+      )}
+    </ModalShell>
   );
 };
 
