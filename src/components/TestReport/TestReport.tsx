@@ -43,6 +43,7 @@ import {
   User,
   X,
   ChevronRight,
+  GitBranch, // ✅ added
 } from "lucide-react";
 import { supabase } from "../../supabase";
 import {
@@ -111,16 +112,35 @@ function clearSessionStart() {
   sessionStorage.removeItem(SESSION_STORAGE_KEY);
 }
 
+// ─── Revision Badge ───────────────────────────────────────────────────────────
+// ✅ Warn-themed badge, matches your existing RevisionBadge style
+const RevisionTag: React.FC<{ revision: string }> = ({ revision }) => (
+  <span
+    className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full
+      text-[10px] font-bold uppercase tracking-wider select-none shrink-0"
+    style={{
+      background: "color-mix(in srgb, var(--color-warn) 12%, transparent)",
+      color: "color-mix(in srgb, var(--color-warn), black 15%)",
+      border: "1px solid color-mix(in srgb, var(--color-warn) 30%, transparent)",
+    }}
+  >
+    <GitBranch size={9} className="shrink-0" />
+    {revision}
+  </span>
+);
+
 // ─── Session Step Detail Modal ─────────────────────────────────────────────────
 interface SessionModalProps {
   group: SessionTestGroup;
-  displayName: string; // resolved test name (or serial_no fallback)
+  displayName: string;
+  revisionLabel: string | null; // ✅ added
   onClose: () => void;
 }
 
 const SessionDetailModal: React.FC<SessionModalProps> = ({
   group,
   displayName,
+  revisionLabel, // ✅ added
   onClose,
 }) => {
   const sorted = useMemo(
@@ -144,9 +164,12 @@ const SessionDetailModal: React.FC<SessionModalProps> = ({
       >
         {/* Header */}
         <div className="flex items-start justify-between gap-3 px-5 py-4 border-b border-(--border-color)">
-          <div className="flex flex-col gap-0.5">
-            {/* ── FIXED: use resolved displayName instead of group.tests_name ── */}
-            <p className="text-sm font-bold text-t-primary">{displayName}</p>
+          <div className="flex flex-col gap-1">
+            <div className="flex items-center gap-2">
+              <p className="text-sm font-bold text-t-primary">{displayName}</p>
+              {/* ✅ Revision tag in modal header */}
+              {revisionLabel && <RevisionTag revision={revisionLabel} />}
+            </div>
             <p className="text-xs text-t-muted">{group.module_name}</p>
           </div>
           <div className="flex items-center gap-2">
@@ -298,9 +321,7 @@ const TestReport: React.FC<Props> = ({ module_test_id, onBack }) => {
   const mountedRef = useRef(true);
   useEffect(() => {
     mountedRef.current = true;
-    return () => {
-      mountedRef.current = false;
-    };
+    return () => { mountedRef.current = false; };
   }, []);
 
   // ── Clear session on sign-out ─────────────────────────────────────────────
@@ -311,8 +332,7 @@ const TestReport: React.FC<Props> = ({ module_test_id, onBack }) => {
     }
   }, [user]);
 
-  // ── serial_no → test display name map (built from loaded modules) ─────────
-  // FIXED: replaces testSerialMap (name→serial) with serialToNameMap (serial→name)
+  // ── serial_no → test display name map ────────────────────────────────────
   const serialToNameMap = useMemo(() => {
     const map = new Map<string, string>();
     modules.forEach((m) => {
@@ -325,20 +345,31 @@ const TestReport: React.FC<Props> = ({ module_test_id, onBack }) => {
     return map;
   }, [modules]);
 
+  // ✅ serial_no → revision label map (built from modules)
+  const serialToRevisionMap = useMemo(() => {
+    const map = new Map<string, string>();
+    modules.forEach((m) => {
+      m.module_tests?.forEach((mt) => {
+        if (mt.test?.serial_no && mt.active_revision?.revision) {
+          map.set(String(mt.test.serial_no), mt.active_revision.revision);
+        }
+      });
+    });
+    return map;
+  }, [modules]);
+
   // ── Session groups (derived) ──────────────────────────────────────────────
-  // FIXED: group by tests_serial_no (was tests_name)
   const sessionGroups = useMemo<SessionTestGroup[]>(() => {
     if (!sessionSteps.length) return [];
     const map = new Map<string, SessionTestGroup>();
     sessionSteps
       .filter((s) => !s.is_divider)
       .forEach((s) => {
-        // ── FIXED: key on tests_serial_no ──
         const key = `${s.module_name}::${s.tests_serial_no}`;
         if (!map.has(key)) {
           map.set(key, {
             module_name: s.module_name,
-            tests_serial_no: s.tests_serial_no, // ← was tests_name
+            tests_serial_no: s.tests_serial_no,
             steps: [],
             pass: 0,
             fail: 0,
@@ -416,7 +447,6 @@ const TestReport: React.FC<Props> = ({ module_test_id, onBack }) => {
 
   // ── Drill-down stats ──────────────────────────────────────────────────────
   const real = useMemo(() => getNonDividerResults(results), [results]);
-
   const stats = useMemo(() => {
     const pass = real.filter((r) => r.status === "pass").length;
     const fail = real.filter((r) => r.status === "fail").length;
@@ -474,13 +504,11 @@ const TestReport: React.FC<Props> = ({ module_test_id, onBack }) => {
   );
 
   // ── Session data formatted as FlatData for export ─────────────────────────
-  // FIXED: use tests_serial_no; resolve display name via serialToNameMap
   const sessionFlatData = useMemo<FlatData[]>(() => {
     return sessionSteps.map((s) => ({
       module: s.module_name,
-      // ── FIXED: resolve name from serial map; fall back to serial_no ──
       test: serialToNameMap.get(String(s.tests_serial_no)) ?? s.tests_serial_no,
-      test_serial_no: s.tests_serial_no, // ← was testSerialMap.get(s.tests_name)
+      test_serial_no: s.tests_serial_no,
       serial: s.serial_no,
       action: s.action || "",
       expected: s.expected_result || "",
@@ -518,7 +546,6 @@ const TestReport: React.FC<Props> = ({ module_test_id, onBack }) => {
         .forEach((mt) => {
           (m.step_results ?? [])
             .filter(
-              // ── FIXED: compare serial_no values instead of tests_name ──
               (sr) =>
                 sr.step?.tests_serial_no === mt.test?.serial_no &&
                 !sr.step?.is_divider
@@ -659,13 +686,15 @@ const TestReport: React.FC<Props> = ({ module_test_id, onBack }) => {
           ))}
         </div>
 
-        {/* Test rows — click to open detail popup */}
+        {/* Test rows */}
         <div className="flex flex-col gap-1 pt-1 border-t border-(--border-color)">
           {sessionGroups.map((g) => {
-            // ── FIXED: resolve display name from serial map ──
             const testDisplayName =
               serialToNameMap.get(String(g.tests_serial_no)) ??
               g.tests_serial_no;
+            // ✅ Look up revision label for this test
+            const revisionLabel =
+              serialToRevisionMap.get(String(g.tests_serial_no)) ?? null;
 
             return (
               <button
@@ -687,6 +716,9 @@ const TestReport: React.FC<Props> = ({ module_test_id, onBack }) => {
                 <span className="flex-1 text-xs font-semibold text-t-primary truncate">
                   {testDisplayName}
                 </span>
+
+                {/* ✅ Revision tag — shown only when a revision exists */}
+                {revisionLabel && <RevisionTag revision={revisionLabel} />}
 
                 {/* Counts */}
                 <span className="flex items-center gap-1.5 shrink-0">
@@ -782,13 +814,21 @@ const TestReport: React.FC<Props> = ({ module_test_id, onBack }) => {
                 String(activeSessionGroup.tests_serial_no)
               ) ?? activeSessionGroup.tests_serial_no
             }
+            // ✅ pass revision label to modal
+            revisionLabel={
+              serialToRevisionMap.get(
+                String(activeSessionGroup.tests_serial_no)
+              ) ?? null
+            }
             onClose={() => setActiveSessionGroup(null)}
           />
         )}
 
         <Topbar
           title={meta.test?.name ?? meta.tests_name}
-          subtitle={`${meta.module_name} · ${stats.total} steps`}
+          subtitle={`${meta.module_name} · ${stats.total} steps${
+            meta.active_revision ? ` · ${meta.active_revision.revision}` : ""
+          }`}
           onBack={onBack}
           actions={
             <div className="flex items-center gap-2">
@@ -980,7 +1020,13 @@ const TestReport: React.FC<Props> = ({ module_test_id, onBack }) => {
                 <tbody className="divide-y divide-(--border-color)">
                   <tr className="hover:bg-bg-card transition-colors">
                     <td className="px-4 py-3 font-semibold text-t-primary">
-                      {meta.test?.name ?? meta.tests_name}
+                      <div className="flex items-center gap-2">
+                        {meta.test?.name ?? meta.tests_name}
+                        {/* ✅ Revision tag in drill-down table */}
+                        {meta.active_revision && (
+                          <RevisionTag revision={meta.active_revision.revision} />
+                        )}
+                      </div>
                     </td>
                     <td className="px-4 py-3 text-center font-bold text-t-primary">
                       {stats.total}
@@ -1043,6 +1089,12 @@ const TestReport: React.FC<Props> = ({ module_test_id, onBack }) => {
             serialToNameMap.get(
               String(activeSessionGroup.tests_serial_no)
             ) ?? activeSessionGroup.tests_serial_no
+          }
+          // ✅ pass revision label to modal
+          revisionLabel={
+            serialToRevisionMap.get(
+              String(activeSessionGroup.tests_serial_no)
+            ) ?? null
           }
           onClose={() => setActiveSessionGroup(null)}
         />
@@ -1132,99 +1184,68 @@ const TestReport: React.FC<Props> = ({ module_test_id, onBack }) => {
               <table className="w-full text-sm">
                 <thead>
                   <tr className="bg-bg-card text-t-muted uppercase text-xs">
-                    <th className="px-4 py-3 text-left">Trainset</th>
-                    <th className="px-4 py-3 text-center">Tests</th>
-                    <th className="px-4 py-3 text-center">Total Steps</th>
-                    <th
-                      className="px-4 py-3 text-center"
-                      style={{ color: "var(--color-pass)" }}
-                    >
-                      Pass
-                    </th>
-                    <th
-                      className="px-4 py-3 text-center"
-                      style={{ color: "var(--color-fail)" }}
-                    >
-                      Fail
-                    </th>
-                    <th
-                      className="px-4 py-3 text-center"
-                      style={{ color: "var(--color-pend)" }}
-                    >
-                      Pending
-                    </th>
+                    <th className="px-4 py-3 text-left">Module</th>
+                    <th className="px-4 py-3 text-left">Test</th>
+                    <th className="px-4 py-3 text-center">Total</th>
+                    <th className="px-4 py-3 text-center" style={{ color: "var(--color-pass)" }}>Pass</th>
+                    <th className="px-4 py-3 text-center" style={{ color: "var(--color-fail)" }}>Fail</th>
+                    <th className="px-4 py-3 text-center" style={{ color: "var(--color-pend)" }}>Pending</th>
                     <th className="px-4 py-3 text-center">Pass Rate</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-(--border-color)">
-                  {displayModules.map((m) => {
-                    const r = getNonDividerResults(m.step_results ?? []);
-                    const total = r.length;
-                    const pass = r.filter((s) => s.status === "pass").length;
-                    const fail = r.filter((s) => s.status === "fail").length;
-                    const pending = r.filter(
-                      (s) => s.status === "pending"
-                    ).length;
-                    const rate =
-                      total > 0 ? Math.round((pass / total) * 100) : 0;
-                    return (
-                      <tr
-                        key={m.name}
-                        className="hover:bg-bg-card transition-colors"
-                      >
-                        <td className="px-4 py-3 font-semibold text-t-primary">
-                          {m.name}
-                        </td>
-                        <td className="px-4 py-3 text-center text-t-secondary">
-                          {m.module_tests?.length ?? 0}
-                        </td>
-                        <td className="px-4 py-3 text-center font-bold text-t-primary">
-                          {total}
-                        </td>
-                        <td
-                          className="px-4 py-3 text-center font-semibold"
-                          style={{ color: "var(--color-pass)" }}
+                  {displayModules.flatMap((m) =>
+                    (m.module_tests ?? []).map((mt) => {
+                      const testResults = getNonDividerResults(
+                        (m.step_results ?? []).filter(
+                          (sr) => sr.step?.tests_serial_no === mt.test?.serial_no
+                        )
+                      );
+                      const pass = testResults.filter((r) => r.status === "pass").length;
+                      const fail = testResults.filter((r) => r.status === "fail").length;
+                      const pending = testResults.filter((r) => r.status === "pending").length;
+                      const total = testResults.length;
+                      const passRate = total > 0 ? Math.round((pass / total) * 100) : 0;
+                      return (
+                        <tr
+                          key={`${m.name}-${mt.id}`}
+                          className="hover:bg-bg-card transition-colors"
                         >
-                          {pass}
-                        </td>
-                        <td
-                          className="px-4 py-3 text-center font-semibold"
-                          style={{ color: "var(--color-fail)" }}
-                        >
-                          {fail}
-                        </td>
-                        <td
-                          className="px-4 py-3 text-center font-semibold"
-                          style={{ color: "var(--color-pend)" }}
-                        >
-                          {pending}
-                        </td>
-                        <td className="px-4 py-3 text-center">
-                          <div className="flex items-center gap-2 justify-center">
-                            <div className="w-20 h-1.5 bg-(--border-color) rounded-full overflow-hidden">
-                              <div
-                                className="h-full rounded-full"
-                                style={{
-                                  width: `${rate}%`,
-                                  backgroundColor: "var(--color-pass)",
-                                }}
-                              />
+                          <td className="px-4 py-3 text-t-muted text-xs">{m.name}</td>
+                          <td className="px-4 py-3 font-semibold text-t-primary">
+                            <div className="flex items-center gap-2">
+                              {mt.test?.name ?? mt.tests_name}
+                              {/* ✅ Revision tag in standalone table */}
+                              {mt.active_revision && (
+                                <RevisionTag revision={mt.active_revision.revision} />
+                              )}
                             </div>
-                            <span className="font-bold text-t-primary">
-                              {rate}%
-                            </span>
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })}
+                          </td>
+                          <td className="px-4 py-3 text-center font-bold text-t-primary">{total}</td>
+                          <td className="px-4 py-3 text-center font-semibold" style={{ color: "var(--color-pass)" }}>{pass}</td>
+                          <td className="px-4 py-3 text-center font-semibold" style={{ color: "var(--color-fail)" }}>{fail}</td>
+                          <td className="px-4 py-3 text-center font-semibold" style={{ color: "var(--color-pend)" }}>{pending}</td>
+                          <td className="px-4 py-3 text-center">
+                            <div className="flex items-center gap-2 justify-center">
+                              <div className="w-20 h-1.5 bg-(--border-color) rounded-full overflow-hidden">
+                                <div
+                                  className="h-full rounded-full"
+                                  style={{ width: `${passRate}%`, backgroundColor: "var(--color-pass)" }}
+                                />
+                              </div>
+                              <span className="font-bold text-t-primary">{passRate}%</span>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
                 </tbody>
               </table>
             </div>
           )}
         </FadeWrapper>
 
-        {/* ── YOUR SESSION ──────────── */}
         {sessionPanel}
       </div>
     </>

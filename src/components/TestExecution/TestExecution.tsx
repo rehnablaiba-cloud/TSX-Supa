@@ -236,13 +236,16 @@ const cleanDividerLabel = (action: string): string =>
 // RevisionBadge
 // ─────────────────────────────────────────────────────────────────────────────
 
-const RevisionBadge: React.FC<{ revision: ActiveRevision }> = ({
+// ✅ MIGRATION: is_visible moved from ActiveRevision → module_tests.
+//    RevisionBadge now accepts isReadOnly prop instead of reading revision.is_visible.
+const RevisionBadge: React.FC<{ revision: ActiveRevision; isReadOnly?: boolean }> = ({
   revision,
+  isReadOnly = false,
 }) => (
   <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider select-none bg-[color-mix(in_srgb,var(--color-warn)_12%,transparent)] text-[color-mix(in_srgb,var(--color-warn),black_15%)] dark:text-[color-mix(in_srgb,var(--color-warn),white_35%)] border border-[color-mix(in_srgb,var(--color-warn)_30%,transparent)]">
     <GitBranch size={9} className="shrink-0" />
     {revision.revision}
-    {!revision.is_visible && (
+    {isReadOnly && (
       <span className="ml-0.5 opacity-70">· read-only</span>
     )}
   </span>
@@ -1048,6 +1051,8 @@ const TestExecution: React.FC<Props> = ({
   const [steps, setSteps] = useState<ExecutionStep[]>([]);
   const [lock, setLock] = useState<TestLock | null>(null);
   const [currentRevision, setCurrentRevision] = useState<ActiveRevision | null>(null);
+  // ✅ MIGRATION: is_visible moved from ActiveRevision → module_tests
+  const [isVisible, setIsVisible] = useState<boolean>(true);
   const [loading, setLoading] = useState(true);
   const [lockLoading, setLockLoading] = useState(true);
   const [updatingStepIds, setUpdatingStepIds] = useState<Set<string>>(new Set());
@@ -1060,8 +1065,8 @@ const TestExecution: React.FC<Props> = ({
   const scrollContainerRef = useRef<HTMLDivElement>(null);
 
   const isLockedByOther = !!(lock && lock.user_id !== user?.id);
-  // is_visible === false means the revision is hidden — all editing blocked
-  const isRevisionReadOnly = currentRevision !== null && currentRevision.is_visible === false;
+  // ✅ MIGRATION: was `currentRevision.is_visible === false` — now reads from module_tests column
+  const isRevisionReadOnly = !isVisible;
 
   const openImagePreview = useCallback(
     (paths: string[], clickedIdx: number, label: string) => {
@@ -1103,7 +1108,8 @@ const TestExecution: React.FC<Props> = ({
 
       setModuleTests(execData.module_tests);
       setCurrentRevision(execData.current_revision);
-
+      const isVisibleNow = execData.is_visible ?? true; // ✅ local const — no state race
+      setIsVisible(isVisibleNow);
       const ordered = execData.step_results.filter((sr) => sr.step !== null);
       const displaySerials = computeDisplaySerials(
         ordered.map((sr) => ({ is_divider: sr.step!.is_divider }))
@@ -1127,6 +1133,26 @@ const TestExecution: React.FC<Props> = ({
       setSteps(merged);
       setLock(lockRes.data?.[0] ?? null);
       setLoading(false);
+
+      // ✅ Acquire lock here — isVisibleNow is a plain value, no race condition
+      if (isVisibleNow && user) {
+        const result = await acquireLock(
+          currentMtId,
+          user.id,
+          user.display_name ?? user.email ?? "User"
+        );
+        if (!cancelled) {
+          if (result.success) {
+            setActiveLock(currentMtId, user.id);
+          } else {
+            addToast(
+              `Test is locked by ${result.holder ?? "another user"}. View only.`,
+              "warning"
+            );
+          }
+        }
+      }
+
       setLockLoading(false);
     })();
 
@@ -1181,32 +1207,7 @@ const TestExecution: React.FC<Props> = ({
       supabase.removeChannel(lockChannel);
       supabase.removeChannel(srChannel);
     };
-  }, [module_name, currentMtId, user?.id]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // ── Acquire lock ──────────────────────────────────────────────────────────
-  useEffect(() => {
-    if (!user) return;
-    let cancelled = false;
-    (async () => {
-      const result = await acquireLock(
-        currentMtId,
-        user.id,
-        user.display_name ?? user.email ?? "User"
-      );
-      if (cancelled) return;
-      if (result.success) {
-        setActiveLock(currentMtId, user.id);
-      } else {
-        addToast(
-          `Test is locked by ${result.holder ?? "another user"}. View only.`,
-          "warning"
-        );
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [currentMtId, user?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [module_name, currentMtId, user?.id]); 
 
   // ── Signed image URLs ─────────────────────────────────────────────────────
   useEffect(() => {
@@ -1243,7 +1244,6 @@ const TestExecution: React.FC<Props> = ({
   useEffect(() => {
     if (steps.length === 0 || stepsInitialized.current) return;
     stepsInitialized.current = true;
-    // Don't auto-focus when read-only — there's nothing to act on
     if (isRevisionReadOnly) return;
     const firstPending = steps.find((s) => !s.is_divider && s.status === "pending");
     if (firstPending) {
@@ -1316,7 +1316,6 @@ const TestExecution: React.FC<Props> = ({
         .find((s) => !s.is_divider && s.status === "pending");
       const display_name = user?.display_name ?? user?.email ?? "User";
 
-      // Optimistic update
       setSteps((prev) =>
         prev.map((s) =>
           s.stepId === stepId ? { ...s, status, remarks, display_name } : s
@@ -1344,7 +1343,6 @@ const TestExecution: React.FC<Props> = ({
           display_name,
         });
       } catch {
-        // Rollback
         setSteps((prev) =>
           prev.map((s) => {
             if (s.stepId !== stepId) return s;
@@ -1401,7 +1399,6 @@ const TestExecution: React.FC<Props> = ({
     setShowUndoModal(false);
     const display_name = user?.display_name ?? user?.email ?? "User";
 
-    // Optimistic update
     setSteps((prev) =>
       prev.map((s) =>
         s.is_divider ? s : { ...s, status: "pending", remarks: "", display_name }
@@ -1422,7 +1419,6 @@ const TestExecution: React.FC<Props> = ({
       addToast("All steps reset to pending.", "info");
       log("Undo all steps");
     } catch {
-      // Rollback
       setSteps((prev) =>
         prev.map((s) => {
           if (s.is_divider) return s;
@@ -1451,7 +1447,10 @@ const TestExecution: React.FC<Props> = ({
 
   // ── Finish ────────────────────────────────────────────────────────────────
   const handleFinish = async () => {
-    if (user) await releaseLock(currentMtId, user.id).catch(() => {});
+    // ✅ Only release if we actually acquired a lock
+    if (user && isVisible) {
+      await releaseLock(currentMtId, user.id).catch(() => {});
+    }
     clearActiveLock();
     log(`Finished test: ${currentTest?.name ?? "Unknown"}`);
     addToast(`Test "${currentTest?.name ?? "Unknown"}" completed!`, "success");
@@ -1673,10 +1672,10 @@ const TestExecution: React.FC<Props> = ({
         {/* Progress bar */}
         <div className="px-4 pt-3 pb-2">
           <div className="flex items-center justify-between mb-1.5">
-            {/* Left: revision badge + pass/fail/pending counts */}
             <div className="flex items-center gap-3 text-xs text-t-muted flex-wrap">
+              {/* ✅ MIGRATION: pass isReadOnly prop instead of relying on revision.is_visible */}
               {currentRevision && (
-                <RevisionBadge revision={currentRevision} />
+                <RevisionBadge revision={currentRevision} isReadOnly={isRevisionReadOnly} />
               )}
               <span>
                 <span className="text-[color-mix(in_srgb,var(--color-pass),white_30%)] font-semibold">
@@ -1695,7 +1694,6 @@ const TestExecution: React.FC<Props> = ({
                 pending
               </span>
             </div>
-            {/* Right: keyboard hints + percentage */}
             <div className="flex items-center gap-3">
               {focusedStepId && !isRevisionReadOnly && (
                 <span className="hidden md:flex items-center gap-2 text-xs text-t-muted">

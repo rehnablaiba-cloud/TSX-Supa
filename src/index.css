@@ -337,6 +337,7 @@
     --color-other-lock: #f59e0b;
     --neon-cyan: 34, 211, 238;
     --neon-amber: 245, 158, 11;
+    --neon-green: 74, 222, 128;  
     --brand-50: #eff6ff;
     --brand-100: #dbeafe;
     --brand-200: #bfdbfe;
@@ -468,6 +469,11 @@
         0 0 22px 6px
           color-mix(in oklab, rgb(var(--neon-amber)) 32%, transparent);
     }
+  }
+
+  @keyframes greenPulse {
+    0%, 100% { box-shadow: 0 0 0px 0px rgba(var(--neon-green), 0); }
+    50%       { box-shadow: 0 0 10px 3px rgba(var(--neon-green), 0.28); }
   }
 
   @keyframes dualPulse {

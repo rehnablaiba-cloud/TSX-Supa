@@ -1,12 +1,16 @@
 import { supabase } from "../../supabase";
 
+
 // ─── Types ────────────────────────────────────────────────────────────────────
+
 
 export interface RawModuleTest {
   id: string;
   tests_name: string;
+  is_visible: boolean; // ✅ moved here from DashboardRevision
   test: { serial_no: number; name: string; description?: string } | null;
 }
+
 
 export interface RawStepResultMD {
   id: string;
@@ -17,16 +21,19 @@ export interface RawStepResultMD {
   display_name: string;
 }
 
+
 export interface RawLock {
   module_test_id: string;
   user_id: string;
   locked_by_name: string;
 }
 
+
 export interface RawTest {
   name: string;
   serial_no: string;
 }
+
 
 export interface RawStep {
   id: string;
@@ -39,12 +46,14 @@ export interface RawStep {
   tests_serial_no: string;
 }
 
+
 /** Active revision metadata surfaced to the dashboard per test. */
 export interface DashboardRevision {
   id: string;
   revision: string;
-  is_visible: boolean;
+  // ✅ is_visible removed — now lives on RawModuleTest
 }
+
 
 export interface ModuleDashboardData {
   module_tests: RawModuleTest[];
@@ -59,7 +68,9 @@ export interface ModuleDashboardData {
   revisions: Record<string, DashboardRevision>;
 }
 
+
 // ─── fetchModuleDashboard ─────────────────────────────────────────────────────
+
 
 export async function fetchModuleDashboard(
   module_name: string,
@@ -69,7 +80,8 @@ export async function fetchModuleDashboard(
     supabase
       .from("module_tests")
       .select(
-        "id, tests_name, test:tests!module_tests_tests_name_fkey(serial_no, name, description)"
+        // ✅ is_visible added to select
+        "id, tests_name, is_visible, test:tests!module_tests_tests_name_fkey(serial_no, name, description)"
       )
       .eq("module_name", module_name)
       .order("id"),
@@ -79,14 +91,18 @@ export async function fetchModuleDashboard(
       .select("module_test_id, user_id, locked_by_name"),
   ]);
 
+
   if (mtRes.error) throw new Error(mtRes.error.message);
   if (srRes.error) throw new Error(srRes.error.message);
+
 
   const rawMts = (mtRes.data ?? []) as unknown as RawModuleTest[];
   const rawSrs = (srRes.data ?? []) as RawStepResultMD[];
 
+
   // ── Collect test names + serial_nos ────────────────────────────────────────
   const test_names = Array.from(new Set(rawMts.map((m) => m.tests_name)));
+
 
   const testsMap: Record<string, RawTest> = {};
   if (test_names.length > 0) {
@@ -98,34 +114,41 @@ export async function fetchModuleDashboard(
     });
   }
 
+
   // ── Fetch active revisions for all tests in this module ────────────────────
   const serialNos: string[] = rawMts
     .map((mt) => (mt.test as any)?.serial_no as string | undefined)
     .filter((s): s is string => !!s);
 
+
   const revisionsMap: Record<string, DashboardRevision> = {};
+
 
   if (serialNos.length > 0) {
     const { data: revData, error: revErr } = await supabase
       .from("test_revisions")
-      .select("id, revision, is_visible, tests_serial_no")
+      .select("id, revision, tests_serial_no") // ✅ is_visible removed from select
       .eq("status", "active")
       .in("tests_serial_no", serialNos);
 
+
     if (revErr) throw new Error(revErr.message);
+
 
     ((revData ?? []) as any[]).forEach((r) => {
       revisionsMap[r.tests_serial_no] = {
         id: r.id,
         revision: r.revision,
-        is_visible: r.is_visible,
+        // ✅ is_visible no longer mapped here
       };
     });
   }
 
+
   // ── Fetch steps for the step_results returned by RPC ──────────────────────
   const stepIds = rawSrs.map((sr) => sr.test_stepsid);
   const stepsMap: Record<string, RawStep> = {};
+
 
   if (stepIds.length > 0) {
     const stepsRes = await supabase.rpc("gettest_stepsbyids", {
@@ -136,20 +159,11 @@ export async function fetchModuleDashboard(
     });
   }
 
-  // ── JS-side revision filter on step_results ────────────────────────────────
-  //
-  // The RPC returns ALL step_results for the module (no revision filter in SQL).
-  // We narrow the results here:
-  //  • If a step's parent test has an active revision → keep only results whose
-  //    step belongs to that revision's step_order.
-  //  • If no active revision for the test → keep results whose step does not
-  //    belong to any revision (legacy path, revision_id implicitly null).
-  //
-  // Build a set of step IDs that are "in scope" for each serial_no.
-  // For this we need the step_order from the active revision.
 
+  // ── JS-side revision filter on step_results ────────────────────────────────
   const inScopeStepIds = new Set<string>();
   const testsWithoutRevision = new Set<string>(serialNos);
+
 
   if (Object.keys(revisionsMap).length > 0) {
     const revIds = Object.values(revisionsMap).map((r) => r.id);
@@ -158,6 +172,7 @@ export async function fetchModuleDashboard(
       .select("id, tests_serial_no, step_order")
       .in("id", revIds);
 
+
     ((revDetailData ?? []) as any[]).forEach((r) => {
       const steps: string[] = Array.isArray(r.step_order) ? r.step_order : [];
       steps.forEach((sid) => inScopeStepIds.add(sid));
@@ -165,8 +180,7 @@ export async function fetchModuleDashboard(
     });
   }
 
-  // Build set of serial_nos that have no active revision (for fallback)
-  // Steps belonging to those tests remain unfiltered.
+
   const filteredSrs = rawSrs.filter((sr) => {
     const step = stepsMap[sr.test_stepsid];
     if (!step) return false;
@@ -174,12 +188,11 @@ export async function fetchModuleDashboard(
     const serialNo = step.tests_serial_no;
 
     if (testsWithoutRevision.has(serialNo)) {
-      // Legacy path: no active revision → show all
       return true;
     }
-    // Revision path: only show steps in scope
     return inScopeStepIds.has(sr.test_stepsid);
   });
+
 
   return {
     module_tests: rawMts,
@@ -191,7 +204,9 @@ export async function fetchModuleDashboard(
   };
 }
 
+
 // ─── fetchModuleLocks ─────────────────────────────────────────────────────────
+
 
 export async function fetchModuleLocks(): Promise<RawLock[]> {
   const { data, error } = await supabase
@@ -201,7 +216,9 @@ export async function fetchModuleLocks(): Promise<RawLock[]> {
   return (data ?? []) as RawLock[];
 }
 
+
 // ─── acquireModuleLock ────────────────────────────────────────────────────────
+
 
 export async function acquireModuleLock(
   module_test_id: string,
@@ -221,16 +238,20 @@ export async function acquireModuleLock(
     );
   if (upsertErr) throw new Error(upsertErr.message);
 
+
   const { data: owned } = await supabase
     .from("test_locks")
     .select("user_id")
     .eq("module_test_id", module_test_id)
     .single();
 
+
   return (owned as any)?.user_id === user_id;
 }
 
+
 // ─── releaseModuleLock ────────────────────────────────────────────────────────
+
 
 export async function releaseModuleLock(
   module_test_id: string,
@@ -244,7 +265,9 @@ export async function releaseModuleLock(
   if (error) throw new Error(error.message);
 }
 
+
 // ─── forceReleaseModuleLock ───────────────────────────────────────────────────
+
 
 export async function forceReleaseModuleLock(
   module_test_id: string
@@ -256,7 +279,9 @@ export async function forceReleaseModuleLock(
   if (error) throw new Error(error.message);
 }
 
+
 // ─── heartbeatModuleLock ──────────────────────────────────────────────────────
+
 
 export async function heartbeatModuleLock(
   module_test_id: string,
@@ -269,7 +294,9 @@ export async function heartbeatModuleLock(
     .eq("user_id", user_id);
 }
 
+
 // ─── updateModuleStepResult ───────────────────────────────────────────────────
+
 
 export async function updateModuleStepResult(params: {
   module_name: string;
@@ -288,7 +315,9 @@ export async function updateModuleStepResult(params: {
   if (error) throw error;
 }
 
+
 // ─── resetAllModulestep_results ────────────────────────────────────────────────
+
 
 export async function resetAllModulestep_results(params: {
   module_name: string;
@@ -310,7 +339,9 @@ export async function resetAllModulestep_results(params: {
   if (failed) throw failed.error;
 }
 
+
 // ─── fetchExportStepData ──────────────────────────────────────────────────────
+
 
 export async function fetchExportStepData(module_name: string): Promise<{
   steps: {
@@ -328,9 +359,12 @@ export async function fetchExportStepData(module_name: string): Promise<{
     .select("test_steps_id, status, remarks")
     .eq("module_name", module_name);
 
+
   if (resultsRes.error) throw new Error(resultsRes.error.message);
 
+
   const stepIds = (resultsRes.data ?? []).map((r: any) => r.test_steps_id);
+
 
   const stepsRes =
     stepIds.length > 0
@@ -343,7 +377,9 @@ export async function fetchExportStepData(module_name: string): Promise<{
           .order("serial_no")
       : { data: [], error: null };
 
+
   if (stepsRes.error) throw new Error(stepsRes.error.message);
+
 
   return {
     steps: stepsRes.data ?? [],
@@ -355,7 +391,9 @@ export async function fetchExportStepData(module_name: string): Promise<{
   };
 }
 
+
 // ─── fetchModuleSignedUrls ────────────────────────────────────────────────────
+
 
 export async function fetchModuleSignedUrls(
   paths: string[]
@@ -363,14 +401,16 @@ export async function fetchModuleSignedUrls(
   const unique = Array.from(new Set(paths.filter(Boolean)));
   if (!unique.length) return {};
 
-  const results = await Promise.all(
-    unique.map(async (path) => {
-      const { data, error } = await supabase.storage
-        .from("test_steps")
-        .createSignedUrl(path, 60 * 60);
-      if (error || !data?.signedUrl) return [path, ""] as const;
-      return [path, data.signedUrl] as const;
-    })
+  // ✅ Use batch createSignedUrls instead of one-by-one for better performance
+  const { data, error } = await supabase.storage
+    .from("test_steps")
+    .createSignedUrls(unique, 60 * 60);
+
+  if (error || !data) return {};
+
+  return Object.fromEntries(
+    data
+      .filter((entry) => !!entry.signedUrl)
+      .map((entry) => [entry.path, entry.signedUrl!])
   );
-  return Object.fromEntries(results.filter(([, url]) => !!url));
 }

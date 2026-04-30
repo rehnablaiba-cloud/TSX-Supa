@@ -28,7 +28,6 @@ import {
   exportModuleDetailPDF,
   FlatData,
 } from "../../utils/export";
-
 import {
   RBarChart,
   RAreaChart,
@@ -37,6 +36,7 @@ import {
   RRadarChart,
 } from "./charts";
 import type { ChartRow, ChartTheme } from "./charts";
+
 
 const FadeWrapper: React.FC<{
   animKey: string | number;
@@ -49,6 +49,7 @@ const FadeWrapper: React.FC<{
     {children}
   </div>
 );
+
 
 const StaggerRow: React.FC<{ index: number; children: React.ReactNode }> = ({
   index,
@@ -64,14 +65,17 @@ const StaggerRow: React.FC<{ index: number; children: React.ReactNode }> = ({
   </div>
 );
 
+
 const cleanDividerLabel = (action: string): string =>
   action.replace(/^[^a-zA-Z0-9]+/, "");
+
 
 function unwrapOne<T>(val: T | T[] | null | undefined): T | null {
   if (val == null) return null;
   if (Array.isArray(val)) return val[0] ?? null;
   return val;
 }
+
 
 type ChartType = "bar" | "area" | "line" | "pie" | "radar";
 const CHART_TYPES: { type: ChartType; label: string }[] = [
@@ -82,6 +86,7 @@ const CHART_TYPES: { type: ChartType; label: string }[] = [
   { type: "radar", label: "Radar" },
 ];
 
+
 interface Props {
   module_name: string;
   onBack: () => void;
@@ -89,12 +94,14 @@ interface Props {
   onViewReport: (module_test_id: string) => void;
 }
 
+
 interface LockRow {
   module_test_id: string;
   user_id: string;
   locked_by_name: string;
   locked_at: string;
 }
+
 
 interface TrimmedStepResult {
   id: string;
@@ -109,18 +116,23 @@ interface TrimmedStepResult {
   } | null;
 }
 
+
 interface ModuleTestRow {
   id: string;
   tests_name: string;
+  is_visible: boolean; // ✅ moved here from ActiveRevision
   test: { serial_no: string; name: string } | null;
   step_results: TrimmedStepResult[];
 }
 
+
 interface SupabaseModuleTest {
   id: string;
   tests_name: string;
+  is_visible: boolean; // ✅ moved here from ActiveRevision
   test: { serial_no: string; name: string } | null;
 }
+
 
 interface SupabaseStepResult {
   id: string;
@@ -136,12 +148,14 @@ interface SupabaseStepResult {
   } | null;
 }
 
+
 interface ActiveRevision {
   id: string;
   revision: string;
-  is_visible: boolean;
+  // ✅ is_visible removed — now lives on module_tests
   step_order: string[];
 }
+
 
 const ModuleDashboard: React.FC<Props> = ({
   module_name,
@@ -192,6 +206,7 @@ const ModuleDashboard: React.FC<Props> = ({
     });
   }, [theme]);
 
+
   const fetchData = useCallback(
     async (isBackground = false, signal?: AbortSignal) => {
       if (signal?.aborted) return;
@@ -200,12 +215,13 @@ const ModuleDashboard: React.FC<Props> = ({
       setError(null);
 
       try {
-        // ── 1. Fetch module_tests + all step_results for this module ──────────
+        // ── 1. Fetch module_tests (now includes is_visible) + step_results ────
         const [mtRes, srRes] = await Promise.all([
           supabase
             .from("module_tests")
             .select(
-              "id, tests_name, test:tests!module_tests_tests_name_fkey(serial_no, name)"
+              // ✅ is_visible added
+              "id, tests_name, is_visible, test:tests!module_tests_tests_name_fkey(serial_no, name)"
             )
             .eq("module_name", module_name)
             .abortSignal(signal!),
@@ -223,14 +239,18 @@ const ModuleDashboard: React.FC<Props> = ({
         if (srRes.error) { setError(srRes.error.message); return; }
 
         const normalizedMts: SupabaseModuleTest[] = (mtRes.data ?? []).map(
-          (mt: any) => ({ ...mt, test: unwrapOne(mt.test) })
+          (mt: any) => ({
+            ...mt,
+            is_visible: mt.is_visible ?? true, // ✅ preserved from row
+            test: unwrapOne(mt.test),
+          })
         );
 
         const normalizedSrs: SupabaseStepResult[] = (srRes.data ?? []).map(
           (sr: any) => ({ ...sr, step: unwrapOne(sr.step) })
         );
 
-        // ── 2. Fetch active revisions (with step_order) for all tests ─────────
+        // ── 2. Fetch active revisions (is_visible removed from select) ────────
         const serialNos = normalizedMts
           .map((mt) => mt.test?.serial_no)
           .filter((s): s is string => !!s);
@@ -240,7 +260,7 @@ const ModuleDashboard: React.FC<Props> = ({
         if (serialNos.length > 0) {
           const { data: revData } = await supabase
             .from("test_revisions")
-            .select("id, revision, is_visible, tests_serial_no, step_order")
+            .select("id, revision, tests_serial_no, step_order") // ✅ is_visible removed
             .eq("status", "active")
             .in("tests_serial_no", serialNos);
 
@@ -248,7 +268,7 @@ const ModuleDashboard: React.FC<Props> = ({
             revBySerial[r.tests_serial_no] = {
               id: r.id,
               revision: r.revision,
-              is_visible: r.is_visible,
+              // ✅ is_visible no longer mapped here
               step_order: Array.isArray(r.step_order) ? r.step_order : [],
             };
           });
@@ -258,8 +278,6 @@ const ModuleDashboard: React.FC<Props> = ({
         setRevisions(revBySerial);
 
         // ── 3. Build in-scope step ID sets per serial_no ──────────────────────
-        // For revised tests: only step IDs listed in step_order are shown.
-        // For legacy tests (no active revision): all steps pass through.
         const inScopeIds = new Set<string>(
           Object.values(revBySerial).flatMap((r) => r.step_order)
         );
@@ -269,12 +287,9 @@ const ModuleDashboard: React.FC<Props> = ({
         const filteredSrs = normalizedSrs.filter((sr) => {
           const stepSerialNo = sr.step?.tests_serial_no;
           if (!stepSerialNo) return false;
-
           if (serialNosWithRevision.has(stepSerialNo)) {
-            // Revised path: only steps in the active revision's step_order
             return inScopeIds.has(sr.test_steps_id);
           }
-          // Legacy path: no active revision → keep all
           return true;
         });
 
@@ -338,6 +353,7 @@ const ModuleDashboard: React.FC<Props> = ({
     [module_name]
   );
 
+
   useEffect(() => {
     const controller = new AbortController();
     abortControllerRef.current = controller;
@@ -347,6 +363,7 @@ const ModuleDashboard: React.FC<Props> = ({
       abortControllerRef.current = null;
     };
   }, [fetchData]);
+
 
   const forceReleaseLock = useCallback(
     async (module_test_id: string, lockedByName: string) => {
@@ -366,6 +383,7 @@ const ModuleDashboard: React.FC<Props> = ({
     },
     [fetchData]
   );
+
 
   useEffect(() => {
     const channel = supabase
@@ -406,6 +424,7 @@ const ModuleDashboard: React.FC<Props> = ({
     };
   }, [module_name, fetchData, user?.id, module_tests]);
 
+
   const chartData = useMemo<ChartRow[]>(
     () =>
       module_tests.map((mt) => {
@@ -420,6 +439,7 @@ const ModuleDashboard: React.FC<Props> = ({
     [module_tests]
   );
 
+
   const globalStats = useMemo(() => {
     const pass = chartData.reduce((a, x) => a + x.pass, 0);
     const fail = chartData.reduce((a, x) => a + x.fail, 0);
@@ -433,6 +453,7 @@ const ModuleDashboard: React.FC<Props> = ({
       passRate: total > 0 ? Math.round((pass / total) * 100) : 0,
     };
   }, [chartData]);
+
 
   const buildFlatData = useCallback((): FlatData[] => {
     return module_tests.flatMap((mt) =>
@@ -458,6 +479,7 @@ const ModuleDashboard: React.FC<Props> = ({
     );
   }, [module_tests, module_name]);
 
+
   const exportStats = useMemo(() => {
     const flat = buildFlatData();
     const nd = flat.filter((d) => !d.isdivider);
@@ -468,13 +490,16 @@ const ModuleDashboard: React.FC<Props> = ({
     ];
   }, [buildFlatData]);
 
+
   const handleExportCSV = useCallback(() => {
     exportModuleDetailCSV(buildFlatData());
   }, [buildFlatData]);
 
+
   const handleExportPDF = useCallback(() => {
     exportModuleDetailPDF(buildFlatData(), module_name);
   }, [buildFlatData, module_name]);
+
 
   if (loading)
     return (
@@ -486,6 +511,7 @@ const ModuleDashboard: React.FC<Props> = ({
       </div>
     );
 
+
   if (error)
     return (
       <div className="flex-1 flex flex-col">
@@ -494,10 +520,8 @@ const ModuleDashboard: React.FC<Props> = ({
           <div
             className="rounded-xl p-4 text-sm"
             style={{
-              background:
-                "color-mix(in srgb, var(--color-fail) 10%, transparent)",
-              border:
-                "1px solid color-mix(in srgb, var(--color-fail) 30%, transparent)",
+              background: "color-mix(in srgb, var(--color-fail) 10%, transparent)",
+              border: "1px solid color-mix(in srgb, var(--color-fail) 30%, transparent)",
               color: "var(--color-fail)",
             }}
           >
@@ -506,6 +530,7 @@ const ModuleDashboard: React.FC<Props> = ({
         </div>
       </div>
     );
+
 
   return (
     <div className="flex-1 flex flex-col">
@@ -519,16 +544,14 @@ const ModuleDashboard: React.FC<Props> = ({
           {
             label: "CSV",
             icon: <FileSpreadsheet size={16} />,
-            color:
-              "bg-(--bg-card) border border-(--border-color) text-(--text-primary)",
+            color: "bg-(--bg-card) border border-(--border-color) text-(--text-primary)",
             hoverColor: "hover:bg-(--bg-surface) hover:border-(--color-brand)",
             onConfirm: handleExportCSV,
           },
           {
             label: "PDF",
             icon: <FileText size={16} />,
-            color:
-              "bg-(--bg-card) border border-(--border-color) text-(--text-primary)",
+            color: "bg-(--bg-card) border border-(--border-color) text-(--text-primary)",
             hoverColor: "hover:bg-(--bg-surface) hover:border-(--color-brand)",
             onConfirm: handleExportPDF,
           },
@@ -557,10 +580,8 @@ const ModuleDashboard: React.FC<Props> = ({
           <div
             className="rounded-xl p-3 text-sm flex items-center gap-2"
             style={{
-              background:
-                "color-mix(in srgb, var(--color-fail) 10%, transparent)",
-              border:
-                "1px solid color-mix(in srgb, var(--color-fail) 30%, transparent)",
+              background: "color-mix(in srgb, var(--color-fail) 10%, transparent)",
+              border: "1px solid color-mix(in srgb, var(--color-fail) 30%, transparent)",
               color: "var(--color-fail)",
             }}
           >
@@ -575,32 +596,27 @@ const ModuleDashboard: React.FC<Props> = ({
             {
               label: "Total",
               value: globalStats.total,
-              className:
-                "bg-bg-card border border-(--border-color) text-t-primary",
+              className: "bg-bg-card border border-(--border-color) text-t-primary",
             },
             {
               label: "Pass",
               value: globalStats.pass,
-              className:
-                "bg-[color-mix(in_srgb,var(--color-pass)_10%,transparent)] text-[var(--color-pass)] border border-[color-mix(in_srgb,var(--color-pass)_25%,transparent)]",
+              className: "bg-[color-mix(in_srgb,var(--color-pass)_10%,transparent)] text-[var(--color-pass)] border border-[color-mix(in_srgb,var(--color-pass)_25%,transparent)]",
             },
             {
               label: "Fail",
               value: globalStats.fail,
-              className:
-                "bg-[color-mix(in_srgb,var(--color-fail)_10%,transparent)] text-[var(--color-fail)] border border-[color-mix(in_srgb,var(--color-fail)_25%,transparent)]",
+              className: "bg-[color-mix(in_srgb,var(--color-fail)_10%,transparent)] text-[var(--color-fail)] border border-[color-mix(in_srgb,var(--color-fail)_25%,transparent)]",
             },
             {
               label: "Pending",
               value: globalStats.pending,
-              className:
-                "bg-[color-mix(in_srgb,var(--color-pend)_10%,transparent)] text-[var(--color-pend)] border border-[color-mix(in_srgb,var(--color-pend)_25%,transparent)]",
+              className: "bg-[color-mix(in_srgb,var(--color-pend)_10%,transparent)] text-[var(--color-pend)] border border-[color-mix(in_srgb,var(--color-pend)_25%,transparent)]",
             },
             {
               label: "Pass %",
               value: `${globalStats.passRate}%`,
-              className:
-                "bg-[var(--color-brand-bg)] text-[var(--color-brand)] border border-[color-mix(in_srgb,var(--color-brand)_25%,transparent)]",
+              className: "bg-[var(--color-brand-bg)] text-[var(--color-brand)] border border-[color-mix(in_srgb,var(--color-brand)_25%,transparent)]",
             },
           ].map((s) => (
             <span
@@ -635,21 +651,11 @@ const ModuleDashboard: React.FC<Props> = ({
               </div>
             </div>
             <FadeWrapper animKey={chartType}>
-              {chartType === "bar" && (
-                <RBarChart key="bar-chart" data={chartData} ct={ct} />
-              )}
-              {chartType === "area" && (
-                <RAreaChart key="area-chart" data={chartData} ct={ct} />
-              )}
-              {chartType === "line" && (
-                <RLineChart key="line-chart" data={chartData} ct={ct} />
-              )}
-              {chartType === "pie" && (
-                <RPieChart key="pie-chart" data={chartData} ct={ct} />
-              )}
-              {chartType === "radar" && (
-                <RRadarChart key="radar-chart" data={chartData} ct={ct} />
-              )}
+              {chartType === "bar" && <RBarChart key="bar-chart" data={chartData} ct={ct} />}
+              {chartType === "area" && <RAreaChart key="area-chart" data={chartData} ct={ct} />}
+              {chartType === "line" && <RLineChart key="line-chart" data={chartData} ct={ct} />}
+              {chartType === "pie" && <RPieChart key="pie-chart" data={chartData} ct={ct} />}
+              {chartType === "radar" && <RRadarChart key="radar-chart" data={chartData} ct={ct} />}
             </FadeWrapper>
           </div>
         )}
@@ -675,26 +681,33 @@ const ModuleDashboard: React.FC<Props> = ({
             const isMyLock = !!lock && lock.user_id === user?.id;
             const isOtherLock = !!lock && !isMyLock;
 
-            // Active revision for this test (if any)
+            // Active revision for this test (revision label only — no is_visible)
             const activeRev = mt.test?.serial_no
               ? revisions[mt.test.serial_no] ?? null
               : null;
 
+            // ✅ is_visible now read directly from module_tests row
+            const isCompleted = !mt.is_visible;
+
             const cardStyle: React.CSSProperties = isMyLock
-              ? {
-                  border: "1.5px solid rgba(var(--neon-cyan), 0.55)",
-                  background:
-                    "linear-gradient(135deg, rgba(var(--neon-cyan), 0.07) 0%, transparent 60%)",
-                  animation: "neonPulse 2.6s ease-in-out infinite",
-                }
-              : isOtherLock
-              ? {
-                  border: "1.5px solid rgba(var(--neon-amber), 0.55)",
-                  background:
-                    "linear-gradient(135deg, rgba(var(--neon-amber), 0.07) 0%, transparent 60%)",
-                  animation: "amberPulse 2.6s ease-in-out infinite",
-                }
-              : {};
+            ? {
+                border: "1.5px solid rgba(var(--neon-cyan), 0.55)",
+                background: "linear-gradient(135deg, rgba(var(--neon-cyan), 0.07) 0%, transparent 60%)",
+                animation: "neonPulse 2.6s ease-in-out infinite",
+              }
+            : isOtherLock
+            ? {
+                border: "1.5px solid rgba(var(--neon-amber), 0.55)",
+                background: "linear-gradient(135deg, rgba(var(--neon-amber), 0.07) 0%, transparent 60%)",
+                animation: "amberPulse 2.6s ease-in-out infinite",
+              }
+            : isCompleted
+            ? {
+                border: "1.5px solid rgba(var(--neon-green), 0.55)",
+                background: "linear-gradient(135deg, rgba(var(--neon-green), 0.07) 0%, transparent 60%)",
+                animation: "greenPulse 2.6s ease-in-out infinite",
+              }
+            : {};
 
             return (
               <StaggerRow key={mt.id} index={idx}>
@@ -773,8 +786,8 @@ const ModuleDashboard: React.FC<Props> = ({
                         </span>
                       )}
 
-                      {/* Completed badge */}
-                      {activeRev && !activeRev.is_visible && (
+                      {/* ✅ Completed badge — now driven by mt.is_visible */}
+                      {isCompleted && (
                         <span
                           className="font-mono text-[10px] font-bold px-1.5 py-0.5 rounded shrink-0"
                           style={{
@@ -802,7 +815,8 @@ const ModuleDashboard: React.FC<Props> = ({
                         Report
                       </button>
 
-                      {activeRev && !activeRev.is_visible ? (
+                      {/* ✅ Button logic now uses isCompleted (mt.is_visible) */}
+                      {isCompleted ? (
                         <button
                           onClick={() => onExecute(mt.id)}
                           className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors bg-c-brand hover:bg-c-brand-hover text-(--bg-surface)"
@@ -816,8 +830,7 @@ const ModuleDashboard: React.FC<Props> = ({
                           className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all text-black"
                           style={{
                             background: "var(--color-my-lock)",
-                            boxShadow:
-                              "0 0 14px 3px rgba(var(--neon-cyan), 0.40)",
+                            boxShadow: "0 0 14px 3px rgba(var(--neon-cyan), 0.40)",
                           }}
                           onMouseEnter={(e) => {
                             e.currentTarget.style.boxShadow =
@@ -846,24 +859,15 @@ const ModuleDashboard: React.FC<Props> = ({
 
                   <div className="flex items-center gap-3 flex-wrap text-xs">
                     <span className="badge-pass">
-                      <span
-                        className="w-1.5 h-1.5 rounded-full inline-block mr-1"
-                        style={{ background: "var(--color-pass)" }}
-                      />
+                      <span className="w-1.5 h-1.5 rounded-full inline-block mr-1" style={{ background: "var(--color-pass)" }} />
                       {pass} Pass
                     </span>
                     <span className="badge-fail">
-                      <span
-                        className="w-1.5 h-1.5 rounded-full inline-block mr-1"
-                        style={{ background: "var(--color-fail)" }}
-                      />
+                      <span className="w-1.5 h-1.5 rounded-full inline-block mr-1" style={{ background: "var(--color-fail)" }} />
                       {fail} Fail
                     </span>
                     <span className="flex items-center gap-1 font-semibold text-t-muted bg-bg-card border border-(--border-color) rounded-full px-2.5 py-0.5">
-                      <span
-                        className="w-1.5 h-1.5 rounded-full inline-block"
-                        style={{ background: "var(--text-muted)" }}
-                      />
+                      <span className="w-1.5 h-1.5 rounded-full inline-block" style={{ background: "var(--text-muted)" }} />
                       {pending} Pending
                     </span>
                   </div>
@@ -889,29 +893,19 @@ const ModuleDashboard: React.FC<Props> = ({
                       {passRate > 0 && (
                         <div
                           className="h-full transition-all duration-700"
-                          style={{
-                            width: `${passRate}%`,
-                            background: "var(--color-pass)",
-                          }}
+                          style={{ width: `${passRate}%`, background: "var(--color-pass)" }}
                         />
                       )}
                       {failPct > 0 && (
                         <div
                           className="h-full transition-all duration-700"
-                          style={{
-                            width: `${failPct}%`,
-                            background: "var(--color-fail)",
-                          }}
+                          style={{ width: `${failPct}%`, background: "var(--color-fail)" }}
                         />
                       )}
                       {pendingPct > 0 && (
                         <div
                           className="h-full transition-all duration-700"
-                          style={{
-                            width: `${pendingPct}%`,
-                            background: "var(--color-pend)",
-                            opacity: 0.3,
-                          }}
+                          style={{ width: `${pendingPct}%`, background: "var(--color-pend)", opacity: 0.3 }}
                         />
                       )}
                     </div>

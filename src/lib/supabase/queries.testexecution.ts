@@ -12,7 +12,8 @@
  *    assign display serial numbers directly from array index.
  *  - Returns `current_revision` (the active revision for the opened test) and
  *    `active_revisions` keyed by tests_serial_no for the whole module.
- *    `current_revision.is_visible === false` → render read-only.
+ *  - is_visible now lives on module_tests (not test_revisions).
+ *    `is_visible === false` → render read-only.
  */
 import { supabase } from "../../supabase";
 
@@ -43,6 +44,7 @@ export interface RawStepResult {
 export interface RawModuleTestItem {
   id: string;
   tests_name: string;
+  is_visible: boolean; // ✅ moved here from ActiveRevision
   test: { serial_no: string; name: string } | null;
 }
 
@@ -53,8 +55,7 @@ export interface ActiveRevision {
   id: string;
   /** Human-readable label e.g. "R2" */
   revision: string;
-  /** false → UI renders read-only, no pass/fail/undo allowed */
-  is_visible: boolean;
+  // ✅ is_visible removed — now lives on RawModuleTestItem
   /** FK → tests.serial_no */
   tests_serial_no: string;
 }
@@ -79,6 +80,11 @@ export interface TestExecutionData {
    * null when no revision has been activated for this test yet.
    */
   current_revision: ActiveRevision | null;
+  /**
+   * Whether the opened module_test is editable.
+   * false → render read-only; sourced from module_tests.is_visible.
+   */
+  is_visible: boolean; // ✅ added to top-level return
 }
 
 
@@ -125,31 +131,32 @@ function buildStepResult(
 export async function fetchTestExecution(
   module_test_id: string
 ): Promise<TestExecutionData> {
-  // ── 1. Resolve module_name + current test serial_no ──────────────────────
+  // ── 1. Resolve module_name + current test serial_no + is_visible ─────────
   const { data: mtData, error: mtErr } = await supabase
     .from("module_tests")
     .select(
-      "module_name, tests_name, test:tests!module_tests_tests_name_fkey(serial_no, name)"
+      // ✅ is_visible added here
+      "module_name, tests_name, is_visible, test:tests!module_tests_tests_name_fkey(serial_no, name)"
     )
     .eq("id", module_test_id)
     .single();
   if (mtErr) throw mtErr;
 
-
   const module_name: string = (mtData as any)?.module_name ?? "";
   const currentSerialNo: string = (mtData as any)?.test?.serial_no ?? "";
+  const is_visible: boolean = (mtData as any)?.is_visible ?? true; // ✅ extracted here
 
 
   // ── 2. All module_tests in the module ────────────────────────────────────
   const allMtRes = await supabase
     .from("module_tests")
     .select(
-      "id, tests_name, test:tests!module_tests_tests_name_fkey(serial_no, name)"
+      // ✅ is_visible added here
+      "id, tests_name, is_visible, test:tests!module_tests_tests_name_fkey(serial_no, name)"
     )
     .eq("module_name", module_name)
     .order("tests_name");
   if (allMtRes.error) throw allMtRes.error;
-
 
   const allMts = (allMtRes.data ?? []) as unknown as RawModuleTestItem[];
   const serialNos: string[] = allMts
@@ -161,21 +168,19 @@ export async function fetchTestExecution(
   const activeRevisions: Record<string, ActiveRevision> = {};
   let stepOrder: string[] | null = null;
 
-
   if (serialNos.length > 0) {
     const { data: revData, error: revErr } = await supabase
       .from("test_revisions")
-      .select("id, revision, is_visible, tests_serial_no, step_order")
+      .select("id, revision, tests_serial_no, step_order") // ✅ is_visible removed
       .eq("status", "active")
       .in("tests_serial_no", serialNos);
     if (revErr) throw revErr;
-
 
     ((revData ?? []) as any[]).forEach((r) => {
       activeRevisions[r.tests_serial_no] = {
         id: r.id,
         revision: r.revision,
-        is_visible: r.is_visible,
+        // ✅ is_visible no longer mapped here
         tests_serial_no: r.tests_serial_no,
       };
       if (
@@ -188,10 +193,9 @@ export async function fetchTestExecution(
     });
   }
 
-
   const current_revision = activeRevisions[currentSerialNo] ?? null;
 
-  // ✅ FIX: snapshot let into const AFTER all awaits — prevents TS narrowing reset
+  // ✅ Snapshot let into const after all awaits — prevents TS narrowing reset
   const resolvedStepOrder = stepOrder as string[] | null;
 
 
@@ -213,18 +217,11 @@ export async function fetchTestExecution(
     if (stepsRes.error) throw stepsRes.error;
     if (srRes.error) throw srRes.error;
 
-
     const stepsById: Record<string, any> = {};
-    ((stepsRes.data ?? []) as any[]).forEach((s) => {
-      stepsById[s.id] = s;
-    });
-
+    ((stepsRes.data ?? []) as any[]).forEach((s) => { stepsById[s.id] = s; });
 
     const srByStepId: Record<string, any> = {};
-    ((srRes.data ?? []) as any[]).forEach((sr) => {
-      srByStepId[sr.test_steps_id] = sr;
-    });
-
+    ((srRes.data ?? []) as any[]).forEach((sr) => { srByStepId[sr.test_steps_id] = sr; });
 
     const step_results: RawStepResult[] = orderedIds
       .map((stepId: string) => {
@@ -234,13 +231,13 @@ export async function fetchTestExecution(
       })
       .filter((sr: RawStepResult | null): sr is RawStepResult => sr !== null);
 
-
     return {
       module_name,
       step_results,
       module_tests: allMts,
       active_revisions: activeRevisions,
       current_revision,
+      is_visible, // ✅
     };
   }
 
@@ -253,9 +250,9 @@ export async function fetchTestExecution(
       module_tests: allMts,
       active_revisions: activeRevisions,
       current_revision: null,
+      is_visible, // ✅
     };
   }
-
 
   const { data: stepsData, error: stepsErr } = await supabase
     .from("test_steps")
@@ -264,9 +261,7 @@ export async function fetchTestExecution(
     .order("serial_no");
   if (stepsErr) throw stepsErr;
 
-
   const fallbackStepIds = ((stepsData ?? []) as any[]).map((s) => s.id as string);
-
 
   if (!fallbackStepIds.length) {
     return {
@@ -275,9 +270,9 @@ export async function fetchTestExecution(
       module_tests: allMts,
       active_revisions: activeRevisions,
       current_revision: null,
+      is_visible, // ✅
     };
   }
-
 
   const { data: srData, error: srErr } = await supabase
     .from("step_results")
@@ -286,17 +281,12 @@ export async function fetchTestExecution(
     .in("test_steps_id", fallbackStepIds);
   if (srErr) throw srErr;
 
-
   const srByStepId: Record<string, any> = {};
-  ((srData ?? []) as any[]).forEach((sr) => {
-    srByStepId[sr.test_steps_id] = sr;
-  });
-
+  ((srData ?? []) as any[]).forEach((sr) => { srByStepId[sr.test_steps_id] = sr; });
 
   const step_results: RawStepResult[] = ((stepsData ?? []) as any[])
     .map((step) => buildStepResult(step, srByStepId[step.id]))
     .filter((sr: RawStepResult | null): sr is RawStepResult => sr !== null);
-
 
   return {
     module_name,
@@ -304,6 +294,7 @@ export async function fetchTestExecution(
     module_tests: allMts,
     active_revisions: activeRevisions,
     current_revision: null,
+    is_visible, // ✅
   };
 }
 
@@ -317,6 +308,7 @@ export async function acquireLock(
   module_test_id: string,
   user_id: string,
   display_name: string
+
 ): Promise<{ success: boolean; holder?: string }> {
   const { data: existing } = await supabase
     .from("test_locks")
@@ -324,11 +316,9 @@ export async function acquireLock(
     .eq("module_test_id", module_test_id)
     .maybeSingle();
 
-
   if (existing && (existing as any).user_id !== user_id) {
     return { success: false, holder: (existing as any).locked_by_name };
   }
-
 
   if (existing && (existing as any).user_id === user_id) {
     const { error } = await supabase
@@ -346,14 +336,12 @@ export async function acquireLock(
     return { success: true };
   }
 
-
   const { error } = await supabase.from("test_locks").insert({
     module_test_id,
     user_id,
     locked_by_name: display_name,
     locked_at: new Date().toISOString(),
   });
-
 
   if (error) {
     const { data: winner } = await supabase
@@ -365,7 +353,6 @@ export async function acquireLock(
     console.warn("[acquireLock] lost race to:", holder);
     return { success: false, holder };
   }
-
 
   return { success: true };
 }
@@ -464,15 +451,16 @@ export async function fetchSignedUrls(
   const unique = Array.from(new Set(paths.filter(Boolean)));
   if (!unique.length) return {};
 
+  // ✅ Batch call instead of one-by-one for better performance
+  const { data, error } = await supabase.storage
+    .from("test_steps")
+    .createSignedUrls(unique, 3600);
 
-  const result: Record<string, string> = {};
-  await Promise.all(
-    unique.map(async (path) => {
-      const { data } = await supabase.storage
-        .from("test_steps")
-        .createSignedUrl(path, 3600);
-      if (data?.signedUrl) result[path] = data.signedUrl;
-    })
+  if (error || !data) return {};
+
+  return Object.fromEntries(
+    data
+      .filter((entry) => !!entry.signedUrl)
+      .map((entry) => [entry.path, entry.signedUrl!])
   );
-  return result;
 }

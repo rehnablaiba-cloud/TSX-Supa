@@ -7,27 +7,33 @@
  *  - is_divider parsed from step_order string format: {serial}-{rev}-{group}-{step}-{is_divider}
  *  - Legacy tests (no active revision) fetch step_results via test_steps join.
  *  - step_results keyed by (module_name, test_steps_id) to prevent cross-module bleed.
+ *  - is_visible now lives on module_tests (not test_revisions).
  */
 import { supabase } from "../../supabase";
 import type { ActiveLock } from "../../types";
+
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Types
 // ─────────────────────────────────────────────────────────────────────────────
 
+
 export interface DashboardRevision {
   id: string;
   revision: string;
-  is_visible: boolean;
+  // ✅ is_visible removed — now lives on DashboardModuleTest
   step_order: string[];
 }
+
 
 export interface DashboardModuleTest {
   id: string;
   tests_name: string;
+  is_visible: boolean; // ✅ moved here from DashboardRevision
   test: { name: string; serial_no: string | null } | null;
   active_revision: DashboardRevision | null;
 }
+
 
 export interface DashboardStepResult {
   status: string;
@@ -36,6 +42,7 @@ export interface DashboardStepResult {
   tests_serial_no: string;
 }
 
+
 export interface DashboardModule {
   name: string;
   description: string | null;
@@ -43,9 +50,9 @@ export interface DashboardModule {
   step_results: DashboardStepResult[];
 }
 
+
 // ── Parse is_divider and tests_serial_no from step_order string ──────────────
 // Format: "T001-R0-1-1-false"
-// Serial number is everything before the first revision segment (e.g. "R0", "R1").
 function parseStepKey(stepKey: string): { tests_serial_no: string; is_divider: boolean } {
   const parts = stepKey.split('-');
   const isDividerStr = parts[parts.length - 1];
@@ -59,12 +66,14 @@ function parseStepKey(stepKey: string): { tests_serial_no: string; is_divider: b
   };
 }
 
+
 // ─────────────────────────────────────────────────────────────────────────────
 // fetchDashboardModules
 // ─────────────────────────────────────────────────────────────────────────────
 
+
 export async function fetchDashboardModules(): Promise<DashboardModule[]> {
-  // ── 1. Fetch modules + module_tests ──────────────────────────────────────
+  // ── 1. Fetch modules + module_tests (now includes is_visible) ────────────
   const { data: modulesRaw, error: modErr } = await supabase
     .from("modules")
     .select(`
@@ -73,6 +82,7 @@ export async function fetchDashboardModules(): Promise<DashboardModule[]> {
       module_tests:module_tests!module_name(
         id,
         tests_name,
+        is_visible,
         test:tests!module_tests_tests_name_fkey(name, serial_no)
       )
     `)
@@ -80,6 +90,7 @@ export async function fetchDashboardModules(): Promise<DashboardModule[]> {
 
   if (modErr) throw new Error(modErr.message);
   const modulesData = (modulesRaw ?? []) as any[];
+
 
   // ── 2. Collect every unique tests_serial_no ──────────────────────────────
   const allSerialNos: string[] = Array.from(
@@ -92,22 +103,25 @@ export async function fetchDashboardModules(): Promise<DashboardModule[]> {
     )
   );
 
+
   if (allSerialNos.length === 0) {
     return modulesData.map((mod) => ({
       name: mod.name,
       description: mod.description ?? null,
       module_tests: (mod.module_tests ?? []).map((mt: any) => ({
         ...mt,
+        is_visible: mt.is_visible ?? true,
         active_revision: null,
       })),
       step_results: [],
     }));
   }
 
-  // ── 3. Batch-fetch active revisions ──────────────────────────────────────
+
+  // ── 3. Batch-fetch active revisions (is_visible removed from select) ─────
   const { data: revRaw, error: revErr } = await supabase
     .from("test_revisions")
-    .select("id, revision, is_visible, tests_serial_no, step_order")
+    .select("id, revision, tests_serial_no, step_order")
     .eq("status", "active")
     .in("tests_serial_no", allSerialNos);
 
@@ -118,7 +132,7 @@ export async function fetchDashboardModules(): Promise<DashboardModule[]> {
     revBySerial[r.tests_serial_no] = {
       id: r.id,
       revision: r.revision,
-      is_visible: r.is_visible,
+      // ✅ is_visible no longer mapped here
       step_order: Array.isArray(r.step_order) ? (r.step_order as string[]) : [],
     };
   });
@@ -127,6 +141,7 @@ export async function fetchDashboardModules(): Promise<DashboardModule[]> {
     allSerialNos.filter((sn) => !revBySerial[sn])
   );
 
+
   // ── 4. Collect all step IDs from active revisions ────────────────────────
   const allStepIds = Array.from(
     new Set(
@@ -134,16 +149,13 @@ export async function fetchDashboardModules(): Promise<DashboardModule[]> {
     )
   );
 
-  // ── 5. Fetch step_results ─────────────────────────────────────────────────
-  // Key: "(module_name):(test_steps_id)" → prevents cross-module bleed.
 
-  // Declare lookups at outer scope so step-6 assembly can access them.
+  // ── 5. Fetch step_results ─────────────────────────────────────────────────
   const statusByModuleStep = new Map<string, string>();
   const metaByStepId = new Map<string, { is_divider: boolean; tests_serial_no: string }>();
 
   const srPromises: PromiseLike<any>[] = [];
 
-  // Revised path: fetch by exact step IDs in step_order
   if (allStepIds.length > 0) {
     srPromises.push(
       supabase
@@ -153,7 +165,6 @@ export async function fetchDashboardModules(): Promise<DashboardModule[]> {
     );
   }
 
-  // Legacy path: fetch via test_steps join for tests without a revision
   if (serialNosWithoutRevision.size > 0) {
     const legacyModuleNames = new Set<string>();
     for (const mod of modulesData) {
@@ -199,6 +210,7 @@ export async function fetchDashboardModules(): Promise<DashboardModule[]> {
     }
   }
 
+
   // ── 6. Assemble final DashboardModule array ──────────────────────────────
   return modulesData.map((mod): DashboardModule => {
     const modName = mod.name as string;
@@ -207,6 +219,7 @@ export async function fetchDashboardModules(): Promise<DashboardModule[]> {
       (mt: any) => ({
         id: mt.id,
         tests_name: mt.tests_name,
+        is_visible: mt.is_visible ?? true, // ✅ read from module_tests row
         test: mt.test ?? null,
         active_revision: revBySerial[mt.test?.serial_no ?? ""] ?? null,
       })
@@ -221,7 +234,6 @@ export async function fetchDashboardModules(): Promise<DashboardModule[]> {
       if (!serialNo) continue;
 
       if (rev && rev.step_order.length > 0) {
-        // Revised path: iterate step_order, look up status by (module_name, step_id)
         for (const stepId of rev.step_order) {
           const parsed = parseStepKey(stepId);
           if (parsed.tests_serial_no !== serialNo) continue;
@@ -237,7 +249,6 @@ export async function fetchDashboardModules(): Promise<DashboardModule[]> {
           });
         }
       } else {
-        // Legacy path: use join metadata, look up status by (module_name, step_id)
         for (const [stepId, meta] of metaByStepId.entries()) {
           if (meta.tests_serial_no !== serialNo) continue;
 
@@ -263,9 +274,11 @@ export async function fetchDashboardModules(): Promise<DashboardModule[]> {
   });
 }
 
+
 // ─────────────────────────────────────────────────────────────────────────────
 // fetchActiveLocks
 // ─────────────────────────────────────────────────────────────────────────────
+
 
 export async function fetchActiveLocks(): Promise<ActiveLock[]> {
   const { data: sessionData } = await supabase.auth.getSession();
@@ -301,9 +314,11 @@ export async function fetchActiveLocks(): Promise<ActiveLock[]> {
   });
 }
 
+
 // ─────────────────────────────────────────────────────────────────────────────
 // fetchOtherActiveLockModules
 // ─────────────────────────────────────────────────────────────────────────────
+
 
 export async function fetchOtherActiveLockModules(): Promise<Map<string, number>> {
   const { data: sessionData } = await supabase.auth.getSession();
