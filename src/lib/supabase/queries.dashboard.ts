@@ -153,28 +153,28 @@ export async function fetchDashboardModules(): Promise<DashboardModule[]> {
       tests_serial_no
     )
   `;
-
+  
   const srPromises: Promise<any>[] = [];
 
   if (activeRevisionIds.length > 0) {
     srPromises.push(
-      supabase
-        .from("step_results")
-        .select(srSelect)
-        .in("revision_id", activeRevisionIds)
-        .then(res => res)
+      Promise.resolve(
+        supabase
+          .from("step_results")
+          .select(srSelect)
+          .in("revision_id", activeRevisionIds)
+      )
     );
   }
-
+  
   if (serialNosWithoutRevision.size > 0) {
-    // Legacy rows: no revision yet. is null filter brings all old-style rows;
-    // we scope to the right tests in JS below.
     srPromises.push(
-      supabase
-        .from("step_results")
-        .select(srSelect)
-        .is("revision_id", null)
-        .then(res => res)
+      Promise.resolve(
+        supabase
+          .from("step_results")
+          .select(srSelect)
+          .is("revision_id", null)
+      )
     );
   }
 
