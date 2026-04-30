@@ -3,10 +3,10 @@
  *
  * Revision-aware update (2025):
  *  - fetchDashboardModules now fetches active revisions for every test in every
- *    module, then pulls step_results scoped only to those revision IDs.
+ *    module, then pulls step_results scoped to the test_steps referenced in
+ *    those revision step_orders.
  *  - For tests that have no activated revision yet (legacy data) the fallback
- *    is step_results WHERE revision_id IS NULL — same behaviour as before the
- *    revision system existed.
+ *    is step_results for all steps belonging to that test in that module.
  *  - Step counts (pass / fail / pending / total) are computed in JS using
  *    step_order from the active revision so that divider rows and out-of-scope
  *    steps are excluded correctly.
@@ -45,6 +45,8 @@ export interface DashboardStepResult {
   /** Denormalised from the joined test_steps row. */
   is_divider: boolean;
   tests_serial_no: string;
+  /** Module name to scope step_results per module. */
+  module_name: string;
 }
 
 export interface DashboardModule {
@@ -126,55 +128,53 @@ export async function fetchDashboardModules(): Promise<DashboardModule[]> {
     };
   });
 
-  const activeRevisionIds = Object.values(revBySerial).map((r) => r.id);
-
   /** serial_nos that have NO active revision — legacy fallback path */
   const serialNosWithoutRevision = new Set(
     allSerialNos.filter((sn) => !revBySerial[sn])
   );
 
-  // ── 4. Fetch step_results for the two paths ──────────────────────────────
+  // ── 4. Fetch step_results ──────────────────────────────────────────────
   //
-  // Path A — revised tests:
-  //   step_results WHERE revision_id IN (activeRevisionIds)
-  //   These rows were stamped with revision_id when the revision was activated.
-  //
-  // Path B — legacy / pre-revision tests:
-  //   step_results WHERE revision_id IS NULL
-  //   These belong to tests that have never had a revision activated. We
-  //   further filter them in JS to only include steps whose tests_serial_no
-  //   is in serialNosWithoutRevision.
+  // Fetch step_results for the test_steps referenced in active revisions'
+  // step_order arrays, plus legacy rows for tests without revisions.
+  // We use test_steps_id (from step_order) directly rather than revision_id
+  // because step_results has a direct FK to test_steps.
 
   const srSelect = `
     status,
     test_steps_id,
+    module_name,
     step:test_steps!step_results_test_steps_id_fkey(
       is_divider,
       tests_serial_no
     )
   `;
-  
-  const srPromises: Promise<any>[] = [];
 
-  if (activeRevisionIds.length > 0) {
+  // Collect all test_steps_id values from active revision step_orders
+  const allStepIdsFromRevisions = new Set<string>();
+  for (const rev of Object.values(revBySerial)) {
+    for (const stepId of rev.step_order) {
+      allStepIdsFromRevisions.add(stepId);
+    }
+  }
+
+  const srPromises: PromiseLike<any>[] = [];
+
+  if (allStepIdsFromRevisions.size > 0) {
     srPromises.push(
-      Promise.resolve(
-        supabase
-          .from("step_results")
-          .select(srSelect)
-          .in("revision_id", activeRevisionIds)
-      )
+      supabase
+        .from("step_results")
+        .select(srSelect)
+        .in("test_steps_id", Array.from(allStepIdsFromRevisions))
     );
   }
-  
+
   if (serialNosWithoutRevision.size > 0) {
     srPromises.push(
-      Promise.resolve(
-        supabase
-          .from("step_results")
-          .select(srSelect)
-          .is("revision_id", null)
-      )
+      supabase
+        .from("step_results")
+        .select(srSelect)
+        .in("step.tests_serial_no", Array.from(serialNosWithoutRevision))
     );
   }
 
@@ -189,20 +189,12 @@ export async function fetchDashboardModules(): Promise<DashboardModule[]> {
     .map((row) => ({
       status: row.status as string,
       test_steps_id: row.test_steps_id as string,
+      module_name: row.module_name as string,
       is_divider: (row.step?.is_divider ?? false) as boolean,
       tests_serial_no: (row.step?.tests_serial_no ?? "") as string,
-    }))
-    // Legacy filter: drop rows for tests that DO have an active revision
-    // (those should only come through Path A)
-    .filter(
-      (sr) =>
-        revBySerial[sr.tests_serial_no] !== undefined ||
-        serialNosWithoutRevision.has(sr.tests_serial_no)
-    );
+    }));
 
   // ── 5. Build a lookup: test_steps_id → DashboardStepResult ─────────────────
-  //
-  // This lets the per-module assembly below work in O(1) per step.
   const srByStepId = new Map<string, DashboardStepResult>();
   for (const sr of allStepResults) {
     srByStepId.set(sr.test_steps_id, sr);
@@ -230,13 +222,14 @@ export async function fetchDashboardModules(): Promise<DashboardModule[]> {
         // Revised path: walk step_order so counts respect ordering and scope
         for (const stepId of rev.step_order) {
           const sr = srByStepId.get(stepId);
-          if (sr) moduleStepResults.push(sr);
+          // Only include if it belongs to this module
+          if (sr && sr.module_name === mod.name) moduleStepResults.push(sr);
         }
       } else {
-        // Legacy path: all step_results whose tests_serial_no matches this test
+        // Legacy path: all step_results for this test in this module
         const serialNo = (mt.test?.serial_no ?? "") as string;
         for (const sr of allStepResults) {
-          if (sr.tests_serial_no === serialNo) {
+          if (sr.tests_serial_no === serialNo && sr.module_name === mod.name) {
             moduleStepResults.push(sr);
           }
         }

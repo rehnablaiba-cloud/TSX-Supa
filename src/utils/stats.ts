@@ -10,7 +10,7 @@ import type { ModuleSummary } from './export';
 // of the full StepResult interface.
 interface StepResultLike {
   status: string;
-  step?: { is_divider: boolean } | null;
+  is_divider: boolean;
 }
 
 interface ModuleTestLike {
@@ -31,7 +31,7 @@ export function getModuleStats(
   let total = 0, pass = 0, fail = 0, pending = 0;
 
   for (const sr of step_results ?? []) {
-    if (sr.step?.is_divider) continue;
+    if (sr.is_divider) continue;  // ← fixed: top-level is_divider
     total++;
     if      (sr.status === 'pass') pass++;
     else if (sr.status === 'fail') fail++;
