@@ -11,6 +11,9 @@ import {
   AlertCircle,
   Info,
   Play,
+  Eye,
+  EyeOff,
+  Pencil,
 } from "lucide-react";
 import ModalShell from "../UI/ModalShell";
 import { Row } from "../UI/ReviewRow";
@@ -55,6 +58,7 @@ interface RevisionListItem {
   created_at: string;
   notes: string | null;
   step_count: number;
+  is_visible: boolean;
 }
 
 interface Props {
@@ -222,9 +226,8 @@ const ImportStepsModal: React.FC<Props> = ({ onClose, onBack }) => {
 
   // ── Shared state ──────────────────────────────────────────────────────────────
   const [stage,   setStage]   = useState<Stage>("selecttest");
-  // tests: keyed by serial_no (the PK / FK used throughout DB queries)
   const [tests,   setTests]   = useState<{ serial_no: string; name: string }[]>([]);
-  const [selTest, setSelTest] = useState(""); // stores tests.serial_no
+  const [selTest, setSelTest] = useState("");
   const [error,   setError]   = useState<string | null>(null);
 
   // ── Revision control state ────────────────────────────────────────────────────
@@ -245,7 +248,6 @@ const ImportStepsModal: React.FC<Props> = ({ onClose, onBack }) => {
   const fileRef = useRef<HTMLInputElement>(null);
 
   // ── Load test list ────────────────────────────────────────────────────────────
-  // tests PK is serial_no — there is no "id" column
   useEffect(() => {
     supabase
       .from("tests")
@@ -270,19 +272,19 @@ const ImportStepsModal: React.FC<Props> = ({ onClose, onBack }) => {
   };
 
   // ─── Test selection ───────────────────────────────────────────────────────────
-  // Receives tests.serial_no — the FK used in test_revisions.tests_serial_no
+
   const handleTestSelect = async (testSerialNo: string) => {
     setSelTest(testSerialNo);
     setError(null);
     await loadRevisionControl(testSerialNo);
   };
 
-  // ─── Normalize step_order from DB (may arrive as JSON string or array) ────────
+  // ─── Normalize step_order from DB ────────────────────────────────────────────
 
   const parseStepOrder = (so: any): string[] =>
     typeof so === "string" ? JSON.parse(so) : (so ?? []);
 
-  // ─── Load revision control / activator ────────────────────────────────────────
+  // ─── Load revision control ────────────────────────────────────────────────────
 
   const loadRevisionControl = async (testSerialNo: string) => {
     setRevLoading(true);
@@ -294,27 +296,21 @@ const ImportStepsModal: React.FC<Props> = ({ onClose, onBack }) => {
     setError(null);
 
     try {
-      // test_revisions FK column is tests_serial_no (not test_id)
       const { data: revRows, error: revsErr } = await supabase
         .from("test_revisions")
-        .select("id, status, step_order, created_at, notes")
+        .select("id, status, step_order, created_at, notes, is_visible")
         .eq("tests_serial_no", testSerialNo)
         .order("created_at", { ascending: true });
       if (revsErr) throw new Error(revsErr.message);
 
-      const allRevs = (revRows ?? []) as ActiveRevInfo[];
+      const allRevs = (revRows ?? []) as (ActiveRevInfo & { is_visible: boolean })[];
 
-      // Strip the testSerialNo prefix from full revision IDs to get bare codes
       const ids   = allRevs.map(r => r.id);
       const codes = ids.map(id =>
         id.startsWith(testSerialNo + "-") ? id.slice(testSerialNo.length + 1) : id);
       setExistingRevIds(codes);
       setNewRevId(getNextRevisionId(codes, "iterate"));
 
-      // Normalize step_order on the active revision before storing in state.
-      // Supabase may return a JSON string instead of a parsed array depending
-      // on the column type — parseStepOrder handles both so nothing downstream
-      // needs to guard against it again.
       const activeRaw = allRevs.find(r => r.status === "active") ?? null;
       const active    = activeRaw
         ? { ...activeRaw, step_order: parseStepOrder(activeRaw.step_order) }
@@ -327,21 +323,14 @@ const ImportStepsModal: React.FC<Props> = ({ onClose, onBack }) => {
           status:     r.status,
           created_at: r.created_at,
           notes:      r.notes,
-          // parseStepOrder fixes the "3559 steps" bug: step_order was arriving
-          // as a JSON string, so .length returned the character count, not the
-          // item count.
           step_count: parseStepOrder(r.step_order).length,
+          is_visible: (r as any).is_visible ?? true,
         }))
       );
 
-      // Resolve base steps from the active revision's step_order.
-      // step_order is already a clean string[] thanks to the normalisation above.
       if (active && active.step_order.length > 0) {
         const { data: stepRows, error: stepsErr } = await supabase
           .from("test_steps")
-          // Include serial_no so resolveBaseSteps can use the stored DB value
-          // instead of falling back to the positional index. This is required
-          // for the composite-key diff to match divider rows correctly.
           .select("id, serial_no, action, expected_result, is_divider, introduced_in_rev, origin_step_id")
           .in("id", active.step_order);
         if (stepsErr) throw new Error(stepsErr.message);
@@ -364,7 +353,6 @@ const ImportStepsModal: React.FC<Props> = ({ onClose, onBack }) => {
     setRevLoading(true);
     setError(null);
     try {
-      // Deactivate current
       if (activeRev) {
         const { error: deactErr } = await supabase
           .from("test_revisions")
@@ -373,14 +361,30 @@ const ImportStepsModal: React.FC<Props> = ({ onClose, onBack }) => {
         if (deactErr) throw new Error(deactErr.message);
       }
 
-      // Activate selected
       const { error: actErr } = await supabase
         .from("test_revisions")
         .update({ status: "active" })
         .eq("id", revId);
       if (actErr) throw new Error(actErr.message);
 
-      // Reload
+      await loadRevisionControl(selTest);
+    } catch (e: any) {
+      setError(e.message);
+      setRevLoading(false);
+    }
+  };
+
+  // ─── Toggle is_visible ────────────────────────────────────────────────────────
+
+  const handleToggleVisibility = async (rev: RevisionListItem) => {
+    setRevLoading(true);
+    setError(null);
+    try {
+      const { error: updErr } = await supabase
+        .from("test_revisions")
+        .update({ is_visible: !rev.is_visible })
+        .eq("id", rev.id);
+      if (updErr) throw new Error(updErr.message);
       await loadRevisionControl(selTest);
     } catch (e: any) {
       setError(e.message);
@@ -430,7 +434,6 @@ const ImportStepsModal: React.FC<Props> = ({ onClose, onBack }) => {
     const userId  = user?.id ?? "unknown";
     const isFirst = !activeRev || baseSteps.length === 0;
 
-    // newRevId is already just the bare code ("R0-1", "RA-1") — no selTest prefix
     const payload = isFirst
       ? buildFirstRevisionPayload(parseResult!.rows, newRevId, selTest, userId, revNotes)
       : buildDiffRevisionPayload(diffResult!, newRevId, selTest, userId, revNotes);
@@ -447,8 +450,6 @@ const ImportStepsModal: React.FC<Props> = ({ onClose, onBack }) => {
     setError(null);
 
     try {
-      // 1. Insert revision FIRST — if this is a retry, the unique constraint
-      //    on test_revisions.id fires here cleanly before we touch steps.
       const { error: revErr } = await supabase.from("test_revisions").insert({
         tests_serial_no: selTest,
         revision:        revPayload.revision.id,
@@ -460,8 +461,6 @@ const ImportStepsModal: React.FC<Props> = ({ onClose, onBack }) => {
       });
       if (revErr) throw new Error(`test_revisions: ${revErr.message}`);
 
-      // 2. Upsert steps — ignoreDuplicates makes retries safe.
-      //    Steps are append-only/immutable so skipping an existing row is correct.
       if (revPayload.newSteps.length > 0) {
         const { error: stepsErr } = await supabase
           .from("test_steps")
@@ -542,7 +541,7 @@ const ImportStepsModal: React.FC<Props> = ({ onClose, onBack }) => {
       )}
 
       {/* ──────────────────────────────────
-          rev-control (Revision Activator & Control)
+          rev-control
       ────────────────────────────────── */}
       {stage === "rev-control" && (
         <div className="flex flex-col gap-3">
@@ -642,6 +641,26 @@ const ImportStepsModal: React.FC<Props> = ({ onClose, onBack }) => {
                                 Active
                               </span>
                             )}
+
+                            {/* Visibility toggle */}
+                            <button
+                              onClick={() => handleToggleVisibility(rev)}
+                              disabled={revLoading}
+                              title={
+                                rev.is_visible
+                                  ? "Visible to testers — click to hide"
+                                  : "Hidden from testers — click to show"
+                              }
+                              className={`flex items-center gap-1 text-[11px] font-medium
+                                transition-colors disabled:opacity-50
+                                ${rev.is_visible
+                                  ? "text-sky-400 hover:text-sky-300"
+                                  : "text-t-muted hover:text-t-primary"
+                                }`}
+                            >
+                              {rev.is_visible ? <Pencil size={12} /> : <Eye size={12} />}
+                              {rev.is_visible ? "Execute Mode" : "View Only"}
+                            </button>
                           </div>
                         </div>
                       );
@@ -657,7 +676,7 @@ const ImportStepsModal: React.FC<Props> = ({ onClose, onBack }) => {
       )}
 
       {/* ──────────────────────────────────
-          rev-info (New Revision Setup)
+          rev-info
       ────────────────────────────────── */}
       {stage === "rev-info" && (
         <div className="flex flex-col gap-3">
