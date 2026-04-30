@@ -116,6 +116,15 @@ function sleep(ms: number) {
   return new Promise<void>(r => setTimeout(r, ms));
 }
 
+/** Chunk an array into smaller batches */
+function chunk<T>(arr: T[], size: number): T[][] {
+  const out: T[][] = [];
+  for (let i = 0; i < arr.length; i += size) {
+    out.push(arr.slice(i, i + size));
+  }
+  return out;
+}
+
 // ─── Inline Progress Bar ──────────────────────────────────────────────────────
 
 interface ProgressState {
@@ -561,15 +570,21 @@ const ImportStepsModal: React.FC<Props> = ({ onClose, onBack }) => {
       );
 
       if (active && active.step_order.length > 0) {
-        const { data: stepRows, error: stepsErr } = await supabase
-          .from("test_steps")
-          .select("id, serial_no, action, expected_result, is_divider, introduced_in_rev, origin_step_id")
-          .in("id", active.step_order);
-        if (stepsErr) throw new Error(stepsErr.message);
+        // ── CHUNKED FETCH: Supabase .in() breaks with 1000s of IDs ──
+        const BATCH = 200;
+        const batches = chunk(active.step_order, BATCH);
+        const allStepRows: any[] = [];
 
-        const stepMap = new Map(
-          ((stepRows ?? []) as any[]).map(s => [s.id, s])
-        );
+        for (let i = 0; i < batches.length; i++) {
+          const { data: stepRows, error: stepsErr } = await supabase
+            .from("test_steps")
+            .select("id, serial_no, action, expected_result, is_divider, introduced_in_rev, origin_step_id")
+            .in("id", batches[i]);
+          if (stepsErr) throw new Error(stepsErr.message);
+          allStepRows.push(...(stepRows ?? []));
+        }
+
+        const stepMap = new Map(allStepRows.map(s => [s.id, s]));
         setBaseSteps(resolveBaseSteps(active.step_order, stepMap as any));
       }
     } catch (e: any) {
@@ -773,15 +788,22 @@ const ImportStepsModal: React.FC<Props> = ({ onClose, onBack }) => {
 
       const ids = (mtData ?? []).map((r: any) => r.id);
 
-      const { data: lockData } = ids.length > 0
-        ? await supabase
-            .from("test_locks")
-            .select("module_test_id, user_id, locked_by_name")
-            .in("module_test_id", ids)
-        : { data: [] };
+      // ── CHUNKED FETCH for locks too ──
+      const BATCH = 200;
+      const lockBatches = chunk(ids, BATCH);
+      const allLockRows: any[] = [];
+
+      for (const batch of lockBatches) {
+        if (batch.length === 0) continue;
+        const { data: lockData } = await supabase
+          .from("test_locks")
+          .select("module_test_id, user_id, locked_by_name")
+          .in("module_test_id", batch);
+        allLockRows.push(...(lockData ?? []));
+      }
 
       const lockMap = new Map(
-        (lockData ?? []).map((l: any) => [l.module_test_id, { user_id: l.user_id, locked_by_name: l.locked_by_name }])
+        allLockRows.map((l: any) => [l.module_test_id, { user_id: l.user_id, locked_by_name: l.locked_by_name }])
       );
 
       const rows: ModuleTestVisRow[] = (mtData ?? []).map((r: any) => ({
