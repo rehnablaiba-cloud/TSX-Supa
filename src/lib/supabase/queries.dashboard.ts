@@ -207,15 +207,17 @@ if (serialNosWithoutRevision.size > 0) {
   );
 }
 
-const srResponses = await Promise.all(srPromises);
-for (const res of srResponses) {
-  if (res.error) throw new Error(res.error.message);
-}
+
 
 // Build lookup: (module_name, test_steps_id) → status
 const statusByModuleStep = new Map<string, string>();
 // Build lookup for legacy: test_steps_id → {is_divider, tests_serial_no}
 const metaByStepId = new Map<string, { is_divider: boolean; tests_serial_no: string }>();
+
+const srResponses = await Promise.all(srPromises);
+for (const res of srResponses) {
+  if (res.error) throw new Error(res.error.message);
+}
 
 for (const row of srResponses.flatMap((r) => (r.data ?? []) as any[])) {
   const key = `${row.module_name}:${row.test_steps_id}`;
