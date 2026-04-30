@@ -93,11 +93,6 @@ interface ImagePreviewState {
 
 // ─────────────────────────────────────────────────────────────────────────────
 // computeDisplaySerials
-//
-// Assigns 1-based sequential numbers by array position.
-// Non-dividers: counter increments each time one is encountered.
-// Dividers:     show the SN of the NEXT non-divider in the array
-//               (so the reader knows which step comes immediately after).
 // ─────────────────────────────────────────────────────────────────────────────
 
 function computeDisplaySerials(
@@ -105,7 +100,6 @@ function computeDisplaySerials(
 ): number[] {
   const result: number[] = new Array(steps.length).fill(0);
 
-  // First pass — assign sequential numbers to non-dividers
   let counter = 0;
   for (let i = 0; i < steps.length; i++) {
     if (!steps[i].is_divider) {
@@ -113,8 +107,6 @@ function computeDisplaySerials(
     }
   }
 
-  // Second pass — dividers inherit the SN of the next non-divider
-  // (if no next non-divider exists, use counter + 1 as a safe sentinel)
   for (let i = 0; i < steps.length; i++) {
     if (steps[i].is_divider) {
       let nextSn = counter + 1;
@@ -132,7 +124,7 @@ function computeDisplaySerials(
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Divider configs  —  driven by CSS custom properties
+// Divider configs
 // ─────────────────────────────────────────────────────────────────────────────
 
 const DIVIDER_LEVELS: Record<
@@ -521,6 +513,7 @@ const TableStepRow: React.FC<{
   signedImageUrls: Record<string, string>;
   isFocused: boolean;
   isUpdating?: boolean;
+  isReadOnly?: boolean;
   onUpdate: (
     stepId: string,
     status: "pass" | "fail" | "pending",
@@ -536,6 +529,7 @@ const TableStepRow: React.FC<{
   signedImageUrls,
   isFocused,
   isUpdating = false,
+  isReadOnly = false,
   onUpdate,
   onFocus,
   onRemarksChange,
@@ -618,19 +612,22 @@ const TableStepRow: React.FC<{
         <textarea
           value={remarks}
           onChange={(e) => {
+            if (isReadOnly) return;
             setRemarks(e.target.value);
             onRemarksChange(e.target.value);
           }}
           onFocus={onFocus}
           onKeyDown={(e) => {
+            if (isReadOnly) return;
             if (e.key === "Enter" && !e.shiftKey) {
               e.preventDefault();
               onUpdate(step.stepId, "pass", remarks);
             }
           }}
-          placeholder="Remarks… (Enter to pass)"
+          placeholder={isReadOnly ? "Read-only" : "Remarks… (Enter to pass)"}
           rows={2}
-          className="input text-sm resize-none w-full"
+          disabled={isReadOnly}
+          className="input text-sm resize-none w-full disabled:opacity-50 disabled:cursor-not-allowed"
         />
       </td>
       <td className="px-2 py-3 text-center border-r border-(--border-color)">
@@ -657,7 +654,7 @@ const TableStepRow: React.FC<{
                 e.stopPropagation();
                 onUpdate(step.stepId, "pass", remarks);
               }}
-              disabled={isUpdating}
+              disabled={isUpdating || isReadOnly}
               className={`flex-1 h-7 rounded-md text-xs font-bold transition-colors flex items-center justify-center disabled:opacity-40 disabled:cursor-not-allowed ${
                 step.status === "pass"
                   ? "bg-pass text-(--bg-surface)"
@@ -671,7 +668,7 @@ const TableStepRow: React.FC<{
                 e.stopPropagation();
                 onUpdate(step.stepId, "fail", remarks);
               }}
-              disabled={isUpdating}
+              disabled={isUpdating || isReadOnly}
               className={`flex-1 h-7 rounded-md text-xs font-bold transition-colors flex items-center justify-center disabled:opacity-40 disabled:cursor-not-allowed ${
                 step.status === "fail"
                   ? "bg-fail text-(--bg-surface)"
@@ -687,7 +684,7 @@ const TableStepRow: React.FC<{
                 e.stopPropagation();
                 onUpdate(step.stepId, "pending", "");
               }}
-              disabled={isUpdating}
+              disabled={isUpdating || isReadOnly}
               className="w-full h-7 rounded-md text-xs font-semibold text-t-muted hover:text-t-primary bg-bg-card hover:bg-bg-surface border border-(--border-color) transition-colors flex items-center justify-center disabled:opacity-40 disabled:cursor-not-allowed"
             >
               Undo
@@ -709,6 +706,7 @@ const MobileStepCard: React.FC<{
   signedImageUrls: Record<string, string>;
   isFocused: boolean;
   isUpdating?: boolean;
+  isReadOnly?: boolean;
   onUpdate: (
     stepId: string,
     status: "pass" | "fail" | "pending",
@@ -724,6 +722,7 @@ const MobileStepCard: React.FC<{
   signedImageUrls,
   isFocused,
   isUpdating = false,
+  isReadOnly = false,
   onUpdate,
   onFocus,
   onRemarksChange,
@@ -740,6 +739,7 @@ const MobileStepCard: React.FC<{
   }, [initialRemarks]);
 
   const openDialog = (e: React.MouseEvent) => {
+    if (isReadOnly) return;
     e.stopPropagation();
     setDraftRemarks(remarks);
     setShowRemarksDialog(true);
@@ -863,7 +863,7 @@ const MobileStepCard: React.FC<{
             #{step.serial_no}
           </span>
           <div className="flex items-center gap-2 min-w-0">
-            {isFocused && (
+            {isFocused && !isReadOnly && (
               <span className="flex items-center gap-1.5 text-[10px] font-medium shrink-0">
                 <kbd className="px-1 py-0.5 rounded-sm bg-[color-mix(in_srgb,var(--color-pass)_10%,transparent)] text-[color-mix(in_srgb,var(--color-pass),white_30%)] border border-[color-mix(in_srgb,var(--color-pass)_20%,transparent)] font-mono text-[9px]">
                   P
@@ -958,14 +958,16 @@ const MobileStepCard: React.FC<{
         <div className="flex items-center gap-2 px-3 py-2 bg-bg-card">
           <button
             onClick={openDialog}
-            disabled={isUpdating}
+            disabled={isUpdating || isReadOnly}
             className={`flex-1 min-w-0 flex items-center gap-1.5 px-3 h-8 rounded-full border text-xs font-medium transition-colors truncate disabled:opacity-40 disabled:cursor-not-allowed ${
               remarks
                 ? "border-c-brand/40 bg-c-brand/8 text-t-primary hover:bg-c-brand/15"
                 : "border-(--border-color) bg-bg-surface text-t-muted hover:border-c-brand/40 hover:text-t-primary"
             }`}
           >
-            <span className="truncate">{remarks || "Add remarks…"}</span>
+            <span className="truncate">
+              {isReadOnly && !remarks ? "No remarks" : remarks || "Add remarks…"}
+            </span>
             {remarks && (
               <span className="shrink-0 w-1.5 h-1.5 rounded-full bg-c-brand" />
             )}
@@ -976,7 +978,7 @@ const MobileStepCard: React.FC<{
                 e.stopPropagation();
                 onUpdate(step.stepId, "pending", "");
               }}
-              disabled={isUpdating}
+              disabled={isUpdating || isReadOnly}
               className="shrink-0 px-2.5 h-8 rounded-md text-xs font-semibold text-t-muted hover:text-t-primary bg-bg-surface hover:bg-bg-card border border-(--border-color) transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
             >
               Undo
@@ -987,7 +989,7 @@ const MobileStepCard: React.FC<{
               e.stopPropagation();
               onUpdate(step.stepId, "pass", remarks);
             }}
-            disabled={isUpdating}
+            disabled={isUpdating || isReadOnly}
             className={`shrink-0 w-8 h-8 rounded-md text-xs font-bold transition-colors flex items-center justify-center disabled:opacity-40 disabled:cursor-not-allowed ${
               step.status === "pass"
                 ? "bg-pass text-(--bg-surface)"
@@ -1001,7 +1003,7 @@ const MobileStepCard: React.FC<{
               e.stopPropagation();
               onUpdate(step.stepId, "fail", remarks);
             }}
-            disabled={isUpdating}
+            disabled={isUpdating || isReadOnly}
             className={`shrink-0 w-8 h-8 rounded-md text-xs font-bold transition-colors flex items-center justify-center disabled:opacity-40 disabled:cursor-not-allowed ${
               step.status === "fail"
                 ? "bg-fail text-(--bg-surface)"
@@ -1058,6 +1060,8 @@ const TestExecution: React.FC<Props> = ({
   const scrollContainerRef = useRef<HTMLDivElement>(null);
 
   const isLockedByOther = !!(lock && lock.user_id !== user?.id);
+  // is_visible === false means the revision is hidden — all editing blocked
+  const isRevisionReadOnly = currentRevision !== null && currentRevision.is_visible === false;
 
   const openImagePreview = useCallback(
     (paths: string[], clickedIdx: number, label: string) => {
@@ -1100,7 +1104,6 @@ const TestExecution: React.FC<Props> = ({
       setModuleTests(execData.module_tests);
       setCurrentRevision(execData.current_revision);
 
-      // Build ExecutionStep[] — step_results are already ordered by step_order
       const ordered = execData.step_results.filter((sr) => sr.step !== null);
       const displaySerials = computeDisplaySerials(
         ordered.map((sr) => ({ is_divider: sr.step!.is_divider }))
@@ -1240,12 +1243,14 @@ const TestExecution: React.FC<Props> = ({
   useEffect(() => {
     if (steps.length === 0 || stepsInitialized.current) return;
     stepsInitialized.current = true;
+    // Don't auto-focus when read-only — there's nothing to act on
+    if (isRevisionReadOnly) return;
     const firstPending = steps.find((s) => !s.is_divider && s.status === "pending");
     if (firstPending) {
       setFocusedStepId(firstPending.stepId);
       setScrollTarget(firstPending.stepId);
     }
-  }, [steps]);
+  }, [steps, isRevisionReadOnly]);
 
   // ── Clean up stale refs ───────────────────────────────────────────────────
   useEffect(() => {
@@ -1300,7 +1305,7 @@ const TestExecution: React.FC<Props> = ({
       status: "pass" | "fail" | "pending",
       remarks: string
     ) => {
-      if (isLockedByOther) return;
+      if (isLockedByOther || isRevisionReadOnly) return;
       if (updatingStepIds.has(stepId)) return;
 
       setUpdatingStepIds((prev) => new Set(prev).add(stepId));
@@ -1358,7 +1363,7 @@ const TestExecution: React.FC<Props> = ({
         });
       }
     },
-    [steps, module_name, user, addToast, isLockedByOther, updatingStepIds]
+    [steps, module_name, user, addToast, isLockedByOther, isRevisionReadOnly, updatingStepIds]
   );
 
   // ── Keyboard shortcuts ────────────────────────────────────────────────────
@@ -1366,7 +1371,7 @@ const TestExecution: React.FC<Props> = ({
     const onKeyDown = (e: KeyboardEvent) => {
       const tag = (document.activeElement as HTMLElement)?.tagName;
       if (tag === "TEXTAREA" || tag === "INPUT" || tag === "BUTTON") return;
-      if (!focusedStepId || isLockedByOther) return;
+      if (!focusedStepId || isLockedByOther || isRevisionReadOnly) return;
       const focused = steps.find((s) => s.stepId === focusedStepId);
       if (!focused || focused.is_divider) return;
       if (e.key === "p" || e.key === "P" || e.key === "Enter") {
@@ -1387,7 +1392,7 @@ const TestExecution: React.FC<Props> = ({
     };
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);
-  }, [focusedStepId, steps, isLockedByOther, handleStepUpdate]);
+  }, [focusedStepId, steps, isLockedByOther, isRevisionReadOnly, handleStepUpdate]);
 
   // ── Reset all ─────────────────────────────────────────────────────────────
   const handleUndoAll = useCallback(async () => {
@@ -1692,7 +1697,7 @@ const TestExecution: React.FC<Props> = ({
             </div>
             {/* Right: keyboard hints + percentage */}
             <div className="flex items-center gap-3">
-              {focusedStepId && (
+              {focusedStepId && !isRevisionReadOnly && (
                 <span className="hidden md:flex items-center gap-2 text-xs text-t-muted">
                   <span className="flex items-center gap-1">
                     <kbd className="px-1.5 py-0.5 rounded-sm bg-[color-mix(in_srgb,var(--color-pass)_10%,transparent)] text-[color-mix(in_srgb,var(--color-pass),white_30%)] font-mono text-[10px] border border-[color-mix(in_srgb,var(--color-pass)_20%,transparent)]">
@@ -1731,6 +1736,20 @@ const TestExecution: React.FC<Props> = ({
             />
           </div>
         </div>
+
+        {/* Read-only revision banner */}
+        {isRevisionReadOnly && (
+          <div className="mx-4 mb-1 flex items-center gap-2 px-3 py-2 rounded-lg bg-[color-mix(in_srgb,var(--color-warn)_8%,transparent)] border border-[color-mix(in_srgb,var(--color-warn)_25%,transparent)]">
+            <GitBranch
+              size={12}
+              className="shrink-0 text-[color-mix(in_srgb,var(--color-warn),black_10%)] dark:text-[color-mix(in_srgb,var(--color-warn),white_30%)]"
+            />
+            <span className="text-xs text-[color-mix(in_srgb,var(--color-warn),black_10%)] dark:text-[color-mix(in_srgb,var(--color-warn),white_30%)]">
+              This test is <strong>completed</strong> — results are
+              view only.
+            </span>
+          </div>
+        )}
 
         {/* Filters */}
         <div className="flex flex-col border-b border-(--border-color)">
@@ -1841,6 +1860,7 @@ const TestExecution: React.FC<Props> = ({
                       signedImageUrls={signedImageUrls}
                       isFocused={focusedStepId === step.stepId}
                       isUpdating={updatingStepIds.has(step.stepId)}
+                      isReadOnly={isRevisionReadOnly}
                       onUpdate={handleStepUpdate}
                       onFocus={() => setFocusedStepId(step.stepId)}
                       onRemarksChange={(val: string) =>
@@ -1904,6 +1924,7 @@ const TestExecution: React.FC<Props> = ({
                       signedImageUrls={signedImageUrls}
                       isFocused={focusedStepId === step.stepId}
                       isUpdating={updatingStepIds.has(step.stepId)}
+                      isReadOnly={isRevisionReadOnly}
                       onUpdate={handleStepUpdate}
                       onFocus={() => setFocusedStepId(step.stepId)}
                       onRemarksChange={(val: string) =>
@@ -1919,8 +1940,8 @@ const TestExecution: React.FC<Props> = ({
               </div>
             </div>
 
-            {/* Undo All — admin only */}
-            {isAdmin && doneCount > 0 && (
+            {/* Undo All — admin only, hidden when revision is read-only */}
+            {isAdmin && doneCount > 0 && !isRevisionReadOnly && (
               <div className="flex items-center justify-center py-6 px-4">
                 <div className="flex items-center gap-3 px-4 py-3 rounded-xl border border-dashed border-[color-mix(in_srgb,var(--color-pend)_30%,transparent)] bg-[color-mix(in_srgb,var(--color-pend)_5%,transparent)]">
                   <AlertTriangle size={14} className="text-pend shrink-0" />

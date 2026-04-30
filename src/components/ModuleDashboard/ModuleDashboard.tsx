@@ -16,6 +16,7 @@ import {
   Lock,
   Unlock,
   Play,
+  Eye,
   FileSpreadsheet,
   FileText,
   ChevronRight,
@@ -772,6 +773,20 @@ const ModuleDashboard: React.FC<Props> = ({
                         </span>
                       )}
 
+                      {/* Completed badge */}
+                      {activeRev && !activeRev.is_visible && (
+                        <span
+                          className="font-mono text-[10px] font-bold px-1.5 py-0.5 rounded shrink-0"
+                          style={{
+                            color: "var(--color-pass)",
+                            background: "color-mix(in srgb, var(--color-pass) 10%, transparent)",
+                            border: "1px solid color-mix(in srgb, var(--color-pass) 35%, transparent)",
+                          }}
+                        >
+                          completed
+                        </span>
+                      )}
+
                       <h3 className="font-semibold text-t-primary text-sm truncate">
                         {mt.test?.name ?? mt.tests_name ?? "Unnamed Test"}
                       </h3>
@@ -807,6 +822,14 @@ const ModuleDashboard: React.FC<Props> = ({
                         >
                           <RotateCcw size={12} />
                           Resume
+                        </button>
+                      ) : activeRev && !activeRev.is_visible ? (
+                        <button
+                          onClick={() => onViewReport(mt.id)}
+                          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors bg-c-brand hover:bg-c-brand-hover text-(--bg-surface)"
+                        >
+                          <Eye size={12} />
+                          View
                         </button>
                       ) : (
                         <button
