@@ -22,12 +22,22 @@ export async function releaseLocksAndSignOut(
   user_id: string,
   signOut: () => Promise<void>
 ): Promise<void> {
-  try {
-    // test_locks column for the user FK is locked_by (uuid)
-    await supabase.from("test_locks").delete().eq("locked_by", user_id);
-  } catch (err) {
-    console.error("Failed to release locks on sign out", err);
+  // Get email from active session — locked_by_name stores email, not UUID
+  const { data: { session } } = await supabase.auth.getSession();
+  const email = session?.user?.email;
+
+  if (email) {
+    const { data, error } = await supabase
+      .from("test_locks")
+      .delete()
+      .eq("locked_by_name", email)
+      .select();
+
+    console.log("Locks released:", data, "Error:", error);
+  } else {
+    console.warn("No email found in session — skipping lock release");
   }
+
   await signOut();
 }
 
