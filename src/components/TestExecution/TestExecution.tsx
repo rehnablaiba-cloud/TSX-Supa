@@ -19,6 +19,7 @@ import {
   FileText,
   ChevronLeft,
   ChevronRight,
+  GitBranch,
 } from "lucide-react";
 import { useAuth } from "../../context/AuthContext";
 import { useToast } from "../../context/ToastContext";
@@ -32,10 +33,14 @@ import useAuditLog from "../../hooks/useAuditLog";
 import { exportExecutionCSV, exportExecutionPDF } from "../../utils/export";
 import type { FlatData } from "../../utils/export";
 import {
+  fetchTestExecution,
   acquireLock,
   releaseLock,
   forceReleaseLock,
+  upsertStepResult,
+  resetAllStepResults,
 } from "../../lib/supabase/queries.testexecution";
+import type { ActiveRevision } from "../../lib/supabase/queries.testexecution";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Types
@@ -54,6 +59,7 @@ interface ExecutionStep {
   stepId: string;
   stepResultId: string;
   module_test_id: string;
+  /** Display serial number derived from step_order array position, NOT step.serial_no */
   serial_no: number;
   action: string;
   expected_result: string;
@@ -83,6 +89,46 @@ interface ImagePreviewState {
   urls: string[];
   idx: number;
   label: string;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// computeDisplaySerials
+//
+// Assigns 1-based sequential numbers by array position.
+// Non-dividers: counter increments each time one is encountered.
+// Dividers:     show the SN of the NEXT non-divider in the array
+//               (so the reader knows which step comes immediately after).
+// ─────────────────────────────────────────────────────────────────────────────
+
+function computeDisplaySerials(
+  steps: { is_divider: boolean }[]
+): number[] {
+  const result: number[] = new Array(steps.length).fill(0);
+
+  // First pass — assign sequential numbers to non-dividers
+  let counter = 0;
+  for (let i = 0; i < steps.length; i++) {
+    if (!steps[i].is_divider) {
+      result[i] = ++counter;
+    }
+  }
+
+  // Second pass — dividers inherit the SN of the next non-divider
+  // (if no next non-divider exists, use counter + 1 as a safe sentinel)
+  for (let i = 0; i < steps.length; i++) {
+    if (steps[i].is_divider) {
+      let nextSn = counter + 1;
+      for (let j = i + 1; j < steps.length; j++) {
+        if (!steps[j].is_divider) {
+          nextSn = result[j];
+          break;
+        }
+      }
+      result[i] = nextSn;
+    }
+  }
+
+  return result;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -193,6 +239,22 @@ const getDividerLevel = (step: ExecutionStep): number => {
 
 const cleanDividerLabel = (action: string): string =>
   action.replace(/^[^\p{L}\p{N}]+/u, "");
+
+// ─────────────────────────────────────────────────────────────────────────────
+// RevisionBadge
+// ─────────────────────────────────────────────────────────────────────────────
+
+const RevisionBadge: React.FC<{ revision: ActiveRevision }> = ({
+  revision,
+}) => (
+  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider select-none bg-[color-mix(in_srgb,var(--color-warn)_12%,transparent)] text-[color-mix(in_srgb,var(--color-warn),black_15%)] dark:text-[color-mix(in_srgb,var(--color-warn),white_35%)] border border-[color-mix(in_srgb,var(--color-warn)_30%,transparent)]">
+    <GitBranch size={9} className="shrink-0" />
+    {revision.revision}
+    {!revision.is_visible && (
+      <span className="ml-0.5 opacity-70">· read-only</span>
+    )}
+  </span>
+);
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Sub-components
@@ -971,17 +1033,6 @@ const TestExecution: React.FC<Props> = ({
 
   const currentMtId = initialmodule_test_id;
 
-  // testsName is still derived from the module_test_id suffix (module_tests.id
-  // = module_name + '_' + tests_name, unchanged by migration).
-  const testsName = useMemo(() => {
-    const prefix = module_name + "_";
-    if (!currentMtId.startsWith(prefix)) {
-      console.warn(`Unexpected module_test_id format: ${currentMtId}`);
-      return currentMtId;
-    }
-    return currentMtId.slice(prefix.length);
-  }, [currentMtId, module_name]);
-
   const [filter, setFilter] = useState<Filter>("all");
   const [search, setSearch] = useState("");
   const [showExportModal, setShowExportModal] = useState(false);
@@ -990,17 +1041,14 @@ const TestExecution: React.FC<Props> = ({
   const [scrollTarget, setScrollTarget] = useState<string | null>(null);
   const [focusedStepId, setFocusedStepId] = useState<string | null>(null);
   const [signedImageUrls, setSignedImageUrls] = useState<SignedImageMap>({});
-  const [imagePreview, setImagePreview] = useState<ImagePreviewState | null>(
-    null
-  );
+  const [imagePreview, setImagePreview] = useState<ImagePreviewState | null>(null);
   const [moduleTests, setModuleTests] = useState<ModuleTestItem[]>([]);
   const [steps, setSteps] = useState<ExecutionStep[]>([]);
   const [lock, setLock] = useState<TestLock | null>(null);
+  const [currentRevision, setCurrentRevision] = useState<ActiveRevision | null>(null);
   const [loading, setLoading] = useState(true);
   const [lockLoading, setLockLoading] = useState(true);
-  const [updatingStepIds, setUpdatingStepIds] = useState<Set<string>>(
-    new Set()
-  );
+  const [updatingStepIds, setUpdatingStepIds] = useState<Set<string>>(new Set());
   const [isUndoingAll, setIsUndoingAll] = useState(false);
 
   const stepsInitialized = useRef(false);
@@ -1036,23 +1084,11 @@ const TestExecution: React.FC<Props> = ({
     setFocusedStepId(null);
     remarksMap.current = {};
 
+    const uid = user?.id ?? "anon";
+
     (async () => {
-      const [mtRes, srRes, lockRes] = await Promise.all([
-        supabase
-          .from("module_tests")
-          .select("id, tests_name")
-          .eq("module_name", module_name)
-          .order("id"),
-        supabase
-          .from("step_results")
-          .select(
-            `
-            id, status, remarks, display_name,
-            step:test_steps(id, serial_no, action, expected_result, is_divider, action_image_urls, expected_image_urls, tests_serial_no)
-          `
-            // ── FIXED: was tests_name — column no longer exists after migration ──
-          )
-          .eq("module_name", module_name),
+      const [execData, lockRes] = await Promise.all([
+        fetchTestExecution(currentMtId),
         supabase
           .from("test_locks")
           .select("module_test_id, user_id, locked_by_name")
@@ -1061,63 +1097,29 @@ const TestExecution: React.FC<Props> = ({
 
       if (cancelled) return;
 
-      const rawMts = (mtRes.data ?? []) as { id: string; tests_name: string }[];
-      const rawSrs = (srRes.data ?? []) as any[];
+      setModuleTests(execData.module_tests);
+      setCurrentRevision(execData.current_revision);
 
-      const testNames = Array.from(new Set(rawMts.map((m) => m.tests_name)));
-      const testsRes = testNames.length
-        ? await supabase
-            .from("tests")
-            .select("name, serial_no")
-            .in("name", testNames)
-        : { data: [] };
-      const testsMap = Object.fromEntries(
-        ((testsRes.data ?? []) as { name: string; serial_no: string }[]).map(
-          (t) => [t.name, t]
-        )
+      // Build ExecutionStep[] — step_results are already ordered by step_order
+      const ordered = execData.step_results.filter((sr) => sr.step !== null);
+      const displaySerials = computeDisplaySerials(
+        ordered.map((sr) => ({ is_divider: sr.step!.is_divider }))
       );
 
-      if (cancelled) return;
-
-      setModuleTests(
-        rawMts.map((m) => ({
-          id: m.id,
-          tests_name: m.tests_name,
-          test: testsMap[m.tests_name] ?? null,
-        }))
-      );
-
-      // ── FIXED: resolve the serial_no for the current test, then filter
-      //           step_results by tests_serial_no instead of tests_name ──────
-      const currentTestSerial = testsMap[testsName]?.serial_no ?? null;
-
-      const merged: ExecutionStep[] = rawSrs
-        .filter(
-          (sr) =>
-            sr.step && currentTestSerial !== null &&
-            sr.step.tests_serial_no === currentTestSerial
-        )
-        .map((sr) => ({
-          stepId: sr.step.id,
-          stepResultId: sr.id,
-          module_test_id: currentMtId,
-          serial_no: sr.step.serial_no,
-          action: sr.step.action,
-          expected_result: sr.step.expected_result,
-          action_image_urls: sr.step.action_image_urls || [],
-          expected_image_urls: sr.step.expected_image_urls || [],
-          is_divider: sr.step.is_divider,
-          status: sr.status as "pass" | "fail" | "pending",
-          remarks: sr.remarks,
-          display_name: sr.display_name ?? "",
-        }))
-        .sort((a, b) =>
-          a.serial_no !== b.serial_no
-            ? a.serial_no - b.serial_no
-            : (a.is_divider ? 0 : 1) - (b.is_divider ? 0 : 1)
-        );
-
-      if (cancelled) return;
+      const merged: ExecutionStep[] = ordered.map((sr, idx) => ({
+        stepId: sr.step!.id,
+        stepResultId: sr.id,
+        module_test_id: currentMtId,
+        serial_no: displaySerials[idx],
+        action: sr.step!.action,
+        expected_result: sr.step!.expected_result,
+        action_image_urls: sr.step!.action_image_urls || [],
+        expected_image_urls: sr.step!.expected_image_urls || [],
+        is_divider: sr.step!.is_divider,
+        status: sr.status,
+        remarks: sr.remarks,
+        display_name: sr.display_name ?? "",
+      }));
 
       setSteps(merged);
       setLock(lockRes.data?.[0] ?? null);
@@ -1125,8 +1127,7 @@ const TestExecution: React.FC<Props> = ({
       setLockLoading(false);
     })();
 
-    const uid = user?.id ?? "anon";
-
+    // ── Realtime: lock changes ─────────────────────────────────────────────
     const lockChannel = supabase
       .channel(`lock:${currentMtId}:${uid}`)
       .on(
@@ -1144,8 +1145,9 @@ const TestExecution: React.FC<Props> = ({
       )
       .subscribe();
 
+    // ── Realtime: step_result updates ──────────────────────────────────────
     const srChannel = supabase
-      .channel(`step_results:${module_name}:${testsName}:${uid}`)
+      .channel(`sr:${currentMtId}:${uid}`)
       .on(
         "postgres_changes",
         {
@@ -1176,7 +1178,7 @@ const TestExecution: React.FC<Props> = ({
       supabase.removeChannel(lockChannel);
       supabase.removeChannel(srChannel);
     };
-  }, [module_name, currentMtId, testsName, user?.id]);
+  }, [module_name, currentMtId, user?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Acquire lock ──────────────────────────────────────────────────────────
   useEffect(() => {
@@ -1238,9 +1240,7 @@ const TestExecution: React.FC<Props> = ({
   useEffect(() => {
     if (steps.length === 0 || stepsInitialized.current) return;
     stepsInitialized.current = true;
-    const firstPending = steps.find(
-      (s) => !s.is_divider && s.status === "pending"
-    );
+    const firstPending = steps.find((s) => !s.is_divider && s.status === "pending");
     if (firstPending) {
       setFocusedStepId(firstPending.stepId);
       setScrollTarget(firstPending.stepId);
@@ -1311,6 +1311,7 @@ const TestExecution: React.FC<Props> = ({
         .find((s) => !s.is_divider && s.status === "pending");
       const display_name = user?.display_name ?? user?.email ?? "User";
 
+      // Optimistic update
       setSteps((prev) =>
         prev.map((s) =>
           s.stepId === stepId ? { ...s, status, remarks, display_name } : s
@@ -1330,13 +1331,15 @@ const TestExecution: React.FC<Props> = ({
       }
 
       try {
-        const { error } = await supabase
-          .from("step_results")
-          .update({ status, remarks, display_name })
-          .eq("test_steps_id", stepId)
-          .eq("module_name", module_name);
-        if (error) throw error;
+        await upsertStepResult({
+          test_steps_id: stepId,
+          module_name,
+          status,
+          remarks,
+          display_name,
+        });
       } catch {
+        // Rollback
         setSteps((prev) =>
           prev.map((s) => {
             if (s.stepId !== stepId) return s;
@@ -1393,11 +1396,10 @@ const TestExecution: React.FC<Props> = ({
     setShowUndoModal(false);
     const display_name = user?.display_name ?? user?.email ?? "User";
 
+    // Optimistic update
     setSteps((prev) =>
       prev.map((s) =>
-        s.is_divider
-          ? s
-          : { ...s, status: "pending", remarks: "", display_name }
+        s.is_divider ? s : { ...s, status: "pending", remarks: "", display_name }
       )
     );
     remarksMap.current = {};
@@ -1411,14 +1413,11 @@ const TestExecution: React.FC<Props> = ({
       const stepResultIds = steps
         .filter((s) => !s.is_divider)
         .map((s) => s.stepResultId);
-      const { error } = await supabase
-        .from("step_results")
-        .update({ status: "pending", remarks: "", display_name })
-        .in("id", stepResultIds);
-      if (error) throw error;
+      await resetAllStepResults(module_name, stepResultIds, display_name);
       addToast("All steps reset to pending.", "info");
       log("Undo all steps");
     } catch {
+      // Rollback
       setSteps((prev) =>
         prev.map((s) => {
           if (s.is_divider) return s;
@@ -1432,7 +1431,7 @@ const TestExecution: React.FC<Props> = ({
     } finally {
       setIsUndoingAll(false);
     }
-  }, [steps, user, addToast, log, isUndoingAll]);
+  }, [steps, module_name, user, addToast, log, isUndoingAll]);
 
   // ── Force release (admin) ─────────────────────────────────────────────────
   const handleForceRelease = useCallback(async () => {
@@ -1454,7 +1453,7 @@ const TestExecution: React.FC<Props> = ({
     onBack();
   };
 
-  // ── Further derived state ─────────────────────────────────────────────────
+  // ── Derived state ─────────────────────────────────────────────────────────
   const currentMt = moduleTests.find((mt) => mt.id === currentMtId);
   const currentTest = currentMt?.test;
 
@@ -1669,7 +1668,11 @@ const TestExecution: React.FC<Props> = ({
         {/* Progress bar */}
         <div className="px-4 pt-3 pb-2">
           <div className="flex items-center justify-between mb-1.5">
-            <div className="flex items-center gap-4 text-xs text-t-muted">
+            {/* Left: revision badge + pass/fail/pending counts */}
+            <div className="flex items-center gap-3 text-xs text-t-muted flex-wrap">
+              {currentRevision && (
+                <RevisionBadge revision={currentRevision} />
+              )}
               <span>
                 <span className="text-[color-mix(in_srgb,var(--color-pass),white_30%)] font-semibold">
                   {passCount}
@@ -1687,6 +1690,7 @@ const TestExecution: React.FC<Props> = ({
                 pending
               </span>
             </div>
+            {/* Right: keyboard hints + percentage */}
             <div className="flex items-center gap-3">
               {focusedStepId && (
                 <span className="hidden md:flex items-center gap-2 text-xs text-t-muted">
