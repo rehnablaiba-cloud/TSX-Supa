@@ -91,7 +91,7 @@ const ExportTestDocxModal: React.FC<Props> = ({ onClose }) => {
     setLoadingTests(true);
     try {
       const data = await fetchTestsForModule(name);
-      setTests(data);
+      setTests(data.map(t => ({ id: t.serial_no, tests_name: t.name })));
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Failed to load tests.");
     } finally {

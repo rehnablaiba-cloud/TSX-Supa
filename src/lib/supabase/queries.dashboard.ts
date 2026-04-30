@@ -162,6 +162,7 @@ export async function fetchDashboardModules(): Promise<DashboardModule[]> {
         .from("step_results")
         .select(srSelect)
         .in("revision_id", activeRevisionIds)
+        .then(res => res)
     );
   }
 
@@ -173,6 +174,7 @@ export async function fetchDashboardModules(): Promise<DashboardModule[]> {
         .from("step_results")
         .select(srSelect)
         .is("revision_id", null)
+        .then(res => res)
     );
   }
 
