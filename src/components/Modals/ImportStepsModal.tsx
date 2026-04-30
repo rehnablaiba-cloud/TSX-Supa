@@ -7,12 +7,12 @@ import {
   GitBranch,
   ChevronDown,
   ChevronRight,
+  Lock,
   Upload,
   AlertCircle,
   Info,
   Play,
   Eye,
-  EyeOff,
   Pencil,
 } from "lucide-react";
 import ModalShell from "../UI/ModalShell";
@@ -36,13 +36,21 @@ import {
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 type Stage =
-  | "selecttest"
+  // ── entry ──
+  | "selectaction"       // pick: Revision Control  OR  Visibility
+
+  // ── revision control branch ──
+  | "revctrl-test"       // pick test  →  feeds rev-control
   | "rev-control"
   | "rev-info"
   | "rev-diff"
   | "rev-confirm"
   | "submitting"
-  | "done";
+  | "done"
+
+  // ── visibility branch ──
+  | "vis-module"         // pick module  →  feeds vis-list
+  | "vis-list";          // toggle module_tests.is_visible for all tests in that module
 
 interface ActiveRevInfo {
   id: string;
@@ -58,7 +66,15 @@ interface RevisionListItem {
   created_at: string;
   notes: string | null;
   step_count: number;
+}
+
+// ✅ NEW inline query shape — module_tests + test join + test_locks join
+interface ModuleTestVisRow {
+  id: string;
+  module_name: string;
+  tests_name: string;
   is_visible: boolean;
+  lockInfo: { user_id: string; locked_by_name: string } | null;
 }
 
 interface Props {
@@ -66,7 +82,7 @@ interface Props {
   onBack: () => void;
 }
 
-// ─── Diff type colours (Tailwind) ─────────────────────────────────────────────
+// ─── Diff type colours ────────────────────────────────────────────────────────
 
 const TYPE_STYLES: Record<string, { badge: string }> = {
   UNCHANGED: { badge: "bg-green-500/15 text-green-400 border-green-500/20" },
@@ -75,7 +91,7 @@ const TYPE_STYLES: Record<string, { badge: string }> = {
   DELETE:    { badge: "bg-red-500/15 text-red-400 border-red-500/20" },
 };
 
-// ─── Small helpers ────────────────────────────────────────────────────────────
+// ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function truncate(s: string, n = 55): string {
   if (!s) return "—";
@@ -106,8 +122,7 @@ const DiffItemRow: React.FC<{ item: DiffItem; index: number }> = ({ item, index 
     <div className="rounded-lg border border-(--border-color) overflow-hidden">
       <button
         onClick={() => setOpen(o => !o)}
-        className="w-full flex items-center gap-2 px-3 py-2.5 text-left
-          hover:bg-bg-base/50 transition-colors"
+        className="w-full flex items-center gap-2 px-3 py-2.5 text-left hover:bg-bg-base/50 transition-colors"
       >
         <span className="text-[10px] font-mono text-t-muted w-5 shrink-0 text-right">
           {item.type === "DELETE" ? "—" : `#${item.position}`}
@@ -145,7 +160,6 @@ const DiffItemRow: React.FC<{ item: DiffItem; index: number }> = ({ item, index 
               </div>
             </div>
           )}
-
           {item.type === "EDIT" && (
             <div className="grid grid-cols-2 gap-2">
               <div className="rounded-lg bg-red-500/5 border border-red-500/15 p-2">
@@ -168,7 +182,6 @@ const DiffItemRow: React.FC<{ item: DiffItem; index: number }> = ({ item, index 
               </div>
             </div>
           )}
-
           {item.type === "INSERT" && (
             <div className="rounded-lg bg-sky-500/5 border border-sky-500/15 p-2">
               <p className="text-[10px] text-sky-400 font-bold mb-1 uppercase tracking-wide">New Step</p>
@@ -178,7 +191,6 @@ const DiffItemRow: React.FC<{ item: DiffItem; index: number }> = ({ item, index 
               <p className="text-t-secondary">{item.row.expected_result || "—"}</p>
             </div>
           )}
-
           {item.type === "DELETE" && (
             <div className="rounded-lg bg-red-500/5 border border-red-500/15 p-2">
               <p className="text-[10px] text-red-400 font-bold mb-1 uppercase tracking-wide">
@@ -210,8 +222,7 @@ const DiffStats: React.FC<{ summary: DiffResult["summary"] }> = ({ summary }) =>
     ).map(([label, count, color]) => (
       <div
         key={label}
-        className={`rounded-lg border px-2 py-2 text-center
-          bg-${color}-500/5 border-${color}-500/20`}
+        className={`rounded-lg border px-2 py-2 text-center bg-${color}-500/5 border-${color}-500/20`}
       >
         <p className={`text-base font-bold leading-none text-${color}-400`}>{count}</p>
         <p className="text-[9px] text-t-muted uppercase tracking-wide mt-1">{label}</p>
@@ -224,18 +235,16 @@ const DiffStats: React.FC<{ summary: DiffResult["summary"] }> = ({ summary }) =>
 
 const ImportStepsModal: React.FC<Props> = ({ onClose, onBack }) => {
 
-  // ── Shared state ──────────────────────────────────────────────────────────────
-  const [stage,   setStage]   = useState<Stage>("selecttest");
-  const [tests,   setTests]   = useState<{ serial_no: string; name: string }[]>([]);
-  const [selTest, setSelTest] = useState("");
-  const [error,   setError]   = useState<string | null>(null);
+  // ── Shared ────────────────────────────────────────────────────────────────────
+  const [stage, setStage] = useState<Stage>("selectaction");
+  const [tests,  setTests]  = useState<{ serial_no: string; name: string }[]>([]);
+  const [error,  setError]  = useState<string | null>(null);
 
-  // ── Revision control state ────────────────────────────────────────────────────
-  const [allRevisions, setAllRevisions] = useState<RevisionListItem[]>([]);
-  const [activeRev,    setActiveRev]    = useState<ActiveRevInfo | null>(null);
-  const [revLoading,   setRevLoading]   = useState(false);
-
-  // ── New revision state ────────────────────────────────────────────────────────
+  // ── Revision control branch state ─────────────────────────────────────────────
+  const [revSelTest,     setRevSelTest]     = useState("");
+  const [allRevisions,   setAllRevisions]   = useState<RevisionListItem[]>([]);
+  const [activeRev,      setActiveRev]      = useState<ActiveRevInfo | null>(null);
+  const [revLoading,     setRevLoading]     = useState(false);
   const [existingRevIds, setExistingRevIds] = useState<string[]>([]);
   const [baseSteps,      setBaseSteps]      = useState<BaseStep[]>([]);
   const [newRevId,       setNewRevId]       = useState("");
@@ -247,7 +256,13 @@ const ImportStepsModal: React.FC<Props> = ({ onClose, onBack }) => {
   const [revPayload,     setRevPayload]     = useState<RevisionPayload | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
-  // ── Load test list ────────────────────────────────────────────────────────────
+  // ── Visibility branch state ───────────────────────────────────────────────────
+  const [visModules,    setVisModules]    = useState<{ name: string }[]>([]);
+  const [visSelModule,  setVisSelModule]  = useState("");
+  const [visRows,       setVisRows]       = useState<ModuleTestVisRow[]>([]);
+  const [visLoading,    setVisLoading]    = useState(false);
+
+  // ── Load test list for rev-control branch ─────────────────────────────────────
   useEffect(() => {
     supabase
       .from("tests")
@@ -262,29 +277,31 @@ const ImportStepsModal: React.FC<Props> = ({ onClose, onBack }) => {
 
   const handleBack = () => {
     switch (stage) {
-      case "selecttest":   return onBack();
-      case "rev-control":  return setStage("selecttest");
-      case "rev-info":     return setStage("rev-control");
-      case "rev-diff":     return setStage("rev-info");
-      case "rev-confirm":  return setStage("rev-diff");
+      case "selectaction": return onBack();
+
+      // revision control branch
+      case "revctrl-test":  return setStage("selectaction");
+      case "rev-control":   return setStage("revctrl-test");
+      case "rev-info":      return setStage("rev-control");
+      case "rev-diff":      return setStage("rev-info");
+      case "rev-confirm":   return setStage("rev-diff");
+
+      // visibility branch
+      case "vis-module": return setStage("selectaction");
+      case "vis-list":   return setStage("vis-module");
+
       default: break;
     }
   };
 
-  // ─── Test selection ───────────────────────────────────────────────────────────
-
-  const handleTestSelect = async (testSerialNo: string) => {
-    setSelTest(testSerialNo);
-    setError(null);
-    await loadRevisionControl(testSerialNo);
-  };
-
-  // ─── Normalize step_order from DB ────────────────────────────────────────────
+  // ─── Helper ───────────────────────────────────────────────────────────────────
 
   const parseStepOrder = (so: any): string[] =>
     typeof so === "string" ? JSON.parse(so) : (so ?? []);
 
-  // ─── Load revision control ────────────────────────────────────────────────────
+  // ─────────────────────────────────────────────────────────────────────────────
+  // REVISION CONTROL BRANCH
+  // ─────────────────────────────────────────────────────────────────────────────
 
   const loadRevisionControl = async (testSerialNo: string) => {
     setRevLoading(true);
@@ -296,15 +313,15 @@ const ImportStepsModal: React.FC<Props> = ({ onClose, onBack }) => {
     setError(null);
 
     try {
+      // ✅ is_visible NOT selected — it lives on module_tests, not test_revisions
       const { data: revRows, error: revsErr } = await supabase
         .from("test_revisions")
-        .select("id, status, step_order, created_at, notes, is_visible")
+        .select("id, status, step_order, created_at, notes")
         .eq("tests_serial_no", testSerialNo)
         .order("created_at", { ascending: true });
       if (revsErr) throw new Error(revsErr.message);
 
-      const allRevs = (revRows ?? []) as (ActiveRevInfo & { is_visible: boolean })[];
-
+      const allRevs = (revRows ?? []) as ActiveRevInfo[];
       const ids   = allRevs.map(r => r.id);
       const codes = ids.map(id =>
         id.startsWith(testSerialNo + "-") ? id.slice(testSerialNo.length + 1) : id);
@@ -324,7 +341,6 @@ const ImportStepsModal: React.FC<Props> = ({ onClose, onBack }) => {
           created_at: r.created_at,
           notes:      r.notes,
           step_count: parseStepOrder(r.step_order).length,
-          is_visible: (r as any).is_visible ?? true,
         }))
       );
 
@@ -347,7 +363,11 @@ const ImportStepsModal: React.FC<Props> = ({ onClose, onBack }) => {
     }
   };
 
-  // ─── Activate a revision ──────────────────────────────────────────────────────
+  const handleRevTestSelect = async (testSerialNo: string) => {
+    setRevSelTest(testSerialNo);
+    setError(null);
+    await loadRevisionControl(testSerialNo);
+  };
 
   const handleActivateRevision = async (revId: string) => {
     setRevLoading(true);
@@ -360,39 +380,17 @@ const ImportStepsModal: React.FC<Props> = ({ onClose, onBack }) => {
           .eq("id", activeRev.id);
         if (deactErr) throw new Error(deactErr.message);
       }
-
       const { error: actErr } = await supabase
         .from("test_revisions")
         .update({ status: "active" })
         .eq("id", revId);
       if (actErr) throw new Error(actErr.message);
-
-      await loadRevisionControl(selTest);
+      await loadRevisionControl(revSelTest);
     } catch (e: any) {
       setError(e.message);
       setRevLoading(false);
     }
   };
-
-  // ─── Toggle is_visible ────────────────────────────────────────────────────────
-
-  const handleToggleVisibility = async (rev: RevisionListItem) => {
-    setRevLoading(true);
-    setError(null);
-    try {
-      const { error: updErr } = await supabase
-        .from("test_revisions")
-        .update({ is_visible: !rev.is_visible })
-        .eq("id", rev.id);
-      if (updErr) throw new Error(updErr.message);
-      await loadRevisionControl(selTest);
-    } catch (e: any) {
-      setError(e.message);
-      setRevLoading(false);
-    }
-  };
-
-  // ─── Start new revision flow ──────────────────────────────────────────────────
 
   const handleStartNewRevision = () => {
     setCsvText("");
@@ -403,8 +401,6 @@ const ImportStepsModal: React.FC<Props> = ({ onClose, onBack }) => {
     setStage("rev-info");
   };
 
-  // ─── CSV file pick ────────────────────────────────────────────────────────────
-
   const handleCsvFile = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -413,45 +409,35 @@ const ImportStepsModal: React.FC<Props> = ({ onClose, onBack }) => {
     reader.readAsText(file, "UTF-8");
   };
 
-  // ─── Generate diff ────────────────────────────────────────────────────────────
-
   const handleGenerateDiff = () => {
     setError(null);
     const parsed = parseCsv(csvText);
     setParseResult(parsed);
     if (parsed.errors.length > 0) return;
-
     const isFirst = !activeRev || baseSteps.length === 0;
     setDiffResult(isFirst ? null : computeDiff(baseSteps, parsed.rows));
     setStage("rev-diff");
   };
-
-  // ─── Build payload ────────────────────────────────────────────────────────────
 
   const handleBuildPayload = async () => {
     setError(null);
     const { data: { user } } = await supabase.auth.getUser();
     const userId  = user?.id ?? "unknown";
     const isFirst = !activeRev || baseSteps.length === 0;
-
     const payload = isFirst
-      ? buildFirstRevisionPayload(parseResult!.rows, newRevId, selTest, userId, revNotes)
-      : buildDiffRevisionPayload(diffResult!, newRevId, selTest, userId, revNotes);
-
+      ? buildFirstRevisionPayload(parseResult!.rows, newRevId, revSelTest, userId, revNotes)
+      : buildDiffRevisionPayload(diffResult!, newRevId, revSelTest, userId, revNotes);
     setRevPayload(payload);
     setStage("rev-confirm");
   };
-
-  // ─── Submit revision to DB ────────────────────────────────────────────────────
 
   const handleRevisionSubmit = async () => {
     if (!revPayload) return;
     setStage("submitting");
     setError(null);
-
     try {
       const { error: revErr } = await supabase.from("test_revisions").insert({
-        tests_serial_no: selTest,
+        tests_serial_no: revSelTest,
         revision:        revPayload.revision.id,
         status:          "draft",
         step_order:      revPayload.revision.step_order,
@@ -467,7 +453,6 @@ const ImportStepsModal: React.FC<Props> = ({ onClose, onBack }) => {
           .upsert(revPayload.newSteps, { onConflict: "id", ignoreDuplicates: true });
         if (stepsErr) throw new Error(`test_steps: ${stepsErr.message}`);
       }
-
       setStage("done");
     } catch (e: any) {
       setError(e.message);
@@ -475,23 +460,118 @@ const ImportStepsModal: React.FC<Props> = ({ onClose, onBack }) => {
     }
   };
 
-  // ─── Revision mode toggle ─────────────────────────────────────────────────────
-
   const handleRevModeChange = (mode: "iterate" | "branch") => {
     setRevMode(mode);
     try { setNewRevId(getNextRevisionId(existingRevIds, mode)); } catch { /* keep current */ }
   };
 
   // ─────────────────────────────────────────────────────────────────────────────
+  // VISIBILITY BRANCH
+  // ─────────────────────────────────────────────────────────────────────────────
+
+  // Step 1: load module list
+  const handleVisibilityClick = async () => {
+    setVisLoading(true);
+    setStage("vis-module");
+    setVisModules([]);
+    setVisRows([]);
+    setError(null);
+    try {
+      // inline query — distinct module names from module_tests
+      const { data: modData, error: modErr } = await supabase
+        .from("module_tests")
+        .select("module_name")
+        .order("module_name");
+      if (modErr) throw new Error(modErr.message);
+      const unique = [...new Set((modData ?? []).map((r: any) => r.module_name as string))];
+      setVisModules(unique.map(name => ({ name })));
+    } catch (e: any) {
+      setError(e.message);
+    } finally {
+      setVisLoading(false);
+    }
+  };
+
+  // Step 2: load tests within selected module + their active locks
+  // ✅ Two-query approach: module_tests (with test join) + test_locks for those IDs
+  //    test_locks.module_test_id = module_tests.id → if a row exists, test is locked
+  const loadVisibilityList = async (moduleName: string) => {
+    setVisLoading(true);
+    setStage("vis-list");
+    setVisRows([]);
+    setError(null);
+    try {
+      // query 1: module_tests rows + test name via FK
+      const { data: mtData, error: visErr } = await supabase
+        .from("module_tests")
+        .select("id, module_name, tests_name, is_visible")
+        .eq("module_name", moduleName)
+        .order("tests_name");
+      if (visErr) throw new Error(visErr.message);
+
+      const ids = (mtData ?? []).map((r: any) => r.id);
+
+      // query 2: active locks for these module_tests
+      // column names from test_locks schema: module_test_id, user_id, locked_by_name
+      const { data: lockData } = ids.length > 0
+        ? await supabase
+            .from("test_locks")
+            .select("module_test_id, user_id, locked_by_name")
+            .in("module_test_id", ids)
+        : { data: [] };
+
+      const lockMap = new Map(
+        (lockData ?? []).map((l: any) => [l.module_test_id, { user_id: l.user_id, locked_by_name: l.locked_by_name }])
+      );
+
+      const rows: ModuleTestVisRow[] = (mtData ?? []).map((r: any) => ({
+        ...r,
+        lockInfo: lockMap.get(r.id) ?? null,
+      }));
+
+      setVisRows(rows);
+    } catch (e: any) {
+      setError(e.message);
+    } finally {
+      setVisLoading(false);
+    }
+  };
+
+  const handleModuleSelect = async (moduleName: string) => {
+    setVisSelModule(moduleName);
+    setError(null);
+    await loadVisibilityList(moduleName);
+  };
+
+  const handleToggleVisibility = async (row: ModuleTestVisRow) => {
+    setVisLoading(true);
+    setError(null);
+    try {
+      const { error: updErr } = await supabase
+        .from("module_tests")
+        .update({ is_visible: !row.is_visible })
+        .eq("id", row.id);
+      if (updErr) throw new Error(updErr.message);
+      await loadVisibilityList(visSelModule);
+    } catch (e: any) {
+      setError(e.message);
+      setVisLoading(false);
+    }
+  };
+
+  // ─────────────────────────────────────────────────────────────────────────────
 
   const subtitle: Record<Stage, string> = {
-    selecttest:    "Pick test",
-    "rev-control": "Revision Control",
-    "rev-info":    "New Revision",
-    "rev-diff":    "Diff preview",
-    "rev-confirm": "Create revision",
-    submitting:    "Working…",
-    done:          "Done!",
+    selectaction:   "Select action",
+    "revctrl-test": "Revision Control · Pick test",
+    "rev-control":  "Revision Control",
+    "rev-info":     "New Revision",
+    "rev-diff":     "Diff preview",
+    "rev-confirm":  "Create revision",
+    submitting:     "Working…",
+    done:           "Done!",
+    "vis-module":   "Visibility · Pick module",
+    "vis-list":     "Visibility",
   };
 
   const isFirst = !activeRev || baseSteps.length === 0;
@@ -518,10 +598,49 @@ const ImportStepsModal: React.FC<Props> = ({ onClose, onBack }) => {
         </button>
       )}
 
-      {/* ──────────────────────────────────
-          selecttest
-      ────────────────────────────────── */}
-      {stage === "selecttest" && (
+      {/* ══════════════════════════════════
+          selectaction
+      ══════════════════════════════════ */}
+      {stage === "selectaction" && (
+        <div className="flex flex-col gap-3">
+          <button
+            onClick={() => setStage("revctrl-test")}
+            className="flex items-center gap-3 px-4 py-3 rounded-xl border
+              border-(--border-color) bg-bg-card hover:bg-bg-base text-left transition-all"
+          >
+            <span className="text-c-brand shrink-0"><GitBranch size={20} /></span>
+            <div className="min-w-0">
+              <p className="text-sm font-semibold text-t-primary">Revision Control</p>
+              <p className="text-[11px] text-t-muted mt-0.5 leading-snug">
+                Create, activate and manage revisions ·{" "}
+                <span className="font-mono">test_revisions</span>
+              </p>
+            </div>
+            <ChevronRight size={14} className="text-t-muted shrink-0 ml-auto" />
+          </button>
+
+          <button
+            onClick={handleVisibilityClick}
+            className="flex items-center gap-3 px-4 py-3 rounded-xl border
+              border-(--border-color) bg-bg-card hover:bg-bg-base text-left transition-all"
+          >
+            <span className="text-sky-400 shrink-0"><Eye size={20} /></span>
+            <div className="min-w-0">
+              <p className="text-sm font-semibold text-t-primary">Visibility</p>
+              <p className="text-[11px] text-t-muted mt-0.5 leading-snug">
+                Toggle execute / view-only per test in a module ·{" "}
+                <span className="font-mono">module_tests.is_visible</span>
+              </p>
+            </div>
+            <ChevronRight size={14} className="text-t-muted shrink-0 ml-auto" />
+          </button>
+        </div>
+      )}
+
+      {/* ══════════════════════════════════
+          revctrl-test  — pick test for revision control
+      ══════════════════════════════════ */}
+      {stage === "revctrl-test" && (
         <div className="flex flex-col gap-1.5 max-h-60 overflow-y-auto">
           {tests.length === 0 && (
             <p className="text-sm text-t-muted text-center py-4">No tests found.</p>
@@ -529,9 +648,9 @@ const ImportStepsModal: React.FC<Props> = ({ onClose, onBack }) => {
           {tests.map(t => (
             <button
               key={t.serial_no}
-              onClick={() => handleTestSelect(t.serial_no)}
+              onClick={() => handleRevTestSelect(t.serial_no)}
               className="text-left px-3 py-2 rounded-xl border border-(--border-color)
-                bg-bg-card hover:bg-bg-base text-sm text-t-primary"
+                bg-bg-card hover:bg-bg-base text-sm text-t-primary transition-colors"
             >
               <span className="font-mono text-t-muted text-xs mr-2">{t.serial_no}</span>
               {t.name}
@@ -540,9 +659,9 @@ const ImportStepsModal: React.FC<Props> = ({ onClose, onBack }) => {
         </div>
       )}
 
-      {/* ──────────────────────────────────
+      {/* ══════════════════════════════════
           rev-control
-      ────────────────────────────────── */}
+      ══════════════════════════════════ */}
       {stage === "rev-control" && (
         <div className="flex flex-col gap-3">
           {revLoading ? (
@@ -551,7 +670,6 @@ const ImportStepsModal: React.FC<Props> = ({ onClose, onBack }) => {
             </div>
           ) : (
             <>
-              {/* Active revision banner */}
               <div className="rounded-xl border border-(--border-color) bg-bg-card p-3">
                 <p className="text-[10px] font-bold uppercase tracking-wider text-t-muted mb-2">
                   Currently Active
@@ -576,15 +694,12 @@ const ImportStepsModal: React.FC<Props> = ({ onClose, onBack }) => {
                 )}
               </div>
 
-              {/* New revision button */}
               <button
                 onClick={handleStartNewRevision}
                 className="flex items-center gap-3 px-4 py-3 rounded-xl border border-(--border-color)
                   bg-bg-card hover:bg-bg-base text-left transition-all"
               >
-                <span className="text-c-brand">
-                  <GitBranch size={20} />
-                </span>
+                <span className="text-c-brand"><GitBranch size={20} /></span>
                 <div className="min-w-0">
                   <p className="text-sm font-semibold text-t-primary">Create New Revision</p>
                   <p className="text-[11px] text-t-muted mt-0.5 leading-snug">
@@ -593,7 +708,6 @@ const ImportStepsModal: React.FC<Props> = ({ onClose, onBack }) => {
                 </div>
               </button>
 
-              {/* Revision history list */}
               {allRevisions.length > 0 && (
                 <div className="flex flex-col gap-1.5">
                   <p className="text-[10px] font-bold uppercase tracking-wider text-t-muted">
@@ -629,38 +743,14 @@ const ImportStepsModal: React.FC<Props> = ({ onClose, onBack }) => {
                                 onClick={() => handleActivateRevision(rev.id)}
                                 disabled={revLoading}
                                 className="flex items-center gap-1 text-[11px] font-medium
-                                  text-c-brand hover:text-c-brand/80 transition-colors
-                                  disabled:opacity-50"
+                                  text-c-brand hover:text-c-brand/80 transition-colors disabled:opacity-50"
                               >
-                                <Play size={12} />
-                                Activate
+                                <Play size={12} /> Activate
                               </button>
                             )}
                             {isActive && (
-                              <span className="text-[11px] font-medium text-green-400">
-                                Active
-                              </span>
+                              <span className="text-[11px] font-medium text-green-400">Active</span>
                             )}
-
-                            {/* Visibility toggle */}
-                            <button
-                              onClick={() => handleToggleVisibility(rev)}
-                              disabled={revLoading}
-                              title={
-                                rev.is_visible
-                                  ? "Visible to testers — click to hide"
-                                  : "Hidden from testers — click to show"
-                              }
-                              className={`flex items-center gap-1 text-[11px] font-medium
-                                transition-colors disabled:opacity-50
-                                ${rev.is_visible
-                                  ? "text-sky-400 hover:text-sky-300"
-                                  : "text-t-muted hover:text-t-primary"
-                                }`}
-                            >
-                              {rev.is_visible ? <Pencil size={12} /> : <Eye size={12} />}
-                              {rev.is_visible ? "Execute Mode" : "View Only"}
-                            </button>
                           </div>
                         </div>
                       );
@@ -675,12 +765,11 @@ const ImportStepsModal: React.FC<Props> = ({ onClose, onBack }) => {
         </div>
       )}
 
-      {/* ──────────────────────────────────
+      {/* ══════════════════════════════════
           rev-info
-      ────────────────────────────────── */}
+      ══════════════════════════════════ */}
       {stage === "rev-info" && (
         <div className="flex flex-col gap-3">
-          {/* Active revision card */}
           <div className="rounded-xl border border-(--border-color) bg-bg-card p-3">
             <p className="text-[10px] font-bold uppercase tracking-wider text-t-muted mb-2">
               Current Active Revision
@@ -688,9 +777,8 @@ const ImportStepsModal: React.FC<Props> = ({ onClose, onBack }) => {
             {activeRev ? (
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
-                  <span className="text-xs font-bold font-mono
-                    bg-green-500/15 text-green-400 border border-green-500/20
-                    px-2 py-0.5 rounded-full">
+                  <span className="text-xs font-bold font-mono bg-green-500/15 text-green-400
+                    border border-green-500/20 px-2 py-0.5 rounded-full">
                     {activeRev.id}
                   </span>
                   <span className="text-xs text-t-muted">{baseSteps.length} steps</span>
@@ -705,12 +793,8 @@ const ImportStepsModal: React.FC<Props> = ({ onClose, onBack }) => {
             )}
           </div>
 
-          {/* New revision ID + mode */}
           <div className="rounded-xl border border-(--border-color) bg-bg-card p-3 flex flex-col gap-2.5">
-            <p className="text-[10px] font-bold uppercase tracking-wider text-t-muted">
-              New Revision
-            </p>
-
+            <p className="text-[10px] font-bold uppercase tracking-wider text-t-muted">New Revision</p>
             {activeRev && (
               <div className="flex gap-1.5">
                 {(["iterate", "branch"] as const).map(m => (
@@ -728,7 +812,6 @@ const ImportStepsModal: React.FC<Props> = ({ onClose, onBack }) => {
                 ))}
               </div>
             )}
-
             <div>
               <label className="block text-[10px] text-t-muted mb-1">
                 Revision code (e.g. R0, RA-1, RB-2)
@@ -747,12 +830,8 @@ const ImportStepsModal: React.FC<Props> = ({ onClose, onBack }) => {
             </div>
           </div>
 
-          {/* CSV input */}
           <div className="rounded-xl border border-(--border-color) bg-bg-card p-3 flex flex-col gap-2">
-            <p className="text-[10px] font-bold uppercase tracking-wider text-t-muted">
-              CSV Input
-            </p>
-
+            <p className="text-[10px] font-bold uppercase tracking-wider text-t-muted">CSV Input</p>
             <input
               ref={fileRef}
               type="file"
@@ -764,18 +843,15 @@ const ImportStepsModal: React.FC<Props> = ({ onClose, onBack }) => {
               onClick={() => fileRef.current?.click()}
               className="flex items-center justify-center gap-2 w-full py-2.5
                 rounded-lg border border-dashed border-(--border-color)
-                text-xs text-t-muted hover:text-t-primary hover:border-c-brand/40
-                transition-colors"
+                text-xs text-t-muted hover:text-t-primary hover:border-c-brand/40 transition-colors"
             >
               <Upload size={14} /> Select CSV file
             </button>
-
             <div className="flex items-center gap-2 text-[10px] text-t-muted">
               <div className="flex-1 border-t border-(--border-color)" />
               or paste
               <div className="flex-1 border-t border-(--border-color)" />
             </div>
-
             <textarea
               value={csvText}
               onChange={e => setCsvText(e.target.value)}
@@ -785,12 +861,10 @@ const ImportStepsModal: React.FC<Props> = ({ onClose, onBack }) => {
               placeholder={"action,expected_result,is_divider\nClick login,Page loads,false"}
             />
             <p className="text-[10px] text-t-muted">
-              3-col (action, expected, divider) or 4-col (serial_no, action, expected, divider).
-              Header optional.
+              3-col (action, expected, divider) or 4-col (serial_no, action, expected, divider). Header optional.
             </p>
           </div>
 
-          {/* Parse error/warning feedback */}
           {parseResult && parseResult.errors.length > 0 && (
             <div className="flex flex-col gap-1">
               {parseResult.errors.map((e, i) => (
@@ -815,32 +889,29 @@ const ImportStepsModal: React.FC<Props> = ({ onClose, onBack }) => {
         </div>
       )}
 
-      {/* ──────────────────────────────────
+      {/* ══════════════════════════════════
           rev-diff
-      ────────────────────────────────── */}
+      ══════════════════════════════════ */}
       {stage === "rev-diff" && parseResult && (
         <div className="flex flex-col gap-3">
-
           {isFirst ? (
             <div className="text-xs font-semibold text-green-400
               bg-green-500/8 border border-green-500/20 rounded-lg px-3 py-2.5">
               ✦ First import — {parseResult.rows.length} steps →&nbsp;
-              <span className="font-mono">{newRevId}</span>.
-              All rows become new step records.
+              <span className="font-mono">{newRevId}</span>. All rows become new step records.
             </div>
           ) : diffResult ? (
             <>
               <div className="text-xs font-semibold text-c-brand
                 bg-c-brand/8 border border-c-brand/20 rounded-lg px-3 py-2.5">
                 ⇄ Diff: <span className="font-mono">{activeRev?.id}</span>
-                &nbsp;→&nbsp;<span className="font-mono">{selTest}-{newRevId}</span>
+                &nbsp;→&nbsp;<span className="font-mono">{revSelTest}-{newRevId}</span>
                 &nbsp;·&nbsp;{diffResult.summary.total} items
               </div>
               <DiffStats summary={diffResult.summary} />
             </>
           ) : null}
 
-          {/* Step list */}
           <div className="flex flex-col gap-1.5 max-h-56 overflow-y-auto">
             {isFirst
               ? parseResult.rows.slice(0, 6).map((r, i) => (
@@ -861,7 +932,6 @@ const ImportStepsModal: React.FC<Props> = ({ onClose, onBack }) => {
             )}
           </div>
 
-          {/* Warnings */}
           {parseResult.warnings.length > 0 && (
             <div className="flex flex-col gap-1">
               {parseResult.warnings.map((w, i) => (
@@ -879,30 +949,28 @@ const ImportStepsModal: React.FC<Props> = ({ onClose, onBack }) => {
         </div>
       )}
 
-      {/* ──────────────────────────────────
+      {/* ══════════════════════════════════
           rev-confirm
-      ────────────────────────────────── */}
+      ══════════════════════════════════ */}
       {stage === "rev-confirm" && revPayload && (
         <div className="flex flex-col gap-3">
-          {/* Summary */}
           <div className="rounded-xl border border-(--border-color) bg-bg-card p-3
             flex flex-col gap-1.5 text-xs">
-            <Row label="Revision ID"    value={`${selTest}-${newRevId}`} brand />
-            <Row label="Test serial"    value={selTest} mono />
+            <Row label="Revision ID"    value={`${revSelTest}-${newRevId}`} brand />
+            <Row label="Test serial"    value={revSelTest} mono />
             <Row label="Status"         value="draft" />
             <Row label="Steps in order" value={String(revPayload.revision.step_order.length)} mono />
             <Row label="New step rows"  value={String(revPayload.newSteps.length)} mono />
             {!isFirst && diffResult && (
               <>
-                <Row label="Unchanged (reused)"   value={String(diffResult.summary.unchanged)} mono />
-                <Row label="Edited (new rows)"    value={String(diffResult.summary.edited)}    mono />
-                <Row label="Inserted (new rows)"  value={String(diffResult.summary.inserted)}  mono />
-                <Row label="Deleted from order"   value={String(diffResult.summary.deleted)}   mono />
+                <Row label="Unchanged (reused)"  value={String(diffResult.summary.unchanged)} mono />
+                <Row label="Edited (new rows)"   value={String(diffResult.summary.edited)}    mono />
+                <Row label="Inserted (new rows)" value={String(diffResult.summary.inserted)}  mono />
+                <Row label="Deleted from order"  value={String(diffResult.summary.deleted)}   mono />
               </>
             )}
           </div>
 
-          {/* Step order preview chip strip */}
           <div>
             <p className="text-[10px] font-bold uppercase tracking-wider text-t-muted mb-1.5">
               Step order preview
@@ -930,12 +998,10 @@ const ImportStepsModal: React.FC<Props> = ({ onClose, onBack }) => {
               )}
             </div>
             <p className="text-[10px] text-t-muted mt-1">
-              <span className="text-sky-400 font-bold">Blue</span> = new rows ·
-              grey = reused unchanged
+              <span className="text-sky-400 font-bold">Blue</span> = new rows · grey = reused unchanged
             </p>
           </div>
 
-          {/* Notes */}
           <div>
             <label className="block text-xs text-t-muted mb-1">Notes (optional)</label>
             <textarea
@@ -958,28 +1024,141 @@ const ImportStepsModal: React.FC<Props> = ({ onClose, onBack }) => {
         </div>
       )}
 
-      {/* ──────────────────────────────────
+      {/* ══════════════════════════════════
           submitting
-      ────────────────────────────────── */}
+      ══════════════════════════════════ */}
       {stage === "submitting" && (
         <div className="flex items-center justify-center py-8">
           <div className="w-8 h-8 border-4 border-c-brand border-t-transparent rounded-full animate-spin" />
         </div>
       )}
 
-      {/* ──────────────────────────────────
+      {/* ══════════════════════════════════
           done
-      ────────────────────────────────── */}
+      ══════════════════════════════════ */}
       {stage === "done" && (
         <div className="flex flex-col items-center gap-3 py-6">
           <CheckCircle size={32} className="text-green-400" />
           <p className="text-sm font-semibold text-t-primary">
-            {`Revision ${selTest}-${newRevId} created as draft`}
+            {`Revision ${revSelTest}-${newRevId} created as draft`}
           </p>
           <p className="text-xs text-t-muted text-center max-w-48">
             Activate it from Revision Control when you're ready to use it.
           </p>
           <button onClick={onClose} className="btn-primary text-sm px-6">Close</button>
+        </div>
+      )}
+
+      {/* ══════════════════════════════════
+          vis-module  — pick module
+      ══════════════════════════════════ */}
+      {stage === "vis-module" && (
+        <div className="flex flex-col gap-2">
+          {visLoading ? (
+            <div className="flex items-center justify-center py-8">
+              <div className="w-6 h-6 border-2 border-c-brand border-t-transparent rounded-full animate-spin" />
+            </div>
+          ) : visModules.length === 0 ? (
+            <p className="text-sm text-t-muted text-center py-4">No modules found.</p>
+          ) : (
+            <div className="flex flex-col gap-1.5 max-h-60 overflow-y-auto">
+              {visModules.map(m => (
+                <button
+                  key={m.name}
+                  onClick={() => handleModuleSelect(m.name)}
+                  className="text-left px-3 py-2.5 rounded-xl border border-(--border-color)
+                    bg-bg-card hover:bg-bg-base text-sm text-t-primary transition-colors"
+                >
+                  {m.name}
+                </button>
+              ))}
+            </div>
+          )}
+          {error && <p className="text-xs text-red-400">{error}</p>}
+        </div>
+      )}
+
+      {/* ══════════════════════════════════
+          vis-list  — toggle module_tests.is_visible
+          ✅ NEW inline query: module_tests + FK join to tests
+      ══════════════════════════════════ */}
+      {stage === "vis-list" && (
+        <div className="flex flex-col gap-3">
+          {visLoading ? (
+            <div className="flex items-center justify-center py-8">
+              <div className="w-6 h-6 border-2 border-c-brand border-t-transparent rounded-full animate-spin" />
+            </div>
+          ) : visRows.length === 0 ? (
+            <p className="text-sm text-t-muted text-center py-8">
+              No tests found in this module.
+            </p>
+          ) : (
+            <>
+              {/* Module header */}
+              <div className="rounded-xl border border-(--border-color) bg-bg-card px-3 py-2">
+                <p className="text-[10px] font-bold uppercase tracking-wider text-t-muted mb-0.5">
+                  Module
+                </p>
+                <p className="text-sm font-semibold text-t-primary">{visSelModule}</p>
+              </div>
+
+              <p className="text-[10px] font-bold uppercase tracking-wider text-t-muted">
+                Tests · toggle visibility
+              </p>
+
+              <div className="flex flex-col gap-1.5 max-h-56 overflow-y-auto">
+                {visRows.map(row => (
+                  <div
+                    key={row.id}
+                    className="flex items-center justify-between px-3 py-2.5
+                      rounded-xl border border-(--border-color) bg-bg-card"
+                  >
+                    <div className="flex flex-col min-w-0">
+                      <span className="text-sm font-semibold text-t-primary truncate">
+                        {row.tests_name}
+                      </span>
+                    </div>
+                    {row.lockInfo ? (
+                      // ✅ Test is locked in test_locks — disable toggle, show who holds it
+                      <div
+                        title={`Locked by ${row.lockInfo.locked_by_name} — finish test to unlock`}
+                        className="flex items-center gap-1.5 shrink-0 text-[11px]
+                          font-semibold px-2.5 py-1 rounded-lg border
+                          text-amber-400 border-amber-500/30 bg-amber-500/8
+                          cursor-not-allowed select-none"
+                      >
+                        <Lock size={11} />
+                        <span className="max-w-[80px] truncate">{row.lockInfo.locked_by_name}</span>
+                      </div>
+                    ) : (
+                      <button
+                        onClick={() => handleToggleVisibility(row)}
+                        disabled={visLoading}
+                        title={
+                          row.is_visible
+                            ? "Execute mode — click to make view-only"
+                            : "View-only — click to enable execution"
+                        }
+                        className={`flex items-center gap-1.5 shrink-0 text-[11px]
+                          font-semibold px-2.5 py-1 rounded-lg border transition-colors
+                          disabled:opacity-50
+                          ${row.is_visible
+                            ? "text-sky-400 border-sky-500/30 bg-sky-500/8 hover:bg-sky-500/15"
+                            : "text-t-muted border-(--border-color) bg-bg-base hover:text-t-primary"
+                          }`}
+                      >
+                        {row.is_visible
+                          ? <><Pencil size={11} /> Execute</>
+                          : <><Eye size={11} /> View Only</>
+                        }
+                      </button>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
+          {error && <p className="text-xs text-red-400">{error}</p>}
         </div>
       )}
     </ModalShell>
