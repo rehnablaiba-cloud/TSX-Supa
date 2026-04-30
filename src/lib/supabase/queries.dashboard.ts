@@ -6,6 +6,7 @@
  *    revision step_order. No bulk test_steps fetching.
  *  - is_divider parsed from step_order string format: {serial}-{rev}-{group}-{step}-{is_divider}
  *  - Legacy tests (no active revision) fetch step_results via test_steps join.
+ *  - step_results keyed by (module_name, test_steps_id) to prevent cross-module bleed.
  */
 import { supabase } from "../../supabase";
 import type { ActiveLock } from "../../types";
@@ -42,13 +43,18 @@ export interface DashboardModule {
   step_results: DashboardStepResult[];
 }
 
-// ── Parse is_divider from step_order string ─────────────────────────────────
-// Format: "T001-R0-1-1-false" → tests_serial_no=T001, is_divider=false
+// ── Parse is_divider and tests_serial_no from step_order string ──────────────
+// Format: "T001-R0-1-1-false"
+// Serial number is everything before the first revision segment (e.g. "R0", "R1").
 function parseStepKey(stepKey: string): { tests_serial_no: string; is_divider: boolean } {
   const parts = stepKey.split('-');
-  const isDividerStr = parts[parts.length - 1]; // last part: "true" or "false"
+  const isDividerStr = parts[parts.length - 1];
+
+  const revIdx = parts.findIndex((p, i) => i > 0 && /^R\d+$/.test(p));
+  const tests_serial_no = revIdx > 0 ? parts.slice(0, revIdx).join('-') : parts[0];
+
   return {
-    tests_serial_no: parts[0],
+    tests_serial_no,
     is_divider: isDividerStr === 'true',
   };
 }
@@ -122,177 +128,81 @@ export async function fetchDashboardModules(): Promise<DashboardModule[]> {
   );
 
   // ── 4. Collect all step IDs from active revisions ────────────────────────
-  const allStepIdsFromRevisions = new Set<string>();
-  for (const rev of Object.values(revBySerial)) {
-    for (const stepId of rev.step_order) {
-      allStepIdsFromRevisions.add(stepId);
-    }
+  const allStepIds = Array.from(
+    new Set(
+      Object.values(revBySerial).flatMap((rev) => rev.step_order)
+    )
+  );
+
+  // ── 5. Fetch step_results ─────────────────────────────────────────────────
+  // Key: "(module_name):(test_steps_id)" → prevents cross-module bleed.
+
+  // Declare lookups at outer scope so step-6 assembly can access them.
+  const statusByModuleStep = new Map<string, string>();
+  const metaByStepId = new Map<string, { is_divider: boolean; tests_serial_no: string }>();
+
+  const srPromises: PromiseLike<any>[] = [];
+
+  // Revised path: fetch by exact step IDs in step_order
+  if (allStepIds.length > 0) {
+    srPromises.push(
+      supabase
+        .from("step_results")
+        .select("status, test_steps_id, module_name")
+        .in("test_steps_id", allStepIds)
+    );
   }
 
-  // ── 5. Fetch step_results ──────────────────────────────────────────────
-//
-// For each module, we need step_results for its tests' step_order items,
-// scoped by module_name. Since step_results are unique per (test, module),
-// we must include module_name in the query.
-
-// Build a map: module_name → Set of test_steps_id for that module
-const moduleStepIds: Record<string, Set<string>> = {};
-
-for (const mod of modulesData) {
-  const modName = mod.name as string;
-  moduleStepIds[modName] = new Set();
-
-  const mts = (mod.module_tests ?? []) as any[];
-  for (const mt of mts) {
-    const serialNo = mt.test?.serial_no as string | undefined;
-    if (!serialNo) continue;
-
-    const rev = revBySerial[serialNo];
-    if (rev) {
-      for (const stepId of rev.step_order) {
-        moduleStepIds[modName].add(stepId);
+  // Legacy path: fetch via test_steps join for tests without a revision
+  if (serialNosWithoutRevision.size > 0) {
+    const legacyModuleNames = new Set<string>();
+    for (const mod of modulesData) {
+      for (const mt of (mod.module_tests ?? []) as any[]) {
+        const sn = mt.test?.serial_no as string | undefined;
+        if (sn && serialNosWithoutRevision.has(sn)) {
+          legacyModuleNames.add(mod.name as string);
+        }
       }
     }
-  }
-}
 
-// Fetch step_results per module (or batch by module_name if Supabase supports)
-// Since .in() doesn't work well with composite (module_name, test_steps_id),
-// we fetch all step_results for the test_steps_id set, then filter in JS by module_name.
-
-const allStepIds = Array.from(
-  new Set(Object.values(moduleStepIds).flatMap((s) => Array.from(s)))
-);
-
-const srPromises: PromiseLike<any>[] = [];
-
-if (allStepIds.length > 0) {
-  srPromises.push(
-    supabase
-      .from("step_results")
-      .select("status, test_steps_id, module_name")
-      .in("test_steps_id", allStepIds)
-  );
-}
-
-// Legacy path: fetch by tests_serial_no + module_name
-if (serialNosWithoutRevision.size > 0) {
-  // For legacy, we need to know which (serial_no, module_name) pairs exist
-  // Build a set of module_names that have legacy tests
-  const legacyModuleNames = new Set<string>();
-  for (const mod of modulesData) {
-    const mts = (mod.module_tests ?? []) as any[];
-    for (const mt of mts) {
-      const serialNo = mt.test?.serial_no as string | undefined;
-      if (serialNo && serialNosWithoutRevision.has(serialNo)) {
-        legacyModuleNames.add(mod.name as string);
-      }
-    }
-  }
-
-  srPromises.push(
-    supabase
-      .from("step_results")
-      .select(`
-        status,
-        test_steps_id,
-        module_name,
-        step:test_steps!step_results_test_steps_id_fkey(
-          is_divider,
-          tests_serial_no
-        )
-      `)
-      .in("step.tests_serial_no", Array.from(serialNosWithoutRevision))
-      .in("module_name", Array.from(legacyModuleNames))
-  );
-}
-
-
-
-// Build lookup: (module_name, test_steps_id) → status
-const statusByModuleStep = new Map<string, string>();
-// Build lookup for legacy: test_steps_id → {is_divider, tests_serial_no}
-const metaByStepId = new Map<string, { is_divider: boolean; tests_serial_no: string }>();
-
-const srResponses = await Promise.all(srPromises);
-for (const res of srResponses) {
-  if (res.error) throw new Error(res.error.message);
-}
-
-for (const row of srResponses.flatMap((r) => (r.data ?? []) as any[])) {
-  const key = `${row.module_name}:${row.test_steps_id}`;
-  statusByModuleStep.set(key, row.status as string);
-
-  if (row.step) {
-    metaByStepId.set(row.test_steps_id as string, {
-      is_divider: row.step.is_divider ?? false,
-      tests_serial_no: row.step.tests_serial_no ?? "",
-    });
-  }
-}
-
-// ── 6. Assemble final DashboardModule array ──────────────────────────────
-return modulesData.map((mod): DashboardModule => {
-  const modName = mod.name as string;
-  const enrichedMts: DashboardModuleTest[] = ((mod.module_tests ?? []) as any[]).map(
-    (mt: any) => ({
-      id: mt.id,
-      tests_name: mt.tests_name,
-      test: mt.test ?? null,
-      active_revision: revBySerial[mt.test?.serial_no ?? ""] ?? null,
-    })
-  );
-
-  const moduleStepResults: DashboardStepResult[] = [];
-
-  for (const mt of enrichedMts) {
-    const rev = mt.active_revision;
-    const serialNo = (mt.test?.serial_no ?? "") as string;
-
-    if (rev && rev.step_order.length > 0) {
-      // Revised path: lookup by (module_name, test_steps_id)
-      for (const stepId of rev.step_order) {
-        const parsed = parseStepKey(stepId);
-        if (parsed.tests_serial_no !== serialNo) continue;
-
-        const key = `${modName}:${stepId}`;
-        const status = statusByModuleStep.get(key) ?? "pending";
-
-        moduleStepResults.push({
+    srPromises.push(
+      supabase
+        .from("step_results")
+        .select(`
           status,
-          test_steps_id: stepId,
-          is_divider: parsed.is_divider,
-          tests_serial_no: parsed.tests_serial_no,
-        });
-      }
-    } else {
-      // Legacy path: lookup by (module_name, test_steps_id) using meta
-      for (const [stepId, meta] of metaByStepId.entries()) {
-        if (meta.tests_serial_no !== serialNo) continue;
+          test_steps_id,
+          module_name,
+          step:test_steps!step_results_test_steps_id_fkey(
+            is_divider,
+            tests_serial_no
+          )
+        `)
+        .in("step.tests_serial_no", Array.from(serialNosWithoutRevision))
+        .in("module_name", Array.from(legacyModuleNames))
+    );
+  }
 
-        const key = `${modName}:${stepId}`;
-        const status = statusByModuleStep.get(key) ?? "pending";
+  const srResponses = await Promise.all(srPromises);
+  for (const res of srResponses) {
+    if (res.error) throw new Error(res.error.message);
+  }
 
-        moduleStepResults.push({
-          status,
-          test_steps_id: stepId,
-          is_divider: meta.is_divider,
-          tests_serial_no: meta.tests_serial_no,
-        });
-      }
+  for (const row of srResponses.flatMap((r) => (r.data ?? []) as any[])) {
+    const key = `${row.module_name}:${row.test_steps_id}`;
+    statusByModuleStep.set(key, row.status as string);
+
+    if (row.step) {
+      metaByStepId.set(row.test_steps_id as string, {
+        is_divider: row.step.is_divider ?? false,
+        tests_serial_no: row.step.tests_serial_no ?? "",
+      });
     }
   }
 
-  return {
-    name: modName,
-    description: mod.description ?? null,
-    module_tests: enrichedMts,
-    step_results: moduleStepResults,
-  };
-});
-  // ── 6. Assemble final DashboardModule array ──────────────────────────────
   // ── 6. Assemble final DashboardModule array ──────────────────────────────
   return modulesData.map((mod): DashboardModule => {
+    const modName = mod.name as string;
+
     const enrichedMts: DashboardModuleTest[] = ((mod.module_tests ?? []) as any[]).map(
       (mt: any) => ({
         id: mt.id,
@@ -308,15 +218,16 @@ return modulesData.map((mod): DashboardModule => {
       const rev = mt.active_revision;
       const serialNo = (mt.test?.serial_no ?? "") as string;
 
+      if (!serialNo) continue;
+
       if (rev && rev.step_order.length > 0) {
-        // Revised path: use step_order directly, parse metadata from string
+        // Revised path: iterate step_order, look up status by (module_name, step_id)
         for (const stepId of rev.step_order) {
           const parsed = parseStepKey(stepId);
-
-          // Safety check: ensure this step belongs to this test
           if (parsed.tests_serial_no !== serialNo) continue;
 
-          const status = statusByStepId.get(stepId) ?? "pending";
+          const key = `${modName}:${stepId}`;
+          const status = statusByModuleStep.get(key) ?? "pending";
 
           moduleStepResults.push({
             status,
@@ -326,11 +237,12 @@ return modulesData.map((mod): DashboardModule => {
           });
         }
       } else {
-        // Legacy path: use fetched metadata from step_results join
+        // Legacy path: use join metadata, look up status by (module_name, step_id)
         for (const [stepId, meta] of metaByStepId.entries()) {
           if (meta.tests_serial_no !== serialNo) continue;
 
-          const status = statusByStepId.get(stepId) ?? "pending";
+          const key = `${modName}:${stepId}`;
+          const status = statusByModuleStep.get(key) ?? "pending";
 
           moduleStepResults.push({
             status,
@@ -343,7 +255,7 @@ return modulesData.map((mod): DashboardModule => {
     }
 
     return {
-      name: mod.name,
+      name: modName,
       description: mod.description ?? null,
       module_tests: enrichedMts,
       step_results: moduleStepResults,
