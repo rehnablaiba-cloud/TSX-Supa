@@ -2,14 +2,10 @@
  * queries.dashboard.ts
  *
  * Revision-aware update (2025):
- *  - fetchDashboardModules now fetches active revisions for every test in every
- *    module, then pulls step_results scoped to the test_steps referenced in
- *    those revision step_orders.
- *  - For tests that have no activated revision yet (legacy data) the fallback
- *    is step_results for all steps belonging to that test in that module.
- *  - Step counts (pass / fail / pending / total) are computed in JS using
- *    step_order from the active revision so that divider rows and out-of-scope
- *    steps are excluded correctly.
+ *  - Only fetches step_results for test_steps_id explicitly listed in active
+ *    revision step_order. No bulk test_steps fetching.
+ *  - is_divider parsed from step_order string format: {serial}-{rev}-{group}-{step}-{is_divider}
+ *  - Legacy tests (no active revision) fetch step_results via test_steps join.
  */
 import { supabase } from "../../supabase";
 import type { ActiveLock } from "../../types";
@@ -22,7 +18,6 @@ export interface DashboardRevision {
   id: string;
   revision: string;
   is_visible: boolean;
-  /** Ordered list of test_steps.id that belong to this revision. */
   step_order: string[];
 }
 
@@ -30,34 +25,32 @@ export interface DashboardModuleTest {
   id: string;
   tests_name: string;
   test: { name: string; serial_no: string | null } | null;
-  /** Active revision for this specific test, null if not yet activated. */
   active_revision: DashboardRevision | null;
 }
 
-/**
- * A step_result row returned for the dashboard.
- * Includes enough data to compute progress (status, is_divider) and to
- * link back to its parent test (tests_serial_no).
- */
 export interface DashboardStepResult {
   status: string;
   test_steps_id: string;
-  /** Denormalised from the joined test_steps row. */
   is_divider: boolean;
   tests_serial_no: string;
-  /** Module name to scope step_results per module. */
-  module_name: string;
 }
 
 export interface DashboardModule {
   name: string;
   description: string | null;
   module_tests: DashboardModuleTest[];
-  /**
-   * step_results already filtered to the active revision for each test.
-   * Use step_order from the active_revision to sort/count correctly.
-   */
   step_results: DashboardStepResult[];
+}
+
+// ── Parse is_divider from step_order string ─────────────────────────────────
+// Format: "T001-R0-1-1-false" → tests_serial_no=T001, is_divider=false
+function parseStepKey(stepKey: string): { tests_serial_no: string; is_divider: boolean } {
+  const parts = stepKey.split('-');
+  const isDividerStr = parts[parts.length - 1]; // last part: "true" or "false"
+  return {
+    tests_serial_no: parts[0],
+    is_divider: isDividerStr === 'true',
+  };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -65,11 +58,10 @@ export interface DashboardModule {
 // ─────────────────────────────────────────────────────────────────────────────
 
 export async function fetchDashboardModules(): Promise<DashboardModule[]> {
-  // ── 1. Fetch modules + module_tests (no step_results in this query) ────────
+  // ── 1. Fetch modules + module_tests ──────────────────────────────────────
   const { data: modulesRaw, error: modErr } = await supabase
     .from("modules")
-    .select(
-      `
+    .select(`
       name,
       description,
       module_tests:module_tests!module_name(
@@ -77,14 +69,13 @@ export async function fetchDashboardModules(): Promise<DashboardModule[]> {
         tests_name,
         test:tests!module_tests_tests_name_fkey(name, serial_no)
       )
-    `
-    )
+    `)
     .order("name");
 
   if (modErr) throw new Error(modErr.message);
   const modulesData = (modulesRaw ?? []) as any[];
 
-  // ── 2. Collect every unique tests_serial_no across all modules ─────────────
+  // ── 2. Collect every unique tests_serial_no ──────────────────────────────
   const allSerialNos: string[] = Array.from(
     new Set(
       modulesData.flatMap((mod) =>
@@ -96,7 +87,6 @@ export async function fetchDashboardModules(): Promise<DashboardModule[]> {
   );
 
   if (allSerialNos.length === 0) {
-    // No tests at all — return modules with empty step_results
     return modulesData.map((mod) => ({
       name: mod.name,
       description: mod.description ?? null,
@@ -108,7 +98,7 @@ export async function fetchDashboardModules(): Promise<DashboardModule[]> {
     }));
   }
 
-  // ── 3. Batch-fetch active revisions (including step_order) ─────────────────
+  // ── 3. Batch-fetch active revisions ──────────────────────────────────────
   const { data: revRaw, error: revErr } = await supabase
     .from("test_revisions")
     .select("id, revision, is_visible, tests_serial_no, step_order")
@@ -117,7 +107,6 @@ export async function fetchDashboardModules(): Promise<DashboardModule[]> {
 
   if (revErr) throw new Error(revErr.message);
 
-  /** Map: tests_serial_no → DashboardRevision */
   const revBySerial: Record<string, DashboardRevision> = {};
   ((revRaw ?? []) as any[]).forEach((r) => {
     revBySerial[r.tests_serial_no] = {
@@ -128,29 +117,11 @@ export async function fetchDashboardModules(): Promise<DashboardModule[]> {
     };
   });
 
-  /** serial_nos that have NO active revision — legacy fallback path */
   const serialNosWithoutRevision = new Set(
     allSerialNos.filter((sn) => !revBySerial[sn])
   );
 
-  // ── 4. Fetch step_results ──────────────────────────────────────────────
-  //
-  // Fetch step_results for the test_steps referenced in active revisions'
-  // step_order arrays, plus legacy rows for tests without revisions.
-  // We use test_steps_id (from step_order) directly rather than revision_id
-  // because step_results has a direct FK to test_steps.
-
-  const srSelect = `
-    status,
-    test_steps_id,
-    module_name,
-    step:test_steps!step_results_test_steps_id_fkey(
-      is_divider,
-      tests_serial_no
-    )
-  `;
-
-  // Collect all test_steps_id values from active revision step_orders
+  // ── 4. Collect all step IDs from active revisions ────────────────────────
   const allStepIdsFromRevisions = new Set<string>();
   for (const rev of Object.values(revBySerial)) {
     for (const stepId of rev.step_order) {
@@ -158,48 +129,165 @@ export async function fetchDashboardModules(): Promise<DashboardModule[]> {
     }
   }
 
-  const srPromises: PromiseLike<any>[] = [];
+  // ── 5. Fetch step_results ──────────────────────────────────────────────
+//
+// For each module, we need step_results for its tests' step_order items,
+// scoped by module_name. Since step_results are unique per (test, module),
+// we must include module_name in the query.
 
-  if (allStepIdsFromRevisions.size > 0) {
-    srPromises.push(
-      supabase
-        .from("step_results")
-        .select(srSelect)
-        .in("test_steps_id", Array.from(allStepIdsFromRevisions))
-    );
+// Build a map: module_name → Set of test_steps_id for that module
+const moduleStepIds: Record<string, Set<string>> = {};
+
+for (const mod of modulesData) {
+  const modName = mod.name as string;
+  moduleStepIds[modName] = new Set();
+
+  const mts = (mod.module_tests ?? []) as any[];
+  for (const mt of mts) {
+    const serialNo = mt.test?.serial_no as string | undefined;
+    if (!serialNo) continue;
+
+    const rev = revBySerial[serialNo];
+    if (rev) {
+      for (const stepId of rev.step_order) {
+        moduleStepIds[modName].add(stepId);
+      }
+    }
+  }
+}
+
+// Fetch step_results per module (or batch by module_name if Supabase supports)
+// Since .in() doesn't work well with composite (module_name, test_steps_id),
+// we fetch all step_results for the test_steps_id set, then filter in JS by module_name.
+
+const allStepIds = Array.from(
+  new Set(Object.values(moduleStepIds).flatMap((s) => Array.from(s)))
+);
+
+const srPromises: PromiseLike<any>[] = [];
+
+if (allStepIds.length > 0) {
+  srPromises.push(
+    supabase
+      .from("step_results")
+      .select("status, test_steps_id, module_name")
+      .in("test_steps_id", allStepIds)
+  );
+}
+
+// Legacy path: fetch by tests_serial_no + module_name
+if (serialNosWithoutRevision.size > 0) {
+  // For legacy, we need to know which (serial_no, module_name) pairs exist
+  // Build a set of module_names that have legacy tests
+  const legacyModuleNames = new Set<string>();
+  for (const mod of modulesData) {
+    const mts = (mod.module_tests ?? []) as any[];
+    for (const mt of mts) {
+      const serialNo = mt.test?.serial_no as string | undefined;
+      if (serialNo && serialNosWithoutRevision.has(serialNo)) {
+        legacyModuleNames.add(mod.name as string);
+      }
+    }
   }
 
-  if (serialNosWithoutRevision.size > 0) {
-    srPromises.push(
-      supabase
-        .from("step_results")
-        .select(srSelect)
-        .in("step.tests_serial_no", Array.from(serialNosWithoutRevision))
-    );
+  srPromises.push(
+    supabase
+      .from("step_results")
+      .select(`
+        status,
+        test_steps_id,
+        module_name,
+        step:test_steps!step_results_test_steps_id_fkey(
+          is_divider,
+          tests_serial_no
+        )
+      `)
+      .in("step.tests_serial_no", Array.from(serialNosWithoutRevision))
+      .in("module_name", Array.from(legacyModuleNames))
+  );
+}
+
+const srResponses = await Promise.all(srPromises);
+for (const res of srResponses) {
+  if (res.error) throw new Error(res.error.message);
+}
+
+// Build lookup: (module_name, test_steps_id) → status
+const statusByModuleStep = new Map<string, string>();
+// Build lookup for legacy: test_steps_id → {is_divider, tests_serial_no}
+const metaByStepId = new Map<string, { is_divider: boolean; tests_serial_no: string }>();
+
+for (const row of srResponses.flatMap((r) => (r.data ?? []) as any[])) {
+  const key = `${row.module_name}:${row.test_steps_id}`;
+  statusByModuleStep.set(key, row.status as string);
+
+  if (row.step) {
+    metaByStepId.set(row.test_steps_id as string, {
+      is_divider: row.step.is_divider ?? false,
+      tests_serial_no: row.step.tests_serial_no ?? "",
+    });
+  }
+}
+
+// ── 6. Assemble final DashboardModule array ──────────────────────────────
+return modulesData.map((mod): DashboardModule => {
+  const modName = mod.name as string;
+  const enrichedMts: DashboardModuleTest[] = ((mod.module_tests ?? []) as any[]).map(
+    (mt: any) => ({
+      id: mt.id,
+      tests_name: mt.tests_name,
+      test: mt.test ?? null,
+      active_revision: revBySerial[mt.test?.serial_no ?? ""] ?? null,
+    })
+  );
+
+  const moduleStepResults: DashboardStepResult[] = [];
+
+  for (const mt of enrichedMts) {
+    const rev = mt.active_revision;
+    const serialNo = (mt.test?.serial_no ?? "") as string;
+
+    if (rev && rev.step_order.length > 0) {
+      // Revised path: lookup by (module_name, test_steps_id)
+      for (const stepId of rev.step_order) {
+        const parsed = parseStepKey(stepId);
+        if (parsed.tests_serial_no !== serialNo) continue;
+
+        const key = `${modName}:${stepId}`;
+        const status = statusByModuleStep.get(key) ?? "pending";
+
+        moduleStepResults.push({
+          status,
+          test_steps_id: stepId,
+          is_divider: parsed.is_divider,
+          tests_serial_no: parsed.tests_serial_no,
+        });
+      }
+    } else {
+      // Legacy path: lookup by (module_name, test_steps_id) using meta
+      for (const [stepId, meta] of metaByStepId.entries()) {
+        if (meta.tests_serial_no !== serialNo) continue;
+
+        const key = `${modName}:${stepId}`;
+        const status = statusByModuleStep.get(key) ?? "pending";
+
+        moduleStepResults.push({
+          status,
+          test_steps_id: stepId,
+          is_divider: meta.is_divider,
+          tests_serial_no: meta.tests_serial_no,
+        });
+      }
+    }
   }
 
-  const srResponses = await Promise.all(srPromises);
-  for (const res of srResponses) {
-    if (res.error) throw new Error(res.error.message);
-  }
-
-  // Flatten + normalise into DashboardStepResult
-  const allStepResults: DashboardStepResult[] = srResponses
-    .flatMap((r) => (r.data ?? []) as any[])
-    .map((row) => ({
-      status: row.status as string,
-      test_steps_id: row.test_steps_id as string,
-      module_name: row.module_name as string,
-      is_divider: (row.step?.is_divider ?? false) as boolean,
-      tests_serial_no: (row.step?.tests_serial_no ?? "") as string,
-    }));
-
-  // ── 5. Build a lookup: test_steps_id → DashboardStepResult ─────────────────
-  const srByStepId = new Map<string, DashboardStepResult>();
-  for (const sr of allStepResults) {
-    srByStepId.set(sr.test_steps_id, sr);
-  }
-
+  return {
+    name: modName,
+    description: mod.description ?? null,
+    module_tests: enrichedMts,
+    step_results: moduleStepResults,
+  };
+});
   // ── 6. Assemble final DashboardModule array ──────────────────────────────
   return modulesData.map((mod): DashboardModule => {
     const enrichedMts: DashboardModuleTest[] = ((mod.module_tests ?? []) as any[]).map(
@@ -211,27 +299,42 @@ export async function fetchDashboardModules(): Promise<DashboardModule[]> {
       })
     );
 
-    // Collect step_results for this module only, ordered by step_order where
-    // a revision exists, or by natural insertion order for legacy tests.
     const moduleStepResults: DashboardStepResult[] = [];
 
     for (const mt of enrichedMts) {
       const rev = mt.active_revision;
+      const serialNo = (mt.test?.serial_no ?? "") as string;
 
       if (rev && rev.step_order.length > 0) {
-        // Revised path: walk step_order so counts respect ordering and scope
+        // Revised path: use step_order directly, parse metadata from string
         for (const stepId of rev.step_order) {
-          const sr = srByStepId.get(stepId);
-          // Only include if it belongs to this module
-          if (sr && sr.module_name === mod.name) moduleStepResults.push(sr);
+          const parsed = parseStepKey(stepId);
+
+          // Safety check: ensure this step belongs to this test
+          if (parsed.tests_serial_no !== serialNo) continue;
+
+          const status = statusByStepId.get(stepId) ?? "pending";
+
+          moduleStepResults.push({
+            status,
+            test_steps_id: stepId,
+            is_divider: parsed.is_divider,
+            tests_serial_no: parsed.tests_serial_no,
+          });
         }
       } else {
-        // Legacy path: all step_results for this test in this module
-        const serialNo = (mt.test?.serial_no ?? "") as string;
-        for (const sr of allStepResults) {
-          if (sr.tests_serial_no === serialNo && sr.module_name === mod.name) {
-            moduleStepResults.push(sr);
-          }
+        // Legacy path: use fetched metadata from step_results join
+        for (const [stepId, meta] of metaByStepId.entries()) {
+          if (meta.tests_serial_no !== serialNo) continue;
+
+          const status = statusByStepId.get(stepId) ?? "pending";
+
+          moduleStepResults.push({
+            status,
+            test_steps_id: stepId,
+            is_divider: meta.is_divider,
+            tests_serial_no: meta.tests_serial_no,
+          });
         }
       }
     }
@@ -246,7 +349,7 @@ export async function fetchDashboardModules(): Promise<DashboardModule[]> {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// fetchActiveLocks — current user's locks only (used for warning banner)
+// fetchActiveLocks
 // ─────────────────────────────────────────────────────────────────────────────
 
 export async function fetchActiveLocks(): Promise<ActiveLock[]> {
@@ -284,12 +387,10 @@ export async function fetchActiveLocks(): Promise<ActiveLock[]> {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// fetchOtherActiveLockModules — locks held by OTHER users
+// fetchOtherActiveLockModules
 // ─────────────────────────────────────────────────────────────────────────────
 
-export async function fetchOtherActiveLockModules(): Promise<
-  Map<string, number>
-> {
+export async function fetchOtherActiveLockModules(): Promise<Map<string, number>> {
   const { data: sessionData } = await supabase.auth.getSession();
   const userEmail = sessionData?.session?.user?.email;
 
