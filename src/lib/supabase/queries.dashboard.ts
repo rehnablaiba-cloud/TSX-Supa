@@ -291,6 +291,7 @@ return modulesData.map((mod): DashboardModule => {
   };
 });
   // ── 6. Assemble final DashboardModule array ──────────────────────────────
+  // ── 6. Assemble final DashboardModule array ──────────────────────────────
   return modulesData.map((mod): DashboardModule => {
     const enrichedMts: DashboardModuleTest[] = ((mod.module_tests ?? []) as any[]).map(
       (mt: any) => ({
