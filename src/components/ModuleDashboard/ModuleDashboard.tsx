@@ -802,7 +802,15 @@ const ModuleDashboard: React.FC<Props> = ({
                         Report
                       </button>
 
-                      {isMyLock ? (
+                      {activeRev && !activeRev.is_visible ? (
+                        <button
+                          onClick={() => onExecute(mt.id)}
+                          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors bg-c-brand hover:bg-c-brand-hover text-(--bg-surface)"
+                        >
+                          <Eye size={12} />
+                          View
+                        </button>
+                      ) : isMyLock ? (
                         <button
                           onClick={() => onExecute(mt.id)}
                           className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all text-black"
@@ -822,14 +830,6 @@ const ModuleDashboard: React.FC<Props> = ({
                         >
                           <RotateCcw size={12} />
                           Resume
-                        </button>
-                      ) : activeRev && !activeRev.is_visible ? (
-                        <button
-                          onClick={() => onViewReport(mt.id)}
-                          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors bg-c-brand hover:bg-c-brand-hover text-(--bg-surface)"
-                        >
-                          <Eye size={12} />
-                          View
                         </button>
                       ) : (
                         <button
