@@ -83,7 +83,7 @@ export interface DashboardModuleSummary {
   name:        string;
   description: string | null;
   tests:       DashboardTestCount[];
-  /** Pre-summed across all non-divider tests in this module. */
+  test_count:  number;
   pass:        number;
   fail:        number;
   pending:     number;
@@ -171,6 +171,7 @@ export async function fetchDashboardSummaries(): Promise<DashboardModuleSummary[
       name:        mod.name as string,
       description: (mod.description as string | null) ?? null,
       tests,
+      test_count:  tests.length,
       pass,
       fail,
       pending,
