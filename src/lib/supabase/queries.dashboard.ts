@@ -9,8 +9,10 @@
  *    Dashboard renders cards immediately from this.
  *
  *  Phase 2 — streamStepResults()
- *    Fetches step_results in sequential batches of 100.
- *    Calls onBatch() after each batch so numbers/bars animate upward.
+ *    Step IDs are split into chunks of 500.
+ *    Up to 100 chunks fire in parallel per wave; onBatch() fires once per wave
+ *    so numbers/bars animate upward as each wave lands.
+ *    Legacy tests (no active revision) are fetched in one trailing request.
  *    Accepts a cancellation token so superseded fetches abort cleanly.
  */
 import { supabase } from "../../supabase";
@@ -80,7 +82,10 @@ export interface DashboardShell {
 // Internal utilities
 // ─────────────────────────────────────────────────────────────────────────────
 
-const STEP_BATCH_SIZE = 100;
+/** Step IDs per Supabase request. */
+const BATCH_SIZE = 500;
+/** Max concurrent requests per wave. onBatch() fires once per wave. */
+const WAVE_SIZE  = 100;
 
 function chunkArray<T>(arr: T[], size: number): T[][] {
   const out: T[][] = [];
@@ -282,7 +287,8 @@ export async function fetchDashboardShell(
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Phase 2 — streamStepResults
-// Sequential batches of 100. onBatch() fires after each so UI counts up live.
+// 500 IDs per request, up to 100 in parallel per wave.
+// onBatch() fires once per wave so the UI counts up live.
 // ─────────────────────────────────────────────────────────────────────────────
 
 export async function streamStepResults(
@@ -293,35 +299,45 @@ export async function streamStepResults(
 ): Promise<void> {
   const statusByModuleStep = new Map<string, string>();
   const metaByStepId = new Map<string, { is_divider: boolean; tests_serial_no: string }>();
+  const isCancelled = () => token?.cancelled;
 
-  // ── Revision-based batches (sequential) ──────────────────────────────────
+  // ── Revision-based parallel waves ────────────────────────────────────────
   if (shell._allStepIds.length > 0) {
-    const batches = chunkArray(shell._allStepIds, STEP_BATCH_SIZE);
-    const totalBatches = batches.length;
-    onProgress?.("Loading step results…", 0, totalBatches);
+    const batches    = chunkArray(shell._allStepIds, BATCH_SIZE);
+    const totalWaves = Math.ceil(batches.length / WAVE_SIZE);
+    onProgress?.("Loading step results…", 0, totalWaves);
 
-    for (let i = 0; i < batches.length; i++) {
-      if (token?.cancelled) return;
+    for (let i = 0; i < batches.length; i += WAVE_SIZE) {
+      if (isCancelled()) return;
 
-      const { data, error } = await supabase
-        .from("step_results")
-        .select("status, test_steps_id, module_name")
-        .in("test_steps_id", batches[i]);
+      const wave = batches.slice(i, i + WAVE_SIZE);
 
-      if (error) throw new Error(error.message);
+      const results = await Promise.all(
+        wave.map((batch) =>
+          supabase
+            .from("step_results")
+            .select("status, test_steps_id, module_name")
+            .in("test_steps_id", batch)
+        )
+      );
 
-      for (const row of (data ?? []) as any[]) {
-        statusByModuleStep.set(`${row.module_name}:${row.test_steps_id}`, row.status as string);
+      if (isCancelled()) return;
+
+      for (const { data, error } of results) {
+        if (error) throw new Error(error.message);
+        for (const row of (data ?? []) as any[]) {
+          statusByModuleStep.set(`${row.module_name}:${row.test_steps_id}`, row.status as string);
+        }
       }
 
-      // Emit after every batch → bars and counts animate upward
+      // One render per wave — bars and counts animate upward as each wave lands.
       onBatch(assembleModules(shell, statusByModuleStep, metaByStepId));
-      onProgress?.("Loading step results…", i + 1, totalBatches);
+      onProgress?.("Loading step results…", Math.floor(i / WAVE_SIZE) + 1, totalWaves);
     }
   }
 
   // ── Legacy path — tests without an active revision ────────────────────────
-  if (shell._serialNosWithoutRevision.size > 0 && !token?.cancelled) {
+  if (shell._serialNosWithoutRevision.size > 0 && !isCancelled()) {
     onProgress?.(`Loading legacy steps (${shell._serialNosWithoutRevision.size} tests)…`, 0, 1);
 
     const { data, error } = await supabase

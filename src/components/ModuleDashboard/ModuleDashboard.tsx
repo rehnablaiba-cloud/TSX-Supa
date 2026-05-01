@@ -34,7 +34,15 @@ import type {
   ModuleTestRow,
   ActiveRevision,
 } from "./ModuleDashboard.types";
-
+import {
+  fetchModuleDashboardShell,
+  streamModuleStepResults,
+  fetchModuleLocks,
+} from "../../lib/supabase/queries.moduledashboard";
+import type {
+  ModuleDashboardShell,
+  StreamCancellationToken,
+} from "../../lib/supabase/queries.moduledashboard";
 
 // ─── Animation wrappers ───────────────────────────────────────────────────────
 
@@ -70,12 +78,6 @@ const StaggerRow: React.FC<{ index: number; children: React.ReactNode }> = ({
 const cleanDividerLabel = (action: string): string =>
   action.replace(/^[^a-zA-Z0-9]+/, "");
 
-function unwrapOne<T>(val: T | T[] | null | undefined): T | null {
-  if (val == null) return null;
-  if (Array.isArray(val)) return val[0] ?? null;
-  return val;
-}
-
 /** Debounce: returns a stable callback that delays `fn` by `delay` ms. */
 function useDebounceRef(fn: () => void, delay: number) {
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -90,10 +92,10 @@ function useDebounceRef(fn: () => void, delay: number) {
 
 /**
  * Optimistically patch one step_result's status in local state.
- * Called immediately on Realtime UPDATE before the debounced refetch arrives.
+ * Called immediately on Realtime UPDATE before the debounced restream arrives.
  */
 function patchStepStatus(
-  mts:  ModuleTestRow[],
+  mts: ModuleTestRow[],
   row: { id: string; status: string }
 ): ModuleTestRow[] {
   return mts.map((mt) => ({
@@ -107,28 +109,7 @@ function patchStepStatus(
 }
 
 
-// ─── Internal Supabase shapes ─────────────────────────────────────────────────
-
-interface SupabaseModuleTest {
-  id:         string;
-  tests_name: string;
-  is_visible: boolean;
-  test:       { serial_no: string; name: string } | null;
-}
-
-interface SupabaseStepResult {
-  id:            string;
-  status:        "pass" | "fail" | "pending";
-  test_steps_id: string;
-  step: {
-    id:              string;
-    is_divider:      boolean;
-    tests_serial_no: string;
-    serial_no:       number | null;
-    action:          string | null;
-    expected_result: string | null;
-  } | null;
-}
+// ─── Chart type ───────────────────────────────────────────────────────────────
 
 type ChartType = "bar" | "area" | "line" | "pie" | "radar";
 const CHART_TYPES: { type: ChartType; label: string }[] = [
@@ -172,7 +153,11 @@ const ModuleDashboard: React.FC<Props> = ({
   const [showExport,   setShowExport]  = useState(false);
   const [releaseError, setReleaseError]= useState<string | null>(null);
 
-  const abortRef = useRef<AbortController | null>(null);
+  // Holds the last fetched shell so Phase 2 can be re-triggered independently
+  // (e.g. after a Realtime step_result change without needing to re-fetch shell).
+  const shellRef   = useRef<ModuleDashboardShell | null>(null);
+  const abortRef   = useRef<AbortController | null>(null);
+  const tokenRef   = useRef<StreamCancellationToken>({ cancelled: false });
 
   const [ct, setCt] = useState<ChartTheme>({
     panel:       "#ffffff",
@@ -202,145 +187,83 @@ const ModuleDashboard: React.FC<Props> = ({
   }, [theme]);
 
 
-  // ── Core fetch ──────────────────────────────────────────────────────────────
-  const fetchData = useCallback(
-    async (isBackground = false, signal?: AbortSignal) => {
-      if (signal?.aborted) return;
-      if (!isBackground) setLoading(true);
-      else               setRefreshing(true);
-      setError(null);
-
+  // ── Phase 2 only: restream step results using the cached shell ─────────────
+  const restreamStepResults = useCallback(
+    async (shell: ModuleDashboardShell, signal: AbortSignal, token: StreamCancellationToken) => {
+      setRefreshing(true);
       try {
-        // 1. Module tests + step results in parallel
-        const [mtRes, srRes] = await Promise.all([
-          supabase
-            .from("module_tests")
-            .select("id, tests_name, is_visible, test:tests!module_tests_tests_name_fkey(serial_no, name)")
-            .eq("module_name", module_name)
-            .abortSignal(signal!),
-          supabase
-            .from("step_results")
-            .select("id, status, test_steps_id, step:test_steps!step_results_test_steps_id_fkey(id, is_divider, tests_serial_no, serial_no, action, expected_result)")
-            .eq("module_name", module_name)
-            .abortSignal(signal!),
-        ]);
-
-        if (signal?.aborted) return;
-        if (mtRes.error) { setError(mtRes.error.message); return; }
-        if (srRes.error) { setError(srRes.error.message); return; }
-
-        const normalizedMts: SupabaseModuleTest[] = (mtRes.data ?? []).map(
-          (mt: any) => ({ ...mt, is_visible: mt.is_visible ?? true, test: unwrapOne(mt.test) })
-        );
-        const normalizedSrs: SupabaseStepResult[] = (srRes.data ?? []).map(
-          (sr: any) => ({ ...sr, step: unwrapOne(sr.step) })
-        );
-
-        // 2. Active revisions
-        const serialNos = normalizedMts
-          .map((mt) => mt.test?.serial_no)
-          .filter((s): s is string => !!s);
-
-        const revBySerial: Record<string, ActiveRevision> = {};
-
-        if (serialNos.length > 0) {
-          const { data: revData } = await supabase
-            .from("test_revisions")
-            .select("id, revision, tests_serial_no, step_order")
-            .eq("status", "active")
-            .in("tests_serial_no", serialNos);
-
-          ((revData ?? []) as any[]).forEach((r) => {
-            revBySerial[r.tests_serial_no] = {
-              id:         r.id,
-              revision:   r.revision,
-              step_order: Array.isArray(r.step_order) ? r.step_order : [],
-            };
-          });
-        }
-
-        if (signal?.aborted) return;
-        setRevisions(revBySerial);
-
-        // 3. Build in-scope step ID sets
-        const inScopeIds           = new Set<string>(Object.values(revBySerial).flatMap((r) => r.step_order));
-        const serialNosWithRevision = new Set(Object.keys(revBySerial));
-
-        // 4. Filter step_results to active revision scope
-        const filteredSrs = normalizedSrs.filter((sr) => {
-          const stepSerialNo = sr.step?.tests_serial_no;
-          if (!stepSerialNo) return false;
-          if (serialNosWithRevision.has(stepSerialNo)) return inScopeIds.has(sr.test_steps_id);
-          return true;
-        });
-
-        // 5. Locks
-        const moduleTestIds = normalizedMts.map((mt) => mt.id);
-        const lockRes = moduleTestIds.length > 0
-          ? await supabase
-              .from("test_locks")
-              .select("module_test_id, user_id, locked_by_name, locked_at")
-              .in("module_test_id", moduleTestIds)
-              .abortSignal(signal!)
-          : { data: [], error: null };
-
-        if (signal?.aborted) return;
-
-        const lockMap = (!lockRes.error && lockRes.data)
-          ? (lockRes.data as LockRow[]).reduce<Record<string, LockRow>>(
-              (acc, l) => { acc[l.module_test_id] = l; return acc; }, {}
-            )
-          : {};
-        setLocks(lockMap);
-
-        // 6. Group step results by serial_no → join to tests → sort
-        const srBySerial = filteredSrs.reduce<Record<string, SupabaseStepResult[]>>(
-          (acc, sr) => {
-            const key = sr.step?.tests_serial_no;
-            if (!key) return acc;
-            if (!acc[key]) acc[key] = [];
-            acc[key].push(sr);
-            return acc;
+        await streamModuleStepResults(
+          module_name,
+          shell,
+          (updatedTests) => {
+            if (!token.cancelled) setModuleTests(updatedTests);
           },
-          {}
+          signal,
+          token
         );
-
-        const joined = normalizedMts
-          .map((mt) => ({
-            ...mt,
-            step_results: srBySerial[mt.test?.serial_no ?? ""] ?? [],
-          }))
-          .sort((a, b) => {
-            const aSerial = a.test?.serial_no ?? "";
-            const bSerial = b.test?.serial_no ?? "";
-            return aSerial.localeCompare(bSerial, undefined, { numeric: true, sensitivity: "base" });
-          });
-
-        setModuleTests(joined as ModuleTestRow[]);
-        setError(null);
       } catch (e: any) {
-        if (e.name === "AbortError") return;
-        setError(e?.message ?? "Failed to load module data");
+        if (e.name === "AbortError" || token.cancelled) return;
+        // Non-fatal — shell data is still valid, just show stale step counts
+        console.error("[ModuleDashboard] stream error:", e.message);
       } finally {
-        setLoading(false);
-        setRefreshing(false);
+        if (!token.cancelled) setRefreshing(false);
       }
     },
     [module_name]
   );
 
+
+  // ── Full load: Phase 1 (shell) then Phase 2 (stream) ──────────────────────
+  const loadDashboard = useCallback(
+    async (isBackground = false) => {
+      // Cancel any in-flight fetch/stream
+      abortRef.current?.abort();
+      tokenRef.current.cancelled = true;
+
+      const controller = new AbortController();
+      const token: StreamCancellationToken = { cancelled: false };
+      abortRef.current = controller;
+      tokenRef.current = token;
+
+      if (!isBackground) setLoading(true);
+      setError(null);
+
+      try {
+        // ── Phase 1: shell (fast) ──────────────────────────────────────────
+        const shell = await fetchModuleDashboardShell(module_name, controller.signal);
+        if (token.cancelled) return;
+
+        shellRef.current = shell;
+        setModuleTests(shell.module_tests);   // cards appear immediately (empty bars)
+        setLocks(shell.locks);
+        setRevisions(shell.revisions);
+
+        if (!isBackground) setLoading(false);
+
+        // ── Phase 2: stream step results (animated fill) ───────────────────
+        await restreamStepResults(shell, controller.signal, token);
+
+      } catch (e: any) {
+        if (e.name === "AbortError" || token.cancelled) return;
+        setError(e?.message ?? "Failed to load module data");
+        setLoading(false);
+        setRefreshing(false);
+      }
+    },
+    [module_name, restreamStepResults]
+  );
+
   // Initial load
   useEffect(() => {
-    const controller = new AbortController();
-    abortRef.current = controller;
-    fetchData(false, controller.signal);
+    loadDashboard(false);
     return () => {
-      controller.abort();
-      abortRef.current = null;
+      abortRef.current?.abort();
+      tokenRef.current.cancelled = true;
     };
-  }, [fetchData]);
+  }, [loadDashboard]);
 
-  // ── Force release (admin only) ───────────────────────────────────────────
+
+  // ── Force release (admin only) ────────────────────────────────────────────
   const forceReleaseLock = useCallback(
     async (module_test_id: string, lockedByName: string) => {
       if (!confirm(`Force-release the lock held by ${lockedByName}?`)) return;
@@ -353,26 +276,42 @@ const ModuleDashboard: React.FC<Props> = ({
         setReleaseError(`Failed to release lock: ${error.message}`);
         setTimeout(() => setReleaseError(null), 5000);
       } else {
-        const controller = new AbortController();
-        fetchData(true, controller.signal);
+        // Locks changed — lightweight re-fetch of just the lock map
+        const mtIds = (shellRef.current?.module_tests ?? []).map((mt) => mt.id);
+        fetchModuleLocks(mtIds)
+          .then(setLocks)
+          .catch(console.error);
       }
     },
-    [fetchData]
+    []
   );
 
-  // ── Debounced background refetch for Realtime ────────────────────────────
-  const debouncedRefetch = useDebounceRef(() => {
+
+  // ── Debounced background restream for Realtime step_result changes ─────────
+  const debouncedRestream = useDebounceRef(() => {
+    const shell = shellRef.current;
+    if (!shell) { loadDashboard(true); return; }
+
+    // Cancel any in-flight stream, start a fresh one using the cached shell
+    abortRef.current?.abort();
+    tokenRef.current.cancelled = true;
+
     const controller = new AbortController();
-    fetchData(true, controller.signal);
+    const token: StreamCancellationToken = { cancelled: false };
+    abortRef.current = controller;
+    tokenRef.current = token;
+
+    restreamStepResults(shell, controller.signal, token);
   }, 800);
 
-  // ── Realtime subscriptions ───────────────────────────────────────────────
+
+  // ── Realtime subscriptions ────────────────────────────────────────────────
   useEffect(() => {
     const mtIds = module_tests.map((mt) => mt.id).join(",");
 
     const channel = supabase
       .channel(`module-dashboard-${module_name}-${user?.id ?? "anon"}-${Date.now()}`)
-      // step_results UPDATE → optimistic patch immediately + debounced refetch
+      // step_results UPDATE → optimistic patch immediately + debounced restream
       .on(
         "postgres_changes",
         { event: "UPDATE", schema: "public", table: "step_results", filter: `module_name=eq.${module_name}` },
@@ -381,21 +320,21 @@ const ModuleDashboard: React.FC<Props> = ({
           if (row.id && row.status) {
             setModuleTests((prev) => patchStepStatus(prev, row));
           }
-          debouncedRefetch();
+          debouncedRestream();
         }
       )
-      // INSERT / DELETE → just debounce (no optimistic shortcut needed)
+      // INSERT / DELETE → just restream (no optimistic shortcut needed)
       .on(
         "postgres_changes",
         { event: "INSERT", schema: "public", table: "step_results", filter: `module_name=eq.${module_name}` },
-        debouncedRefetch
+        debouncedRestream
       )
       .on(
         "postgres_changes",
         { event: "DELETE", schema: "public", table: "step_results", filter: `module_name=eq.${module_name}` },
-        debouncedRefetch
+        debouncedRestream
       )
-      // test_locks — locks change less often, immediate refetch is fine
+      // test_locks — lightweight lock-only refresh
       .on(
         "postgres_changes",
         {
@@ -405,14 +344,16 @@ const ModuleDashboard: React.FC<Props> = ({
           ...(mtIds ? { filter: `module_test_id=in.(${mtIds})` } : {}),
         },
         () => {
-          const controller = new AbortController();
-          fetchData(true, controller.signal);
+          const mtIdsArr = (shellRef.current?.module_tests ?? []).map((mt) => mt.id);
+          fetchModuleLocks(mtIdsArr)
+            .then(setLocks)
+            .catch(console.error);
         }
       )
       .subscribe();
 
     return () => { supabase.removeChannel(channel); };
-  }, [module_name, fetchData, debouncedRefetch, user?.id, module_tests]);
+  }, [module_name, debouncedRestream, user?.id, module_tests]);
 
 
   // ── Derived data ──────────────────────────────────────────────────────────

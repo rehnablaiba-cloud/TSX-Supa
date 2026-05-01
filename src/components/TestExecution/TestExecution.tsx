@@ -1096,64 +1096,74 @@ const TestExecution: React.FC<Props> = ({
     const uid = user?.id ?? "anon";
 
     (async () => {
-      const [execData, lockRes] = await Promise.all([
-        fetchTestExecution(currentMtId),
-        supabase
-          .from("test_locks")
-          .select("module_test_id, user_id, locked_by_name")
-          .eq("module_test_id", currentMtId),
-      ]);
+      try {
+        const [execData, lockRes] = await Promise.all([
+          fetchTestExecution(currentMtId),
+          supabase
+            .from("test_locks")
+            .select("module_test_id, user_id, locked_by_name")
+            .eq("module_test_id", currentMtId),
+        ]);
 
-      if (cancelled) return;
+        if (cancelled) return;
 
-      setModuleTests(execData.module_tests);
-      setCurrentRevision(execData.current_revision);
-      const isVisibleNow = execData.is_visible ?? true; // ✅ local const — no state race
-      setIsVisible(isVisibleNow);
-      const ordered = execData.step_results.filter((sr) => sr.step !== null);
-      const displaySerials = computeDisplaySerials(
-        ordered.map((sr) => ({ is_divider: sr.step!.is_divider }))
-      );
+        setModuleTests(execData.module_tests);
+        setCurrentRevision(execData.current_revision);
+        const isVisibleNow = execData.is_visible ?? true;
+        setIsVisible(isVisibleNow);
 
-      const merged: ExecutionStep[] = ordered.map((sr, idx) => ({
-        stepId: sr.step!.id,
-        stepResultId: sr.id,
-        module_test_id: currentMtId,
-        serial_no: displaySerials[idx],
-        action: sr.step!.action,
-        expected_result: sr.step!.expected_result,
-        action_image_urls: sr.step!.action_image_urls || [],
-        expected_image_urls: sr.step!.expected_image_urls || [],
-        is_divider: sr.step!.is_divider,
-        status: sr.status,
-        remarks: sr.remarks,
-        display_name: sr.display_name ?? "",
-      }));
-
-      setSteps(merged);
-      setLock(lockRes.data?.[0] ?? null);
-      setLoading(false);
-
-      // ✅ Acquire lock here — isVisibleNow is a plain value, no race condition
-      if (isVisibleNow && user) {
-        const result = await acquireLock(
-          currentMtId,
-          user.id,
-          user.display_name ?? user.email ?? "User"
+        const ordered = execData.step_results.filter((sr) => sr.step !== null);
+        const displaySerials = computeDisplaySerials(
+          ordered.map((sr) => ({ is_divider: sr.step!.is_divider }))
         );
-        if (!cancelled) {
-          if (result.success) {
-            setActiveLock(currentMtId, user.id);
-          } else {
-            addToast(
-              `Test is locked by ${result.holder ?? "another user"}. View only.`,
-              "warning"
-            );
+
+        const merged: ExecutionStep[] = ordered.map((sr, idx) => ({
+          stepId: sr.step!.id,
+          stepResultId: sr.id,
+          module_test_id: currentMtId,
+          serial_no: displaySerials[idx],
+          action: sr.step!.action,
+          expected_result: sr.step!.expected_result,
+          action_image_urls: sr.step!.action_image_urls || [],
+          expected_image_urls: sr.step!.expected_image_urls || [],
+          is_divider: sr.step!.is_divider,
+          status: sr.status,
+          remarks: sr.remarks,
+          display_name: sr.display_name ?? "",
+        }));
+
+        setSteps(merged);
+        setLock(lockRes.data?.[0] ?? null);
+        setLoading(false);
+
+        // Acquire lock — only when test is editable
+        if (isVisibleNow && user) {
+          const result = await acquireLock(
+            currentMtId,
+            user.id,
+            user.display_name ?? user.email ?? "User"
+          );
+          if (!cancelled) {
+            if (result.success) {
+              setActiveLock(currentMtId, user.id);
+            } else {
+              addToast(
+                `Test is locked by ${result.holder ?? "another user"}. View only.`,
+                "warning"
+              );
+            }
           }
         }
-      }
 
-      setLockLoading(false);
+        setLockLoading(false);
+      } catch (err) {
+        if (!cancelled) {
+          console.error("[TestExecution] load failed:", err);
+          addToast("Failed to load test data. Please try again.", "error");
+          setLoading(false);
+          setLockLoading(false);
+        }
+      }
     })();
 
     // ── Realtime: lock changes ─────────────────────────────────────────────
@@ -1207,9 +1217,9 @@ const TestExecution: React.FC<Props> = ({
       supabase.removeChannel(lockChannel);
       supabase.removeChannel(srChannel);
     };
-  }, [module_name, currentMtId, user?.id]); 
+  }, [module_name, currentMtId, user?.id]);
 
-  // ── Signed image URLs ─────────────────────────────────────────────────────
+  // ── Signed image URLs (BATCHED — was per-path loop, now 500/request) ──────
   useEffect(() => {
     const allPaths = steps.flatMap((s) => [
       ...(s.action_image_urls || []),
@@ -1220,21 +1230,30 @@ const TestExecution: React.FC<Props> = ({
       return;
     }
     let cancelled = false;
+
     (async () => {
       const unique = Array.from(new Set(allPaths.filter(Boolean)));
-      const results = await Promise.all(
-        unique.map(async (path) => {
-          const { data } = await supabase.storage
-            .from("test_steps")
-            .createSignedUrl(path, 3600);
-          return [path, data?.signedUrl ?? ""] as const;
-        })
-      );
-      if (!cancelled)
-        setSignedImageUrls(
-          Object.fromEntries(results.filter(([, url]) => !!url))
-        );
+
+      // Batch into chunks of 500 — createSignedUrls is one request per chunk
+      const chunks: string[][] = [];
+      for (let i = 0; i < unique.length; i += 500) {
+        chunks.push(unique.slice(i, i + 500));
+      }
+
+      const allEntries: [string, string][] = [];
+      for (const chunk of chunks) {
+        const { data, error } = await supabase.storage
+          .from("test_steps")
+          .createSignedUrls(chunk, 3600);
+        if (error || !data) continue;
+        for (const entry of data) {
+          if (entry.signedUrl) allEntries.push([entry.path!, entry.signedUrl!]);
+        }
+      }
+
+      if (!cancelled) setSignedImageUrls(Object.fromEntries(allEntries));
     })();
+
     return () => {
       cancelled = true;
     };
@@ -1412,8 +1431,9 @@ const TestExecution: React.FC<Props> = ({
     }
 
     try {
+      // FIX: filter out empty stepResultIds — Phase 1 pending rows have id: ""
       const stepResultIds = steps
-        .filter((s) => !s.is_divider)
+        .filter((s) => !s.is_divider && s.stepResultId)
         .map((s) => s.stepResultId);
       await resetAllStepResults(module_name, stepResultIds, display_name);
       addToast("All steps reset to pending.", "info");

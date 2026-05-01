@@ -1,416 +1,308 @@
+/**
+ * queries.moduledashboard.ts
+ *
+ * Two-phase loading strategy (mirrors queries.dashboard.ts):
+ *
+ *  Phase 1 — fetchModuleDashboardShell(module_name, signal?)
+ *    Fetches module_tests + revisions + locks (~fast).
+ *    Returns shell with step_results: [] on every ModuleTestRow.
+ *    ModuleDashboard renders cards immediately from this.
+ *
+ *  Phase 2 — streamModuleStepResults(module_name, shell, onBatch, signal?, token?)
+ *    Step IDs are split into chunks of 500.
+ *    Up to 100 chunks fire in parallel; onBatch() is called once per wave
+ *    so bars/counts animate upward as each wave resolves.
+ *    Legacy tests (no active revision) are fetched in one trailing request.
+ *    Accepts a cancellation token so superseded fetches abort cleanly.
+ */
 import { supabase } from "../../supabase";
+import type {
+  LockRow,
+  TrimmedStepResult,
+  ModuleTestRow,
+  ActiveRevision,
+} from "../../components/ModuleDashboard/ModuleDashboard.types";
 
 
-// ─── Types ────────────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+// Cancellation token
+// ─────────────────────────────────────────────────────────────────────────────
 
-
-export interface RawModuleTest {
-  id: string;
-  tests_name: string;
-  is_visible: boolean; // ✅ moved here from DashboardRevision
-  test: { serial_no: number; name: string; description?: string } | null;
+/** Lightweight cancellation token — set cancelled = true to abort streaming. */
+export interface StreamCancellationToken {
+  cancelled: boolean;
 }
 
 
-export interface RawStepResultMD {
-  id: string;
-  module_name: string;
-  test_stepsid: string;
-  status: string;
-  remarks: string;
-  display_name: string;
+// ─────────────────────────────────────────────────────────────────────────────
+// Shell type
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Result of Phase 1. Pass the whole object to streamModuleStepResults().
+ * _internal fields are opaque — do not read them outside this module.
+ */
+export interface ModuleDashboardShell {
+  /** Ready-to-render test cards. step_results is [] until Phase 2 fills it. */
+  module_tests: ModuleTestRow[];
+  locks:        Record<string, LockRow>;
+  /** Keyed by tests_serial_no — used by ModuleDashboard to resolve per-card activeRev. */
+  revisions:    Record<string, ActiveRevision>;
+
+  /** @internal */ _revBySerial:                Record<string, ActiveRevision>;
+  /** @internal */ _allStepIds:                  string[];
+  /** @internal */ _serialNosWithoutRevision:    Set<string>;
 }
 
 
-export interface RawLock {
-  module_test_id: string;
-  user_id: string;
-  locked_by_name: string;
+// ─────────────────────────────────────────────────────────────────────────────
+// Internal utilities
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Step IDs per Supabase request. */
+const BATCH_SIZE = 1000;
+/** Max concurrent requests per wave. onBatch() fires once per wave. */
+const WAVE_SIZE  = 500;
+
+function chunkArray<T>(arr: T[], size: number): T[][] {
+  const out: T[][] = [];
+  for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
+  return out;
 }
 
-
-export interface RawTest {
-  name: string;
-  serial_no: string;
+function unwrapOne<T>(val: T | T[] | null | undefined): T | null {
+  if (val == null) return null;
+  if (Array.isArray(val)) return val[0] ?? null;
+  return val;
 }
 
-
-export interface RawStep {
-  id: string;
-  serial_no: number;
-  action: string;
-  expected_result: string;
-  action_image_urls: string[];
-  expected_image_urls: string[];
-  is_divider: boolean;
-  tests_serial_no: string;
-}
-
-
-/** Active revision metadata surfaced to the dashboard per test. */
-export interface DashboardRevision {
-  id: string;
-  revision: string;
-  // ✅ is_visible removed — now lives on RawModuleTest
-}
-
-
-export interface ModuleDashboardData {
-  module_tests: RawModuleTest[];
-  step_results: RawStepResultMD[];
-  locks: RawLock[];
-  tests: Record<string, RawTest>;
-  steps: Record<string, RawStep>;
-  /**
-   * Active revision per test, keyed by tests_serial_no.
-   * Present only for tests that have an activated revision.
-   */
-  revisions: Record<string, DashboardRevision>;
-}
-
-
-// ─── fetchModuleDashboard ─────────────────────────────────────────────────────
-
-
-export async function fetchModuleDashboard(
-  module_name: string,
-  currentMtId: string
-): Promise<ModuleDashboardData> {
-  const [mtRes, srRes, locksRes] = await Promise.all([
-    supabase
-      .from("module_tests")
-      .select(
-        // ✅ is_visible added to select
-        "id, tests_name, is_visible, test:tests!module_tests_tests_name_fkey(serial_no, name, description)"
-      )
-      .eq("module_name", module_name)
-      .order("id"),
-    supabase.rpc("getstep_resultsformodule", { p_module_name: module_name }),
-    supabase
-      .from("test_locks")
-      .select("module_test_id, user_id, locked_by_name"),
-  ]);
-
-
-  if (mtRes.error) throw new Error(mtRes.error.message);
-  if (srRes.error) throw new Error(srRes.error.message);
-
-
-  const rawMts = (mtRes.data ?? []) as unknown as RawModuleTest[];
-  const rawSrs = (srRes.data ?? []) as RawStepResultMD[];
-
-
-  // ── Collect test names + serial_nos ────────────────────────────────────────
-  const test_names = Array.from(new Set(rawMts.map((m) => m.tests_name)));
-
-
-  const testsMap: Record<string, RawTest> = {};
-  if (test_names.length > 0) {
-    const testsRes = await supabase.rpc("gettestsbynames", {
-      p_names: test_names,
-    });
-    ((testsRes.data ?? []) as (RawTest & { name: string })[]).forEach((t) => {
-      testsMap[t.name] = t;
+/**
+ * Merge an incoming batch of raw step_result rows into the running accumulator
+ * (keyed by step_result id), then rebuild ModuleTestRow[] from scratch.
+ */
+function applyBatch(
+  accumulated: Map<string, TrimmedStepResult>,
+  rawRows:     any[]
+): void {
+  for (const row of rawRows) {
+    const step = unwrapOne(row.step) as TrimmedStepResult["step"];
+    if (!step) continue; // skip orphaned results
+    accumulated.set(row.id as string, {
+      id:     row.id,
+      status: row.status as TrimmedStepResult["status"],
+      step,
     });
   }
+}
+
+function rebuildModuleTests(
+  shell:       ModuleDashboardShell,
+  accumulated: Map<string, TrimmedStepResult>
+): ModuleTestRow[] {
+  // Group accumulated step_results by tests_serial_no
+  const srBySerial: Record<string, TrimmedStepResult[]> = {};
+  for (const sr of accumulated.values()) {
+    const key = sr.step?.tests_serial_no;
+    if (!key) continue;
+    (srBySerial[key] ??= []).push(sr);
+  }
+
+  return shell.module_tests.map((mt) => ({
+    ...mt,
+    step_results: srBySerial[mt.test?.serial_no ?? ""] ?? [],
+  }));
+}
 
 
-  // ── Fetch active revisions for all tests in this module ────────────────────
-  const serialNos: string[] = rawMts
-    .map((mt) => (mt.test as any)?.serial_no as string | undefined)
+// ─────────────────────────────────────────────────────────────────────────────
+// Phase 1 — fetchModuleDashboardShell
+// Fast: module_tests + revisions + locks. No step_results fetched here.
+// ─────────────────────────────────────────────────────────────────────────────
+
+export async function fetchModuleDashboardShell(
+  module_name: string,
+  signal?:     AbortSignal
+): Promise<ModuleDashboardShell> {
+
+  // ── 1. module_tests ─────────────────────────────────────────────────────
+  const { data: mtData, error: mtErr } = await supabase
+    .from("module_tests")
+    .select("id, tests_name, is_visible, test:tests!module_tests_tests_name_fkey(serial_no, name)")
+    .eq("module_name", module_name)
+    .abortSignal(signal!);
+
+  if (mtErr) throw new Error(mtErr.message);
+  if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
+
+  const normalizedMts = (mtData ?? []).map((mt: any) => ({
+    id:           mt.id as string,
+    tests_name:   mt.tests_name as string,
+    is_visible:   (mt.is_visible ?? true) as boolean,
+    test:         unwrapOne(mt.test) as { serial_no: string; name: string } | null,
+    step_results: [] as TrimmedStepResult[],
+  }));
+
+  // ── 2. Sort ──────────────────────────────────────────────────────────────
+  normalizedMts.sort((a, b) => {
+    const aS = a.test?.serial_no ?? "";
+    const bS = b.test?.serial_no ?? "";
+    return aS.localeCompare(bS, undefined, { numeric: true, sensitivity: "base" });
+  });
+
+  // ── 3. Active revisions ──────────────────────────────────────────────────
+  const serialNos = normalizedMts
+    .map((mt) => mt.test?.serial_no)
     .filter((s): s is string => !!s);
 
-
-  const revisionsMap: Record<string, DashboardRevision> = {};
-
+  const revBySerial: Record<string, ActiveRevision> = {};
 
   if (serialNos.length > 0) {
     const { data: revData, error: revErr } = await supabase
       .from("test_revisions")
-      .select("id, revision, tests_serial_no") // ✅ is_visible removed from select
+      .select("id, revision, tests_serial_no, step_order")
       .eq("status", "active")
       .in("tests_serial_no", serialNos);
 
-
     if (revErr) throw new Error(revErr.message);
-
+    if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
 
     ((revData ?? []) as any[]).forEach((r) => {
-      revisionsMap[r.tests_serial_no] = {
-        id: r.id,
-        revision: r.revision,
-        // ✅ is_visible no longer mapped here
+      revBySerial[r.tests_serial_no] = {
+        id:         r.id,
+        revision:   r.revision,
+        step_order: Array.isArray(r.step_order) ? (r.step_order as string[]) : [],
       };
     });
   }
 
+  const serialNosWithoutRevision = new Set(serialNos.filter((sn) => !revBySerial[sn]));
+  const allStepIds = Array.from(
+    new Set(Object.values(revBySerial).flatMap((rev) => rev.step_order))
+  );
 
-  // ── Fetch steps for the step_results returned by RPC ──────────────────────
-  const stepIds = rawSrs.map((sr) => sr.test_stepsid);
-  const stepsMap: Record<string, RawStep> = {};
+  // ── 4. Locks ─────────────────────────────────────────────────────────────
+  const moduleTestIds = normalizedMts.map((mt) => mt.id);
+  const lockMap: Record<string, LockRow> = {};
 
+  if (moduleTestIds.length > 0) {
+    const { data: lockData, error: lockErr } = await supabase
+      .from("test_locks")
+      .select("module_test_id, user_id, locked_by_name, locked_at")
+      .in("module_test_id", moduleTestIds)
+      .abortSignal(signal!);
 
-  if (stepIds.length > 0) {
-    const stepsRes = await supabase.rpc("gettest_stepsbyids", {
-      p_ids: stepIds,
-    });
-    ((stepsRes.data ?? []) as RawStep[]).forEach((s) => {
-      stepsMap[s.id] = s;
-    });
-  }
-
-
-  // ── JS-side revision filter on step_results ────────────────────────────────
-  const inScopeStepIds = new Set<string>();
-  const testsWithoutRevision = new Set<string>(serialNos);
-
-
-  if (Object.keys(revisionsMap).length > 0) {
-    const revIds = Object.values(revisionsMap).map((r) => r.id);
-    const { data: revDetailData } = await supabase
-      .from("test_revisions")
-      .select("id, tests_serial_no, step_order")
-      .in("id", revIds);
-
-
-    ((revDetailData ?? []) as any[]).forEach((r) => {
-      const steps: string[] = Array.isArray(r.step_order) ? r.step_order : [];
-      steps.forEach((sid) => inScopeStepIds.add(sid));
-      testsWithoutRevision.delete(r.tests_serial_no);
-    });
-  }
-
-
-  const filteredSrs = rawSrs.filter((sr) => {
-    const step = stepsMap[sr.test_stepsid];
-    if (!step) return false;
-
-    const serialNo = step.tests_serial_no;
-
-    if (testsWithoutRevision.has(serialNo)) {
-      return true;
+    if (!lockErr && lockData) {
+      (lockData as LockRow[]).forEach((l) => { lockMap[l.module_test_id] = l; });
     }
-    return inScopeStepIds.has(sr.test_stepsid);
-  });
-
+  }
 
   return {
-    module_tests: rawMts,
-    step_results: filteredSrs,
-    locks: (locksRes.data ?? []) as RawLock[],
-    tests: testsMap,
-    steps: stepsMap,
-    revisions: revisionsMap,
+    module_tests:              normalizedMts as ModuleTestRow[],
+    locks:                     lockMap,
+    revisions:                 revBySerial,
+    _revBySerial:              revBySerial,
+    _allStepIds:               allStepIds,
+    _serialNosWithoutRevision: serialNosWithoutRevision,
   };
 }
 
 
-// ─── fetchModuleLocks ─────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+// Phase 2 — streamModuleStepResults
+// Sequential batches of 100 (revision-scoped), then one trailing legacy fetch.
+// onBatch() fires after each so the UI counts up live.
+// ─────────────────────────────────────────────────────────────────────────────
+
+const STEP_RESULT_SELECT =
+  "id, status, test_steps_id, step:test_steps!step_results_test_steps_id_fkey(id, is_divider, tests_serial_no, serial_no, action, expected_result)";
+
+export async function streamModuleStepResults(
+  module_name: string,
+  shell:       ModuleDashboardShell,
+  onBatch:     (updatedTests: ModuleTestRow[]) => void,
+  signal?:     AbortSignal,
+  token?:      StreamCancellationToken
+): Promise<void> {
+  const accumulated = new Map<string, TrimmedStepResult>();
+  const isCancelled = () => token?.cancelled || signal?.aborted;
+
+  // ── Phase A: revision-scoped — parallel waves (500 per req, 100 concurrent) ─
+  if (shell._allStepIds.length > 0) {
+    const batches = chunkArray(shell._allStepIds, BATCH_SIZE);
+
+    // Fire up to WAVE_SIZE requests concurrently; emit one UI update per wave.
+    for (let i = 0; i < batches.length; i += WAVE_SIZE) {
+      if (isCancelled()) return;
+
+      const wave = batches.slice(i, i + WAVE_SIZE);
+
+      const results = await Promise.all(
+        wave.map((batch) =>
+          supabase
+            .from("step_results")
+            .select(STEP_RESULT_SELECT)
+            .in("test_steps_id", batch)
+            .eq("module_name", module_name)
+            .abortSignal(signal!)
+        )
+      );
+
+      if (isCancelled()) return;
+
+      for (const { data, error } of results) {
+        if (error) {
+          if (error.message?.includes("AbortError") || signal?.aborted) return;
+          throw new Error(error.message);
+        }
+        applyBatch(accumulated, data ?? []);
+      }
+
+      // One render per wave — bars animate as each wave lands.
+      onBatch(rebuildModuleTests(shell, accumulated));
+    }
+  }
+
+  // ── Phase B: legacy tests (no active revision) ───────────────────────────
+  if (shell._serialNosWithoutRevision.size > 0 && !isCancelled()) {
+    // Fetch all step_results for the module; filter client-side to legacy serial_nos.
+    // (PostgREST doesn't support filtering on nested relation columns reliably.)
+    const { data, error } = await supabase
+      .from("step_results")
+      .select(STEP_RESULT_SELECT)
+      .eq("module_name", module_name)
+      .abortSignal(signal!);
+
+    if (error) {
+      if (error.message?.includes("AbortError") || signal?.aborted) return;
+      throw new Error(error.message);
+    }
+    if (isCancelled()) return;
+
+    const legacyRows = (data ?? []).filter((row: any) => {
+      const step = unwrapOne(row.step) as { tests_serial_no?: string } | null;
+      return step && shell._serialNosWithoutRevision.has(step.tests_serial_no ?? "");
+    });
+
+    applyBatch(accumulated, legacyRows);
+    onBatch(rebuildModuleTests(shell, accumulated));
+  }
+}
 
 
-export async function fetchModuleLocks(): Promise<RawLock[]> {
+// ─────────────────────────────────────────────────────────────────────────────
+// fetchModuleLocks  (used by Realtime lock refresh — lightweight)
+// ─────────────────────────────────────────────────────────────────────────────
+
+export async function fetchModuleLocks(
+  moduleTestIds: string[]
+): Promise<Record<string, LockRow>> {
+  if (moduleTestIds.length === 0) return {};
   const { data, error } = await supabase
     .from("test_locks")
-    .select("module_test_id, user_id, locked_by_name");
+    .select("module_test_id, user_id, locked_by_name, locked_at")
+    .in("module_test_id", moduleTestIds);
   if (error) throw new Error(error.message);
-  return (data ?? []) as RawLock[];
-}
-
-
-// ─── acquireModuleLock ────────────────────────────────────────────────────────
-
-
-export async function acquireModuleLock(
-  module_test_id: string,
-  user_id: string,
-  display_name: string
-): Promise<boolean> {
-  const { error: upsertErr } = await supabase
-    .from("test_locks")
-    .upsert(
-      {
-        module_test_id: module_test_id,
-        user_id: user_id,
-        locked_by_name: display_name,
-        locked_at: new Date().toISOString(),
-      },
-      { onConflict: "module_test_id", ignoreDuplicates: true }
-    );
-  if (upsertErr) throw new Error(upsertErr.message);
-
-
-  const { data: owned } = await supabase
-    .from("test_locks")
-    .select("user_id")
-    .eq("module_test_id", module_test_id)
-    .single();
-
-
-  return (owned as any)?.user_id === user_id;
-}
-
-
-// ─── releaseModuleLock ────────────────────────────────────────────────────────
-
-
-export async function releaseModuleLock(
-  module_test_id: string,
-  user_id: string
-): Promise<void> {
-  const { error } = await supabase
-    .from("test_locks")
-    .delete()
-    .eq("module_test_id", module_test_id)
-    .eq("user_id", user_id);
-  if (error) throw new Error(error.message);
-}
-
-
-// ─── forceReleaseModuleLock ───────────────────────────────────────────────────
-
-
-export async function forceReleaseModuleLock(
-  module_test_id: string
-): Promise<void> {
-  const { error } = await supabase
-    .from("test_locks")
-    .delete()
-    .eq("module_test_id", module_test_id);
-  if (error) throw new Error(error.message);
-}
-
-
-// ─── heartbeatModuleLock ──────────────────────────────────────────────────────
-
-
-export async function heartbeatModuleLock(
-  module_test_id: string,
-  user_id: string
-): Promise<void> {
-  await supabase
-    .from("test_locks")
-    .update({ locked_at: new Date().toISOString() })
-    .eq("module_test_id", module_test_id)
-    .eq("user_id", user_id);
-}
-
-
-// ─── updateModuleStepResult ───────────────────────────────────────────────────
-
-
-export async function updateModuleStepResult(params: {
-  module_name: string;
-  stepId: string;
-  status: "pass" | "fail" | "pending";
-  remarks: string;
-  display_name: string;
-}): Promise<void> {
-  const { error } = await supabase.rpc("updatestepresult", {
-    p_module_name: params.module_name,
-    p_test_stepsid: params.stepId,
-    p_status: params.status,
-    p_remarks: params.remarks,
-    p_display_name: params.display_name,
-  });
-  if (error) throw error;
-}
-
-
-// ─── resetAllModulestep_results ────────────────────────────────────────────────
-
-
-export async function resetAllModulestep_results(params: {
-  module_name: string;
-  steps: { stepId: string }[];
-  display_name: string;
-}): Promise<void> {
-  const results = await Promise.all(
-    params.steps.map((s) =>
-      supabase.rpc("updatestepresult", {
-        p_module_name: params.module_name,
-        p_test_stepsid: s.stepId,
-        p_status: "pending",
-        p_remarks: "",
-        p_display_name: params.display_name,
-      })
-    )
-  );
-  const failed = results.find((r) => r.error);
-  if (failed) throw failed.error;
-}
-
-
-// ─── fetchExportStepData ──────────────────────────────────────────────────────
-
-
-export async function fetchExportStepData(module_name: string): Promise<{
-  steps: {
-    id: string;
-    serial_no: number;
-    action: string;
-    expected_result: string;
-    is_divider: boolean;
-    tests_serial_no: string;
-  }[];
-  results: { test_stepsid: string; status: string; remarks: string }[];
-}> {
-  const resultsRes = await supabase
-    .from("step_results")
-    .select("test_steps_id, status, remarks")
-    .eq("module_name", module_name);
-
-
-  if (resultsRes.error) throw new Error(resultsRes.error.message);
-
-
-  const stepIds = (resultsRes.data ?? []).map((r: any) => r.test_steps_id);
-
-
-  const stepsRes =
-    stepIds.length > 0
-      ? await supabase
-          .from("test_steps")
-          .select(
-            "id, serial_no, action, expected_result, is_divider, tests_serial_no"
-          )
-          .in("id", stepIds)
-          .order("serial_no")
-      : { data: [], error: null };
-
-
-  if (stepsRes.error) throw new Error(stepsRes.error.message);
-
-
-  return {
-    steps: stepsRes.data ?? [],
-    results: (resultsRes.data ?? []).map((r: any) => ({
-      test_stepsid: r.test_steps_id,
-      status: r.status,
-      remarks: r.remarks,
-    })),
-  };
-}
-
-
-// ─── fetchModuleSignedUrls ────────────────────────────────────────────────────
-
-
-export async function fetchModuleSignedUrls(
-  paths: string[]
-): Promise<Record<string, string>> {
-  const unique = Array.from(new Set(paths.filter(Boolean)));
-  if (!unique.length) return {};
-
-  // ✅ Use batch createSignedUrls instead of one-by-one for better performance
-  const { data, error } = await supabase.storage
-    .from("test_steps")
-    .createSignedUrls(unique, 60 * 60);
-
-  if (error || !data) return {};
-
-  return Object.fromEntries(
-    data
-      .filter((entry) => !!entry.signedUrl)
-      .map((entry) => [entry.path, entry.signedUrl!])
-  );
+  const map: Record<string, LockRow> = {};
+  ((data ?? []) as LockRow[]).forEach((l) => { map[l.module_test_id] = l; });
+  return map;
 }
