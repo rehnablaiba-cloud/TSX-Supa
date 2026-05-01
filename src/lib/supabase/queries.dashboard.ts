@@ -66,14 +66,7 @@ import type { ActiveLock } from "../../types";
 // ─────────────────────────────────────────────────────────────────────────────
 
 /** Per-test counts for a single (module, test) pair. */
-export interface DashboardTestCount {
-  serial_no:  string;
-  tests_name: string;
-  pass:       number;
-  fail:       number;
-  pending:    number;
-  total:      number;
-}
+
 
 /**
  * One card on the dashboard — aggregated counts only, no raw step rows.
@@ -82,7 +75,6 @@ export interface DashboardTestCount {
 export interface DashboardModuleSummary {
   name:        string;
   description: string | null;
-  tests:       DashboardTestCount[];
   test_count:  number;
   pass:        number;
   fail:        number;
@@ -94,15 +86,15 @@ export interface DashboardModuleSummary {
 // Internal — shape returned by the RPC
 // ─────────────────────────────────────────────────────────────────────────────
 
+// Internal — matches the CURRENT SQL output (module-level, no serial_no)
 interface RpcCountRow {
   module_name:   string;
-  serial_no:     string;
-  pass_count:    number;   // Supabase returns bigint as number in JS
+  test_count:    number;
+  pass_count:    number;
   fail_count:    number;
   pending_count: number;
   total_count:   number;
 }
-
 
 // ─────────────────────────────────────────────────────────────────────────────
 // fetchDashboardSummaries
@@ -119,63 +111,28 @@ interface RpcCountRow {
 export async function fetchDashboardSummaries(): Promise<DashboardModuleSummary[]> {
   const [countsResult, modulesResult] = await Promise.all([
     supabase.rpc("get_dashboard_counts"),
-    supabase
-      .from("modules")
-      .select(`
-        name,
-        description,
-        module_tests:module_tests!module_name(
-          tests_name,
-          is_visible,
-          test:tests!module_tests_tests_name_fkey(name, serial_no)
-        )
-      `)
-      .order("name"),
+    supabase.from("modules").select("name, description").order("name"),
   ]);
 
   if (countsResult.error) throw new Error(countsResult.error.message);
   if (modulesResult.error) throw new Error(modulesResult.error.message);
 
-  // Index RPC rows by "module_name::serial_no" for O(1) lookup
+  // Key by module_name only — no serial_no in the new RPC
   const countMap = new Map<string, RpcCountRow>();
   for (const row of (countsResult.data ?? []) as RpcCountRow[]) {
-    countMap.set(`${row.module_name}::${row.serial_no}`, row);
+    countMap.set(row.module_name, row);
   }
 
   return ((modulesResult.data ?? []) as any[]).map((mod): DashboardModuleSummary => {
-    const mts = ((mod.module_tests ?? []) as any[]).filter(
-      (mt) => mt.test?.serial_no
-    );
-
-    const tests: DashboardTestCount[] = mts.map((mt: any): DashboardTestCount => {
-      const sn  = mt.test.serial_no as string;
-      const key = `${mod.name}::${sn}`;
-      const cnt = countMap.get(key);
-      return {
-        serial_no:  sn,
-        tests_name: (mt.test.name ?? mt.tests_name) as string,
-        pass:       cnt?.pass_count    ?? 0,
-        fail:       cnt?.fail_count    ?? 0,
-        pending:    cnt?.pending_count ?? 0,
-        total:      cnt?.total_count   ?? 0,
-      };
-    });
-
-    // Sum module-level totals from test rows (dividers already excluded by RPC)
-    const pass    = tests.reduce((a, t) => a + t.pass,    0);
-    const fail    = tests.reduce((a, t) => a + t.fail,    0);
-    const pending = tests.reduce((a, t) => a + t.pending, 0);
-    const total   = tests.reduce((a, t) => a + t.total,   0);
-
+    const cnt = countMap.get(mod.name as string);
     return {
-      name:        mod.name as string,
+      name:        mod.name        as string,
       description: (mod.description as string | null) ?? null,
-      tests,
-      test_count:  tests.length,
-      pass,
-      fail,
-      pending,
-      total,
+      test_count:  Number(cnt?.test_count    ?? 0),
+      pass:        Number(cnt?.pass_count    ?? 0),
+      fail:        Number(cnt?.fail_count    ?? 0),
+      pending:     Number(cnt?.pending_count ?? 0),
+      total:       Number(cnt?.total_count   ?? 0),
     };
   });
 }
