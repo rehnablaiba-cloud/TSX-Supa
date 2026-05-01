@@ -178,11 +178,12 @@ export async function fetchDashboardModules(): Promise<DashboardModule[]> {
           .from("step_results")
           .select("status, test_steps_id, module_name")
           .in("test_steps_id", batch)
+          .then(r => r) // <-- .then() makes it a real Promise
       );
     }
   }
 
-  // 5b. Legacy path (no active revision): chunk serial nos, parallel fetch
+  // 5b. Legacy path (no active revision): chunk serial nos + module names, parallel fetch
   if (serialNosWithoutRevision.size > 0) {
     const legacyModuleNames = new Set<string>();
     for (const mod of modulesData) {
@@ -214,6 +215,7 @@ export async function fetchDashboardModules(): Promise<DashboardModule[]> {
             `)
             .in("step.tests_serial_no", serialBatch)
             .in("module_name", moduleBatch)
+            .then(r => r) // <-- .then() makes it a real Promise
         );
       }
     }
@@ -331,6 +333,7 @@ export async function fetchActiveLocks(): Promise<ActiveLock[]> {
       .from("module_tests")
       .select("id, module_name, tests_name")
       .in("id", batch)
+      .then(r => r) // <-- .then() makes it a real Promise
   );
 
   const mtResponses = await Promise.all(mtPromises);
@@ -382,6 +385,7 @@ export async function fetchOtherActiveLockModules(): Promise<Map<string, number>
       .from("module_tests")
       .select("id, module_name")
       .in("id", batch)
+      .then(r => r) // <-- .then() makes it a real Promise
   );
 
   const mtResponses = await Promise.all(mtPromises);
