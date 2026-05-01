@@ -262,15 +262,6 @@ const Dashboard: React.FC<Props> = ({ onNavigate }) => {
       fail:     m.fail,
       pending:  m.pending,
       passRate: m.total > 0 ? Math.round((m.pass / m.total) * 100) : 0,
-      tests: m.tests.map((t) => ({
-        name:     t.tests_name,
-        serialno: t.serial_no,
-        total:    t.total,
-        pass:     t.pass,
-        fail:     t.fail,
-        pending:  t.pending,
-        passRate: t.total > 0 ? Math.round((t.pass / t.total) * 100) : 0,
-      })),
     })),
     [modules]
   );
