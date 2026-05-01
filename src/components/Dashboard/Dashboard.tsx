@@ -1,4 +1,15 @@
 // src/components/Dashboard/Dashboard.tsx
+//
+// CHANGES FROM PREVIOUS VERSION:
+//   - Replaced two-phase streaming with single fetchDashboardSummaries() call
+//   - Removed: streamStepResults, DashboardShell, StreamCancellationToken,
+//              FetchProgressCallback, QueryMonitor, stepsStreaming, streamTokenRef,
+//              totalStepIds, progressHistory, patchModuleStepStatus
+//   - Removed: Realtime subscription on step_results and modules
+//   - Kept:    Realtime subscription on test_locks (lock badges still live)
+//   - Added:   Manual refresh button with loading spinner
+//   - Module state is now DashboardModuleSummary[] (counts baked in, no step rows)
+//
 import React, {
   useEffect,
   useLayoutEffect,
@@ -18,9 +29,7 @@ import {
   FileText,
   FileDown,
   FileSpreadsheet,
-  Activity,
-  ChevronDown,
-  ChevronUp,
+  RefreshCw,
 } from "lucide-react";
 import {
   exportDashboardCSV,
@@ -28,22 +37,15 @@ import {
   exportDashboardDocx,
 } from "../../utils/export";
 import type { ModuleSummary } from "../../utils/export";
-import { getModuleStats, buildSummaries } from "../../utils/stats";
 import { getChartTheme } from "../../utils/chartTheme";
 import { useTheme } from "../../context/ThemeContext";
 import type { ActiveLock } from "../../types";
 import {
-  fetchDashboardShell,
-  streamStepResults,
+  fetchDashboardSummaries,
   fetchActiveLocks,
   fetchOtherActiveLockModules,
 } from "../../lib/supabase/queries.dashboard";
-import type {
-  DashboardModule,
-  DashboardShell,
-  FetchProgressCallback,
-  StreamCancellationToken,
-} from "../../lib/supabase/queries.dashboard";
+import type { DashboardModuleSummary } from "../../lib/supabase/queries.dashboard";
 import { idbGet, idbSet } from "../../lib/idbCache";
 import RBarChart from "../ModuleDashboard/charts/RBarChart";
 import RPieChart from "../ModuleDashboard/charts/RPieChart";
@@ -52,7 +54,7 @@ import RLineChart from "../ModuleDashboard/charts/RLineChart";
 import RRadarChart from "../ModuleDashboard/charts/RRadarChart";
 
 // ─── IDB key ─────────────────────────────────────────────────────────────────
-const IDB_MODULES_KEY = "dashboard-modules-v1";
+const IDB_MODULES_KEY = "dashboard-modules-v2";   // bump version — new shape
 
 // ─── Animations ──────────────────────────────────────────────────────────────
 const ANIM_STYLE = `
@@ -76,8 +78,7 @@ const ANIM_STYLE = `
       0 0 22px 6px rgba(var(--neon-cyan),0.32), 0 0 32px 10px rgba(var(--neon-amber),0.25);
   }
 }
-@keyframes qmSpin  { to { transform: rotate(360deg); } }
-@keyframes qmPulse { 0%,100% { opacity:1; } 50% { opacity:0.4; } }
+@keyframes refreshSpin { to { transform: rotate(360deg); } }
 `;
 
 function useInjectStyle() {
@@ -89,49 +90,12 @@ function useInjectStyle() {
   }, []);
 }
 
-// ─── Debounce utility ────────────────────────────────────────────────────────
-function useDebounceRef(fn: () => void, delay: number) {
-  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const fnRef    = useRef(fn);
-  fnRef.current  = fn;
-
-  return useCallback(() => {
-    if (timerRef.current) clearTimeout(timerRef.current);
-    timerRef.current = setTimeout(() => fnRef.current(), delay);
-  }, [delay]);
-}
-
-// ─── Optimistic RT patch ─────────────────────────────────────────────────────
-function patchModuleStepStatus(
-  modules: DashboardModule[],
-  row: { module_name: string; test_steps_id: string; status: string }
-): DashboardModule[] {
-  return modules.map((m) =>
-    m.name !== row.module_name
-      ? m
-      : {
-          ...m,
-          step_results: m.step_results.map((sr) =>
-            sr.test_steps_id === row.test_steps_id
-              ? { ...sr, status: row.status }
-              : sr
-          ),
-        }
-  );
-}
-
 // ─── Types ───────────────────────────────────────────────────────────────────
 interface Props {
   onNavigate: (page: string, module_name?: string) => void;
 }
 
 type ChartTab = "bar" | "area" | "line" | "radar" | "pie";
-
-interface QueryProgress {
-  phase: string;
-  done:  number;
-  total: number;
-}
 
 // ─── ChartErrorBoundary ───────────────────────────────────────────────────────
 class ChartErrorBoundary extends React.Component<
@@ -151,268 +115,58 @@ class ChartErrorBoundary extends React.Component<
   }
 }
 
-// ─── QueryMonitor ─────────────────────────────────────────────────────────────
-interface QueryMonitorProps {
-  progress:     QueryProgress | null;
-  history:      QueryProgress[];
-  isCollapsed:  boolean;
-  onToggle:     () => void;
-  totalStepIds: number;
-}
-
-const QueryMonitor: React.FC<QueryMonitorProps> = ({
-  progress, history, isCollapsed, onToggle, totalStepIds,
-}) => {
-  const isActive    = progress !== null;
-  const pct         = isActive && progress.total > 0
-    ? Math.round((progress.done / progress.total) * 100)
-    : 0;
-  const totalBatches = Math.ceil(totalStepIds / 100);
-
-  return (
-    <div
-      className="rounded-xl border overflow-hidden"
-      style={{
-        borderColor: isActive
-          ? "color-mix(in srgb, var(--color-brand) 50%, transparent)"
-          : "var(--border-color)",
-        background: "var(--bg-card)",
-        transition: "border-color 0.3s",
-      }}
-    >
-      <button
-        onClick={onToggle}
-        className="w-full flex items-center justify-between px-3 py-2.5 gap-2"
-      >
-        <div className="flex items-center gap-2">
-          <span style={{
-            display:   "inline-flex",
-            color:     isActive ? "var(--color-brand)" : "var(--text-muted)",
-            animation: isActive ? "qmSpin 1.1s linear infinite" : "none",
-          }}>
-            <Activity size={13} />
-          </span>
-          <span className="text-[10px] font-bold px-1.5 py-0.5 rounded border tracking-wider" style={{
-            color:       "var(--color-brand)",
-            borderColor: "color-mix(in srgb, var(--color-brand) 40%, transparent)",
-            background:  "color-mix(in srgb, var(--color-brand) 8%, transparent)",
-          }}>ADMIN</span>
-          <span className="text-xs font-semibold text-t-primary">Query Monitor</span>
-          {isActive && (
-            <span className="text-[10px] text-t-muted" style={{ animation: "qmPulse 1.4s ease-in-out infinite" }}>
-              live
-            </span>
-          )}
-        </div>
-        <div className="flex items-center gap-3">
-          {totalStepIds > 0 && (
-            <span className="text-[10px] text-t-muted hidden sm:inline">
-              {totalStepIds.toLocaleString()} step IDs · {totalBatches} batch{totalBatches !== 1 ? "es" : ""} · sequential ×100
-            </span>
-          )}
-          <span className="text-t-muted">
-            {isCollapsed ? <ChevronDown size={13} /> : <ChevronUp size={13} />}
-          </span>
-        </div>
-      </button>
-
-      {!isCollapsed && (
-        <div className="px-3 pb-3 flex flex-col gap-2.5">
-          <div className="flex flex-col gap-1.5">
-            <div className="flex items-center justify-between">
-              <span className="text-xs text-t-muted truncate max-w-[70%]">
-                {isActive ? progress.phase : (history.length > 0 ? "Complete" : "Idle")}
-              </span>
-              {isActive && (
-                <span className="text-xs font-bold text-t-primary tabular-nums">
-                  {progress.done}/{progress.total}
-                </span>
-              )}
-            </div>
-            <div className="h-1.5 rounded-full overflow-hidden" style={{ background: "var(--bg-surface)" }}>
-              <div
-                className="h-full rounded-full"
-                style={{
-                  width:      isActive ? `${pct}%` : "100%",
-                  background: isActive
-                    ? "var(--color-brand)"
-                    : "color-mix(in srgb, var(--color-pass) 70%, transparent)",
-                  transition: "width 0.2s ease, background 0.3s",
-                }}
-              />
-            </div>
-          </div>
-
-          {(history.length > 0 || isActive) && (
-            <div className="rounded-lg p-2 flex flex-col gap-1" style={{ background: "var(--bg-surface)" }}>
-              <p className="text-[10px] font-semibold text-t-muted uppercase tracking-wider mb-0.5">
-                Phase log
-              </p>
-              {history.map((h, i) => (
-                <div key={i} className="flex items-center gap-2">
-                  <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: "var(--color-pass)" }} />
-                  <span className="text-[11px] text-t-muted truncate">{h.phase}</span>
-                  <span className="text-[10px] text-t-muted ml-auto tabular-nums shrink-0">{h.done}/{h.total}</span>
-                </div>
-              ))}
-              {isActive && (
-                <div className="flex items-center gap-2">
-                  <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: "var(--color-brand)", animation: "qmPulse 1s ease-in-out infinite" }} />
-                  <span className="text-[11px] truncate" style={{ color: "var(--color-brand)" }}>{progress.phase}</span>
-                  <span className="text-[10px] ml-auto tabular-nums shrink-0" style={{ color: "var(--color-brand)" }}>{progress.done}/{progress.total}</span>
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-      )}
-    </div>
-  );
-};
-
-
 // ─── Dashboard ────────────────────────────────────────────────────────────────
 const Dashboard: React.FC<Props> = ({ onNavigate }) => {
   useInjectStyle();
 
   const { theme } = useTheme();
-  const [showExportModal, setShowExportModal]   = useState(false);
-  const [modules, setModules]                   = useState<DashboardModule[]>([]);
-  const [initialLoad, setInitialLoad]           = useState(true);
-  const [stepsStreaming, setStepsStreaming]      = useState(false);
-  const [error, setError]                       = useState<string | null>(null);
-  const [activeLocks, setActiveLocks]           = useState<ActiveLock[]>([]);
-  const [activeChart, setActiveChart]           = useState<ChartTab>("bar");
+  const [showExportModal, setShowExportModal] = useState(false);
+  const [modules, setModules]                 = useState<DashboardModuleSummary[]>([]);
+  const [initialLoad, setInitialLoad]         = useState(true);
+  const [refreshing, setRefreshing]           = useState(false);   // manual refresh spinner
+  const [error, setError]                     = useState<string | null>(null);
+  const [activeLocks, setActiveLocks]         = useState<ActiveLock[]>([]);
+  const [activeChart, setActiveChart]         = useState<ChartTab>("bar");
   const [otherLockedModules, setOtherLockedModules] = useState<Map<string, number>>(new Map());
 
-  // Admin query monitor
-  const [isAdmin, setIsAdmin]                   = useState(false);
-  const [queryProgress, setQueryProgress]       = useState<QueryProgress | null>(null);
-  const [progressHistory, setProgressHistory]   = useState<QueryProgress[]>([]);
-  const [monitorCollapsed, setMonitorCollapsed] = useState(false);
-  const [totalStepIds, setTotalStepIds]         = useState(0);
-
-  const gridRef      = useRef<HTMLDivElement>(null);
-  const mountedRef   = useRef(true);
-  const lastPhaseRef = useRef("");
-  // Tracks whether GSAP entrance has already run — prevents re-animating on RT patches
+  const gridRef         = useRef<HTMLDivElement>(null);
+  const mountedRef      = useRef(true);
   const entranceDoneRef = useRef(false);
-  const streamTokenRef  = useRef<StreamCancellationToken>({ cancelled: false });
 
   useEffect(() => {
     mountedRef.current = true;
     return () => { mountedRef.current = false; };
   }, []);
 
-  useEffect(() => {
-    supabase.auth.getUser().then(({ data: { user } }) => {
-      const role =
-        user?.user_metadata?.defaultRole ??
-        user?.app_metadata?.role ??
-        user?.user_metadata?.role;
-      setIsAdmin(role === "admin");
-    });
-  }, []);
+  // ── Main fetch — single RPC + modules query in parallel ───────────────────
+  const fetchModules = useCallback(async (isInitial = false) => {
+    // IDB stale-while-revalidate on first load
+    if (isInitial) {
+      const cached = await idbGet<DashboardModuleSummary[]>(IDB_MODULES_KEY);
+      if (cached && cached.length > 0 && mountedRef.current) {
+        setModules(cached);
+        setInitialLoad(false);
+      }
+    }
 
-  const makeProgressCallback = useCallback((): FetchProgressCallback | undefined => {
-    if (!isAdmin) return undefined;
-    setProgressHistory([]);
-    lastPhaseRef.current = "";
+    if (!isInitial) setRefreshing(true);
 
-    return (phase, done, total) => {
+    try {
+      const summaries = await fetchDashboardSummaries();
       if (!mountedRef.current) return;
 
-      if (lastPhaseRef.current && lastPhaseRef.current !== phase) {
-        setProgressHistory((prev) => [
-          ...prev,
-          { phase: lastPhaseRef.current, done: total, total },
-        ]);
-      }
-      lastPhaseRef.current = phase;
-
-      if (phase.startsWith("Loading step results") && total > 0) {
-        setTotalStepIds(total * 100);
-      }
-
-      setQueryProgress({ phase, done, total });
-    };
-  }, [isAdmin]);
-
-  const finishProgress = useCallback(() => {
-    if (!mountedRef.current) return;
-    if (lastPhaseRef.current) {
-      setProgressHistory((prev) => [
-        ...prev,
-        { phase: lastPhaseRef.current, done: 1, total: 1 },
-      ]);
-      lastPhaseRef.current = "";
+      setModules(summaries);
+      setError(null);
+      idbSet(IDB_MODULES_KEY, summaries).catch(() => {/* non-fatal */});
+    } catch (e: any) {
+      if (!mountedRef.current) return;
+      setError(e?.message ?? "Failed to load modules");
+    } finally {
+      if (!mountedRef.current) return;
+      setInitialLoad(false);
+      setRefreshing(false);
     }
-    setQueryProgress(null);
   }, []);
-
-  // ── Two-phase fetch with IDB stale-while-revalidate ───────────────────────
-  const fetchModules = useCallback(
-    async (isInitial = false) => {
-      streamTokenRef.current.cancelled = true;
-      const token: StreamCancellationToken = { cancelled: false };
-      streamTokenRef.current = token;
-
-      const onProgress = makeProgressCallback();
-
-      // ── IDB: serve stale cache immediately on first load ─────────────────
-      if (isInitial) {
-        const cached = await idbGet<DashboardModule[]>(IDB_MODULES_KEY);
-        if (cached && cached.length > 0 && mountedRef.current) {
-          setModules(cached);
-          setInitialLoad(false); // drop skeleton right away — stale data visible
-        }
-      }
-
-      try {
-        // Phase 1 — modules + revisions
-        const shell: DashboardShell = await fetchDashboardShell(onProgress);
-        if (!mountedRef.current || token.cancelled) return;
-
-        setModules(shell.modules);
-        setError(null);
-        if (isInitial) setInitialLoad(false);
-
-        // Persist shell modules to IDB for next visit
-        idbSet(IDB_MODULES_KEY, shell.modules).catch(() => {/* non-fatal */});
-
-        // Phase 2 — step streaming
-        if (shell._allStepIds.length > 0 || shell._serialNosWithoutRevision.size > 0) {
-          setStepsStreaming(true);
-          await streamStepResults(
-            shell,
-            (updated) => {
-              if (!mountedRef.current || token.cancelled) return;
-              setModules(updated);
-            },
-            onProgress,
-            token
-          );
-          // Update IDB with fully-loaded modules after streaming completes
-          if (mountedRef.current && !token.cancelled) {
-            idbSet(IDB_MODULES_KEY, streamTokenRef.current === token
-              ? shell.modules  // will be overwritten by setModules above anyway
-              : []
-            ).catch(() => {});
-          }
-        }
-      } catch (e: any) {
-        if (!mountedRef.current || token.cancelled) return;
-        setError(e?.message ?? "Failed to load modules");
-      } finally {
-        if (mountedRef.current && !token.cancelled) {
-          setStepsStreaming(false);
-          finishProgress();
-        }
-        if (isInitial && mountedRef.current) setInitialLoad(false);
-      }
-    },
-    [makeProgressCallback, finishProgress]
-  );
 
   const fetchActiveLocksData = useCallback(async () => {
     try {
@@ -426,49 +180,15 @@ const Dashboard: React.FC<Props> = ({ onNavigate }) => {
     } catch { /* non-critical */ }
   }, []);
 
+  // Initial load
   useEffect(() => {
     Promise.all([fetchModules(true), fetchActiveLocksData()]);
   }, [fetchModules, fetchActiveLocksData]);
 
-  // Debounced refetch — prevents fetch storms during active test execution
-  const debouncedFetch = useDebounceRef(() => fetchModules(false), 800);
-
-  // Realtime subscriptions
+  // ── Realtime — locks only (no step_results subscription) ─────────────────
   useEffect(() => {
     const channel = supabase
-      .channel("dashboard-live")
-      .on(
-        "postgres_changes",
-        { event: "UPDATE", schema: "public", table: "step_results" },
-        (payload) => {
-          // Optimistic patch: update only the changed row in state immediately,
-          // then schedule a debounced full refetch to stay eventually consistent.
-          const row = payload.new as {
-            module_name: string;
-            test_steps_id: string;
-            status: string;
-          };
-          if (row.module_name && row.test_steps_id && row.status) {
-            setModules((prev) => patchModuleStepStatus(prev, row));
-          }
-          debouncedFetch();
-        }
-      )
-      .on(
-        "postgres_changes",
-        { event: "INSERT", schema: "public", table: "step_results" },
-        debouncedFetch
-      )
-      .on(
-        "postgres_changes",
-        { event: "DELETE", schema: "public", table: "step_results" },
-        debouncedFetch
-      )
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "modules" },
-        () => fetchModules(false)
-      )
+      .channel("dashboard-locks")
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "test_locks" },
@@ -477,9 +197,9 @@ const Dashboard: React.FC<Props> = ({ onNavigate }) => {
       .subscribe();
 
     return () => { supabase.removeChannel(channel); };
-  }, [fetchModules, fetchActiveLocksData, debouncedFetch]);
+  }, [fetchActiveLocksData]);
 
-  // GSAP card entrance — runs once after Phase 1, never again
+  // ── GSAP entrance — once, after first data arrives ────────────────────────
   useLayoutEffect(() => {
     if (
       !initialLoad &&
@@ -506,13 +226,12 @@ const Dashboard: React.FC<Props> = ({ onNavigate }) => {
     }
   }, [initialLoad, modules.length]);
 
-  const summaries = useMemo(() => buildSummaries(modules), [modules]);
-
+  // ── Derived data ──────────────────────────────────────────────────────────
   const globalStats = useMemo(() => [
-    { label: "Total Steps", value: summaries.reduce((a, x) => a + x.total,   0) },
-    { label: "Pass",        value: summaries.reduce((a, x) => a + x.pass,    0) },
-    { label: "Fail",        value: summaries.reduce((a, x) => a + x.fail,    0) },
-  ], [summaries]);
+    { label: "Total Steps", value: modules.reduce((a, m) => a + m.total,   0) },
+    { label: "Pass",        value: modules.reduce((a, m) => a + m.pass,    0) },
+    { label: "Fail",        value: modules.reduce((a, m) => a + m.fail,    0) },
+  ], [modules]);
 
   const myLockCountByModule = useMemo(() => {
     const map = new Map<string, number>();
@@ -522,35 +241,48 @@ const Dashboard: React.FC<Props> = ({ onNavigate }) => {
   }, [activeLocks]);
 
   const chartTheme = useMemo(() => getChartTheme(theme), [theme]);
-  const chartData  = useMemo(() => summaries.map((s) => ({
-    name: s.name, pass: s.pass, fail: s.fail, pending: s.pending,
-  })), [summaries]);
 
+  // Chart data — same shape the chart components already expect
+  const chartData = useMemo(() =>
+    modules.map((m) => ({
+      name:    m.name,
+      pass:    m.pass,
+      fail:    m.fail,
+      pending: m.pending,
+    })),
+    [modules]
+  );
+
+  // Export helpers — build ModuleSummary[] from DashboardModuleSummary[]
   const buildSummariesWithTests = useCallback((): ModuleSummary[] =>
-    summaries.map((s) => {
-      const mod   = modules.find((m) => m.name === s.name);
-      const tests = (mod?.module_tests ?? []).map((mt) => {
-        const testSteps = (mod?.step_results ?? []).filter(
-          (sr) => !sr.is_divider && sr.tests_serial_no === mt.test?.serial_no
-        );
-        const pass    = testSteps.filter((sr) => sr.status === "pass").length;
-        const fail    = testSteps.filter((sr) => sr.status === "fail").length;
-        const pending = testSteps.filter((sr) => sr.status === "pending").length;
-        const total   = testSteps.length;
-        return {
-          name:     mt.test?.name ?? mt.tests_name ?? "Unknown",
-          serialno: mt.test?.serial_no ?? null,
-          total, pass, fail, pending,
-          passRate: total > 0 ? Math.round((pass / total) * 100) : 0,
-        };
-      });
-      return { ...s, tests };
-    }), [summaries, modules]);
+    modules.map((m) => ({
+      name:     m.name,
+      total:    m.total,
+      pass:     m.pass,
+      fail:     m.fail,
+      pending:  m.pending,
+      passRate: m.total > 0 ? Math.round((m.pass / m.total) * 100) : 0,
+      tests: m.tests.map((t) => ({
+        name:     t.tests_name,
+        serialno: t.serial_no,
+        total:    t.total,
+        pass:     t.pass,
+        fail:     t.fail,
+        pending:  t.pending,
+        passRate: t.total > 0 ? Math.round((t.pass / t.total) * 100) : 0,
+      })),
+    })),
+    [modules]
+  );
 
-  const handleExportCSV  = useCallback(() => exportDashboardCSV(summaries), [summaries]);
-  const handleExportPDF  = useCallback(() => exportDashboardPDF(buildSummariesWithTests()), [buildSummariesWithTests]);
-  const handleExportDOCX = useCallback(() => exportDashboardDocx(buildSummariesWithTests()), [buildSummariesWithTests]);
+  const handleExportCSV  = useCallback(() =>
+    exportDashboardCSV(buildSummariesWithTests()), [buildSummariesWithTests]);
+  const handleExportPDF  = useCallback(() =>
+    exportDashboardPDF(buildSummariesWithTests()), [buildSummariesWithTests]);
+  const handleExportDOCX = useCallback(() =>
+    exportDashboardDocx(buildSummariesWithTests()), [buildSummariesWithTests]);
 
+  // ── Render ────────────────────────────────────────────────────────────────
   if (error)
     return (
       <div className="p-6">
@@ -612,30 +344,31 @@ const Dashboard: React.FC<Props> = ({ onNavigate }) => {
           <p className="text-sm text-t-muted mt-1">
             {initialLoad
               ? "Loading…"
-              : stepsStreaming
-              ? `${modules.length} Trainset${modules.length !== 1 ? "s" : ""} — loading steps…`
               : `${modules.length} Trainset${modules.length !== 1 ? "s" : ""} tracked`}
           </p>
         </div>
-        <button
-          onClick={() => setShowExportModal(true)}
-          disabled={modules.length === 0}
-          className="flex items-center gap-1.5 px-4 py-2 text-sm font-semibold rounded-lg transition bg-bg-card hover:bg-bg-surface border border-(--border-color) text-t-primary disabled:opacity-40 disabled:cursor-not-allowed"
-        >
-          <Upload size={14} /> Export
-        </button>
+        <div className="flex items-center gap-2">
+          {/* Manual refresh */}
+          <button
+            onClick={() => fetchModules(false)}
+            disabled={initialLoad || refreshing}
+            title="Refresh"
+            className="flex items-center gap-1.5 px-3 py-2 text-sm font-semibold rounded-lg transition bg-bg-card hover:bg-bg-surface border border-(--border-color) text-t-primary disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            <RefreshCw
+              size={14}
+              style={{ animation: refreshing ? "refreshSpin 0.8s linear infinite" : "none" }}
+            />
+          </button>
+          <button
+            onClick={() => setShowExportModal(true)}
+            disabled={modules.length === 0}
+            className="flex items-center gap-1.5 px-4 py-2 text-sm font-semibold rounded-lg transition bg-bg-card hover:bg-bg-surface border border-(--border-color) text-t-primary disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            <Upload size={14} /> Export
+          </button>
+        </div>
       </div>
-
-      {/* Admin Query Monitor */}
-      {isAdmin && (queryProgress !== null || progressHistory.length > 0) && (
-        <QueryMonitor
-          progress={queryProgress}
-          history={progressHistory}
-          isCollapsed={monitorCollapsed}
-          onToggle={() => setMonitorCollapsed((c) => !c)}
-          totalStepIds={totalStepIds}
-        />
-      )}
 
       {!initialLoad && hasAnyLocks && (
         <LockWarningBanner
@@ -744,10 +477,9 @@ const Dashboard: React.FC<Props> = ({ onNavigate }) => {
             return (
               <ModuleCard
                 key={m.name}
-                module={m}
+                module={m}           // NOW: DashboardModuleSummary (counts baked in)
                 myLockCount={myLockCount}
                 otherLockCount={otherLockCount}
-                stepsStreaming={stepsStreaming}
                 cardStyle={cardStyle}
                 onClick={() => onNavigate("module", m.name)}
               />
@@ -766,3 +498,27 @@ const Dashboard: React.FC<Props> = ({ onNavigate }) => {
 };
 
 export default Dashboard;
+
+/*
+ * ── ModuleCard migration note ─────────────────────────────────────────────────
+ *
+ * ModuleCard previously received `module: DashboardModule` and used
+ * `getModuleStats(module)` / `module.step_results` to compute pass/fail/total.
+ *
+ * It now receives `module: DashboardModuleSummary` where counts are pre-baked.
+ * Update ModuleCard like so:
+ *
+ *   // Before
+ *   const stats = getModuleStats(module);   // computed from step_results[]
+ *
+ *   // After
+ *   const stats = {
+ *     pass:    module.pass,
+ *     fail:    module.fail,
+ *     pending: module.pending,
+ *     total:   module.total,
+ *   };
+ *
+ * The `stepsStreaming` prop is removed — delete it from ModuleCard props too.
+ * ─────────────────────────────────────────────────────────────────────────────
+ */

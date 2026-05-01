@@ -1,90 +1,48 @@
 // src/components/Dashboard/ModuleCard.tsx
 import React from "react";
 import { Lock } from "lucide-react";
-import { useCountUp } from "../../hooks/useCountUp";
-import type { DashboardModule } from "../../lib/supabase/queries.dashboard";
-import { getModuleStats } from "../../utils/stats";
+import type { DashboardModuleSummary } from "../../lib/supabase/queries.dashboard";
 
-// ─── Shimmer keyframe (injected once at module level) ─────────────────────────
-const SHIMMER_STYLE = `
-@keyframes shimmerSweep {
-  0%   { transform: translateX(-100%); }
-  100% { transform: translateX(100%); }
-}
-@keyframes cardPulse {
-  0%, 100% { opacity: 1; }
-  50%       { opacity: 0.7; }
-}
-`;
-
-let shimmerInjected = false;
-function injectShimmer() {
-  if (shimmerInjected) return;
-  shimmerInjected = true;
-  const el = document.createElement("style");
-  el.textContent = SHIMMER_STYLE;
-  document.head.appendChild(el);
+// ─── ModuleCard ───────────────────────────────────────────────────────────────
+interface ModuleCardProps {
+  module:         DashboardModuleSummary;
+  myLockCount:    number;
+  otherLockCount: number;
+  cardStyle?:     React.CSSProperties;
+  onClick:        () => void;
 }
 
-// ─── Spring SegmentedBar ───────────────────────────────────────────────────────
+// ─── SegmentedBar ─────────────────────────────────────────────────────────────
 interface SegmentedBarProps {
   passRate:   number;
   failPct:    number;
   pendingPct: number;
-  total:      number;
-  streaming:  boolean;
 }
 
-const SegmentedBar: React.FC<SegmentedBarProps> = ({
-  passRate, failPct, pendingPct, total, streaming,
-}) => {
-  const segments = [
-    { pct: passRate,   color: "var(--color-pass)" },
-    { pct: failPct,    color: "var(--color-fail)" },
-    { pct: pendingPct, color: "var(--text-muted)"  },
-  ];
-
-  if (total === 0 && streaming) {
-    // Shimmer placeholder bar while steps haven't arrived yet
-    return (
-      <div
-        className="h-2 rounded-full overflow-hidden relative"
-        style={{ background: "var(--bg-surface)" }}
-      >
+const SegmentedBar: React.FC<SegmentedBarProps> = ({ passRate, failPct, pendingPct }) => (
+  <div
+    className="h-2 rounded-full overflow-hidden flex gap-px"
+    style={{ background: "var(--bg-surface)" }}
+  >
+    {([
+      { pct: passRate,   color: "var(--color-pass)" },
+      { pct: failPct,    color: "var(--color-fail)" },
+      { pct: pendingPct, color: "var(--text-muted)" },
+    ] as const).map((seg, i) =>
+      seg.pct > 0 ? (
         <div
+          key={i}
           style={{
-            position:   "absolute",
-            inset:      0,
-            background: "linear-gradient(90deg, transparent 0%, color-mix(in srgb, var(--color-brand) 30%, transparent) 50%, transparent 100%)",
-            animation:  "shimmerSweep 1.4s ease-in-out infinite",
+            width:      `${seg.pct}%`,
+            background: seg.color,
+            height:     "100%",
+            transition: "width 0.45s cubic-bezier(0.34, 1.56, 0.64, 1)",
           }}
         />
-      </div>
-    );
-  }
-
-  return (
-    <div
-      className="h-2 rounded-full overflow-hidden flex gap-px"
-      style={{ background: "var(--bg-surface)" }}
-    >
-      {segments.map((seg, i) =>
-        seg.pct > 0 ? (
-          <div
-            key={i}
-            style={{
-              width:      `${seg.pct}%`,
-              background: seg.color,
-              height:     "100%",
-              // Spring: slight overshoot makes bar feel alive on each batch
-              transition: "width 0.45s cubic-bezier(0.34, 1.56, 0.64, 1)",
-            }}
-          />
-        ) : null
-      )}
-    </div>
-  );
-};
+      ) : null
+    )}
+  </div>
+);
 
 // ─── Per-card error boundary ───────────────────────────────────────────────────
 class CardErrorBoundary extends React.Component<
@@ -95,7 +53,7 @@ class CardErrorBoundary extends React.Component<
   static getDerivedStateFromError() { return { hasError: true }; }
 
   render() {
-    if (this.state.hasError) {
+    if (this.state.hasError)
       return (
         <div
           className="card flex flex-col items-center justify-center gap-2 text-center min-h-[160px]"
@@ -109,40 +67,24 @@ class CardErrorBoundary extends React.Component<
           </span>
         </div>
       );
-    }
     return this.props.children;
   }
 }
 
-// ─── ModuleCard ───────────────────────────────────────────────────────────────
-interface ModuleCardProps {
-  module:         DashboardModule;
-  myLockCount:    number;
-  otherLockCount: number;
-  stepsStreaming: boolean;
-  cardStyle?:     React.CSSProperties;
-  onClick:        () => void;
-}
-
+// ─── Inner card ───────────────────────────────────────────────────────────────
 const ModuleCardInner: React.FC<ModuleCardProps> = ({
-  module, myLockCount, otherLockCount, stepsStreaming, cardStyle, onClick,
+  module, myLockCount, otherLockCount, cardStyle, onClick,
 }) => {
-  injectShimmer();
+  const { pass, fail, pending, total, test_count } = module;
 
-  const { total, pass, fail, pending, passRate, failPct, pendingPct, testCount } =
-    getModuleStats(module.module_tests ?? [], module.step_results ?? []);
-
-  // Count-up: only animate when streaming (data is arriving in batches)
-  const displayTotal   = useCountUp(total,    400, stepsStreaming);
-  const displayPass    = useCountUp(pass,     400, stepsStreaming);
-  const displayFail    = useCountUp(fail,     400, stepsStreaming);
-  const displayPending = useCountUp(pending,  400, stepsStreaming);
-  const displayRate    = useCountUp(passRate, 400, stepsStreaming);
+  const passRate   = total > 0 ? Math.round((pass    / total) * 100) : 0;
+  const failPct    = total > 0 ? Math.round((fail    / total) * 100) : 0;
+  const pendingPct = total > 0 ? Math.round((pending / total) * 100) : 0;
 
   const passLabelColor =
-    total === 0      ? "var(--text-muted)"   :
-    passRate === 100 ? "var(--color-pass)"   :
-    failPct  === 100 ? "var(--color-fail)"   :
+    total === 0      ? "var(--text-muted)" :
+    passRate === 100 ? "var(--color-pass)" :
+    failPct  === 100 ? "var(--color-fail)" :
                        "var(--text-primary)";
 
   return (
@@ -200,36 +142,35 @@ const ModuleCardInner: React.FC<ModuleCardProps> = ({
               background:  "color-mix(in srgb, var(--color-brand) 8%, transparent)",
             }}
           >
-            {testCount} {testCount === 1 ? "Test" : "Tests"}
+            {test_count} {test_count === 1 ? "Test" : "Tests"}
           </span>
         </div>
       </div>
 
-      {/* Total steps row */}
-      <div className="flex items-center justify-between mb-3">
-        <span className="text-xs text-t-muted">Total Steps</span>
-        <span className="text-sm font-bold text-t-primary tabular-nums">
-          {total > 0
-            ? displayTotal
-            : stepsStreaming
-            ? <span style={{ animation: "cardPulse 1.2s ease-in-out infinite", display: "inline-block" }}>—</span>
-            : "0"}
-        </span>
-      </div>
-
-      {/* Pass / Fail / Pending badges */}
-      <div className="flex gap-2 mb-3">
+      {/* Pass / Fail / Pending / Total badges */}
+      <div className="flex flex-wrap gap-2 mb-3">
         <span className="badge-pass">
           <span className="w-1.5 h-1.5 rounded-full bg-pass inline-block mr-1" />
-          {displayPass} Pass
+          {pass} Pass
         </span>
         <span className="badge-fail">
           <span className="w-1.5 h-1.5 rounded-full bg-fail inline-block mr-1" />
-          {displayFail} Fail
+          {fail} Fail
         </span>
         <span className="flex items-center gap-1 text-xs font-semibold text-t-muted bg-bg-card border border-(--border-color) rounded-full px-2.5 py-0.5">
           <span className="w-1.5 h-1.5 rounded-full bg-(--text-muted) inline-block" />
-          {displayPending} Pending
+          {pending} Pending
+        </span>
+        <span
+          className="flex items-center gap-1 text-xs font-semibold rounded-full px-2.5 py-0.5 border"
+          style={{
+            color:       "var(--text-primary)",
+            borderColor: "var(--border-color)",
+            background:  "var(--bg-surface)",
+          }}
+        >
+          <span className="w-1.5 h-1.5 rounded-full inline-block" style={{ background: "var(--color-brand)" }} />
+          {total} Total
         </span>
       </div>
 
@@ -238,20 +179,10 @@ const ModuleCardInner: React.FC<ModuleCardProps> = ({
         <div className="flex justify-between text-xs text-t-muted mb-1">
           <span>Progress</span>
           <span className="font-semibold tabular-nums" style={{ color: passLabelColor }}>
-            {total > 0
-              ? `${displayRate}%`
-              : stepsStreaming
-              ? <span style={{ animation: "cardPulse 1.2s ease-in-out infinite", display: "inline-block" }}>…</span>
-              : "—"}
+            {total > 0 ? `${passRate}%` : "—"}
           </span>
         </div>
-        <SegmentedBar
-          passRate={passRate}
-          failPct={failPct}
-          pendingPct={pendingPct}
-          total={total}
-          streaming={stepsStreaming}
-        />
+        <SegmentedBar passRate={passRate} failPct={failPct} pendingPct={pendingPct} />
       </div>
     </button>
   );
