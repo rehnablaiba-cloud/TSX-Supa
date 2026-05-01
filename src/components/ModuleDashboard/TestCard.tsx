@@ -13,10 +13,6 @@ import type { ActiveRevision, LockRow, ModuleTestRow } from "./ModuleDashboard.t
 
 // ─── Shimmer style (injected once) ───────────────────────────────────────────
 const CARD_STYLE = `
-@keyframes shimmerSweep {
-  0%   { transform: translateX(-100%); }
-  100% { transform: translateX(100%); }
-}
 @keyframes neonPulse {
   0%,100% { box-shadow: 0 0 0 1.5px rgba(var(--neon-cyan),0.45), 0 0 12px 2px rgba(var(--neon-cyan),0.18); }
   50%      { box-shadow: 0 0 0 1.5px rgba(var(--neon-cyan),0.45), 0 0 22px 6px rgba(var(--neon-cyan),0.32); }
@@ -40,34 +36,21 @@ function injectStyle() {
   document.head.appendChild(el);
 }
 
-// ─── Spring SegmentedBar ──────────────────────────────────────────────────────
+// ─── SegmentedBar ─────────────────────────────────────────────────────────────
 interface BarProps {
   passRate:   number;
   failPct:    number;
   pendingPct: number;
   total:      number;
-  refreshing: boolean;
 }
 
-const SpringBar: React.FC<BarProps> = ({
-  passRate, failPct, pendingPct, total, refreshing,
-}) => {
-  // Show shimmer sweep while a background refresh is running and no data yet
-  if (total === 0 && refreshing) {
+const SpringBar: React.FC<BarProps> = ({ passRate, failPct, pendingPct, total }) => {
+  if (total === 0) {
     return (
       <div
-        className="h-1.5 w-full rounded-full overflow-hidden relative"
+        className="h-1.5 w-full rounded-full"
         style={{ background: "var(--bg-surface)" }}
-      >
-        <div
-          style={{
-            position:   "absolute",
-            inset:      0,
-            background: "linear-gradient(90deg, transparent 0%, color-mix(in srgb, var(--color-brand) 30%, transparent) 50%, transparent 100%)",
-            animation:  "shimmerSweep 1.4s ease-in-out infinite",
-          }}
-        />
-      </div>
+      />
     );
   }
 
@@ -82,7 +65,6 @@ const SpringBar: React.FC<BarProps> = ({
           style={{
             width:      `${passRate}%`,
             background: "var(--color-pass)",
-            // Spring overshoot — bar feels alive on each update
             transition: "width 0.45s cubic-bezier(0.34, 1.56, 0.64, 1)",
           }}
         />
@@ -149,7 +131,6 @@ interface TestCardProps {
   isCompleted:    boolean;
   activeRev:      ActiveRevision | null;
   isAdmin:        boolean;
-  refreshing:     boolean;
   onExecute:      (id: string) => void;
   onViewReport:   (id: string) => void;
   onForceRelease: (id: string, name: string) => void;
@@ -157,26 +138,22 @@ interface TestCardProps {
 
 const TestCardInner: React.FC<TestCardProps> = ({
   mt, lock, isMyLock, isOtherLock, isCompleted,
-  activeRev, isAdmin, refreshing,
+  activeRev, isAdmin,
   onExecute, onViewReport, onForceRelease,
 }) => {
   injectStyle();
 
-  const real    = mt.step_results.filter((sr) => !sr.step?.is_divider);
-  const pass    = real.filter((sr) => sr.status === "pass").length;
-  const fail    = real.filter((sr) => sr.status === "fail").length;
-  const pending = real.filter((sr) => sr.status === "pending").length;
-  const total   = real.length;
+  const { pass, fail, pending, total } = mt;
 
   const passRate   = total > 0 ? Math.round((pass / total) * 100) : 0;
   const failPct    = total > 0 ? Math.round((fail / total) * 100) : 0;
   const pendingPct = Math.max(0, 100 - passRate - failPct);
 
-  // Count-up: animate whenever refreshing (data arriving from RT/refetch)
-  const displayPass    = useCountUp(pass,    400, refreshing);
-  const displayFail    = useCountUp(fail,    400, refreshing);
-  const displayPending = useCountUp(pending, 400, refreshing);
-  const displayRate    = useCountUp(passRate, 400, refreshing);
+  const displayPass    = useCountUp(pass,     400);
+  const displayFail    = useCountUp(fail,     400);
+  const displayPending = useCountUp(pending,  400);
+  const displayTotal   = useCountUp(total,    400);
+  const displayRate    = useCountUp(passRate, 400);
 
   const cardStyle: React.CSSProperties = isMyLock
     ? {
@@ -333,8 +310,12 @@ const TestCardInner: React.FC<TestCardProps> = ({
         </div>
       </div>
 
-      {/* Stat badges with count-up */}
+      {/* Stat badges */}
       <div className="flex items-center gap-3 flex-wrap text-xs">
+        <span className="flex items-center gap-1 font-semibold bg-bg-card border border-(--border-color) text-t-primary rounded-full px-2.5 py-0.5">
+          <span className="w-1.5 h-1.5 rounded-full inline-block" style={{ background: "var(--text-muted)" }} />
+          {displayTotal} Total
+        </span>
         <span className="badge-pass">
           <span className="w-1.5 h-1.5 rounded-full inline-block mr-1" style={{ background: "var(--color-pass)" }} />
           {displayPass} Pass
@@ -349,7 +330,7 @@ const TestCardInner: React.FC<TestCardProps> = ({
         </span>
       </div>
 
-      {/* Spring progress bar */}
+      {/* Progress bar */}
       <div>
         <div className="flex justify-between text-xs text-t-muted mb-1">
           <span>Progress</span>
@@ -370,7 +351,6 @@ const TestCardInner: React.FC<TestCardProps> = ({
           failPct={failPct}
           pendingPct={pendingPct}
           total={total}
-          refreshing={refreshing}
         />
       </div>
     </div>

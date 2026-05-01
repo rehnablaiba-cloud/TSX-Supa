@@ -8,6 +8,10 @@ export interface LockRow {
   locked_at:      string;
 }
 
+/**
+ * Full step-result row — only fetched on-demand for CSV/PDF export.
+ * Not held in component state during normal render.
+ */
 export interface TrimmedStepResult {
   id:     string;
   status: "pass" | "fail" | "pending";
@@ -21,12 +25,19 @@ export interface TrimmedStepResult {
   } | null;
 }
 
+/**
+ * One test card — carries pre-aggregated counts from the RPC.
+ * No raw step rows kept in memory.
+ */
 export interface ModuleTestRow {
-  id:           string;
-  tests_name:   string;
-  is_visible:   boolean;
-  test:         { serial_no: string; name: string } | null;
-  step_results: TrimmedStepResult[];
+  id:         string;
+  tests_name: string;
+  is_visible: boolean;
+  test:       { serial_no: string; name: string } | null;
+  pass:       number;
+  fail:       number;
+  pending:    number;
+  total:      number;
 }
 
 export interface ActiveRevision {

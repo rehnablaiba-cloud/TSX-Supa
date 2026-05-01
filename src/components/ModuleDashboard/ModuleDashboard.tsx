@@ -2,7 +2,6 @@
 import React, {
   useEffect,
   useLayoutEffect,
-  useRef,
   useState,
   useMemo,
   useCallback,
@@ -14,7 +13,7 @@ import ExportModal from "../UI/ExportModal";
 import TestCard from "./TestCard";
 import { useAuth } from "../../context/AuthContext";
 import { useTheme } from "../../context/ThemeContext";
-import { FileSpreadsheet, FileText, Upload } from "lucide-react";
+import { FileSpreadsheet, FileText, RefreshCw, Upload } from "lucide-react";
 import {
   exportModuleDetailCSV,
   exportModuleDetailPDF,
@@ -28,21 +27,12 @@ import {
   RRadarChart,
 } from "./charts";
 import type { ChartRow, ChartTheme } from "./charts";
-import type {
-  LockRow,
-  TrimmedStepResult,
-  ModuleTestRow,
-  ActiveRevision,
-} from "./ModuleDashboard.types";
+import type { LockRow, ModuleTestRow, ActiveRevision, TrimmedStepResult } from "./ModuleDashboard.types";
 import {
-  fetchModuleDashboardShell,
-  streamModuleStepResults,
-  fetchModuleLocks,
+  fetchModuleData,
+  fetchModuleStepDetails,
 } from "../../lib/supabase/queries.moduledashboard";
-import type {
-  ModuleDashboardShell,
-  StreamCancellationToken,
-} from "../../lib/supabase/queries.moduledashboard";
+
 
 // ─── Animation wrappers ───────────────────────────────────────────────────────
 
@@ -71,42 +61,6 @@ const StaggerRow: React.FC<{ index: number; children: React.ReactNode }> = ({
     {children}
   </div>
 );
-
-
-// ─── Helpers ──────────────────────────────────────────────────────────────────
-
-const cleanDividerLabel = (action: string): string =>
-  action.replace(/^[^a-zA-Z0-9]+/, "");
-
-/** Debounce: returns a stable callback that delays `fn` by `delay` ms. */
-function useDebounceRef(fn: () => void, delay: number) {
-  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const fnRef    = useRef(fn);
-  fnRef.current  = fn;
-
-  return useCallback(() => {
-    if (timerRef.current) clearTimeout(timerRef.current);
-    timerRef.current = setTimeout(() => fnRef.current(), delay);
-  }, [delay]);
-}
-
-/**
- * Optimistically patch one step_result's status in local state.
- * Called immediately on Realtime UPDATE before the debounced restream arrives.
- */
-function patchStepStatus(
-  mts: ModuleTestRow[],
-  row: { id: string; status: string }
-): ModuleTestRow[] {
-  return mts.map((mt) => ({
-    ...mt,
-    step_results: mt.step_results.map((sr) =>
-      sr.id === row.id
-        ? { ...sr, status: row.status as TrimmedStepResult["status"] }
-        : sr
-    ),
-  }));
-}
 
 
 // ─── Chart type ───────────────────────────────────────────────────────────────
@@ -152,12 +106,7 @@ const ModuleDashboard: React.FC<Props> = ({
   const [chartType,    setChartType]   = useState<ChartType>("bar");
   const [showExport,   setShowExport]  = useState(false);
   const [releaseError, setReleaseError]= useState<string | null>(null);
-
-  // Holds the last fetched shell so Phase 2 can be re-triggered independently
-  // (e.g. after a Realtime step_result change without needing to re-fetch shell).
-  const shellRef   = useRef<ModuleDashboardShell | null>(null);
-  const abortRef   = useRef<AbortController | null>(null);
-  const tokenRef   = useRef<StreamCancellationToken>({ cancelled: false });
+  const [exporting,    setExporting]   = useState(false);
 
   const [ct, setCt] = useState<ChartTheme>({
     panel:       "#ffffff",
@@ -187,80 +136,25 @@ const ModuleDashboard: React.FC<Props> = ({
   }, [theme]);
 
 
-  // ── Phase 2 only: restream step results using the cached shell ─────────────
-  const restreamStepResults = useCallback(
-    async (shell: ModuleDashboardShell, signal: AbortSignal, token: StreamCancellationToken) => {
-      setRefreshing(true);
-      try {
-        await streamModuleStepResults(
-          module_name,
-          shell,
-          (updatedTests) => {
-            if (!token.cancelled) setModuleTests(updatedTests);
-          },
-          signal,
-          token
-        );
-      } catch (e: any) {
-        if (e.name === "AbortError" || token.cancelled) return;
-        // Non-fatal — shell data is still valid, just show stale step counts
-        console.error("[ModuleDashboard] stream error:", e.message);
-      } finally {
-        if (!token.cancelled) setRefreshing(false);
-      }
-    },
-    [module_name]
-  );
+  // ── Load ──────────────────────────────────────────────────────────────────
+  const loadDashboard = useCallback(async (isRefresh = false) => {
+    setError(null);
+    if (isRefresh) setRefreshing(true);
+    try {
+      const { module_tests: mts, locks: lockMap, revisions: revMap } =
+        await fetchModuleData(module_name);
+      setModuleTests(mts);
+      setLocks(lockMap);
+      setRevisions(revMap);
+    } catch (e: any) {
+      setError(e?.message ?? "Failed to load module data");
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  }, [module_name]);
 
-
-  // ── Full load: Phase 1 (shell) then Phase 2 (stream) ──────────────────────
-  const loadDashboard = useCallback(
-    async (isBackground = false) => {
-      // Cancel any in-flight fetch/stream
-      abortRef.current?.abort();
-      tokenRef.current.cancelled = true;
-
-      const controller = new AbortController();
-      const token: StreamCancellationToken = { cancelled: false };
-      abortRef.current = controller;
-      tokenRef.current = token;
-
-      if (!isBackground) setLoading(true);
-      setError(null);
-
-      try {
-        // ── Phase 1: shell (fast) ──────────────────────────────────────────
-        const shell = await fetchModuleDashboardShell(module_name, controller.signal);
-        if (token.cancelled) return;
-
-        shellRef.current = shell;
-        setModuleTests(shell.module_tests);   // cards appear immediately (empty bars)
-        setLocks(shell.locks);
-        setRevisions(shell.revisions);
-
-        if (!isBackground) setLoading(false);
-
-        // ── Phase 2: stream step results (animated fill) ───────────────────
-        await restreamStepResults(shell, controller.signal, token);
-
-      } catch (e: any) {
-        if (e.name === "AbortError" || token.cancelled) return;
-        setError(e?.message ?? "Failed to load module data");
-        setLoading(false);
-        setRefreshing(false);
-      }
-    },
-    [module_name, restreamStepResults]
-  );
-
-  // Initial load
-  useEffect(() => {
-    loadDashboard(false);
-    return () => {
-      abortRef.current?.abort();
-      tokenRef.current.cancelled = true;
-    };
-  }, [loadDashboard]);
+  useEffect(() => { loadDashboard(); }, [loadDashboard]);
 
 
   // ── Force release (admin only) ────────────────────────────────────────────
@@ -276,145 +170,80 @@ const ModuleDashboard: React.FC<Props> = ({
         setReleaseError(`Failed to release lock: ${error.message}`);
         setTimeout(() => setReleaseError(null), 5000);
       } else {
-        // Locks changed — lightweight re-fetch of just the lock map
-        const mtIds = (shellRef.current?.module_tests ?? []).map((mt) => mt.id);
-        fetchModuleLocks(mtIds)
-          .then(setLocks)
-          .catch(console.error);
+        loadDashboard(true);
       }
     },
-    []
+    [loadDashboard]
   );
-
-
-  // ── Debounced background restream for Realtime step_result changes ─────────
-  const debouncedRestream = useDebounceRef(() => {
-    const shell = shellRef.current;
-    if (!shell) { loadDashboard(true); return; }
-
-    // Cancel any in-flight stream, start a fresh one using the cached shell
-    abortRef.current?.abort();
-    tokenRef.current.cancelled = true;
-
-    const controller = new AbortController();
-    const token: StreamCancellationToken = { cancelled: false };
-    abortRef.current = controller;
-    tokenRef.current = token;
-
-    restreamStepResults(shell, controller.signal, token);
-  }, 800);
-
-
-  // ── Realtime subscriptions ────────────────────────────────────────────────
-  useEffect(() => {
-    const mtIds = module_tests.map((mt) => mt.id).join(",");
-
-    const channel = supabase
-      .channel(`module-dashboard-${module_name}-${user?.id ?? "anon"}-${Date.now()}`)
-      // step_results UPDATE → optimistic patch immediately + debounced restream
-      .on(
-        "postgres_changes",
-        { event: "UPDATE", schema: "public", table: "step_results", filter: `module_name=eq.${module_name}` },
-        (payload) => {
-          const row = payload.new as { id: string; status: string };
-          if (row.id && row.status) {
-            setModuleTests((prev) => patchStepStatus(prev, row));
-          }
-          debouncedRestream();
-        }
-      )
-      // INSERT / DELETE → just restream (no optimistic shortcut needed)
-      .on(
-        "postgres_changes",
-        { event: "INSERT", schema: "public", table: "step_results", filter: `module_name=eq.${module_name}` },
-        debouncedRestream
-      )
-      .on(
-        "postgres_changes",
-        { event: "DELETE", schema: "public", table: "step_results", filter: `module_name=eq.${module_name}` },
-        debouncedRestream
-      )
-      // test_locks — lightweight lock-only refresh
-      .on(
-        "postgres_changes",
-        {
-          event:  "*",
-          schema: "public",
-          table:  "test_locks",
-          ...(mtIds ? { filter: `module_test_id=in.(${mtIds})` } : {}),
-        },
-        () => {
-          const mtIdsArr = (shellRef.current?.module_tests ?? []).map((mt) => mt.id);
-          fetchModuleLocks(mtIdsArr)
-            .then(setLocks)
-            .catch(console.error);
-        }
-      )
-      .subscribe();
-
-    return () => { supabase.removeChannel(channel); };
-  }, [module_name, debouncedRestream, user?.id, module_tests]);
 
 
   // ── Derived data ──────────────────────────────────────────────────────────
   const chartData = useMemo<ChartRow[]>(
     () =>
-      module_tests.map((mt) => {
-        const real = mt.step_results.filter((sr) => !sr.step?.is_divider);
-        return {
-          name:    mt.test?.name ?? mt.tests_name ?? "Unnamed Test",
-          pass:    real.filter((sr) => sr.status === "pass").length,
-          fail:    real.filter((sr) => sr.status === "fail").length,
-          pending: real.filter((sr) => sr.status === "pending").length,
-        };
-      }),
+      module_tests.map((mt) => ({
+        name:    mt.test?.name ?? mt.tests_name ?? "Unnamed Test",
+        pass:    mt.pass,
+        fail:    mt.fail,
+        pending: mt.pending,
+      })),
     [module_tests]
   );
 
   const globalStats = useMemo(() => {
-    const pass    = chartData.reduce((a, x) => a + x.pass,    0);
-    const fail    = chartData.reduce((a, x) => a + x.fail,    0);
-    const pending = chartData.reduce((a, x) => a + x.pending, 0);
+    const pass    = module_tests.reduce((a, mt) => a + mt.pass,    0);
+    const fail    = module_tests.reduce((a, mt) => a + mt.fail,    0);
+    const pending = module_tests.reduce((a, mt) => a + mt.pending, 0);
     const total   = pass + fail + pending;
     return { pass, fail, pending, total, passRate: total > 0 ? Math.round((pass / total) * 100) : 0 };
-  }, [chartData]);
+  }, [module_tests]);
 
-  const buildFlatData = useCallback((): FlatData[] =>
-    module_tests.flatMap((mt) =>
-      mt.step_results
-        .slice()
-        .sort((a, b) => {
-          const sa = a.step?.serial_no ?? 0;
-          const sb = b.step?.serial_no ?? 0;
-          if (sa !== sb) return sa - sb;
-          return (a.step?.is_divider ? 0 : 1) - (b.step?.is_divider ? 0 : 1);
-        })
-        .map((sr) => ({
-          module:         module_name,
-          test:           mt.test?.name ?? mt.tests_name ?? "Unnamed Test",
-          test_serial_no: mt.test?.serial_no ?? "",
-          serial:         sr.step?.serial_no ?? 0,
-          action:         cleanDividerLabel(sr.step?.action ?? ""),
-          expected:       sr.step?.expected_result ?? "",
-          remarks:        "",
-          status:         sr.status,
-          isdivider:      sr.step?.is_divider ?? false,
-        }))
-    ),
-  [module_tests, module_name]);
+  const exportStats = useMemo(() => [
+    { label: "Total Steps", value: globalStats.total },
+    { label: "Pass",        value: globalStats.pass  },
+    { label: "Fail",        value: globalStats.fail  },
+  ], [globalStats]);
 
-  const exportStats = useMemo(() => {
-    const flat = buildFlatData();
-    const nd   = flat.filter((d) => !d.isdivider);
-    return [
-      { label: "Total Steps", value: nd.length },
-      { label: "Pass",        value: nd.filter((d) => d.status === "pass").length },
-      { label: "Fail",        value: nd.filter((d) => d.status === "fail").length },
-    ];
-  }, [buildFlatData]);
 
-  const handleExportCSV = useCallback(() => exportModuleDetailCSV(buildFlatData()), [buildFlatData]);
-  const handleExportPDF = useCallback(() => exportModuleDetailPDF(buildFlatData(), module_name), [buildFlatData, module_name]);
+  // ── Export — fetch step details lazily ───────────────────────────────────
+  const handleExport = useCallback(
+    async (format: "csv" | "pdf") => {
+      setExporting(true);
+      try {
+        const bySerial = await fetchModuleStepDetails(module_name);
+
+        const flat: FlatData[] = module_tests.flatMap((mt) => {
+          const serialNo = mt.test?.serial_no ?? "";
+          const results  = (bySerial[serialNo] ?? []).slice().sort((a: TrimmedStepResult, b: TrimmedStepResult) => {
+            const sa = a.step?.serial_no ?? 0;
+            const sb = b.step?.serial_no ?? 0;
+            if (sa !== sb) return sa - sb;
+            return (a.step?.is_divider ? 0 : 1) - (b.step?.is_divider ? 0 : 1);
+          });
+          return results.map((sr: TrimmedStepResult) => ({
+            module:         module_name,
+            test:           mt.test?.name ?? mt.tests_name ?? "Unnamed Test",
+            test_serial_no: mt.test?.serial_no ?? "",
+            serial:         sr.step?.serial_no ?? 0,
+            action:         (sr.step?.action ?? "").replace(/^[^a-zA-Z0-9]+/, ""),
+            expected:       sr.step?.expected_result ?? "",
+            remarks:        "",
+            status:         sr.status,
+            isdivider:      sr.step?.is_divider ?? false,
+          }));
+        });
+
+        if (format === "csv") exportModuleDetailCSV(flat);
+        else                  exportModuleDetailPDF(flat, module_name);
+      } catch (e: any) {
+        setReleaseError(`Export failed: ${e?.message}`);
+        setTimeout(() => setReleaseError(null), 5000);
+      } finally {
+        setExporting(false);
+        setShowExport(false);
+      }
+    },
+    [module_name, module_tests]
+  );
 
 
   // ── Render guards ─────────────────────────────────────────────────────────
@@ -459,34 +288,44 @@ const ModuleDashboard: React.FC<Props> = ({
         stats={exportStats}
         options={[
           {
-            label:      "CSV",
+            label:      exporting ? "Preparing…" : "CSV",
             icon:       <FileSpreadsheet size={16} />,
             color:      "bg-(--bg-card) border border-(--border-color) text-(--text-primary)",
             hoverColor: "hover:bg-(--bg-surface) hover:border-(--color-brand)",
-            onConfirm:  handleExportCSV,
+            onConfirm:  () => handleExport("csv"),
           },
           {
-            label:      "PDF",
+            label:      exporting ? "Preparing…" : "PDF",
             icon:       <FileText size={16} />,
             color:      "bg-(--bg-card) border border-(--border-color) text-(--text-primary)",
             hoverColor: "hover:bg-(--bg-surface) hover:border-(--color-brand)",
-            onConfirm:  handleExportPDF,
+            onConfirm:  () => handleExport("pdf"),
           },
         ]}
       />
 
       <Topbar
         title={module_name}
-        subtitle={`${module_tests.length} test${module_tests.length !== 1 ? "s" : ""} · ${globalStats.total} steps${refreshing ? " · syncing…" : ""}`}
+        subtitle={`${module_tests.length} test${module_tests.length !== 1 ? "s" : ""} · ${globalStats.total} steps`}
         onBack={onBack}
         actions={
-          <button
-            onClick={() => setShowExport(true)}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg bg-bg-card hover:bg-bg-surface border border-(--border-color) text-t-primary transition"
-          >
-            <Upload size={13} />
-            Export
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => loadDashboard(true)}
+              disabled={refreshing}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg bg-bg-card hover:bg-bg-surface border border-(--border-color) text-t-primary transition disabled:opacity-50"
+            >
+              <RefreshCw size={13} className={refreshing ? "animate-spin" : ""} />
+              {refreshing ? "Refreshing…" : "Refresh"}
+            </button>
+            <button
+              onClick={() => setShowExport(true)}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg bg-bg-card hover:bg-bg-surface border border-(--border-color) text-t-primary transition"
+            >
+              <Upload size={13} />
+              Export
+            </button>
+          </div>
         }
       />
 
@@ -509,11 +348,11 @@ const ModuleDashboard: React.FC<Props> = ({
         {/* Global stat pills */}
         <div className="flex flex-wrap gap-2">
           {[
-            { label: "Total",   value: globalStats.total,             className: "bg-bg-card border border-(--border-color) text-t-primary" },
-            { label: "Pass",    value: globalStats.pass,              className: "bg-[color-mix(in_srgb,var(--color-pass)_10%,transparent)] text-[var(--color-pass)] border border-[color-mix(in_srgb,var(--color-pass)_25%,transparent)]" },
-            { label: "Fail",    value: globalStats.fail,              className: "bg-[color-mix(in_srgb,var(--color-fail)_10%,transparent)] text-[var(--color-fail)] border border-[color-mix(in_srgb,var(--color-fail)_25%,transparent)]" },
-            { label: "Pending", value: globalStats.pending,           className: "bg-[color-mix(in_srgb,var(--color-pend)_10%,transparent)] text-[var(--color-pend)] border border-[color-mix(in_srgb,var(--color-pend)_25%,transparent)]" },
-            { label: "Pass %",  value: `${globalStats.passRate}%`,    className: "bg-[var(--color-brand-bg)] text-[var(--color-brand)] border border-[color-mix(in_srgb,var(--color-brand)_25%,transparent)]" },
+            { label: "Total",   value: globalStats.total,          className: "bg-bg-card border border-(--border-color) text-t-primary" },
+            { label: "Pass",    value: globalStats.pass,           className: "bg-[color-mix(in_srgb,var(--color-pass)_10%,transparent)] text-[var(--color-pass)] border border-[color-mix(in_srgb,var(--color-pass)_25%,transparent)]" },
+            { label: "Fail",    value: globalStats.fail,           className: "bg-[color-mix(in_srgb,var(--color-fail)_10%,transparent)] text-[var(--color-fail)] border border-[color-mix(in_srgb,var(--color-fail)_25%,transparent)]" },
+            { label: "Pending", value: globalStats.pending,        className: "bg-[color-mix(in_srgb,var(--color-pend)_10%,transparent)] text-[var(--color-pend)] border border-[color-mix(in_srgb,var(--color-pend)_25%,transparent)]" },
+            { label: "Pass %",  value: `${globalStats.passRate}%`, className: "bg-[var(--color-brand-bg)] text-[var(--color-brand)] border border-[color-mix(in_srgb,var(--color-brand)_25%,transparent)]" },
           ].map((s) => (
             <span key={s.label} className={`flex items-center gap-1 text-xs font-bold px-3 py-1 rounded-full ${s.className}`}>
               {s.label}: {s.value}
@@ -577,7 +416,6 @@ const ModuleDashboard: React.FC<Props> = ({
                   isCompleted={isCompleted}
                   activeRev={activeRev}
                   isAdmin={isAdmin}
-                  refreshing={refreshing}
                   onExecute={onExecute}
                   onViewReport={onViewReport}
                   onForceRelease={forceReleaseLock}
