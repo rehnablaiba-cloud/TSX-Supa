@@ -1,3 +1,4 @@
+// src/components/ModuleDashboard/ModuleDashboard.tsx
 import React, {
   useEffect,
   useLayoutEffect,
@@ -10,19 +11,10 @@ import { supabase } from "../../supabase";
 import Spinner from "../UI/Spinner";
 import Topbar from "../Layout/Topbar";
 import ExportModal from "../UI/ExportModal";
+import TestCard from "./TestCard";
 import { useAuth } from "../../context/AuthContext";
 import { useTheme } from "../../context/ThemeContext";
-import {
-  Lock,
-  Unlock,
-  Play,
-  Eye,
-  FileSpreadsheet,
-  FileText,
-  ChevronRight,
-  RotateCcw,
-  Upload,
-} from "lucide-react";
+import { FileSpreadsheet, FileText, Upload } from "lucide-react";
 import {
   exportModuleDetailCSV,
   exportModuleDetailPDF,
@@ -36,7 +28,15 @@ import {
   RRadarChart,
 } from "./charts";
 import type { ChartRow, ChartTheme } from "./charts";
+import type {
+  LockRow,
+  TrimmedStepResult,
+  ModuleTestRow,
+  ActiveRevision,
+} from "./ModuleDashboard.types";
 
+
+// ─── Animation wrappers ───────────────────────────────────────────────────────
 
 const FadeWrapper: React.FC<{
   animKey: string | number;
@@ -50,14 +50,13 @@ const FadeWrapper: React.FC<{
   </div>
 );
 
-
 const StaggerRow: React.FC<{ index: number; children: React.ReactNode }> = ({
   index,
   children,
 }) => (
   <div
     style={{
-      animation: "fadeSlideInRow 0.25s cubic-bezier(0.22,1,0.36,1) both",
+      animation:      "fadeSlideInRow 0.25s cubic-bezier(0.22,1,0.36,1) both",
       animationDelay: `${index * 45}ms`,
     }}
   >
@@ -66,9 +65,10 @@ const StaggerRow: React.FC<{ index: number; children: React.ReactNode }> = ({
 );
 
 
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
 const cleanDividerLabel = (action: string): string =>
   action.replace(/^[^a-zA-Z0-9]+/, "");
-
 
 function unwrapOne<T>(val: T | T[] | null | undefined): T | null {
   if (val == null) return null;
@@ -76,86 +76,81 @@ function unwrapOne<T>(val: T | T[] | null | undefined): T | null {
   return val;
 }
 
+/** Debounce: returns a stable callback that delays `fn` by `delay` ms. */
+function useDebounceRef(fn: () => void, delay: number) {
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const fnRef    = useRef(fn);
+  fnRef.current  = fn;
+
+  return useCallback(() => {
+    if (timerRef.current) clearTimeout(timerRef.current);
+    timerRef.current = setTimeout(() => fnRef.current(), delay);
+  }, [delay]);
+}
+
+/**
+ * Optimistically patch one step_result's status in local state.
+ * Called immediately on Realtime UPDATE before the debounced refetch arrives.
+ */
+function patchStepStatus(
+  mts:  ModuleTestRow[],
+  row: { id: string; status: string }
+): ModuleTestRow[] {
+  return mts.map((mt) => ({
+    ...mt,
+    step_results: mt.step_results.map((sr) =>
+      sr.id === row.id
+        ? { ...sr, status: row.status as TrimmedStepResult["status"] }
+        : sr
+    ),
+  }));
+}
+
+
+// ─── Internal Supabase shapes ─────────────────────────────────────────────────
+
+interface SupabaseModuleTest {
+  id:         string;
+  tests_name: string;
+  is_visible: boolean;
+  test:       { serial_no: string; name: string } | null;
+}
+
+interface SupabaseStepResult {
+  id:            string;
+  status:        "pass" | "fail" | "pending";
+  test_steps_id: string;
+  step: {
+    id:              string;
+    is_divider:      boolean;
+    tests_serial_no: string;
+    serial_no:       number | null;
+    action:          string | null;
+    expected_result: string | null;
+  } | null;
+}
 
 type ChartType = "bar" | "area" | "line" | "pie" | "radar";
 const CHART_TYPES: { type: ChartType; label: string }[] = [
-  { type: "bar", label: "Bar" },
-  { type: "area", label: "Area" },
-  { type: "line", label: "Line" },
-  { type: "pie", label: "Pie" },
+  { type: "bar",   label: "Bar"   },
+  { type: "area",  label: "Area"  },
+  { type: "line",  label: "Line"  },
+  { type: "pie",   label: "Pie"   },
   { type: "radar", label: "Radar" },
 ];
 
 
+// ─── Props ────────────────────────────────────────────────────────────────────
+
 interface Props {
-  module_name: string;
-  onBack: () => void;
-  onExecute: (module_test_id: string) => void;
+  module_name:  string;
+  onBack:       () => void;
+  onExecute:    (module_test_id: string) => void;
   onViewReport: (module_test_id: string) => void;
 }
 
 
-interface LockRow {
-  module_test_id: string;
-  user_id: string;
-  locked_by_name: string;
-  locked_at: string;
-}
-
-
-interface TrimmedStepResult {
-  id: string;
-  status: "pass" | "fail" | "pending";
-  step: {
-    id: string;
-    is_divider: boolean;
-    tests_serial_no: string;
-    serial_no: number | null;
-    action: string | null;
-    expected_result: string | null;
-  } | null;
-}
-
-
-interface ModuleTestRow {
-  id: string;
-  tests_name: string;
-  is_visible: boolean; // ✅ moved here from ActiveRevision
-  test: { serial_no: string; name: string } | null;
-  step_results: TrimmedStepResult[];
-}
-
-
-interface SupabaseModuleTest {
-  id: string;
-  tests_name: string;
-  is_visible: boolean; // ✅ moved here from ActiveRevision
-  test: { serial_no: string; name: string } | null;
-}
-
-
-interface SupabaseStepResult {
-  id: string;
-  status: "pass" | "fail" | "pending";
-  test_steps_id: string;
-  step: {
-    id: string;
-    is_divider: boolean;
-    tests_serial_no: string;
-    serial_no: number | null;
-    action: string | null;
-    expected_result: string | null;
-  } | null;
-}
-
-
-interface ActiveRevision {
-  id: string;
-  revision: string;
-  // ✅ is_visible removed — now lives on module_tests
-  step_order: string[];
-}
-
+// ─── ModuleDashboard ──────────────────────────────────────────────────────────
 
 const ModuleDashboard: React.FC<Props> = ({
   module_name,
@@ -163,73 +158,69 @@ const ModuleDashboard: React.FC<Props> = ({
   onExecute,
   onViewReport,
 }) => {
-  const { user } = useAuth();
+  const { user }  = useAuth();
   const { theme } = useTheme();
-  const isAdmin = user?.role === "admin";
+  const isAdmin   = user?.role === "admin";
 
-  const [module_tests, setmodule_tests] = useState<ModuleTestRow[]>([]);
-  const [locks, setLocks] = useState<Record<string, LockRow>>({});
-  const [revisions, setRevisions] = useState<Record<string, ActiveRevision>>({});
-  const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [chartType, setChartType] = useState<ChartType>("bar");
-  const [showExportModal, setShowExportModal] = useState(false);
-  const [releaseError, setReleaseError] = useState<string | null>(null);
+  const [module_tests, setModuleTests] = useState<ModuleTestRow[]>([]);
+  const [locks,        setLocks]       = useState<Record<string, LockRow>>({});
+  const [revisions,    setRevisions]   = useState<Record<string, ActiveRevision>>({});
+  const [loading,      setLoading]     = useState(true);
+  const [refreshing,   setRefreshing]  = useState(false);
+  const [error,        setError]       = useState<string | null>(null);
+  const [chartType,    setChartType]   = useState<ChartType>("bar");
+  const [showExport,   setShowExport]  = useState(false);
+  const [releaseError, setReleaseError]= useState<string | null>(null);
 
-  const abortControllerRef = useRef<AbortController | null>(null);
+  const abortRef = useRef<AbortController | null>(null);
 
   const [ct, setCt] = useState<ChartTheme>({
-    panel: "#ffffff",
-    text: "#1e293b",
-    muted: "#94a3b8",
-    grid: "rgba(0,0,0,0.06)",
-    border: "rgba(0,0,0,0.10)",
-    tooltipBg: "#ffffff",
+    panel:       "#ffffff",
+    text:        "#1e293b",
+    muted:       "#94a3b8",
+    grid:        "rgba(0,0,0,0.06)",
+    border:      "rgba(0,0,0,0.10)",
+    tooltipBg:   "#ffffff",
     tooltipText: "#1e293b",
     tooltipName: "#64748b",
   });
 
   useLayoutEffect(() => {
-    const s = getComputedStyle(document.documentElement);
-    const get = (v: string) => s.getPropertyValue(v).trim();
+    const s      = getComputedStyle(document.documentElement);
+    const get    = (v: string) => s.getPropertyValue(v).trim();
     const isDark = theme === "dark";
     setCt({
-      panel: isDark ? "#0f172a" : "#ffffff",
-      text: get("--text-primary") || (isDark ? "#f1f5f9" : "#1e293b"),
-      muted: get("--text-muted") || (isDark ? "#64748b" : "#94a3b8"),
-      grid: isDark ? "rgba(255,255,255,0.06)" : "rgba(0,0,0,0.06)",
-      border: isDark ? "rgba(255,255,255,0.10)" : "rgba(0,0,0,0.10)",
-      tooltipBg: isDark ? "#1e293b" : "#ffffff",
+      panel:       isDark ? "#0f172a" : "#ffffff",
+      text:        get("--text-primary") || (isDark ? "#f1f5f9" : "#1e293b"),
+      muted:       get("--text-muted")   || (isDark ? "#64748b" : "#94a3b8"),
+      grid:        isDark ? "rgba(255,255,255,0.06)" : "rgba(0,0,0,0.06)",
+      border:      isDark ? "rgba(255,255,255,0.10)" : "rgba(0,0,0,0.10)",
+      tooltipBg:   isDark ? "#1e293b" : "#ffffff",
       tooltipText: isDark ? "#f1f5f9" : "#1e293b",
       tooltipName: isDark ? "#94a3b8" : "#64748b",
     });
   }, [theme]);
 
 
+  // ── Core fetch ──────────────────────────────────────────────────────────────
   const fetchData = useCallback(
     async (isBackground = false, signal?: AbortSignal) => {
       if (signal?.aborted) return;
       if (!isBackground) setLoading(true);
-      else setRefreshing(true);
+      else               setRefreshing(true);
       setError(null);
 
       try {
-        // ── 1. Fetch module_tests (now includes is_visible) + step_results ────
+        // 1. Module tests + step results in parallel
         const [mtRes, srRes] = await Promise.all([
           supabase
             .from("module_tests")
-            .select(
-              // ✅ is_visible added
-              "id, tests_name, is_visible, test:tests!module_tests_tests_name_fkey(serial_no, name)"
-            )
+            .select("id, tests_name, is_visible, test:tests!module_tests_tests_name_fkey(serial_no, name)")
             .eq("module_name", module_name)
             .abortSignal(signal!),
           supabase
             .from("step_results")
-            .select(
-              "id, status, test_steps_id, step:test_steps!step_results_test_steps_id_fkey(id, is_divider, tests_serial_no, serial_no, action, expected_result)"
-            )
+            .select("id, status, test_steps_id, step:test_steps!step_results_test_steps_id_fkey(id, is_divider, tests_serial_no, serial_no, action, expected_result)")
             .eq("module_name", module_name)
             .abortSignal(signal!),
         ]);
@@ -239,18 +230,13 @@ const ModuleDashboard: React.FC<Props> = ({
         if (srRes.error) { setError(srRes.error.message); return; }
 
         const normalizedMts: SupabaseModuleTest[] = (mtRes.data ?? []).map(
-          (mt: any) => ({
-            ...mt,
-            is_visible: mt.is_visible ?? true, // ✅ preserved from row
-            test: unwrapOne(mt.test),
-          })
+          (mt: any) => ({ ...mt, is_visible: mt.is_visible ?? true, test: unwrapOne(mt.test) })
         );
-
         const normalizedSrs: SupabaseStepResult[] = (srRes.data ?? []).map(
           (sr: any) => ({ ...sr, step: unwrapOne(sr.step) })
         );
 
-        // ── 2. Fetch active revisions (is_visible removed from select) ────────
+        // 2. Active revisions
         const serialNos = normalizedMts
           .map((mt) => mt.test?.serial_no)
           .filter((s): s is string => !!s);
@@ -260,15 +246,14 @@ const ModuleDashboard: React.FC<Props> = ({
         if (serialNos.length > 0) {
           const { data: revData } = await supabase
             .from("test_revisions")
-            .select("id, revision, tests_serial_no, step_order") // ✅ is_visible removed
+            .select("id, revision, tests_serial_no, step_order")
             .eq("status", "active")
             .in("tests_serial_no", serialNos);
 
           ((revData ?? []) as any[]).forEach((r) => {
             revBySerial[r.tests_serial_no] = {
-              id: r.id,
-              revision: r.revision,
-              // ✅ is_visible no longer mapped here
+              id:         r.id,
+              revision:   r.revision,
               step_order: Array.isArray(r.step_order) ? r.step_order : [],
             };
           });
@@ -277,54 +262,48 @@ const ModuleDashboard: React.FC<Props> = ({
         if (signal?.aborted) return;
         setRevisions(revBySerial);
 
-        // ── 3. Build in-scope step ID sets per serial_no ──────────────────────
-        const inScopeIds = new Set<string>(
-          Object.values(revBySerial).flatMap((r) => r.step_order)
-        );
+        // 3. Build in-scope step ID sets
+        const inScopeIds           = new Set<string>(Object.values(revBySerial).flatMap((r) => r.step_order));
         const serialNosWithRevision = new Set(Object.keys(revBySerial));
 
-        // ── 4. Filter step_results ────────────────────────────────────────────
+        // 4. Filter step_results to active revision scope
         const filteredSrs = normalizedSrs.filter((sr) => {
           const stepSerialNo = sr.step?.tests_serial_no;
           if (!stepSerialNo) return false;
-          if (serialNosWithRevision.has(stepSerialNo)) {
-            return inScopeIds.has(sr.test_steps_id);
-          }
+          if (serialNosWithRevision.has(stepSerialNo)) return inScopeIds.has(sr.test_steps_id);
           return true;
         });
 
-        // ── 5. Fetch locks ────────────────────────────────────────────────────
+        // 5. Locks
         const moduleTestIds = normalizedMts.map((mt) => mt.id);
-        const lockRes =
-          moduleTestIds.length > 0
-            ? await supabase
-                .from("test_locks")
-                .select("module_test_id, user_id, locked_by_name, locked_at")
-                .in("module_test_id", moduleTestIds)
-                .abortSignal(signal!)
-            : { data: [], error: null };
+        const lockRes = moduleTestIds.length > 0
+          ? await supabase
+              .from("test_locks")
+              .select("module_test_id, user_id, locked_by_name, locked_at")
+              .in("module_test_id", moduleTestIds)
+              .abortSignal(signal!)
+          : { data: [], error: null };
 
         if (signal?.aborted) return;
 
-        const lockMap =
-          !lockRes.error && lockRes.data
-            ? (lockRes.data as LockRow[]).reduce<Record<string, LockRow>>(
-                (acc, l) => { acc[l.module_test_id] = l; return acc; },
-                {}
-              )
-            : {};
+        const lockMap = (!lockRes.error && lockRes.data)
+          ? (lockRes.data as LockRow[]).reduce<Record<string, LockRow>>(
+              (acc, l) => { acc[l.module_test_id] = l; return acc; }, {}
+            )
+          : {};
         setLocks(lockMap);
 
-        // ── 6. Group filtered step_results by tests_serial_no, join to tests ──
-        const srBySerial = filteredSrs.reduce<
-          Record<string, SupabaseStepResult[]>
-        >((acc, sr) => {
-          const key = sr.step?.tests_serial_no;
-          if (!key) return acc;
-          if (!acc[key]) acc[key] = [];
-          acc[key].push(sr);
-          return acc;
-        }, {});
+        // 6. Group step results by serial_no → join to tests → sort
+        const srBySerial = filteredSrs.reduce<Record<string, SupabaseStepResult[]>>(
+          (acc, sr) => {
+            const key = sr.step?.tests_serial_no;
+            if (!key) return acc;
+            if (!acc[key]) acc[key] = [];
+            acc[key].push(sr);
+            return acc;
+          },
+          {}
+        );
 
         const joined = normalizedMts
           .map((mt) => ({
@@ -334,13 +313,10 @@ const ModuleDashboard: React.FC<Props> = ({
           .sort((a, b) => {
             const aSerial = a.test?.serial_no ?? "";
             const bSerial = b.test?.serial_no ?? "";
-            return aSerial.localeCompare(bSerial, undefined, {
-              numeric: true,
-              sensitivity: "base",
-            });
+            return aSerial.localeCompare(bSerial, undefined, { numeric: true, sensitivity: "base" });
           });
 
-        setmodule_tests(joined as ModuleTestRow[]);
+        setModuleTests(joined as ModuleTestRow[]);
         setError(null);
       } catch (e: any) {
         if (e.name === "AbortError") return;
@@ -353,18 +329,18 @@ const ModuleDashboard: React.FC<Props> = ({
     [module_name]
   );
 
-
+  // Initial load
   useEffect(() => {
     const controller = new AbortController();
-    abortControllerRef.current = controller;
+    abortRef.current = controller;
     fetchData(false, controller.signal);
     return () => {
       controller.abort();
-      abortControllerRef.current = null;
+      abortRef.current = null;
     };
   }, [fetchData]);
 
-
+  // ── Force release (admin only) ───────────────────────────────────────────
   const forceReleaseLock = useCallback(
     async (module_test_id: string, lockedByName: string) => {
       if (!confirm(`Force-release the lock held by ${lockedByName}?`)) return;
@@ -384,34 +360,49 @@ const ModuleDashboard: React.FC<Props> = ({
     [fetchData]
   );
 
+  // ── Debounced background refetch for Realtime ────────────────────────────
+  const debouncedRefetch = useDebounceRef(() => {
+    const controller = new AbortController();
+    fetchData(true, controller.signal);
+  }, 800);
 
+  // ── Realtime subscriptions ───────────────────────────────────────────────
   useEffect(() => {
+    const mtIds = module_tests.map((mt) => mt.id).join(",");
+
     const channel = supabase
-      .channel(
-        `module-dashboard-${module_name}-${user?.id ?? "anon"}-${Date.now()}`
-      )
+      .channel(`module-dashboard-${module_name}-${user?.id ?? "anon"}-${Date.now()}`)
+      // step_results UPDATE → optimistic patch immediately + debounced refetch
       .on(
         "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "step_results",
-          filter: `module_name=eq.${module_name}`,
-        },
-        () => {
-          const controller = new AbortController();
-          fetchData(true, controller.signal);
+        { event: "UPDATE", schema: "public", table: "step_results", filter: `module_name=eq.${module_name}` },
+        (payload) => {
+          const row = payload.new as { id: string; status: string };
+          if (row.id && row.status) {
+            setModuleTests((prev) => patchStepStatus(prev, row));
+          }
+          debouncedRefetch();
         }
       )
+      // INSERT / DELETE → just debounce (no optimistic shortcut needed)
+      .on(
+        "postgres_changes",
+        { event: "INSERT", schema: "public", table: "step_results", filter: `module_name=eq.${module_name}` },
+        debouncedRefetch
+      )
+      .on(
+        "postgres_changes",
+        { event: "DELETE", schema: "public", table: "step_results", filter: `module_name=eq.${module_name}` },
+        debouncedRefetch
+      )
+      // test_locks — locks change less often, immediate refetch is fine
       .on(
         "postgres_changes",
         {
-          event: "*",
+          event:  "*",
           schema: "public",
-          table: "test_locks",
-          filter: `module_test_id=in.(${module_tests
-            .map((mt) => mt.id)
-            .join(",")})`,
+          table:  "test_locks",
+          ...(mtIds ? { filter: `module_test_id=in.(${mtIds})` } : {}),
         },
         () => {
           const controller = new AbortController();
@@ -419,44 +410,36 @@ const ModuleDashboard: React.FC<Props> = ({
         }
       )
       .subscribe();
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, [module_name, fetchData, user?.id, module_tests]);
+
+    return () => { supabase.removeChannel(channel); };
+  }, [module_name, fetchData, debouncedRefetch, user?.id, module_tests]);
 
 
+  // ── Derived data ──────────────────────────────────────────────────────────
   const chartData = useMemo<ChartRow[]>(
     () =>
       module_tests.map((mt) => {
         const real = mt.step_results.filter((sr) => !sr.step?.is_divider);
         return {
-          name: mt.test?.name ?? mt.tests_name ?? "Unnamed Test",
-          pass: real.filter((sr) => sr.status === "pass").length,
-          fail: real.filter((sr) => sr.status === "fail").length,
+          name:    mt.test?.name ?? mt.tests_name ?? "Unnamed Test",
+          pass:    real.filter((sr) => sr.status === "pass").length,
+          fail:    real.filter((sr) => sr.status === "fail").length,
           pending: real.filter((sr) => sr.status === "pending").length,
         };
       }),
     [module_tests]
   );
 
-
   const globalStats = useMemo(() => {
-    const pass = chartData.reduce((a, x) => a + x.pass, 0);
-    const fail = chartData.reduce((a, x) => a + x.fail, 0);
+    const pass    = chartData.reduce((a, x) => a + x.pass,    0);
+    const fail    = chartData.reduce((a, x) => a + x.fail,    0);
     const pending = chartData.reduce((a, x) => a + x.pending, 0);
-    const total = pass + fail + pending;
-    return {
-      pass,
-      fail,
-      pending,
-      total,
-      passRate: total > 0 ? Math.round((pass / total) * 100) : 0,
-    };
+    const total   = pass + fail + pending;
+    return { pass, fail, pending, total, passRate: total > 0 ? Math.round((pass / total) * 100) : 0 };
   }, [chartData]);
 
-
-  const buildFlatData = useCallback((): FlatData[] => {
-    return module_tests.flatMap((mt) =>
+  const buildFlatData = useCallback((): FlatData[] =>
+    module_tests.flatMap((mt) =>
       mt.step_results
         .slice()
         .sort((a, b) => {
@@ -466,41 +449,34 @@ const ModuleDashboard: React.FC<Props> = ({
           return (a.step?.is_divider ? 0 : 1) - (b.step?.is_divider ? 0 : 1);
         })
         .map((sr) => ({
-          module: module_name,
-          test: mt.test?.name ?? mt.tests_name ?? "Unnamed Test",
+          module:         module_name,
+          test:           mt.test?.name ?? mt.tests_name ?? "Unnamed Test",
           test_serial_no: mt.test?.serial_no ?? "",
-          serial: sr.step?.serial_no ?? 0,
-          action: cleanDividerLabel(sr.step?.action ?? ""),
-          expected: sr.step?.expected_result ?? "",
-          remarks: "",
-          status: sr.status,
-          isdivider: sr.step?.is_divider ?? false,
+          serial:         sr.step?.serial_no ?? 0,
+          action:         cleanDividerLabel(sr.step?.action ?? ""),
+          expected:       sr.step?.expected_result ?? "",
+          remarks:        "",
+          status:         sr.status,
+          isdivider:      sr.step?.is_divider ?? false,
         }))
-    );
-  }, [module_tests, module_name]);
-
+    ),
+  [module_tests, module_name]);
 
   const exportStats = useMemo(() => {
     const flat = buildFlatData();
-    const nd = flat.filter((d) => !d.isdivider);
+    const nd   = flat.filter((d) => !d.isdivider);
     return [
       { label: "Total Steps", value: nd.length },
-      { label: "Pass", value: nd.filter((d) => d.status === "pass").length },
-      { label: "Fail", value: nd.filter((d) => d.status === "fail").length },
+      { label: "Pass",        value: nd.filter((d) => d.status === "pass").length },
+      { label: "Fail",        value: nd.filter((d) => d.status === "fail").length },
     ];
   }, [buildFlatData]);
 
-
-  const handleExportCSV = useCallback(() => {
-    exportModuleDetailCSV(buildFlatData());
-  }, [buildFlatData]);
+  const handleExportCSV = useCallback(() => exportModuleDetailCSV(buildFlatData()), [buildFlatData]);
+  const handleExportPDF = useCallback(() => exportModuleDetailPDF(buildFlatData(), module_name), [buildFlatData, module_name]);
 
 
-  const handleExportPDF = useCallback(() => {
-    exportModuleDetailPDF(buildFlatData(), module_name);
-  }, [buildFlatData, module_name]);
-
-
+  // ── Render guards ─────────────────────────────────────────────────────────
   if (loading)
     return (
       <div className="flex-1 flex flex-col">
@@ -511,7 +487,6 @@ const ModuleDashboard: React.FC<Props> = ({
       </div>
     );
 
-
   if (error)
     return (
       <div className="flex-1 flex flex-col">
@@ -521,8 +496,8 @@ const ModuleDashboard: React.FC<Props> = ({
             className="rounded-xl p-4 text-sm"
             style={{
               background: "color-mix(in srgb, var(--color-fail) 10%, transparent)",
-              border: "1px solid color-mix(in srgb, var(--color-fail) 30%, transparent)",
-              color: "var(--color-fail)",
+              border:     "1px solid color-mix(in srgb, var(--color-fail) 30%, transparent)",
+              color:      "var(--color-fail)",
             }}
           >
             Failed to load module: {error}
@@ -532,41 +507,40 @@ const ModuleDashboard: React.FC<Props> = ({
     );
 
 
+  // ── Main render ───────────────────────────────────────────────────────────
   return (
     <div className="flex-1 flex flex-col">
       <ExportModal
-        isOpen={showExportModal}
-        onClose={() => setShowExportModal(false)}
+        isOpen={showExport}
+        onClose={() => setShowExport(false)}
         title="Export Module Results"
         subtitle={module_name}
         stats={exportStats}
         options={[
           {
-            label: "CSV",
-            icon: <FileSpreadsheet size={16} />,
-            color: "bg-(--bg-card) border border-(--border-color) text-(--text-primary)",
+            label:      "CSV",
+            icon:       <FileSpreadsheet size={16} />,
+            color:      "bg-(--bg-card) border border-(--border-color) text-(--text-primary)",
             hoverColor: "hover:bg-(--bg-surface) hover:border-(--color-brand)",
-            onConfirm: handleExportCSV,
+            onConfirm:  handleExportCSV,
           },
           {
-            label: "PDF",
-            icon: <FileText size={16} />,
-            color: "bg-(--bg-card) border border-(--border-color) text-(--text-primary)",
+            label:      "PDF",
+            icon:       <FileText size={16} />,
+            color:      "bg-(--bg-card) border border-(--border-color) text-(--text-primary)",
             hoverColor: "hover:bg-(--bg-surface) hover:border-(--color-brand)",
-            onConfirm: handleExportPDF,
+            onConfirm:  handleExportPDF,
           },
         ]}
       />
 
       <Topbar
         title={module_name}
-        subtitle={`${module_tests.length} test${
-          module_tests.length !== 1 ? "s" : ""
-        } · ${globalStats.total} steps${refreshing ? " · syncing…" : ""}`}
+        subtitle={`${module_tests.length} test${module_tests.length !== 1 ? "s" : ""} · ${globalStats.total} steps${refreshing ? " · syncing…" : ""}`}
         onBack={onBack}
         actions={
           <button
-            onClick={() => setShowExportModal(true)}
+            onClick={() => setShowExport(true)}
             className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg bg-bg-card hover:bg-bg-surface border border-(--border-color) text-t-primary transition"
           >
             <Upload size={13} />
@@ -581,8 +555,8 @@ const ModuleDashboard: React.FC<Props> = ({
             className="rounded-xl p-3 text-sm flex items-center gap-2"
             style={{
               background: "color-mix(in srgb, var(--color-fail) 10%, transparent)",
-              border: "1px solid color-mix(in srgb, var(--color-fail) 30%, transparent)",
-              color: "var(--color-fail)",
+              border:     "1px solid color-mix(in srgb, var(--color-fail) 30%, transparent)",
+              color:      "var(--color-fail)",
             }}
           >
             <span className="font-semibold">Error:</span> {releaseError}
@@ -591,49 +565,26 @@ const ModuleDashboard: React.FC<Props> = ({
       )}
 
       <div className="p-6 flex flex-col gap-6 pb-24 md:pb-6">
+        {/* Global stat pills */}
         <div className="flex flex-wrap gap-2">
           {[
-            {
-              label: "Total",
-              value: globalStats.total,
-              className: "bg-bg-card border border-(--border-color) text-t-primary",
-            },
-            {
-              label: "Pass",
-              value: globalStats.pass,
-              className: "bg-[color-mix(in_srgb,var(--color-pass)_10%,transparent)] text-[var(--color-pass)] border border-[color-mix(in_srgb,var(--color-pass)_25%,transparent)]",
-            },
-            {
-              label: "Fail",
-              value: globalStats.fail,
-              className: "bg-[color-mix(in_srgb,var(--color-fail)_10%,transparent)] text-[var(--color-fail)] border border-[color-mix(in_srgb,var(--color-fail)_25%,transparent)]",
-            },
-            {
-              label: "Pending",
-              value: globalStats.pending,
-              className: "bg-[color-mix(in_srgb,var(--color-pend)_10%,transparent)] text-[var(--color-pend)] border border-[color-mix(in_srgb,var(--color-pend)_25%,transparent)]",
-            },
-            {
-              label: "Pass %",
-              value: `${globalStats.passRate}%`,
-              className: "bg-[var(--color-brand-bg)] text-[var(--color-brand)] border border-[color-mix(in_srgb,var(--color-brand)_25%,transparent)]",
-            },
+            { label: "Total",   value: globalStats.total,             className: "bg-bg-card border border-(--border-color) text-t-primary" },
+            { label: "Pass",    value: globalStats.pass,              className: "bg-[color-mix(in_srgb,var(--color-pass)_10%,transparent)] text-[var(--color-pass)] border border-[color-mix(in_srgb,var(--color-pass)_25%,transparent)]" },
+            { label: "Fail",    value: globalStats.fail,              className: "bg-[color-mix(in_srgb,var(--color-fail)_10%,transparent)] text-[var(--color-fail)] border border-[color-mix(in_srgb,var(--color-fail)_25%,transparent)]" },
+            { label: "Pending", value: globalStats.pending,           className: "bg-[color-mix(in_srgb,var(--color-pend)_10%,transparent)] text-[var(--color-pend)] border border-[color-mix(in_srgb,var(--color-pend)_25%,transparent)]" },
+            { label: "Pass %",  value: `${globalStats.passRate}%`,    className: "bg-[var(--color-brand-bg)] text-[var(--color-brand)] border border-[color-mix(in_srgb,var(--color-brand)_25%,transparent)]" },
           ].map((s) => (
-            <span
-              key={s.label}
-              className={`flex items-center gap-1 text-xs font-bold px-3 py-1 rounded-full ${s.className}`}
-            >
+            <span key={s.label} className={`flex items-center gap-1 text-xs font-bold px-3 py-1 rounded-full ${s.className}`}>
               {s.label}: {s.value}
             </span>
           ))}
         </div>
 
+        {/* Chart */}
         {module_tests.length > 0 && (
           <div className="card flex flex-col gap-3">
             <div className="flex items-center justify-between flex-wrap gap-2">
-              <p className="text-sm font-semibold text-t-primary">
-                Step Results by Test
-              </p>
+              <p className="text-sm font-semibold text-t-primary">Step Results by Test</p>
               <div className="flex items-center gap-1 bg-bg-base rounded-xl p-1">
                 {CHART_TYPES.map(({ type, label }) => (
                   <button
@@ -651,15 +602,16 @@ const ModuleDashboard: React.FC<Props> = ({
               </div>
             </div>
             <FadeWrapper animKey={chartType}>
-              {chartType === "bar" && <RBarChart key="bar-chart" data={chartData} ct={ct} />}
-              {chartType === "area" && <RAreaChart key="area-chart" data={chartData} ct={ct} />}
-              {chartType === "line" && <RLineChart key="line-chart" data={chartData} ct={ct} />}
-              {chartType === "pie" && <RPieChart key="pie-chart" data={chartData} ct={ct} />}
+              {chartType === "bar"   && <RBarChart   key="bar-chart"   data={chartData} ct={ct} />}
+              {chartType === "area"  && <RAreaChart  key="area-chart"  data={chartData} ct={ct} />}
+              {chartType === "line"  && <RLineChart  key="line-chart"  data={chartData} ct={ct} />}
+              {chartType === "pie"   && <RPieChart   key="pie-chart"   data={chartData} ct={ct} />}
               {chartType === "radar" && <RRadarChart key="radar-chart" data={chartData} ct={ct} />}
             </FadeWrapper>
           </div>
         )}
 
+        {/* Test cards */}
         <div className="flex flex-col gap-3">
           {module_tests.length === 0 && (
             <div className="text-center text-t-muted py-12">
@@ -668,249 +620,27 @@ const ModuleDashboard: React.FC<Props> = ({
           )}
 
           {module_tests.map((mt, idx) => {
-            const real = mt.step_results.filter((sr) => !sr.step?.is_divider);
-            const pass = real.filter((sr) => sr.status === "pass").length;
-            const fail = real.filter((sr) => sr.status === "fail").length;
-            const pending = real.filter((sr) => sr.status === "pending").length;
-            const total = real.length;
-            const passRate = total > 0 ? Math.round((pass / total) * 100) : 0;
-            const failPct = total > 0 ? Math.round((fail / total) * 100) : 0;
-            const pendingPct = Math.max(0, 100 - passRate - failPct);
-
-            const lock = locks[mt.id];
-            const isMyLock = !!lock && lock.user_id === user?.id;
+            const lock        = locks[mt.id];
+            const isMyLock    = !!lock && lock.user_id === user?.id;
             const isOtherLock = !!lock && !isMyLock;
-
-            // Active revision for this test (revision label only — no is_visible)
-            const activeRev = mt.test?.serial_no
-              ? revisions[mt.test.serial_no] ?? null
-              : null;
-
-            // ✅ is_visible now read directly from module_tests row
             const isCompleted = !mt.is_visible;
-
-            const cardStyle: React.CSSProperties = isMyLock
-            ? {
-                border: "1.5px solid rgba(var(--neon-cyan), 0.55)",
-                background: "linear-gradient(135deg, rgba(var(--neon-cyan), 0.07) 0%, transparent 60%)",
-                animation: "neonPulse 2.6s ease-in-out infinite",
-              }
-            : isOtherLock
-            ? {
-                border: "1.5px solid rgba(var(--neon-amber), 0.55)",
-                background: "linear-gradient(135deg, rgba(var(--neon-amber), 0.07) 0%, transparent 60%)",
-                animation: "amberPulse 2.6s ease-in-out infinite",
-              }
-            : isCompleted
-            ? {
-                border: "1.5px solid rgba(var(--neon-green), 0.55)",
-                background: "linear-gradient(135deg, rgba(var(--neon-green), 0.07) 0%, transparent 60%)",
-                animation: "greenPulse 2.6s ease-in-out infinite",
-              }
-            : {};
+            const activeRev   = mt.test?.serial_no ? revisions[mt.test.serial_no] ?? null : null;
 
             return (
               <StaggerRow key={mt.id} index={idx}>
-                <div
-                  className="card flex flex-col gap-3 relative transition-all duration-200"
-                  style={cardStyle}
-                >
-                  {isMyLock && (
-                    <div className="flex items-center gap-1.5 self-start px-2.5 py-1 rounded-lg w-fit text-xs font-semibold text-[var(--color-my-lock)] border border-[color-mix(in_srgb,var(--color-my-lock)_40%,transparent)] bg-[color-mix(in_srgb,var(--color-my-lock)_10%,transparent)]">
-                      <Lock size={11} className="text-[var(--color-my-lock)]" />
-                      <span>Locked by me</span>
-                      <span className="opacity-50">·</span>
-                      <span className="opacity-70">
-                        {new Date(lock.locked_at).toLocaleTimeString([], {
-                          hour: "2-digit",
-                          minute: "2-digit",
-                        })}
-                      </span>
-                    </div>
-                  )}
-
-                  {isOtherLock && (
-                    <div className="flex items-center gap-1.5 self-start px-2.5 py-1 rounded-lg w-fit text-xs font-semibold text-[var(--color-other-lock)] border border-[color-mix(in_srgb,var(--color-other-lock)_40%,transparent)] bg-[color-mix(in_srgb,var(--color-other-lock)_10%,transparent)]">
-                      <Lock size={11} />
-                      <span>In use by {lock.locked_by_name}</span>
-                      <span className="opacity-50">·</span>
-                      <span className="opacity-70">
-                        {new Date(lock.locked_at).toLocaleTimeString([], {
-                          hour: "2-digit",
-                          minute: "2-digit",
-                        })}
-                      </span>
-                      {isAdmin && (
-                        <>
-                          <span className="opacity-65 mx-0.5">|</span>
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              forceReleaseLock(mt.id, lock.locked_by_name);
-                            }}
-                            className="flex items-center gap-1 text-[11px] font-bold rounded-md px-1.5 py-0.5 transition-colors text-[var(--color-fail)] bg-[color-mix(in_srgb,var(--color-fail)_10%,transparent)] border border-[color-mix(in_srgb,var(--color-fail)_30%,transparent)]"
-                          >
-                            <Unlock size={10} />
-                            Release
-                          </button>
-                        </>
-                      )}
-                    </div>
-                  )}
-
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="flex items-center gap-2 flex-wrap min-w-0">
-                      {/* Serial No */}
-                      <span
-                        className="font-mono text-xs font-bold shrink-0"
-                        style={{
-                          color: isMyLock
-                            ? "var(--color-my-lock)"
-                            : "var(--color-brand)",
-                        }}
-                      >
-                        {mt.test?.serial_no}
-                      </span>
-
-                      {/* Active Revision badge */}
-                      {activeRev && (
-                        <span
-                          className="font-mono text-[10px] font-bold px-1.5 py-0.5 rounded shrink-0"
-                          style={{
-                            color: "var(--color-warn)",
-                            background: "color-mix(in srgb, var(--color-warn) 10%, transparent)",
-                            border: "1px solid color-mix(in srgb, var(--color-warn) 35%, transparent)",
-                          }}
-                        >
-                          {activeRev.revision}
-                        </span>
-                      )}
-
-                      {/* ✅ Completed badge — now driven by mt.is_visible */}
-                      {isCompleted && (
-                        <span
-                          className="font-mono text-[10px] font-bold px-1.5 py-0.5 rounded shrink-0"
-                          style={{
-                            color: "var(--color-pass)",
-                            background: "color-mix(in srgb, var(--color-pass) 10%, transparent)",
-                            border: "1px solid color-mix(in srgb, var(--color-pass) 35%, transparent)",
-                          }}
-                        >
-                          completed
-                        </span>
-                      )}
-
-                      <h3 className="font-semibold text-t-primary text-sm truncate">
-                        {mt.test?.name ?? mt.tests_name ?? "Unnamed Test"}
-                      </h3>
-                    </div>
-
-                    <div className="flex items-center gap-1.5 shrink-0">
-                      <button
-                        onClick={() => onViewReport(mt.id)}
-                        disabled={isOtherLock}
-                        className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-colors bg-bg-card hover:bg-bg-surface border border-(--border-color) text-t-secondary hover:text-t-primary disabled:opacity-30 disabled:cursor-not-allowed"
-                      >
-                        <ChevronRight size={12} />
-                        Report
-                      </button>
-
-                      {/* ✅ Button logic now uses isCompleted (mt.is_visible) */}
-                      {isCompleted ? (
-                        <button
-                          onClick={() => onExecute(mt.id)}
-                          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors bg-c-brand hover:bg-c-brand-hover text-(--bg-surface)"
-                        >
-                          <Eye size={12} />
-                          View
-                        </button>
-                      ) : isMyLock ? (
-                        <button
-                          onClick={() => onExecute(mt.id)}
-                          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all text-black"
-                          style={{
-                            background: "var(--color-my-lock)",
-                            boxShadow: "0 0 14px 3px rgba(var(--neon-cyan), 0.40)",
-                          }}
-                          onMouseEnter={(e) => {
-                            e.currentTarget.style.boxShadow =
-                              "0 0 20px 5px rgba(var(--neon-cyan), 0.55)";
-                          }}
-                          onMouseLeave={(e) => {
-                            e.currentTarget.style.boxShadow =
-                              "0 0 14px 3px rgba(var(--neon-cyan), 0.40)";
-                          }}
-                        >
-                          <RotateCcw size={12} />
-                          Resume
-                        </button>
-                      ) : (
-                        <button
-                          onClick={() => onExecute(mt.id)}
-                          disabled={isOtherLock}
-                          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors bg-c-brand hover:bg-c-brand-hover text-(--bg-surface) disabled:opacity-30 disabled:cursor-not-allowed"
-                        >
-                          <Play size={12} />
-                          Execute
-                        </button>
-                      )}
-                    </div>
-                  </div>
-
-                  <div className="flex items-center gap-3 flex-wrap text-xs">
-                    <span className="badge-pass">
-                      <span className="w-1.5 h-1.5 rounded-full inline-block mr-1" style={{ background: "var(--color-pass)" }} />
-                      {pass} Pass
-                    </span>
-                    <span className="badge-fail">
-                      <span className="w-1.5 h-1.5 rounded-full inline-block mr-1" style={{ background: "var(--color-fail)" }} />
-                      {fail} Fail
-                    </span>
-                    <span className="flex items-center gap-1 font-semibold text-t-muted bg-bg-card border border-(--border-color) rounded-full px-2.5 py-0.5">
-                      <span className="w-1.5 h-1.5 rounded-full inline-block" style={{ background: "var(--text-muted)" }} />
-                      {pending} Pending
-                    </span>
-                  </div>
-
-                  <div>
-                    <div className="flex justify-between text-xs text-t-muted mb-1">
-                      <span>Progress</span>
-                      <span
-                        className="font-semibold"
-                        style={{
-                          color:
-                            passRate === 100
-                              ? "var(--color-pass)"
-                              : failPct === 100
-                              ? "var(--color-fail)"
-                              : undefined,
-                        }}
-                      >
-                        {total > 0 ? `${passRate}%` : "—"}
-                      </span>
-                    </div>
-                    <div className="h-1.5 w-full rounded-full overflow-hidden flex">
-                      {passRate > 0 && (
-                        <div
-                          className="h-full transition-all duration-700"
-                          style={{ width: `${passRate}%`, background: "var(--color-pass)" }}
-                        />
-                      )}
-                      {failPct > 0 && (
-                        <div
-                          className="h-full transition-all duration-700"
-                          style={{ width: `${failPct}%`, background: "var(--color-fail)" }}
-                        />
-                      )}
-                      {pendingPct > 0 && (
-                        <div
-                          className="h-full transition-all duration-700"
-                          style={{ width: `${pendingPct}%`, background: "var(--color-pend)", opacity: 0.3 }}
-                        />
-                      )}
-                    </div>
-                  </div>
-                </div>
+                <TestCard
+                  mt={mt}
+                  lock={lock}
+                  isMyLock={isMyLock}
+                  isOtherLock={isOtherLock}
+                  isCompleted={isCompleted}
+                  activeRev={activeRev}
+                  isAdmin={isAdmin}
+                  refreshing={refreshing}
+                  onExecute={onExecute}
+                  onViewReport={onViewReport}
+                  onForceRelease={forceReleaseLock}
+                />
               </StaggerRow>
             );
           })}
