@@ -318,13 +318,15 @@ const ModuleDashboard: React.FC<Props> = ({
               <RefreshCw size={13} className={refreshing ? "animate-spin" : ""} />
               {refreshing ? "Refreshing…" : "Refresh"}
             </button>
-            <button
-              onClick={() => setShowExport(true)}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg bg-bg-card hover:bg-bg-surface border border-(--border-color) text-t-primary transition"
-            >
-              <Upload size={13} />
-              Export
-            </button>
+            {isAdmin && (
+              <button
+                onClick={() => setShowExport(true)}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg bg-bg-card hover:bg-bg-surface border border-(--border-color) text-t-primary transition"
+              >
+                <Upload size={13} />
+                Export
+              </button>
+            )}
           </div>
         }
       />

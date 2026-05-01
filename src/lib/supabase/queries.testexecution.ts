@@ -1,29 +1,119 @@
 /**
- * queries.testexecution.ts
+ * queries.testexecution.ts  (RPC rewrite — mirrors queries.moduledashboard.ts)
  *
- * Two-phase loading strategy (single test):
+ * Two round-trips, no streaming, no phases:
  *
- *  Phase 1 — fetchTestExecutionShell(module_test_id)
- *    Fetches module_test metadata + active revisions + all module_tests
- *    + step definitions (test_steps).
- *    Returns a shell with step_results pre-populated as "pending" so the
- *    full step list renders immediately without waiting for the DB.
+ *  Round 1 (parallel):
+ *    a. supabase.rpc("get_test_execution", { p_module_test_id, p_module_name })
+ *       Joins test_steps ⋈ step_results in Postgres.
+ *       Returns one row per step — ordered by step_order — with metadata scalars
+ *       (is_visible, revision_id, revision_label, revision_serial_no) duplicated
+ *       on every row so the caller reads them once from row[0].
+ *    b. module_tests  (sidebar list — uses module_name prop already on hand)
+ *    c. test_locks    (lock check for this module_test_id)
  *
- *  Phase 2 — streamTestStepResults(shell, onBatch, signal?, token?)
- *    Streams real step_result rows in parallel waves:
- *    500 step IDs per request, up to 100 concurrent per wave.
- *    onBatch() fires after each wave with fully updated RawStepResult[].
- *    Accepts a cancellation token so superseded fetches abort cleanly.
+ *  Round 2 (after round 1 resolves):
+ *    d. test_revisions (active, for other tests' revision badges in the nav)
+ *       Needs serialNos extracted from module_tests result — unavoidable.
  *
- * FIXES (5k step support):
- *  - fetchTestExecutionShell: step definitions now batched (500/req) so
- *    .in("id", [...5000 ids]) never blows the URL size limit.
- *  - streamTestStepResults: abortSignal(signal!) replaced with a safe guard
- *    so undefined is never passed to the Supabase client.
- *  - fetchSignedUrls: always uses createSignedUrls (batch) instead of the
- *    per-path createSignedUrl loop that fired thousands of HTTP requests.
- *  - fetchTestExecution (legacy): step-def fetch is now batched too.
+ * ─── SQL to deploy in Supabase SQL editor ────────────────────────────────────
+ *
+ *  create or replace function get_test_execution(
+ *    p_module_test_id text,
+ *    p_module_name    text
+ *  )
+ *  returns table (
+ *    step_id              text,
+ *    ord_idx              bigint,
+ *    serial_no            integer,
+ *    is_divider           boolean,
+ *    action               text,
+ *    expected_result      text,
+ *    action_image_urls    text[],
+ *    expected_image_urls  text[],
+ *    tests_serial_no      text,
+ *    result_id            text,
+ *    status               text,
+ *    remarks              text,
+ *    display_name         text,
+ *    -- scalar metadata: same on every row, read once from rows[0]
+ *    is_visible           boolean,
+ *    revision_id          text,
+ *    revision_label       text,
+ *    revision_serial_no   text
+ *  )
+ *  language sql stable security definer
+ *  as $$
+ *    with
+ *    mt as (
+ *      select is_visible, tests_name
+ *      from   module_tests
+ *      where  id = p_module_test_id
+ *      limit  1
+ *    ),
+ *    sno as (
+ *      select serial_no as tests_serial_no
+ *      from   tests
+ *      where  name = (select tests_name from mt)
+ *      limit  1
+ *    ),
+ *    active_rev as (
+ *      select id, revision, tests_serial_no, step_order
+ *      from   test_revisions
+ *      where  tests_serial_no = (select tests_serial_no from sno)
+ *        and  status = 'active'
+ *      limit  1
+ *    ),
+ *    fallback_order as (
+ *      -- Used when there is no active revision (edge case)
+ *      select array_agg(id order by serial_no) as step_order
+ *      from   test_steps
+ *      where  tests_serial_no = (select tests_serial_no from sno)
+ *        and  not exists (select 1 from active_rev)
+ *    ),
+ *    effective_order as (
+ *      select coalesce(
+ *        (select step_order from active_rev),
+ *        (select step_order from fallback_order)
+ *      ) as step_order
+ *    )
+ *    select
+ *      s.id                                         as step_id,
+ *      ord.idx                                      as ord_idx,
+ *      s.serial_no,
+ *      s.is_divider,
+ *      s.action,
+ *      s.expected_result,
+ *      s.action_image_urls,
+ *      s.expected_image_urls,
+ *      s.tests_serial_no,
+ *      coalesce(sr.id,            '')               as result_id,
+ *      coalesce(sr.status,        'pending')        as status,
+ *      coalesce(sr.remarks,       '')               as remarks,
+ *      coalesce(sr.display_name,  '')               as display_name,
+ *      (select is_visible         from mt)          as is_visible,
+ *      (select id                 from active_rev)  as revision_id,
+ *      (select revision           from active_rev)  as revision_label,
+ *      (select tests_serial_no    from active_rev)  as revision_serial_no
+ *    from   unnest((select step_order from effective_order))
+ *             with ordinality as ord(sid, idx)
+ *    join   test_steps s   on s.id = ord.sid
+ *    left   join step_results sr
+ *               on  sr.test_steps_id = s.id
+ *               and sr.module_name   = p_module_name
+ *    order  by ord.idx;
+ *  $$;
+ *
+ *  -- Recommended indexes (if not already present):
+ *  create index if not exists idx_step_results_module_step
+ *    on step_results (module_name, test_steps_id);
+ *
+ *  create index if not exists idx_test_revisions_serial_active
+ *    on test_revisions (tests_serial_no, status);
+ *
+ * ─────────────────────────────────────────────────────────────────────────────
  */
+
 import { supabase } from "../../supabase";
 
 
@@ -61,372 +151,174 @@ export interface ActiveRevision {
   tests_serial_no: string;
 }
 
-/**
- * Result of Phase 1. Pass the whole object to streamTestStepResults().
- * _internal fields are opaque — do not read them outside this module.
- */
-export interface TestExecutionShell {
-  module_name: string;
-  is_visible: boolean;
-  current_revision: ActiveRevision | null;
-  active_revisions: Record<string, ActiveRevision>;
-  module_tests: RawModuleTestItem[];
-  /**
-   * Step results pre-ordered to match the active revision's step_order (or
-   * serial_no order for the fallback path). Status is "pending" for every row
-   * until Phase 2 fills in real values.
-   */
-  step_results: RawStepResult[];
-
-  /** @internal Ordered step IDs (from step_order or serial_no sort). */
-  _orderedStepIds: string[];
-  /** @internal Step definitions keyed by step ID. */
-  _stepsById: Record<string, RawStepDef>;
-}
-
-/** Legacy return type kept for callers that still use fetchTestExecution directly. */
 export interface TestExecutionData {
   module_name: string;
-  step_results: RawStepResult[];
-  module_tests: RawModuleTestItem[];
-  active_revisions: Record<string, ActiveRevision>;
-  current_revision: ActiveRevision | null;
   is_visible: boolean;
+  current_revision: ActiveRevision | null;
+  active_revisions: Record<string, ActiveRevision>;
+  module_tests: RawModuleTestItem[];
+  step_results: RawStepResult[];
 }
 
-/** Lightweight cancellation token. */
+/** Lightweight cancellation token (kept for any callers still using it). */
 export interface StreamCancellationToken {
   cancelled: boolean;
 }
 
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Internal types & constants
+// Internal — shape returned by the RPC
 // ─────────────────────────────────────────────────────────────────────────────
 
-interface RawStepDef {
-  id: string;
-  serial_no: number;
-  action: string;
-  expected_result: string;
-  is_divider: boolean;
-  action_image_urls: string[];
-  expected_image_urls: string[];
-  tests_serial_no: string;
+interface RpcStepRow {
+  step_id:             string;
+  ord_idx:             number;
+  serial_no:           number;
+  is_divider:          boolean;
+  action:              string;
+  expected_result:     string;
+  action_image_urls:   string[] | null;
+  expected_image_urls: string[] | null;
+  tests_serial_no:     string;
+  result_id:           string;
+  status:              string;
+  remarks:             string;
+  display_name:        string;
+  // scalar metadata — same on every row
+  is_visible:          boolean;
+  revision_id:         string | null;
+  revision_label:      string | null;
+  revision_serial_no:  string | null;
 }
-
-interface RawSrRow {
-  id: string;
-  status: "pass" | "fail" | "pending";
-  remarks: string;
-  display_name: string;
-  test_steps_id: string;
-}
-
-/** Step IDs per Supabase request — keeps URL well under limits at any scale. */
-const BATCH_SIZE = 500;
-/** Max concurrent requests per wave. onBatch() fires once per wave. */
-const WAVE_SIZE  = 100;
-
-const STEP_SELECT =
-  "id, serial_no, action, expected_result, is_divider, action_image_urls, expected_image_urls, tests_serial_no";
-
-const SR_SELECT = "id, status, remarks, display_name, test_steps_id";
 
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Internal utilities
+// fetchTestExecutionData  — main entry point (RPC-based)
 // ─────────────────────────────────────────────────────────────────────────────
-
-function chunkArray<T>(arr: T[], size: number): T[][] {
-  const out: T[][] = [];
-  for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
-  return out;
-}
-
-function buildPendingResult(step: RawStepDef): RawStepResult {
-  return {
-    id:           "",
-    status:       "pending",
-    remarks:      "",
-    display_name: "",
-    step: {
-      id:                  step.id,
-      serial_no:           step.serial_no,
-      action:              step.action,
-      expected_result:     step.expected_result,
-      is_divider:          step.is_divider,
-      action_image_urls:   step.action_image_urls,
-      expected_image_urls: step.expected_image_urls,
-      tests_serial_no:     step.tests_serial_no,
-    },
-  };
-}
-  function applyStatuses(
-    orderedStepIds: string[],
-    stepsById:      Record<string, RawStepDef>,
-    srMap:          Map<string, RawSrRow>
-  ): RawStepResult[] {
-    const results: (RawStepResult | null)[] = orderedStepIds.map((stepId) => {
-      const step = stepsById[stepId];
-      if (!step) return null;
-      const sr = srMap.get(stepId);
-      return {
-        id:           sr?.id           ?? "",
-        status:       (sr?.status      ?? "pending") as "pass" | "fail" | "pending",
-        remarks:      sr?.remarks      ?? "",
-        display_name: sr?.display_name ?? "",
-        step: {
-          id:                  step.id,
-          serial_no:           step.serial_no,
-          action:              step.action,
-          expected_result:     step.expected_result,
-          is_divider:          step.is_divider,
-          action_image_urls:   step.action_image_urls,
-          expected_image_urls: step.expected_image_urls,
-          tests_serial_no:     step.tests_serial_no,
-        },
-      };
-    });
-  
-    // ✅ TypeScript now correctly narrows: (RawStepResult | null)[] → RawStepResult[]
-    return results.filter((r): r is RawStepResult => r !== null);
-  }
 
 /**
- * Fetches step definitions in batches of BATCH_SIZE.
- * Replaces single .in("id", allIds) calls that blow the URL limit at ~2k+ IDs.
+ * Fetches all data needed to render TestExecution in two round-trips.
+ *
+ * Round 1 (parallel):
+ *   - RPC get_test_execution — step defs + results joined in Postgres
+ *   - module_tests for the whole module (sidebar)
+ *   - test_locks for this module_test_id
+ *
+ * Round 2 (sequential, needs serialNos from round 1):
+ *   - test_revisions active (for revision badges on nav items)
  */
-async function fetchStepDefsBatched(
-  ids: string[]
-): Promise<Record<string, RawStepDef>> {
-  if (!ids.length) return {};
+export async function fetchTestExecutionData(
+  module_test_id: string,
+  module_name: string
+): Promise<TestExecutionData> {
 
-  const batches = chunkArray(ids, BATCH_SIZE);
-  const results = await Promise.all(
-    batches.map((batch) =>
-      supabase.from("test_steps").select(STEP_SELECT).in("id", batch)
-    )
-  );
-
-  const stepsById: Record<string, RawStepDef> = {};
-  for (const { data, error } of results) {
-    if (error) throw new Error(error.message);
-    for (const s of (data ?? []) as any[]) {
-      stepsById[s.id] = s as RawStepDef;
-    }
-  }
-  return stepsById;
-}
-
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Phase 1 — fetchTestExecutionShell
-// Fast: everything except real step_result statuses.
-// step_results is returned with status "pending" so the UI renders at once.
-// ─────────────────────────────────────────────────────────────────────────────
-
-export async function fetchTestExecutionShell(
-  module_test_id: string
-): Promise<TestExecutionShell> {
-
-  // ── 1. module_test row ───────────────────────────────────────────────────
-  const { data: mtData, error: mtErr } = await supabase
-    .from("module_tests")
-    .select("module_name, tests_name, is_visible, test:tests!module_tests_tests_name_fkey(serial_no, name)")
-    .eq("id", module_test_id)
-    .single();
-  if (mtErr) throw mtErr;
-
-  const module_name:     string  = (mtData as any)?.module_name ?? "";
-  const currentSerialNo: string  = (mtData as any)?.test?.serial_no ?? "";
-  const is_visible:      boolean = (mtData as any)?.is_visible ?? true;
-
-  // ── 2. All module_tests (parallel-safe, no .in() needed) ─────────────────
-  const [allMtRes] = await Promise.all([
+  // ── Round 1: parallel ──────────────────────────────────────────────────────
+  const [stepsRes, allMtRes] = await Promise.all([
+    supabase.rpc("get_test_execution", {
+      p_module_test_id: module_test_id,
+      p_module_name:    module_name,
+    }),
     supabase
       .from("module_tests")
       .select("id, tests_name, is_visible, test:tests!module_tests_tests_name_fkey(serial_no, name)")
       .eq("module_name", module_name)
       .order("tests_name"),
   ]);
-  if (allMtRes.error) throw allMtRes.error;
 
-  const allMts = (allMtRes.data ?? []) as unknown as RawModuleTestItem[];
-  const serialNos: string[] = allMts
+  if (stepsRes.error) throw new Error(stepsRes.error.message);
+  if (allMtRes.error)  throw new Error(allMtRes.error.message);
+
+  const rows    = (stepsRes.data ?? []) as RpcStepRow[];
+  const first   = rows[0] ?? null;
+
+  // ── Extract metadata from row[0] scalars ───────────────────────────────────
+  const is_visible: boolean = first?.is_visible ?? true;
+
+  const current_revision: ActiveRevision | null =
+    first?.revision_id
+      ? {
+          id:              first.revision_id,
+          revision:        first.revision_label  ?? "",
+          tests_serial_no: first.revision_serial_no ?? "",
+        }
+      : null;
+
+  // ── Build RawStepResult[] (ordered — RPC already sorted by ord_idx) ────────
+  const step_results: RawStepResult[] = rows.map((r) => ({
+    id:           r.result_id,
+    status:       r.status as "pass" | "fail" | "pending",
+    remarks:      r.remarks,
+    display_name: r.display_name,
+    step: {
+      id:                  r.step_id,
+      serial_no:           r.serial_no,
+      action:              r.action,
+      expected_result:     r.expected_result,
+      is_divider:          r.is_divider,
+      action_image_urls:   r.action_image_urls   ?? [],
+      expected_image_urls: r.expected_image_urls ?? [],
+      tests_serial_no:     r.tests_serial_no,
+    },
+  }));
+
+  // ── module_tests & serialNos ───────────────────────────────────────────────
+  const module_tests = (allMtRes.data ?? []) as unknown as RawModuleTestItem[];
+  const serialNos: string[] = module_tests
     .map((mt) => (mt as any).test?.serial_no as string | undefined)
     .filter((s): s is string => !!s);
 
-  // ── 3. Active revisions ──────────────────────────────────────────────────
-  const activeRevisions: Record<string, ActiveRevision> = {};
-  let stepOrder: string[] | null = null;
+  // ── Round 2: active revisions for all tests (nav badges) ──────────────────
+  const active_revisions: Record<string, ActiveRevision> = {};
+
+  if (current_revision) {
+    // Seed with the current test's revision already in hand — avoids refetch
+    active_revisions[current_revision.tests_serial_no] = current_revision;
+  }
 
   if (serialNos.length > 0) {
-    const { data: revData, error: revErr } = await supabase
+    const { data: revData } = await supabase
       .from("test_revisions")
-      .select("id, revision, tests_serial_no, step_order")
+      .select("id, revision, tests_serial_no")
       .eq("status", "active")
       .in("tests_serial_no", serialNos);
-    if (revErr) throw revErr;
 
-    ((revData ?? []) as any[]).forEach((r) => {
-      activeRevisions[r.tests_serial_no] = {
+    for (const r of (revData ?? []) as any[]) {
+      active_revisions[r.tests_serial_no] = {
         id:              r.id,
         revision:        r.revision,
         tests_serial_no: r.tests_serial_no,
       };
-      if (
-        r.tests_serial_no === currentSerialNo &&
-        Array.isArray(r.step_order) &&
-        r.step_order.length > 0
-      ) {
-        stepOrder = r.step_order as string[];
-      }
-    });
+    }
   }
-
-  const current_revision  = activeRevisions[currentSerialNo] ?? null;
-  const resolvedStepOrder = stepOrder as string[] | null;
-
-  // ── 4. Fetch step definitions (BATCHED — safe at any step count) ──────────
-  let orderedStepIds: string[] = [];
-  let stepsById: Record<string, RawStepDef> = {};
-
-  if (resolvedStepOrder !== null && resolvedStepOrder.length > 0) {
-    // Revision path — IDs come from step_order; batch-fetch definitions.
-    // A single .in("id", 5000ids) produces a ~180 KB URL and hard-fails;
-    // batching at 500 keeps every request well under limits.
-    orderedStepIds = resolvedStepOrder;
-    stepsById = await fetchStepDefsBatched(orderedStepIds);
-
-  } else if (currentSerialNo) {
-    // Fallback path — ordered by serial_no. No .in() needed; always safe.
-    const { data: stepsData, error: stepsErr } = await supabase
-      .from("test_steps")
-      .select(STEP_SELECT)
-      .eq("tests_serial_no", currentSerialNo)
-      .order("serial_no");
-    if (stepsErr) throw stepsErr;
-
-    orderedStepIds = ((stepsData ?? []) as any[]).map((s) => s.id as string);
-    ((stepsData ?? []) as any[]).forEach((s) => { stepsById[s.id] = s as RawStepDef; });
-  }
-
-  // Build pending results so the full step list renders immediately
-  const step_results: RawStepResult[] = orderedStepIds
-    .map((id) => stepsById[id] ? buildPendingResult(stepsById[id]) : null)
-    .filter((r): r is RawStepResult => r !== null);
 
   return {
     module_name,
     is_visible,
     current_revision,
-    active_revisions:  activeRevisions,
-    module_tests:      allMts,
+    active_revisions,
+    module_tests,
     step_results,
-    _orderedStepIds:   orderedStepIds,
-    _stepsById:        stepsById,
   };
 }
 
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Phase 2 — streamTestStepResults
-// 500 step IDs per request, up to 100 concurrent per wave.
-// onBatch() fires after each wave with a fully rebuilt RawStepResult[].
+// fetchTestExecution  (legacy alias — kept for backward compat)
+// Only passes module_name=""; callers that need accuracy should switch to
+// fetchTestExecutionData(id, module_name).
 // ─────────────────────────────────────────────────────────────────────────────
 
-export async function streamTestStepResults(
-  shell:   TestExecutionShell,
-  onBatch: (updatedResults: RawStepResult[]) => void,
-  signal?: AbortSignal,
-  token?:  StreamCancellationToken
-): Promise<void> {
-  if (shell._orderedStepIds.length === 0) return;
-
-  const srMap       = new Map<string, RawSrRow>();
-  const isCancelled = () => token?.cancelled || signal?.aborted;
-  const batches     = chunkArray(shell._orderedStepIds, BATCH_SIZE);
-
-  for (let i = 0; i < batches.length; i += WAVE_SIZE) {
-    if (isCancelled()) return;
-
-    const wave = batches.slice(i, i + WAVE_SIZE);
-
-    const results = await Promise.all(
-      wave.map((batch) => {
-        // FIX: abortSignal(signal!) was passing undefined at runtime → TypeError.
-        // Only attach the signal when it is actually defined.
-        const q = supabase
-          .from("step_results")
-          .select(SR_SELECT)
-          .eq("module_name", shell.module_name)
-          .in("test_steps_id", batch);
-        return signal ? q.abortSignal(signal) : q;
-      })
-    );
-
-    if (isCancelled()) return;
-
-    for (const { data, error } of results) {
-      if (error) {
-        if (error.message?.includes("AbortError") || signal?.aborted) return;
-        throw new Error(error.message);
-      }
-      for (const row of (data ?? []) as RawSrRow[]) {
-        srMap.set(row.test_steps_id, row);
-      }
-    }
-
-    // Rebuild full ordered list — statuses fill in progressively wave by wave.
-    onBatch(applyStatuses(shell._orderedStepIds, shell._stepsById, srMap));
-  }
-}
-
-
-// ─────────────────────────────────────────────────────────────────────────────
-// fetchTestExecution  (legacy one-shot — kept for backward compat)
-// ─────────────────────────────────────────────────────────────────────────────
-
+/** @deprecated Use fetchTestExecutionData(module_test_id, module_name) instead. */
 export async function fetchTestExecution(
-  module_test_id: string
+  module_test_id: string,
+  module_name = ""
 ): Promise<TestExecutionData> {
-  const shell = await fetchTestExecutionShell(module_test_id);
-  const srMap = new Map<string, RawSrRow>();
-
-  if (shell._orderedStepIds.length > 0) {
-    // FIX: was a single .in("id", allIds) — now batched via same BATCH_SIZE.
-    const batches = chunkArray(shell._orderedStepIds, BATCH_SIZE);
-    const allResults = await Promise.all(
-      batches.map((batch) =>
-        supabase
-          .from("step_results")
-          .select(SR_SELECT)
-          .eq("module_name", shell.module_name)
-          .in("test_steps_id", batch)
-      )
-    );
-    for (const { data, error } of allResults) {
-      if (error) throw new Error(error.message);
-      for (const row of (data ?? []) as RawSrRow[]) {
-        srMap.set(row.test_steps_id, row);
-      }
-    }
-  }
-
-  return {
-    module_name:      shell.module_name,
-    step_results:     applyStatuses(shell._orderedStepIds, shell._stepsById, srMap),
-    module_tests:     shell.module_tests,
-    active_revisions: shell.active_revisions,
-    current_revision: shell.current_revision,
-    is_visible:       shell.is_visible,
-  };
+  return fetchTestExecutionData(module_test_id, module_name);
 }
 
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Lock management
+// Lock management  (unchanged)
 // ─────────────────────────────────────────────────────────────────────────────
 
 export async function acquireLock(
@@ -498,10 +390,6 @@ export async function forceReleaseLock(module_test_id: string): Promise<void> {
   if (error) console.error("[forceReleaseLock]", error.message);
 }
 
-/**
- * Refreshes locked_at timestamp to keep the lock alive.
- * Call every ~15 s while the user is in execution.
- */
 export async function heartbeatLock(
   module_test_id: string,
   user_id:        string
@@ -516,8 +404,16 @@ export async function heartbeatLock(
 
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Step results
+// Step results  (unchanged)
 // ─────────────────────────────────────────────────────────────────────────────
+
+const BATCH_SIZE = 500;
+
+function chunkArray<T>(arr: T[], size: number): T[][] {
+  const out: T[][] = [];
+  for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
+  return out;
+}
 
 export async function upsertStepResult(payload: {
   test_steps_id: string;
@@ -538,18 +434,11 @@ export async function upsertStepResult(payload: {
   if (error) throw error;
 }
 
-/**
- * Resets all step results for a specific test within a module.
- * Accepts the step_result row IDs directly (already scoped by the caller).
- * Empty-string IDs (steps not yet persisted) are filtered out before the query.
- */
 export async function resetAllStepResults(
   module_name:   string,
   stepResultIds: string[],
   display_name:  string
 ): Promise<void> {
-  // Filter out empty IDs — Phase 1 pending rows have id: "" and would cause
-  // .in("id", ["",...]) to match nothing or error.
   const validIds = stepResultIds.filter(Boolean);
   if (!validIds.length) return;
 
@@ -569,10 +458,7 @@ export async function resetAllStepResults(
 
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Signed image URLs
-// FIX: was calling createSignedUrl (singular) in a Promise.all loop —
-// 5k steps with images = up to 5k HTTP requests.
-// Now uses createSignedUrls (batch API), 500 paths per request.
+// Signed image URLs  (batch API, unchanged)
 // ─────────────────────────────────────────────────────────────────────────────
 
 export async function fetchSignedUrls(
