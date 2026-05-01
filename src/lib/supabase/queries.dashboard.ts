@@ -67,6 +67,16 @@ function parseStepKey(stepKey: string): { tests_serial_no: string; is_divider: b
 }
 
 
+// ── Chunk helper ─────────────────────────────────────────────────────────────
+function chunk<T>(arr: T[], size: number): T[][] {
+  const out: T[][] = [];
+  for (let i = 0; i < arr.length; i += size) {
+    out.push(arr.slice(i, i + size));
+  }
+  return out;
+}
+
+
 // ─────────────────────────────────────────────────────────────────────────────
 // fetchDashboardModules
 // ─────────────────────────────────────────────────────────────────────────────
@@ -150,21 +160,29 @@ export async function fetchDashboardModules(): Promise<DashboardModule[]> {
   );
 
 
-  // ── 5. Fetch step_results ─────────────────────────────────────────────────
+  // ── 5. Fetch step_results — ALL IN PARALLEL ──────────────────────────────
   const statusByModuleStep = new Map<string, string>();
   const metaByStepId = new Map<string, { is_divider: boolean; tests_serial_no: string }>();
 
-  const srPromises: PromiseLike<any>[] = [];
+  const BATCH = 100;
 
+  // Build all promises upfront, fire them in parallel
+  const allPromises: Promise<any>[] = [];
+
+  // 5a. Active revision path: chunk step IDs, parallel fetch
   if (allStepIds.length > 0) {
-    srPromises.push(
-      supabase
-        .from("step_results")
-        .select("status, test_steps_id, module_name")
-        .in("test_steps_id", allStepIds)
-    );
+    const stepBatches = chunk(allStepIds, BATCH);
+    for (const batch of stepBatches) {
+      allPromises.push(
+        supabase
+          .from("step_results")
+          .select("status, test_steps_id, module_name")
+          .in("test_steps_id", batch)
+      );
+    }
   }
 
+  // 5b. Legacy path (no active revision): chunk serial nos, parallel fetch
   if (serialNosWithoutRevision.size > 0) {
     const legacyModuleNames = new Set<string>();
     for (const mod of modulesData) {
@@ -176,24 +194,35 @@ export async function fetchDashboardModules(): Promise<DashboardModule[]> {
       }
     }
 
-    srPromises.push(
-      supabase
-        .from("step_results")
-        .select(`
-          status,
-          test_steps_id,
-          module_name,
-          step:test_steps!step_results_test_steps_id_fkey(
-            is_divider,
-            tests_serial_no
-          )
-        `)
-        .in("step.tests_serial_no", Array.from(serialNosWithoutRevision))
-        .in("module_name", Array.from(legacyModuleNames))
-    );
+    const legacySerialBatches = chunk(Array.from(serialNosWithoutRevision), BATCH);
+    const legacyModuleBatches = chunk(Array.from(legacyModuleNames), BATCH);
+
+    // Cartesian product of batches — each combo is one parallel query
+    for (const serialBatch of legacySerialBatches) {
+      for (const moduleBatch of legacyModuleBatches) {
+        allPromises.push(
+          supabase
+            .from("step_results")
+            .select(`
+              status,
+              test_steps_id,
+              module_name,
+              step:test_steps!step_results_test_steps_id_fkey(
+                is_divider,
+                tests_serial_no
+              )
+            `)
+            .in("step.tests_serial_no", serialBatch)
+            .in("module_name", moduleBatch)
+        );
+      }
+    }
   }
 
-  const srResponses = await Promise.all(srPromises);
+  // 🔥 Fire ALL requests in parallel
+  const srResponses = await Promise.all(allPromises);
+
+  // Check errors after all settle
   for (const res of srResponses) {
     if (res.error) throw new Error(res.error.message);
   }
@@ -294,12 +323,22 @@ export async function fetchActiveLocks(): Promise<ActiveLock[]> {
 
   const module_test_ids = locks.map((l: any) => l.module_test_id);
 
-  const { data: module_tests, error: mtErr } = await supabase
-    .from("module_tests")
-    .select("id, module_name, tests_name")
-    .in("id", module_test_ids);
+  // ── CHUNKED + PARALLEL fetch for module_tests ──
+  const BATCH = 100;
+  const batches = chunk(module_test_ids, BATCH);
+  const mtPromises = batches.map(batch =>
+    supabase
+      .from("module_tests")
+      .select("id, module_name, tests_name")
+      .in("id", batch)
+  );
 
-  if (mtErr || !module_tests) return [];
+  const mtResponses = await Promise.all(mtPromises);
+  for (const res of mtResponses) {
+    if (res.error) throw new Error(res.error.message);
+  }
+
+  const module_tests = mtResponses.flatMap((r) => (r.data ?? []) as any[]);
 
   const mtMap = Object.fromEntries(module_tests.map((mt: any) => [mt.id, mt]));
 
@@ -335,12 +374,22 @@ export async function fetchOtherActiveLockModules(): Promise<Map<string, number>
 
   const module_test_ids = otherLocks.map((l: any) => l.module_test_id);
 
-  const { data: module_tests, error: mtErr } = await supabase
-    .from("module_tests")
-    .select("id, module_name")
-    .in("id", module_test_ids);
+  // ── CHUNKED + PARALLEL fetch for module_tests ──
+  const BATCH = 100;
+  const batches = chunk(module_test_ids, BATCH);
+  const mtPromises = batches.map(batch =>
+    supabase
+      .from("module_tests")
+      .select("id, module_name")
+      .in("id", batch)
+  );
 
-  if (mtErr || !module_tests) return new Map();
+  const mtResponses = await Promise.all(mtPromises);
+  for (const res of mtResponses) {
+    if (res.error) throw new Error(res.error.message);
+  }
+
+  const module_tests = mtResponses.flatMap((r) => (r.data ?? []) as any[]);
 
   const idToModule = Object.fromEntries(
     module_tests.map((mt: any) => [mt.id, mt.module_name])
