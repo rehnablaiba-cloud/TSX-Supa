@@ -19,6 +19,9 @@ import {
   FileDown,
   FileSpreadsheet,
   Lock,
+  Activity,
+  ChevronDown,
+  ChevronUp,
 } from "lucide-react";
 import {
   exportDashboardCSV,
@@ -35,7 +38,7 @@ import {
   fetchActiveLocks,
   fetchOtherActiveLockModules,
 } from "../../lib/supabase/queries.dashboard";
-import type { DashboardModule } from "../../lib/supabase/queries.dashboard";
+import type { DashboardModule, FetchProgressCallback } from "../../lib/supabase/queries.dashboard";
 import RBarChart from "../ModuleDashboard/charts/RBarChart";
 import RPieChart from "../ModuleDashboard/charts/RPieChart";
 import RAreaChart from "../ModuleDashboard/charts/RAreaChart";
@@ -63,6 +66,13 @@ const ANIM_STYLE = `
       0 0 22px 6px rgba(var(--neon-cyan),0.32), 0 0 32px 10px rgba(var(--neon-amber),0.25);
   }
 }
+@keyframes qmSpinner {
+  to { transform: rotate(360deg); }
+}
+@keyframes qmPulse {
+  0%,100% { opacity: 1; }
+  50%      { opacity: 0.45; }
+}
 `;
 
 function useInjectStyle() {
@@ -82,7 +92,13 @@ interface Props {
 
 type ChartTab = "bar" | "area" | "line" | "radar" | "pie";
 
-/* ── FIX 1: ChartErrorBoundary restored from v1 ── */
+interface QueryProgress {
+  phase: string;
+  done: number;
+  total: number;
+}
+
+/* ── ChartErrorBoundary ── */
 class ChartErrorBoundary extends React.Component<
   { children: React.ReactNode },
   { hasError: boolean }
@@ -103,6 +119,201 @@ class ChartErrorBoundary extends React.Component<
   }
 }
 
+
+// ─────────────────────────────────────────────────────────────────────────────
+// QueryMonitor — admin-only panel
+// ─────────────────────────────────────────────────────────────────────────────
+
+interface QueryMonitorProps {
+  progress: QueryProgress | null;
+  history: QueryProgress[];
+  isCollapsed: boolean;
+  onToggle: () => void;
+  totalStepIds: number;
+  batchSize: number;
+}
+
+const QueryMonitor: React.FC<QueryMonitorProps> = ({
+  progress,
+  history,
+  isCollapsed,
+  onToggle,
+  totalStepIds,
+  batchSize,
+}) => {
+  const isActive = progress !== null;
+  const pct =
+    progress && progress.total > 0
+      ? Math.round((progress.done / progress.total) * 100)
+      : 0;
+
+  const totalBatches = batchSize > 0 ? Math.ceil(totalStepIds / batchSize) : 0;
+
+  return (
+    <div
+      className="rounded-xl border overflow-hidden"
+      style={{
+        borderColor: isActive
+          ? "color-mix(in srgb, var(--color-brand) 50%, transparent)"
+          : "var(--border-color)",
+        background: "var(--bg-card)",
+        transition: "border-color 0.3s",
+      }}
+    >
+      {/* ── Header ── */}
+      <button
+        onClick={onToggle}
+        className="w-full flex items-center justify-between px-3 py-2.5 gap-2"
+      >
+        <div className="flex items-center gap-2">
+          {/* spinner when active, static icon when idle */}
+          <span
+            style={{
+              display: "inline-flex",
+              color: isActive ? "var(--color-brand)" : "var(--text-muted)",
+              animation: isActive ? "qmSpinner 1.1s linear infinite" : "none",
+            }}
+          >
+            <Activity size={13} />
+          </span>
+
+          <span
+            className="text-[10px] font-bold px-1.5 py-0.5 rounded border tracking-wider"
+            style={{
+              color: "var(--color-brand)",
+              borderColor:
+                "color-mix(in srgb, var(--color-brand) 40%, transparent)",
+              background:
+                "color-mix(in srgb, var(--color-brand) 8%, transparent)",
+            }}
+          >
+            ADMIN
+          </span>
+
+          <span className="text-xs font-semibold text-t-primary">
+            Query Monitor
+          </span>
+
+          {isActive && (
+            <span
+              className="text-[10px] text-t-muted"
+              style={{ animation: "qmPulse 1.4s ease-in-out infinite" }}
+            >
+              live
+            </span>
+          )}
+        </div>
+
+        <div className="flex items-center gap-3">
+          {totalStepIds > 0 && (
+            <span className="text-[10px] text-t-muted hidden sm:inline">
+              {totalStepIds.toLocaleString()} step IDs · {totalBatches} batch
+              {totalBatches !== 1 ? "es" : ""} · chunk 100
+            </span>
+          )}
+          <span className="text-t-muted">
+            {isCollapsed ? <ChevronDown size={13} /> : <ChevronUp size={13} />}
+          </span>
+        </div>
+      </button>
+
+      {/* ── Body ── */}
+      {!isCollapsed && (
+        <div className="px-3 pb-3 flex flex-col gap-2.5">
+          {/* Current phase + bar */}
+          <div className="flex flex-col gap-1.5">
+            <div className="flex items-center justify-between">
+              <span className="text-xs text-t-muted truncate max-w-[70%]">
+                {isActive
+                  ? progress!.phase
+                  : history.length > 0
+                  ? history[history.length - 1].phase
+                  : "Idle"}
+              </span>
+              {isActive && (
+                <span className="text-xs font-bold text-t-primary tabular-nums">
+                  {progress!.done}/{progress!.total}
+                </span>
+              )}
+            </div>
+
+            {/* Progress track */}
+            <div
+              className="h-1.5 rounded-full overflow-hidden"
+              style={{ background: "var(--bg-surface)" }}
+            >
+              <div
+                className="h-full rounded-full"
+                style={{
+                  width: isActive ? `${pct}%` : "100%",
+                  background: isActive
+                    ? "var(--color-brand)"
+                    : "color-mix(in srgb, var(--color-pass) 70%, transparent)",
+                  transition: "width 0.25s ease, background 0.3s",
+                }}
+              />
+            </div>
+          </div>
+
+          {/* Phase history log */}
+          {history.length > 0 && (
+            <div
+              className="rounded-lg p-2 flex flex-col gap-1"
+              style={{ background: "var(--bg-surface)" }}
+            >
+              <p className="text-[10px] font-semibold text-t-muted uppercase tracking-wider mb-0.5">
+                Phase log
+              </p>
+              {history.map((h, i) => (
+                <div key={i} className="flex items-center gap-2">
+                  <span
+                    className="w-1.5 h-1.5 rounded-full shrink-0"
+                    style={{ background: "var(--color-pass)" }}
+                  />
+                  <span className="text-[11px] text-t-muted truncate">
+                    {h.phase}
+                  </span>
+                  <span className="text-[10px] text-t-muted ml-auto tabular-nums shrink-0">
+                    {h.done}/{h.total}
+                  </span>
+                </div>
+              ))}
+              {isActive && (
+                <div className="flex items-center gap-2">
+                  <span
+                    className="w-1.5 h-1.5 rounded-full shrink-0"
+                    style={{
+                      background: "var(--color-brand)",
+                      animation: "qmPulse 1s ease-in-out infinite",
+                    }}
+                  />
+                  <span
+                    className="text-[11px] truncate"
+                    style={{ color: "var(--color-brand)" }}
+                  >
+                    {progress!.phase}
+                  </span>
+                  <span
+                    className="text-[10px] ml-auto tabular-nums shrink-0"
+                    style={{ color: "var(--color-brand)" }}
+                  >
+                    {progress!.done}/{progress!.total}
+                  </span>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+};
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Dashboard
+// ─────────────────────────────────────────────────────────────────────────────
+
 const Dashboard: React.FC<Props> = ({ onNavigate }) => {
   useInjectStyle();
 
@@ -117,6 +328,17 @@ const Dashboard: React.FC<Props> = ({ onNavigate }) => {
     Map<string, number>
   >(new Map());
 
+  // ── Admin state ──────────────────────────────────────────────────────────
+  const [isAdmin, setIsAdmin] = useState(false);
+
+  // ── Query monitor state ──────────────────────────────────────────────────
+  const [queryProgress, setQueryProgress] = useState<QueryProgress | null>(null);
+  const [progressHistory, setProgressHistory] = useState<QueryProgress[]>([]);
+  const [monitorCollapsed, setMonitorCollapsed] = useState(false);
+  const [totalStepIdsTracked, setTotalStepIdsTracked] = useState(0);
+  // Track the last seen phase to deduplicate history entries
+  const lastPhaseRef = useRef<string>("");
+
   const gridRef = useRef<HTMLDivElement>(null);
   const mountedRef = useRef(true);
 
@@ -126,6 +348,46 @@ const Dashboard: React.FC<Props> = ({ onNavigate }) => {
       mountedRef.current = false;
     };
   }, []);
+
+  // ── Detect admin role on mount ───────────────────────────────────────────
+  useEffect(() => {
+    supabase.auth.getUser().then(({ data: { user } }) => {
+      const role =
+        user?.user_metadata?.defaultRole ??
+        user?.app_metadata?.role ??
+        user?.user_metadata?.role;
+      setIsAdmin(role === "admin");
+    });
+  }, []);
+
+  // ── Progress callback builder ────────────────────────────────────────────
+  const buildProgressCallback = useCallback((): FetchProgressCallback | undefined => {
+    if (!isAdmin) return undefined;
+
+    // Reset history at the start of each fetch
+    setProgressHistory([]);
+    lastPhaseRef.current = "";
+
+    return (phase: string, done: number, total: number) => {
+      if (!mountedRef.current) return;
+
+      // Snapshot the completed previous phase into history when phase changes
+      if (lastPhaseRef.current && lastPhaseRef.current !== phase) {
+        setProgressHistory((prev) => [
+          ...prev,
+          { phase: lastPhaseRef.current, done: total, total },
+        ]);
+      }
+      lastPhaseRef.current = phase;
+
+      // Track total step IDs for the batch summary line
+      if (phase.startsWith("Fetching step results") && total > 0) {
+        setTotalStepIdsTracked(total * 100); // batches × chunk size ≈ step count
+      }
+
+      setQueryProgress({ phase, done, total });
+    };
+  }, [isAdmin]);
 
   const fetchActiveLocksData = useCallback(async () => {
     try {
@@ -141,19 +403,34 @@ const Dashboard: React.FC<Props> = ({ onNavigate }) => {
     }
   }, []);
 
-  const fetchModules = useCallback(async (isInitial = false) => {
-    try {
-      const data = await fetchDashboardModules();
-      if (!mountedRef.current) return;
-      setModules(data);
-      setError(null);
-    } catch (e: any) {
-      if (!mountedRef.current) return;
-      setError(e?.message ?? "Failed to load modules");
-    } finally {
-      if (isInitial && mountedRef.current) setInitialLoad(false);
-    }
-  }, []);
+  const fetchModules = useCallback(
+    async (isInitial = false) => {
+      const onProgress = buildProgressCallback();
+      try {
+        const data = await fetchDashboardModules(onProgress);
+        if (!mountedRef.current) return;
+        setModules(data);
+        setError(null);
+      } catch (e: any) {
+        if (!mountedRef.current) return;
+        setError(e?.message ?? "Failed to load modules");
+      } finally {
+        if (mountedRef.current) {
+          // Push final phase into history then clear active progress
+          if (lastPhaseRef.current) {
+            setProgressHistory((prev) => [
+              ...prev,
+              { phase: lastPhaseRef.current, done: 1, total: 1 },
+            ]);
+            lastPhaseRef.current = "";
+          }
+          setQueryProgress(null);
+        }
+        if (isInitial && mountedRef.current) setInitialLoad(false);
+      }
+    },
+    [buildProgressCallback]
+  );
 
   useEffect(() => {
     Promise.all([fetchModules(true), fetchActiveLocksData()]);
@@ -268,7 +545,6 @@ const Dashboard: React.FC<Props> = ({ onNavigate }) => {
     });
   }, [summaries, modules]);
 
-  /* ── FIX 2: Memoized export handlers restored from v1 ── */
   const handleExportCSV = useCallback(() => {
     exportDashboardCSV(summaries);
   }, [summaries]);
@@ -367,6 +643,18 @@ const Dashboard: React.FC<Props> = ({ onNavigate }) => {
         </button>
       </div>
 
+      {/* ── Admin Query Monitor ── */}
+      {isAdmin && (queryProgress !== null || progressHistory.length > 0) && (
+        <QueryMonitor
+          progress={queryProgress}
+          history={progressHistory}
+          isCollapsed={monitorCollapsed}
+          onToggle={() => setMonitorCollapsed((c) => !c)}
+          totalStepIds={totalStepIdsTracked}
+          batchSize={100}
+        />
+      )}
+
       {!initialLoad && hasAnyLocks && (
         <LockWarningBanner
           locks={activeLocks}
@@ -405,7 +693,6 @@ const Dashboard: React.FC<Props> = ({ onNavigate }) => {
             </div>
           </div>
 
-          {/* ── FIX 1: ChartErrorBoundary wrapping chart area ── */}
           <ChartErrorBoundary>
             {activeChart === "pie" ? (
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-center">
@@ -413,7 +700,6 @@ const Dashboard: React.FC<Props> = ({ onNavigate }) => {
                   <p className="text-xs text-t-muted mb-2 self-start">
                     Fleet Total Distribution
                   </p>
-                  {/* ── FIX 3: key prop restored ── */}
                   <RPieChart
                     key="pie-chart"
                     data={chartData}
@@ -470,7 +756,6 @@ const Dashboard: React.FC<Props> = ({ onNavigate }) => {
               </div>
             ) : (
               <div className="w-full">
-                {/* ── FIX 3: key props restored on all chart variants ── */}
                 {activeChart === "bar" && (
                   <RBarChart key="bar-chart" data={chartData} ct={chartTheme} />
                 )}
