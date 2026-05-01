@@ -60,6 +60,7 @@ interface RevisionListItem {
   status: string;
   created_at: string;
   notes: string | null;
+  /** count of step_order entries from DB — no full fetch */
   step_count: number;
 }
 
@@ -116,22 +117,18 @@ function sleep(ms: number) {
   return new Promise<void>(r => setTimeout(r, ms));
 }
 
-/** Chunk an array into smaller batches */
 function chunk<T>(arr: T[], size: number): T[][] {
   const out: T[][] = [];
-  for (let i = 0; i < arr.length; i += size) {
-    out.push(arr.slice(i, i + size));
-  }
+  for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
   return out;
 }
 
+const parseStepOrder = (so: any): string[] =>
+  typeof so === "string" ? JSON.parse(so) : (so ?? []);
+
 // ─── Inline Progress Bar ──────────────────────────────────────────────────────
 
-interface ProgressState {
-  show: boolean;
-  percent: number;
-  message: string;
-}
+interface ProgressState { show: boolean; percent: number; message: string; }
 
 const InlineProgress: React.FC<ProgressState> = ({ show, percent, message }) => {
   if (!show) return null;
@@ -177,29 +174,23 @@ const DiffTableRow: React.FC<{ item: DiffItem; index: number }> = ({ item, index
           item.type === "DELETE" ? "opacity-60" : ""
         }`}
       >
-        {/* Pos */}
         <td className="px-3 py-2.5 text-[11px] font-mono text-t-muted text-right whitespace-nowrap w-8">
           {item.type === "DELETE" ? "—" : `#${item.position}`}
         </td>
-        {/* Type badge */}
         <td className="px-2 py-2.5 w-10">
           <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded border leading-none ${style.badge}`}>
             {item.type[0]}
           </span>
         </td>
-        {/* S/N */}
         <td className="px-2 py-2.5 text-[11px] font-mono text-t-muted whitespace-nowrap w-10">
           {item.serialNo}
         </td>
-        {/* Action */}
         <td className="px-2 py-2.5 text-xs text-t-secondary max-w-[180px]">
           <p className="truncate">{truncate(previewAction ?? "")}</p>
         </td>
-        {/* Expected */}
         <td className="px-2 py-2.5 text-xs text-t-muted max-w-[140px]">
           <p className="truncate">{truncate(previewExpected ?? "", 40)}</p>
         </td>
-        {/* Expand chevron */}
         <td className="px-2 py-2.5 w-6 text-right">
           {open
             ? <ChevronDown  size={12} className="text-t-muted inline" />
@@ -230,7 +221,6 @@ const DiffTableRow: React.FC<{ item: DiffItem; index: number }> = ({ item, index
                 </div>
               </div>
             )}
-
             {item.type === "EDIT" && (
               <div className="grid grid-cols-2 gap-2 text-xs">
                 <div className="rounded-lg bg-red-500/5 border border-red-500/15 p-2.5">
@@ -253,7 +243,6 @@ const DiffTableRow: React.FC<{ item: DiffItem; index: number }> = ({ item, index
                 </div>
               </div>
             )}
-
             {item.type === "INSERT" && (
               <div className="rounded-lg bg-sky-500/5 border border-sky-500/15 p-2.5 text-xs">
                 <p className="text-[10px] text-sky-400 font-bold uppercase tracking-wide mb-2">New Step</p>
@@ -263,7 +252,6 @@ const DiffTableRow: React.FC<{ item: DiffItem; index: number }> = ({ item, index
                 <p className="text-t-secondary">{item.row.expected_result || "—"}</p>
               </div>
             )}
-
             {item.type === "DELETE" && (
               <div className="rounded-lg bg-red-500/5 border border-red-500/15 p-2.5 text-xs">
                 <p className="text-[10px] text-red-400 font-bold uppercase tracking-wide mb-2">
@@ -282,10 +270,7 @@ const DiffTableRow: React.FC<{ item: DiffItem; index: number }> = ({ item, index
   );
 };
 
-// Table header for diff
-const DiffTable: React.FC<{
-  items: DiffItem[];
-}> = ({ items }) => (
+const DiffTable: React.FC<{ items: DiffItem[] }> = ({ items }) => (
   <div className="rounded-xl border border-(--border-color) overflow-hidden">
     <div className="overflow-y-auto" style={{ maxHeight: "420px" }}>
       <table className="w-full text-left border-collapse">
@@ -309,7 +294,6 @@ const DiffTable: React.FC<{
   </div>
 );
 
-// First-import preview table (no diff, just rows)
 const FirstImportTable: React.FC<{ rows: ParseResult["rows"] }> = ({ rows }) => (
   <div className="rounded-xl border border-(--border-color) overflow-hidden">
     <div className="overflow-y-auto" style={{ maxHeight: "420px" }}>
@@ -339,7 +323,7 @@ const FirstImportTable: React.FC<{ rows: ParseResult["rows"] }> = ({ rows }) => 
   </div>
 );
 
-// ─── Step Order Table with show-more ─────────────────────────────────────────
+// ─── Step Order Table ─────────────────────────────────────────────────────────
 
 const STEP_PAGE = 10;
 
@@ -358,9 +342,8 @@ const StepOrderTable: React.FC<{
           style={{ maxHeight: "360px" }}
           onScroll={e => {
             const el = e.currentTarget;
-            if (el.scrollHeight - el.scrollTop - el.clientHeight < 60) {
+            if (el.scrollHeight - el.scrollTop - el.clientHeight < 60)
               setVisible(v => Math.min(v + STEP_PAGE, stepOrder.length));
-            }
           }}
         >
           <table className="w-full text-left border-collapse">
@@ -381,9 +364,7 @@ const StepOrderTable: React.FC<{
                       isNew ? "hover:bg-sky-500/5" : "hover:bg-bg-base/50"
                     }`}
                   >
-                    <td className="px-3 py-2.5 text-[11px] font-mono text-t-muted text-right w-10">
-                      {i + 1}
-                    </td>
+                    <td className="px-3 py-2.5 text-[11px] font-mono text-t-muted text-right w-10">{i + 1}</td>
                     <td className="px-3 py-2.5 text-[11px] font-mono">
                       <span className={isNew ? "text-sky-400" : "text-t-secondary"}>{id}</span>
                     </td>
@@ -405,8 +386,6 @@ const StepOrderTable: React.FC<{
           </table>
         </div>
       </div>
-
-      {/* Show more button */}
       {remaining > 0 && (
         <button
           onClick={() => setVisible(v => Math.min(v + STEP_PAGE, stepOrder.length))}
@@ -417,7 +396,6 @@ const StepOrderTable: React.FC<{
           <span className="ml-1 text-[10px] text-t-muted">({remaining} remaining)</span>
         </button>
       )}
-
       <p className="text-[10px] text-t-muted">
         <span className="text-sky-400 font-bold">NEW</span> = new step rows ·{" "}
         <span className="font-bold">REUSED</span> = unchanged from previous revision
@@ -459,11 +437,7 @@ const ImportStepsModal: React.FC<Props> = ({ onClose, onBack }) => {
   const [error,  setError]  = useState<string | null>(null);
 
   // ── Progress ──────────────────────────────────────────────────────────────────
-  const [progress, setProgress] = useState<ProgressState>({
-    show: false,
-    percent: 0,
-    message: "",
-  });
+  const [progress, setProgress] = useState<ProgressState>({ show: false, percent: 0, message: "" });
 
   const showProgress = (message: string, percent: number) =>
     setProgress({ show: true, message, percent });
@@ -474,7 +448,7 @@ const ImportStepsModal: React.FC<Props> = ({ onClose, onBack }) => {
     setProgress({ show: false, percent: 0, message: "" });
   };
 
-  // ── Revision control branch state ─────────────────────────────────────────────
+  // ── Revision control state ────────────────────────────────────────────────────
   const [revSelTest,     setRevSelTest]     = useState("");
   const [allRevisions,   setAllRevisions]   = useState<RevisionListItem[]>([]);
   const [activeRev,      setActiveRev]      = useState<ActiveRevInfo | null>(null);
@@ -490,12 +464,13 @@ const ImportStepsModal: React.FC<Props> = ({ onClose, onBack }) => {
   const [revPayload,     setRevPayload]     = useState<RevisionPayload | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
-  // ── Visibility branch state ───────────────────────────────────────────────────
-  const [visModules,    setVisModules]    = useState<{ name: string }[]>([]);
-  const [visSelModule,  setVisSelModule]  = useState("");
-  const [visRows,       setVisRows]       = useState<ModuleTestVisRow[]>([]);
-  const [visLoading,    setVisLoading]    = useState(false);
+  // ── Visibility state ──────────────────────────────────────────────────────────
+  const [visModules,   setVisModules]   = useState<string[]>([]);
+  const [visSelModule, setVisSelModule] = useState("");
+  const [visRows,      setVisRows]      = useState<ModuleTestVisRow[]>([]);
+  const [visLoading,   setVisLoading]   = useState(false);
 
+  // ── Load test list on mount (RPC-style single select) ─────────────────────────
   useEffect(() => {
     supabase
       .from("tests")
@@ -522,11 +497,16 @@ const ImportStepsModal: React.FC<Props> = ({ onClose, onBack }) => {
     }
   };
 
-  const parseStepOrder = (so: any): string[] =>
-    typeof so === "string" ? JSON.parse(so) : (so ?? []);
-
   // ─────────────────────────────────────────────────────────────────────────────
-  // REVISION CONTROL BRANCH
+  // REVISION CONTROL — loadRevisionControl
+  //
+  // RPC strategy:
+  //   1. supabase.rpc("get_revision_list", { p_tests_serial_no })
+  //      Returns: id, status, created_at, notes, step_count (jsonb_array_length)
+  //      No test_steps rows fetched here at all.
+  //
+  //   2. step_order array count for active rev comes from the RPC itself.
+  //      baseSteps stays [] until "Generate Diff" is clicked.
   // ─────────────────────────────────────────────────────────────────────────────
 
   const loadRevisionControl = async (testSerialNo: string) => {
@@ -534,28 +514,61 @@ const ImportStepsModal: React.FC<Props> = ({ onClose, onBack }) => {
     setStage("rev-control");
     setActiveRev(null);
     setAllRevisions([]);
-    setBaseSteps([]);
+    setBaseSteps([]);           // reset — will be populated lazily on diff click
     setExistingRevIds([]);
     setError(null);
 
     try {
+      // ── Single RPC: get all revision metadata + step_count from Postgres ──
+      // Deploy this function in Supabase:
+      //
+      //   create or replace function get_revision_list(p_tests_serial_no text)
+      //   returns table (
+      //     id          text,
+      //     status      text,
+      //     step_order  jsonb,
+      //     created_at  timestamptz,
+      //     notes       text,
+      //     step_count  int
+      //   )
+      //   language sql stable security definer as $$
+      //     select
+      //       id,
+      //       status,
+      //       step_order,
+      //       created_at,
+      //       notes,
+      //       jsonb_array_length(step_order) as step_count
+      //     from test_revisions
+      //     where tests_serial_no = p_tests_serial_no
+      //     order by created_at asc;
+      //   $$;
+      //
       const { data: revRows, error: revsErr } = await supabase
-        .from("test_revisions")
-        .select("id, status, step_order, created_at, notes")
-        .eq("tests_serial_no", testSerialNo)
-        .order("created_at", { ascending: true });
+        .rpc("get_revision_list", { p_tests_serial_no: testSerialNo });
       if (revsErr) throw new Error(revsErr.message);
 
-      const allRevs = (revRows ?? []) as ActiveRevInfo[];
-      const ids   = allRevs.map(r => r.id);
-      const codes = ids.map(id =>
-        id.startsWith(testSerialNo + "-") ? id.slice(testSerialNo.length + 1) : id);
+      const allRevs = (revRows ?? []) as Array<{
+        id: string;
+        status: string;
+        step_order: any;
+        created_at: string;
+        notes: string | null;
+        step_count: number;
+      }>;
+
+      const codes = allRevs.map(r =>
+        r.id.startsWith(testSerialNo + "-") ? r.id.slice(testSerialNo.length + 1) : r.id
+      );
       setExistingRevIds(codes);
       setNewRevId(getNextRevisionId(codes, "iterate"));
 
       const activeRaw = allRevs.find(r => r.status === "active") ?? null;
-      const active    = activeRaw
-        ? { ...activeRaw, step_order: parseStepOrder(activeRaw.step_order) }
+      const active = activeRaw
+        ? {
+            ...activeRaw,
+            step_order: parseStepOrder(activeRaw.step_order),
+          }
         : null;
       setActiveRev(active);
 
@@ -565,28 +578,11 @@ const ImportStepsModal: React.FC<Props> = ({ onClose, onBack }) => {
           status:     r.status,
           created_at: r.created_at,
           notes:      r.notes,
-          step_count: parseStepOrder(r.step_order).length,
+          step_count: r.step_count ?? 0, // comes from jsonb_array_length in RPC
         }))
       );
 
-      if (active && active.step_order.length > 0) {
-        // ── CHUNKED FETCH: Supabase .in() breaks with 1000s of IDs ──
-        const BATCH = 200;
-        const batches = chunk(active.step_order, BATCH);
-        const allStepRows: any[] = [];
-
-        for (let i = 0; i < batches.length; i++) {
-          const { data: stepRows, error: stepsErr } = await supabase
-            .from("test_steps")
-            .select("id, serial_no, action, expected_result, is_divider, introduced_in_rev, origin_step_id")
-            .in("id", batches[i]);
-          if (stepsErr) throw new Error(stepsErr.message);
-          allStepRows.push(...(stepRows ?? []));
-        }
-
-        const stepMap = new Map(allStepRows.map(s => [s.id, s]));
-        setBaseSteps(resolveBaseSteps(active.step_order, stepMap as any));
-      }
+      // ── No test_steps fetch here — deferred to handleGenerateDiff ──
     } catch (e: any) {
       setError(e.message);
     } finally {
@@ -629,13 +625,13 @@ const ImportStepsModal: React.FC<Props> = ({ onClose, onBack }) => {
     setDiffResult(null);
     setRevPayload(null);
     setRevNotes("");
+    setBaseSteps([]); // will be loaded lazily when diff is triggered
     setStage("rev-info");
   };
 
   const handleCsvFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-
     showProgress("Reading CSV file…", 10);
     try {
       const text = await new Promise<string>((resolve, reject) => {
@@ -654,6 +650,21 @@ const ImportStepsModal: React.FC<Props> = ({ onClose, onBack }) => {
     }
   };
 
+  // ─────────────────────────────────────────────────────────────────────────────
+  // handleGenerateDiff
+  //
+  // This is the ONLY place test_steps rows are fetched.
+  // Fires after the user clicks "Generate Diff →" (i.e. after CSV import).
+  //
+  // Steps:
+  //   1. Parse CSV (local, no network)
+  //   2. If active revision exists → fetch test_steps for its step_order IDs
+  //      filtered by eq(tests_serial_no) + eq(introduced_in_rev / active rev id)
+  //      using .in("id", activeRev.step_order) which is already the narrowest
+  //      possible filter (exact IDs).
+  //   3. Resolve baseSteps → computeDiff
+  // ─────────────────────────────────────────────────────────────────────────────
+
   const handleGenerateDiff = async () => {
     setError(null);
     showProgress("Parsing CSV…", 5);
@@ -670,14 +681,41 @@ const ImportStepsModal: React.FC<Props> = ({ onClose, onBack }) => {
     showProgress("Parsing CSV…", 40);
     await sleep(50);
 
-    const isFirst = !activeRev || baseSteps.length === 0;
-    showProgress("Calculating differences…", 50);
-    await sleep(50);
+    const isFirst = !activeRev || activeRev.step_order.length === 0;
 
-    const diff = isFirst ? null : computeDiff(baseSteps, parsed.rows);
-    setDiffResult(diff);
+    if (!isFirst && activeRev) {
+      showProgress("Fetching step rows…", 50);
+      await sleep(50);
 
-    showProgress("Calculating differences…", 100);
+      // ── Fetch test_steps only now, filtered by exact step_order IDs ──
+      const BATCH = 200;
+      const batches = chunk(activeRev.step_order, BATCH);
+      const allStepRows: any[] = [];
+
+      for (const batch of batches) {
+        const { data: stepRows, error: stepsErr } = await supabase
+          .from("test_steps")
+          .select("id, serial_no, action, expected_result, is_divider, introduced_in_rev, origin_step_id")
+          .eq("tests_serial_no", revSelTest)
+          .in("id", batch);
+        if (stepsErr) throw new Error(stepsErr.message);
+        allStepRows.push(...(stepRows ?? []));
+      }
+
+      const stepMap = new Map(allStepRows.map(s => [s.id, s]));
+      const resolved = resolveBaseSteps(activeRev.step_order, stepMap as any);
+      setBaseSteps(resolved);
+
+      showProgress("Calculating differences…", 80);
+      await sleep(50);
+
+      const diff = computeDiff(resolved, parsed.rows);
+      setDiffResult(diff);
+    } else {
+      setDiffResult(null);
+    }
+
+    showProgress("Done", 100);
     await hideProgress(250);
     setStage("rev-diff");
   };
@@ -689,7 +727,7 @@ const ImportStepsModal: React.FC<Props> = ({ onClose, onBack }) => {
 
     const { data: { user } } = await supabase.auth.getUser();
     const userId  = user?.id ?? "unknown";
-    const isFirst = !activeRev || baseSteps.length === 0;
+    const isFirst = !activeRev || activeRev.step_order.length === 0;
 
     showProgress("Generating step IDs & row numbers…", 55);
     await sleep(50);
@@ -750,6 +788,15 @@ const ImportStepsModal: React.FC<Props> = ({ onClose, onBack }) => {
 
   // ─────────────────────────────────────────────────────────────────────────────
   // VISIBILITY BRANCH
+  //
+  // RPC strategy:
+  //   vis-module: single RPC get_module_names_from_module_tests()
+  //               → distinct module_name list, no other tables
+  //
+  //   vis-list:   single .from("module_tests") with locks joined in one call
+  //               via an RPC get_module_tests_with_locks(p_module_name)
+  //               — see SQL below. No step_order or any other table.
+  //
   // ─────────────────────────────────────────────────────────────────────────────
 
   const handleVisibilityClick = async () => {
@@ -759,13 +806,20 @@ const ImportStepsModal: React.FC<Props> = ({ onClose, onBack }) => {
     setVisRows([]);
     setError(null);
     try {
-      const { data: modData, error: modErr } = await supabase
-        .from("module_tests")
-        .select("module_name")
-        .order("module_name");
+      // ── Single RPC: distinct module names from module_tests only ──
+      //
+      //   create or replace function get_module_names_from_module_tests()
+      //   returns table (module_name text)
+      //   language sql stable security definer as $$
+      //     select distinct module_name
+      //     from   module_tests
+      //     order  by module_name;
+      //   $$;
+      //
+      const { data, error: modErr } = await supabase
+        .rpc("get_module_names_from_module_tests");
       if (modErr) throw new Error(modErr.message);
-      const unique = [...new Set((modData ?? []).map((r: any) => r.module_name as string))];
-      setVisModules(unique.map(name => ({ name })));
+      setVisModules(((data ?? []) as Array<{ module_name: string }>).map(r => r.module_name));
     } catch (e: any) {
       setError(e.message);
     } finally {
@@ -779,38 +833,44 @@ const ImportStepsModal: React.FC<Props> = ({ onClose, onBack }) => {
     setVisRows([]);
     setError(null);
     try {
-      const { data: mtData, error: visErr } = await supabase
-        .from("module_tests")
-        .select("id, module_name, tests_name, is_visible")
-        .eq("module_name", moduleName)
-        .order("tests_name");
-      if (visErr) throw new Error(visErr.message);
+      // ── Single RPC: module_tests + locks joined server-side ──
+      //
+      //   create or replace function get_module_tests_with_locks(p_module_name text)
+      //   returns table (
+      //     id              uuid,
+      //     module_name     text,
+      //     tests_name      text,
+      //     is_visible      boolean,
+      //     lock_user_id    uuid,
+      //     lock_user_name  text
+      //   )
+      //   language sql stable security definer as $$
+      //     select
+      //       mt.id,
+      //       mt.module_name,
+      //       mt.tests_name,
+      //       mt.is_visible,
+      //       tl.user_id        as lock_user_id,
+      //       tl.locked_by_name as lock_user_name
+      //     from  module_tests mt
+      //     left join test_locks tl on tl.module_test_id = mt.id
+      //     where mt.module_name = p_module_name
+      //     order by mt.tests_name;
+      //   $$;
+      //
+      const { data, error: rpcErr } = await supabase
+        .rpc("get_module_tests_with_locks", { p_module_name: moduleName });
+      if (rpcErr) throw new Error(rpcErr.message);
 
-      const ids = (mtData ?? []).map((r: any) => r.id);
-
-      // ── CHUNKED FETCH for locks too ──
-      const BATCH = 200;
-      const lockBatches = chunk(ids, BATCH);
-      const allLockRows: any[] = [];
-
-      for (const batch of lockBatches) {
-        if (batch.length === 0) continue;
-        const { data: lockData } = await supabase
-          .from("test_locks")
-          .select("module_test_id, user_id, locked_by_name")
-          .in("module_test_id", batch);
-        allLockRows.push(...(lockData ?? []));
-      }
-
-      const lockMap = new Map(
-        allLockRows.map((l: any) => [l.module_test_id, { user_id: l.user_id, locked_by_name: l.locked_by_name }])
-      );
-
-      const rows: ModuleTestVisRow[] = (mtData ?? []).map((r: any) => ({
-        ...r,
-        lockInfo: lockMap.get(r.id) ?? null,
+      const rows: ModuleTestVisRow[] = ((data ?? []) as any[]).map(r => ({
+        id:          r.id,
+        module_name: r.module_name,
+        tests_name:  r.tests_name,
+        is_visible:  r.is_visible,
+        lockInfo:    r.lock_user_id
+          ? { user_id: r.lock_user_id, locked_by_name: r.lock_user_name }
+          : null,
       }));
-
       setVisRows(rows);
     } catch (e: any) {
       setError(e.message);
@@ -844,7 +904,7 @@ const ImportStepsModal: React.FC<Props> = ({ onClose, onBack }) => {
   // ─────────────────────────────────────────────────────────────────────────────
 
   const subtitle: Record<Stage, string> = {
-    selectaction:   "Select action",
+    selectaction:  "Select action",
     "revctrl-test": "Revision Control · Pick test",
     "rev-control":  "Revision Control",
     "rev-info":     "New Revision",
@@ -856,9 +916,8 @@ const ImportStepsModal: React.FC<Props> = ({ onClose, onBack }) => {
     "vis-list":     "Visibility",
   };
 
-  const isFirst = !activeRev || baseSteps.length === 0;
+  const isFirst = !activeRev || activeRev.step_order.length === 0;
 
-  // derived set for step order table
   const newStepIdSet = revPayload
     ? new Set(revPayload.newSteps.map(s => s.id))
     : new Set<string>();
@@ -874,7 +933,6 @@ const ImportStepsModal: React.FC<Props> = ({ onClose, onBack }) => {
       subtitle={subtitle[stage]}
       onClose={onClose}
     >
-      {/* Back */}
       {stage !== "submitting" && stage !== "done" && (
         <button
           onClick={handleBack}
@@ -885,12 +943,9 @@ const ImportStepsModal: React.FC<Props> = ({ onClose, onBack }) => {
         </button>
       )}
 
-      {/* Inline progress bar */}
       <InlineProgress {...progress} />
 
-      {/* ══════════════════════════════════
-          selectaction
-      ══════════════════════════════════ */}
+      {/* ══ selectaction ══ */}
       {stage === "selectaction" && (
         <div className="flex flex-col gap-3">
           <button
@@ -927,9 +982,7 @@ const ImportStepsModal: React.FC<Props> = ({ onClose, onBack }) => {
         </div>
       )}
 
-      {/* ══════════════════════════════════
-          revctrl-test
-      ══════════════════════════════════ */}
+      {/* ══ revctrl-test ══ */}
       {stage === "revctrl-test" && (
         <div className="flex flex-col gap-1.5 max-h-60 overflow-y-auto">
           {tests.length === 0 && (
@@ -949,9 +1002,7 @@ const ImportStepsModal: React.FC<Props> = ({ onClose, onBack }) => {
         </div>
       )}
 
-      {/* ══════════════════════════════════
-          rev-control
-      ══════════════════════════════════ */}
+      {/* ══ rev-control ══ */}
       {stage === "rev-control" && (
         <div className="flex flex-col gap-3">
           {revLoading ? (
@@ -1037,15 +1088,9 @@ const ImportStepsModal: React.FC<Props> = ({ onClose, onBack }) => {
                                 <td className="px-3 py-2.5 text-[11px] text-t-muted text-right">{rev.step_count}</td>
                                 <td className="px-3 py-2.5 text-[11px] text-t-muted">{formatDate(rev.created_at)}</td>
                                 <td className="px-3 py-2.5 text-center">
-                                  {isActive && (
-                                    <span className="text-[11px] font-medium text-green-400">Active</span>
-                                  )}
-                                  {rev.status === "draft" && (
-                                    <span className="text-[11px] font-medium text-amber-400">Draft</span>
-                                  )}
-                                  {rev.status === "archived" && (
-                                    <span className="text-[11px] font-medium text-t-muted">Archived</span>
-                                  )}
+                                  {isActive && <span className="text-[11px] font-medium text-green-400">Active</span>}
+                                  {rev.status === "draft" && <span className="text-[11px] font-medium text-amber-400">Draft</span>}
+                                  {rev.status === "archived" && <span className="text-[11px] font-medium text-t-muted">Archived</span>}
                                 </td>
                                 <td className="px-3 py-2.5 text-right">
                                   {!isActive && (
@@ -1075,9 +1120,7 @@ const ImportStepsModal: React.FC<Props> = ({ onClose, onBack }) => {
         </div>
       )}
 
-      {/* ══════════════════════════════════
-          rev-info
-      ══════════════════════════════════ */}
+      {/* ══ rev-info ══ */}
       {stage === "rev-info" && (
         <div className="flex flex-col gap-3">
           <div className="rounded-xl border border-(--border-color) bg-bg-card p-3">
@@ -1091,7 +1134,7 @@ const ImportStepsModal: React.FC<Props> = ({ onClose, onBack }) => {
                     border border-green-500/20 px-2 py-0.5 rounded-full">
                     {activeRev.id}
                   </span>
-                  <span className="text-xs text-t-muted">{baseSteps.length} steps</span>
+                  <span className="text-xs text-t-muted">{activeRev.step_order.length} steps</span>
                 </div>
                 <span className="text-[11px] text-t-muted">{formatDate(activeRev.created_at)}</span>
               </div>
@@ -1199,9 +1242,7 @@ const ImportStepsModal: React.FC<Props> = ({ onClose, onBack }) => {
         </div>
       )}
 
-      {/* ══════════════════════════════════
-          rev-diff  — proper table
-      ══════════════════════════════════ */}
+      {/* ══ rev-diff ══ */}
       {stage === "rev-diff" && parseResult && (
         <div className="flex flex-col gap-3">
           {isFirst ? (
@@ -1222,7 +1263,6 @@ const ImportStepsModal: React.FC<Props> = ({ onClose, onBack }) => {
             </>
           ) : null}
 
-          {/* ── TABLE VIEW ── */}
           {isFirst
             ? <FirstImportTable rows={parseResult.rows} />
             : diffResult
@@ -1251,12 +1291,9 @@ const ImportStepsModal: React.FC<Props> = ({ onClose, onBack }) => {
         </div>
       )}
 
-      {/* ══════════════════════════════════
-          rev-confirm  — proper step order table
-      ══════════════════════════════════ */}
+      {/* ══ rev-confirm ══ */}
       {stage === "rev-confirm" && revPayload && (
         <div className="flex flex-col gap-3">
-          {/* Summary card */}
           <div className="rounded-xl border border-(--border-color) bg-bg-card p-3
             flex flex-col gap-1.5 text-xs">
             <Row label="Revision ID"    value={`${revSelTest}-${newRevId}`} brand />
@@ -1274,7 +1311,6 @@ const ImportStepsModal: React.FC<Props> = ({ onClose, onBack }) => {
             )}
           </div>
 
-          {/* Step order — proper table with show-more */}
           <div>
             <p className="text-[10px] font-bold uppercase tracking-wider text-t-muted mb-2">
               Step Order · {revPayload.revision.step_order.length} steps
@@ -1285,7 +1321,6 @@ const ImportStepsModal: React.FC<Props> = ({ onClose, onBack }) => {
             />
           </div>
 
-          {/* Notes */}
           <div>
             <label className="block text-xs text-t-muted mb-1">Notes (optional)</label>
             <textarea
@@ -1312,18 +1347,14 @@ const ImportStepsModal: React.FC<Props> = ({ onClose, onBack }) => {
         </div>
       )}
 
-      {/* ══════════════════════════════════
-          submitting
-      ══════════════════════════════════ */}
+      {/* ══ submitting ══ */}
       {stage === "submitting" && (
         <div className="flex items-center justify-center py-8">
           <div className="w-8 h-8 border-4 border-c-brand border-t-transparent rounded-full animate-spin" />
         </div>
       )}
 
-      {/* ══════════════════════════════════
-          done
-      ══════════════════════════════════ */}
+      {/* ══ done ══ */}
       {stage === "done" && (
         <div className="flex flex-col items-center gap-3 py-6">
           <CheckCircle size={32} className="text-green-400" />
@@ -1337,9 +1368,7 @@ const ImportStepsModal: React.FC<Props> = ({ onClose, onBack }) => {
         </div>
       )}
 
-      {/* ══════════════════════════════════
-          vis-module
-      ══════════════════════════════════ */}
+      {/* ══ vis-module ══ */}
       {stage === "vis-module" && (
         <div className="flex flex-col gap-2">
           {visLoading ? (
@@ -1350,14 +1379,14 @@ const ImportStepsModal: React.FC<Props> = ({ onClose, onBack }) => {
             <p className="text-sm text-t-muted text-center py-4">No modules found.</p>
           ) : (
             <div className="flex flex-col gap-1.5 max-h-60 overflow-y-auto">
-              {visModules.map(m => (
+              {visModules.map(name => (
                 <button
-                  key={m.name}
-                  onClick={() => handleModuleSelect(m.name)}
+                  key={name}
+                  onClick={() => handleModuleSelect(name)}
                   className="text-left px-3 py-2.5 rounded-xl border border-(--border-color)
                     bg-bg-card hover:bg-bg-base text-sm text-t-primary transition-colors"
                 >
-                  {m.name}
+                  {name}
                 </button>
               ))}
             </div>
@@ -1366,9 +1395,7 @@ const ImportStepsModal: React.FC<Props> = ({ onClose, onBack }) => {
         </div>
       )}
 
-      {/* ══════════════════════════════════
-          vis-list  — table layout
-      ══════════════════════════════════ */}
+      {/* ══ vis-list ══ */}
       {stage === "vis-list" && (
         <div className="flex flex-col gap-3">
           {visLoading ? (
