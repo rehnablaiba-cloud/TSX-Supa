@@ -863,7 +863,7 @@ const ImportStepsModal: React.FC<Props> = ({ onClose, onBack }) => {
       if (rpcErr) throw new Error(rpcErr.message);
 
       const rows: ModuleTestVisRow[] = ((data ?? []) as any[]).map(r => ({
-        id:          r.id,
+        id:          r.id as string,       // text from RPC
         module_name: r.module_name,
         tests_name:  r.tests_name,
         is_visible:  r.is_visible,
