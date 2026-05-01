@@ -1,40 +1,39 @@
 /**
  * queries.dashboard.ts
  *
- * Revision-aware update (2025):
- *  - Only fetches step_results for test_steps_id explicitly listed in active
- *    revision step_order. No bulk test_steps fetching.
- *  - is_divider parsed from step_order string format: {serial}-{rev}-{group}-{step}-{is_divider}
- *  - Legacy tests (no active revision) fetch step_results via test_steps join.
- *  - step_results keyed by (module_name, test_steps_id) to prevent cross-module bleed.
- *  - is_visible now lives on module_tests (not test_revisions).
- *  - step_results fetched in parallel batches of 100 to avoid PostgREST URL limits.
+ * Two-phase loading strategy:
+ *
+ *  Phase 1 — fetchDashboardShell()
+ *    Fetches modules + revisions only (~fast).
+ *    Returns DashboardShell with step_results: [] on every module.
+ *    Dashboard renders cards immediately from this.
+ *
+ *  Phase 2 — streamStepResults()
+ *    Fetches step_results in sequential batches of 100.
+ *    Calls onBatch() after each batch so numbers/bars animate upward.
+ *    Accepts a cancellation token so superseded fetches abort cleanly.
  */
 import { supabase } from "../../supabase";
 import type { ActiveLock } from "../../types";
 
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Types
+// Public types
 // ─────────────────────────────────────────────────────────────────────────────
-
 
 export interface DashboardRevision {
   id: string;
   revision: string;
-  // ✅ is_visible removed — now lives on DashboardModuleTest
   step_order: string[];
 }
-
 
 export interface DashboardModuleTest {
   id: string;
   tests_name: string;
-  is_visible: boolean; // ✅ moved here from DashboardRevision
+  is_visible: boolean;
   test: { name: string; serial_no: string | null } | null;
   active_revision: DashboardRevision | null;
 }
-
 
 export interface DashboardStepResult {
   status: string;
@@ -43,7 +42,6 @@ export interface DashboardStepResult {
   tests_serial_no: string;
 }
 
-
 export interface DashboardModule {
   name: string;
   description: string | null;
@@ -51,57 +49,114 @@ export interface DashboardModule {
   step_results: DashboardStepResult[];
 }
 
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Progress callback type
-// ─────────────────────────────────────────────────────────────────────────────
-
 export type FetchProgressCallback = (
   phase: string,
   done: number,
   total: number
 ) => void;
 
+/** Lightweight cancellation token — set cancelled = true to abort streaming. */
+export interface StreamCancellationToken {
+  cancelled: boolean;
+}
+
+/**
+ * Result of Phase 1. Pass the whole object to streamStepResults().
+ * The _internal fields are opaque — do not read them outside this module.
+ */
+export interface DashboardShell {
+  /** Ready-to-render module cards. step_results is [] until Phase 2 fills it. */
+  modules: DashboardModule[];
+  /** @internal */ _revBySerial: Record<string, DashboardRevision>;
+  /** @internal */ _allStepIds: string[];
+  /** @internal */ _serialNosWithoutRevision: Set<string>;
+  /** @internal */ _modulesData: any[];
+  /** @internal */ _legacyModuleNames: Set<string>;
+  /** @internal */ _enrichedMtsByModule: Map<string, DashboardModuleTest[]>;
+}
+
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Utilities
+// Internal utilities
 // ─────────────────────────────────────────────────────────────────────────────
 
-/** Split an array into chunks of `size`. */
+const STEP_BATCH_SIZE = 100;
+
 function chunkArray<T>(arr: T[], size: number): T[][] {
   const out: T[][] = [];
   for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
   return out;
 }
 
-const STEP_BATCH_SIZE = 100;
-
-// ── Parse is_divider and tests_serial_no from step_order string ──────────────
 // Format: "T001-R0-1-1-false"
-function parseStepKey(stepKey: string): { tests_serial_no: string; is_divider: boolean } {
-  const parts = stepKey.split('-');
-  const isDividerStr = parts[parts.length - 1];
-
+function parseStepKey(key: string): { tests_serial_no: string; is_divider: boolean } {
+  const parts = key.split("-");
   const revIdx = parts.findIndex((p, i) => i > 0 && /^R\d+$/.test(p));
-  const tests_serial_no = revIdx > 0 ? parts.slice(0, revIdx).join('-') : parts[0];
-
   return {
-    tests_serial_no,
-    is_divider: isDividerStr === 'true',
+    tests_serial_no: revIdx > 0 ? parts.slice(0, revIdx).join("-") : parts[0],
+    is_divider: parts[parts.length - 1] === "true",
   };
+}
+
+/** Rebuild all DashboardModule[] from the current step-status accumulator. */
+function assembleModules(
+  shell: DashboardShell,
+  statusByModuleStep: Map<string, string>,
+  metaByStepId: Map<string, { is_divider: boolean; tests_serial_no: string }>
+): DashboardModule[] {
+  return shell._modulesData.map((mod): DashboardModule => {
+    const modName = mod.name as string;
+    const enrichedMts = shell._enrichedMtsByModule.get(modName) ?? [];
+    const stepResults: DashboardStepResult[] = [];
+
+    for (const mt of enrichedMts) {
+      const serialNo = mt.test?.serial_no ?? "";
+      if (!serialNo) continue;
+      const rev = mt.active_revision;
+
+      if (rev && rev.step_order.length > 0) {
+        for (const stepId of rev.step_order) {
+          const parsed = parseStepKey(stepId);
+          if (parsed.tests_serial_no !== serialNo) continue;
+          stepResults.push({
+            status: statusByModuleStep.get(`${modName}:${stepId}`) ?? "pending",
+            test_steps_id: stepId,
+            is_divider: parsed.is_divider,
+            tests_serial_no: serialNo,
+          });
+        }
+      } else {
+        for (const [stepId, meta] of metaByStepId.entries()) {
+          if (meta.tests_serial_no !== serialNo) continue;
+          stepResults.push({
+            status: statusByModuleStep.get(`${modName}:${stepId}`) ?? "pending",
+            test_steps_id: stepId,
+            is_divider: meta.is_divider,
+            tests_serial_no: serialNo,
+          });
+        }
+      }
+    }
+
+    return {
+      name: modName,
+      description: mod.description ?? null,
+      module_tests: enrichedMts,
+      step_results: stepResults,
+    };
+  });
 }
 
 
 // ─────────────────────────────────────────────────────────────────────────────
-// fetchDashboardModules
+// Phase 1 — fetchDashboardShell
+// Fast: modules + revisions only. No step_results fetched here.
 // ─────────────────────────────────────────────────────────────────────────────
 
-
-export async function fetchDashboardModules(
+export async function fetchDashboardShell(
   onProgress?: FetchProgressCallback
-): Promise<DashboardModule[]> {
-
-  // ── 1. Fetch modules + module_tests (now includes is_visible) ────────────
+): Promise<DashboardShell> {
+  // ── Modules ──────────────────────────────────────────────────────────────
   onProgress?.("Fetching modules…", 0, 1);
 
   const { data: modulesRaw, error: modErr } = await supabase
@@ -120,11 +175,9 @@ export async function fetchDashboardModules(
 
   if (modErr) throw new Error(modErr.message);
   const modulesData = (modulesRaw ?? []) as any[];
-
   onProgress?.("Modules loaded", 1, 1);
 
-
-  // ── 2. Collect every unique tests_serial_no ──────────────────────────────
+  // ── Collect serial numbers ────────────────────────────────────────────────
   const allSerialNos: string[] = Array.from(
     new Set(
       modulesData.flatMap((mod) =>
@@ -135,11 +188,10 @@ export async function fetchDashboardModules(
     )
   );
 
-
+  // Early exit if no tests at all
   if (allSerialNos.length === 0) {
-    onProgress?.("Done — no tests found", 1, 1);
-    return modulesData.map((mod) => ({
-      name: mod.name,
+    const emptyModules: DashboardModule[] = modulesData.map((mod) => ({
+      name: mod.name as string,
       description: mod.description ?? null,
       module_tests: (mod.module_tests ?? []).map((mt: any) => ({
         ...mt,
@@ -148,10 +200,18 @@ export async function fetchDashboardModules(
       })),
       step_results: [],
     }));
+    return {
+      modules: emptyModules,
+      _revBySerial: {},
+      _allStepIds: [],
+      _serialNosWithoutRevision: new Set(),
+      _modulesData: modulesData,
+      _legacyModuleNames: new Set(),
+      _enrichedMtsByModule: new Map(emptyModules.map((m) => [m.name, m.module_tests])),
+    };
   }
 
-
-  // ── 3. Batch-fetch active revisions (is_visible removed from select) ─────
+  // ── Active revisions ──────────────────────────────────────────────────────
   onProgress?.("Fetching revisions…", 0, 1);
 
   const { data: revRaw, error: revErr } = await supabase
@@ -162,83 +222,109 @@ export async function fetchDashboardModules(
 
   if (revErr) throw new Error(revErr.message);
 
-  onProgress?.("Revisions loaded", 1, 1);
-
   const revBySerial: Record<string, DashboardRevision> = {};
   ((revRaw ?? []) as any[]).forEach((r) => {
     revBySerial[r.tests_serial_no] = {
       id: r.id,
       revision: r.revision,
-      // ✅ is_visible no longer mapped here
       step_order: Array.isArray(r.step_order) ? (r.step_order as string[]) : [],
     };
   });
+  onProgress?.("Revisions loaded", 1, 1);
 
-  const serialNosWithoutRevision = new Set(
-    allSerialNos.filter((sn) => !revBySerial[sn])
-  );
+  const serialNosWithoutRevision = new Set(allSerialNos.filter((sn) => !revBySerial[sn]));
 
-
-  // ── 4. Collect all step IDs from active revisions ────────────────────────
   const allStepIds = Array.from(
-    new Set(
-      Object.values(revBySerial).flatMap((rev) => rev.step_order)
-    )
+    new Set(Object.values(revBySerial).flatMap((rev) => rev.step_order))
   );
 
+  // ── Build enrichedMts + legacyModuleNames ─────────────────────────────────
+  const enrichedMtsByModule = new Map<string, DashboardModuleTest[]>();
+  const legacyModuleNames = new Set<string>();
 
-  // ── 5. Fetch step_results in parallel chunks of 100 ──────────────────────
+  for (const mod of modulesData) {
+    const modName = mod.name as string;
+    const mts: DashboardModuleTest[] = ((mod.module_tests ?? []) as any[]).map(
+      (mt: any) => {
+        const sn = mt.test?.serial_no as string | undefined;
+        if (sn && serialNosWithoutRevision.has(sn)) legacyModuleNames.add(modName);
+        return {
+          id: mt.id,
+          tests_name: mt.tests_name,
+          is_visible: mt.is_visible ?? true,
+          test: mt.test ?? null,
+          active_revision: revBySerial[sn ?? ""] ?? null,
+        };
+      }
+    );
+    enrichedMtsByModule.set(modName, mts);
+  }
+
+  // Shell modules — step_results intentionally empty
+  const shellModules: DashboardModule[] = modulesData.map((mod) => ({
+    name: mod.name as string,
+    description: mod.description ?? null,
+    module_tests: enrichedMtsByModule.get(mod.name as string) ?? [],
+    step_results: [],
+  }));
+
+  return {
+    modules: shellModules,
+    _revBySerial: revBySerial,
+    _allStepIds: allStepIds,
+    _serialNosWithoutRevision: serialNosWithoutRevision,
+    _modulesData: modulesData,
+    _legacyModuleNames: legacyModuleNames,
+    _enrichedMtsByModule: enrichedMtsByModule,
+  };
+}
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Phase 2 — streamStepResults
+// Sequential batches of 100. onBatch() fires after each so UI counts up live.
+// ─────────────────────────────────────────────────────────────────────────────
+
+export async function streamStepResults(
+  shell: DashboardShell,
+  onBatch: (updatedModules: DashboardModule[]) => void,
+  onProgress?: FetchProgressCallback,
+  token?: StreamCancellationToken
+): Promise<void> {
   const statusByModuleStep = new Map<string, string>();
   const metaByStepId = new Map<string, { is_divider: boolean; tests_serial_no: string }>();
 
-  if (allStepIds.length > 0) {
-    const batches = chunkArray(allStepIds, STEP_BATCH_SIZE);
+  // ── Revision-based batches (sequential) ──────────────────────────────────
+  if (shell._allStepIds.length > 0) {
+    const batches = chunkArray(shell._allStepIds, STEP_BATCH_SIZE);
     const totalBatches = batches.length;
+    onProgress?.("Loading step results…", 0, totalBatches);
 
-    onProgress?.("Fetching step results…", 0, totalBatches);
+    for (let i = 0; i < batches.length; i++) {
+      if (token?.cancelled) return;
 
-    // Fire all batch queries in parallel
-    const batchResults = await Promise.all(
-      batches.map((batch) =>
-        supabase
-          .from("step_results")
-          .select("status, test_steps_id, module_name")
-          .in("test_steps_id", batch)
-      )
-    );
+      const { data, error } = await supabase
+        .from("step_results")
+        .select("status, test_steps_id, module_name")
+        .in("test_steps_id", batches[i]);
 
-    // Process results with running progress ticks
-    batchResults.forEach((res, i) => {
-      if (res.error) throw new Error(res.error.message);
+      if (error) throw new Error(error.message);
 
-      for (const row of (res.data ?? []) as any[]) {
-        const key = `${row.module_name}:${row.test_steps_id}`;
-        statusByModuleStep.set(key, row.status as string);
+      for (const row of (data ?? []) as any[]) {
+        statusByModuleStep.set(`${row.module_name}:${row.test_steps_id}`, row.status as string);
       }
 
-      onProgress?.("Fetching step results…", i + 1, totalBatches);
-    });
+      // Emit after every batch → bars and counts animate upward
+      onBatch(assembleModules(shell, statusByModuleStep, metaByStepId));
+      onProgress?.("Loading step results…", i + 1, totalBatches);
+    }
   }
 
-  // ── 5b. Legacy path: tests without an active revision ────────────────────
-  if (serialNosWithoutRevision.size > 0) {
-    const legacyModuleNames = new Set<string>();
-    for (const mod of modulesData) {
-      for (const mt of (mod.module_tests ?? []) as any[]) {
-        const sn = mt.test?.serial_no as string | undefined;
-        if (sn && serialNosWithoutRevision.has(sn)) {
-          legacyModuleNames.add(mod.name as string);
-        }
-      }
-    }
+  // ── Legacy path — tests without an active revision ────────────────────────
+  if (shell._serialNosWithoutRevision.size > 0 && !token?.cancelled) {
+    onProgress?.(`Loading legacy steps (${shell._serialNosWithoutRevision.size} tests)…`, 0, 1);
 
-    onProgress?.(
-      `Fetching legacy steps (${serialNosWithoutRevision.size} tests)…`,
-      0,
-      1
-    );
-
-    const { data: legacyData, error: legacyErr } = await supabase
+    const { data, error } = await supabase
       .from("step_results")
       .select(`
         status,
@@ -249,15 +335,13 @@ export async function fetchDashboardModules(
           tests_serial_no
         )
       `)
-      .in("step.tests_serial_no", Array.from(serialNosWithoutRevision))
-      .in("module_name", Array.from(legacyModuleNames));
+      .in("step.tests_serial_no", Array.from(shell._serialNosWithoutRevision))
+      .in("module_name", Array.from(shell._legacyModuleNames));
 
-    if (legacyErr) throw new Error(legacyErr.message);
+    if (error) throw new Error(error.message);
 
-    for (const row of (legacyData ?? []) as any[]) {
-      const key = `${row.module_name}:${row.test_steps_id}`;
-      statusByModuleStep.set(key, row.status as string);
-
+    for (const row of (data ?? []) as any[]) {
+      statusByModuleStep.set(`${row.module_name}:${row.test_steps_id}`, row.status as string);
       if (row.step) {
         metaByStepId.set(row.test_steps_id as string, {
           is_divider: row.step.is_divider ?? false,
@@ -266,80 +350,15 @@ export async function fetchDashboardModules(
       }
     }
 
+    onBatch(assembleModules(shell, statusByModuleStep, metaByStepId));
     onProgress?.("Legacy steps loaded", 1, 1);
   }
-
-
-  // ── 6. Assemble final DashboardModule array ──────────────────────────────
-  onProgress?.("Assembling dashboard…", 1, 1);
-
-  return modulesData.map((mod): DashboardModule => {
-    const modName = mod.name as string;
-
-    const enrichedMts: DashboardModuleTest[] = ((mod.module_tests ?? []) as any[]).map(
-      (mt: any) => ({
-        id: mt.id,
-        tests_name: mt.tests_name,
-        is_visible: mt.is_visible ?? true, // ✅ read from module_tests row
-        test: mt.test ?? null,
-        active_revision: revBySerial[mt.test?.serial_no ?? ""] ?? null,
-      })
-    );
-
-    const moduleStepResults: DashboardStepResult[] = [];
-
-    for (const mt of enrichedMts) {
-      const rev = mt.active_revision;
-      const serialNo = (mt.test?.serial_no ?? "") as string;
-
-      if (!serialNo) continue;
-
-      if (rev && rev.step_order.length > 0) {
-        for (const stepId of rev.step_order) {
-          const parsed = parseStepKey(stepId);
-          if (parsed.tests_serial_no !== serialNo) continue;
-
-          const key = `${modName}:${stepId}`;
-          const status = statusByModuleStep.get(key) ?? "pending";
-
-          moduleStepResults.push({
-            status,
-            test_steps_id: stepId,
-            is_divider: parsed.is_divider,
-            tests_serial_no: parsed.tests_serial_no,
-          });
-        }
-      } else {
-        for (const [stepId, meta] of metaByStepId.entries()) {
-          if (meta.tests_serial_no !== serialNo) continue;
-
-          const key = `${modName}:${stepId}`;
-          const status = statusByModuleStep.get(key) ?? "pending";
-
-          moduleStepResults.push({
-            status,
-            test_steps_id: stepId,
-            is_divider: meta.is_divider,
-            tests_serial_no: meta.tests_serial_no,
-          });
-        }
-      }
-    }
-
-    return {
-      name: modName,
-      description: mod.description ?? null,
-      module_tests: enrichedMts,
-      step_results: moduleStepResults,
-    };
-  });
 }
 
 
 // ─────────────────────────────────────────────────────────────────────────────
 // fetchActiveLocks
 // ─────────────────────────────────────────────────────────────────────────────
-
 
 export async function fetchActiveLocks(): Promise<ActiveLock[]> {
   const { data: sessionData } = await supabase.auth.getSession();
@@ -354,7 +373,6 @@ export async function fetchActiveLocks(): Promise<ActiveLock[]> {
   if (lockErr || !locks || locks.length === 0) return [];
 
   const module_test_ids = locks.map((l: any) => l.module_test_id);
-
   const { data: module_tests, error: mtErr } = await supabase
     .from("module_tests")
     .select("id, module_name, tests_name")
@@ -363,7 +381,6 @@ export async function fetchActiveLocks(): Promise<ActiveLock[]> {
   if (mtErr || !module_tests) return [];
 
   const mtMap = Object.fromEntries(module_tests.map((mt: any) => [mt.id, mt]));
-
   return locks.map((l: any) => {
     const mt = mtMap[l.module_test_id];
     return {
@@ -380,7 +397,6 @@ export async function fetchActiveLocks(): Promise<ActiveLock[]> {
 // fetchOtherActiveLockModules
 // ─────────────────────────────────────────────────────────────────────────────
 
-
 export async function fetchOtherActiveLockModules(): Promise<Map<string, number>> {
   const { data: sessionData } = await supabase.auth.getSession();
   const userEmail = sessionData?.session?.user?.email;
@@ -395,7 +411,6 @@ export async function fetchOtherActiveLockModules(): Promise<Map<string, number>
   if (otherLocks.length === 0) return new Map();
 
   const module_test_ids = otherLocks.map((l: any) => l.module_test_id);
-
   const { data: module_tests, error: mtErr } = await supabase
     .from("module_tests")
     .select("id, module_name")
@@ -403,16 +418,12 @@ export async function fetchOtherActiveLockModules(): Promise<Map<string, number>
 
   if (mtErr || !module_tests) return new Map();
 
-  const idToModule = Object.fromEntries(
-    module_tests.map((mt: any) => [mt.id, mt.module_name])
-  );
-
+  const idToModule = Object.fromEntries(module_tests.map((mt: any) => [mt.id, mt.module_name]));
   const countMap = new Map<string, number>();
   for (const lock of otherLocks) {
     const moduleName = idToModule[lock.module_test_id];
     if (!moduleName) continue;
     countMap.set(moduleName, (countMap.get(moduleName) ?? 0) + 1);
   }
-
   return countMap;
 }
