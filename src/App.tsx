@@ -17,6 +17,7 @@ import AuditLog from "./components/AuditLog/AuditLog";
 import Spinner from "./components/UI/Spinner";
 import { supabase } from "./supabase";
 import { Module } from "./types";
+import type { DashboardModule } from "./lib/supabase/queries.dashboard";
 
 type Page =
   | "dashboard"
@@ -26,17 +27,13 @@ type Page =
   | "users"
   | "audit_log";
 
-// ─── AppInner ─────────────────────────────────────────────────────────────────
-
 const AppInner: React.FC = () => {
   const { isLoading: authLoading, isAuthenticated, user } = useAuth();
   const { log } = useSessionLog();
 
   const [modules, setModules] = useState<Module[]>([]);
   const [page, setPage] = useState<Page>("dashboard");
-  const [selectedmodule_name, setSelectedmodule_name] = useState<string | null>(
-    null
-  );
+  const [selectedmodule_name, setSelectedmodule_name] = useState<string | null>(null);
   const [selectedTestId, setSelectedTestId] = useState<string | null>(null);
   const [installPrompt, setInstallPrompt] = useState<any>(null);
   const [showInstall, setShowInstall] = useState(false);
@@ -66,12 +63,8 @@ const AppInner: React.FC = () => {
 
   useEffect(() => {
     if (!isAuthenticated) return;
-    log(
-      "success",
-      "auth",
-      `Signed in as ${user?.email ?? "unknown"} (${user?.role ?? "?"})`
-    );
-  }, [isAuthenticated]); // eslint-disable-line react-hooks/exhaustive-deps
+    log("success", "auth", `Signed in as ${user?.email ?? "unknown"} (${user?.role ?? "?"})`);
+  }, [isAuthenticated, log, user]);
 
   useEffect(() => {
     if (!isAuthenticated) return;
@@ -85,12 +78,7 @@ const AppInner: React.FC = () => {
             setModules(data as Module[]);
             log("success", "query", `SELECT modules → ${data.length} rows`);
           } else if (error) {
-            log(
-              "error",
-              "query",
-              `SELECT modules failed: ${error.message}`,
-              JSON.stringify(error)
-            );
+            log("error", "query", `SELECT modules failed: ${error.message}`, JSON.stringify(error));
             console.error("Error fetching modules:", error.message);
           }
         });
@@ -118,7 +106,7 @@ const AppInner: React.FC = () => {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [isAuthenticated]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [isAuthenticated, log]);
 
   if (authLoading) {
     return (
@@ -132,7 +120,7 @@ const AppInner: React.FC = () => {
 
   const selectedModule = modules.find((m) => m.name === selectedmodule_name);
 
-  const navigate = (p: string, module_name?: string) => {
+  const navigate = useCallback((p: string, module_name?: string) => {
     if (p === "module" && module_name) {
       setSelectedmodule_name(module_name);
       setPage("module");
@@ -142,13 +130,31 @@ const AppInner: React.FC = () => {
       setPage(p as Page);
       log("info", "nav", `Navigate → ${p}`);
     }
-  };
+  }, [log]);
 
-  const navigateToReport = (testId: string) => {
+  const navigateToReport = useCallback((testId: string) => {
     setSelectedTestId(testId);
     setPage("report");
     log("info", "nav", `Navigate → report: ${testId}`);
-  };
+  }, [log]);
+
+  const reportModules: DashboardModule[] = modules.map((m: any) => ({
+    name: m.name,
+    description: m.description ?? null,
+    module_tests: (m.module_tests ?? []).map((mt: any) => ({
+      id: mt.id,
+      tests_name: mt.tests_name,
+      is_visible: mt.is_visible ?? true,
+      test: mt.test ?? null,
+      active_revision: mt.active_revision ?? null,
+    })),
+    step_results: (m.step_results ?? []).map((sr: any) => ({
+      status: sr.status,
+      test_steps_id: sr.test_steps_id,
+      is_divider: sr.is_divider ?? false,
+      tests_serial_no: sr.tests_serial_no ?? "",
+    })),
+  }));
 
   const renderPage = () => {
     switch (page) {
@@ -193,6 +199,7 @@ const AppInner: React.FC = () => {
         return (
           <TestReport
             module_test_id={selectedTestId ?? undefined}
+            modules={reportModules}
             onBack={
               selectedTestId
                 ? () => {
@@ -249,17 +256,14 @@ const AppInner: React.FC = () => {
   );
 };
 
-// ─── Root ─────────────────────────────────────────────────────────────────────
-// ✅ Fixed
 const App: React.FC = () => (
-  <>
-    <ThemeProvider>
-      <SessionLogProvider>
-        <ActiveLockProvider>
-          <AppInner />
-        </ActiveLockProvider>
-      </SessionLogProvider>
-    </ThemeProvider>
-  </>
+  <ThemeProvider>
+    <SessionLogProvider>
+      <ActiveLockProvider>
+        <AppInner />
+      </ActiveLockProvider>
+    </SessionLogProvider>
+  </ThemeProvider>
 );
+
 export default App;

@@ -1,16 +1,12 @@
 /**
  * TestReport.tsx
  * Drill-down mode  → pass module_test_id + onBack
- * Standalone mode  → render with no props
+ * Standalone mode  → pass modules[] from Dashboard (NO own fetch)
  *
- * Two-phase loading (mirrors ModuleDashboard):
- *  Phase 1 — fetchTestReportShell: meta + step defs → renders immediately
- *             with all statuses as "pending"
- *  Phase 2 — streamTestReportResults: real statuses fill in progressively
- *
- * Animations match ModuleDashboard exactly:
- *  - FadeWrapper (fadeSlideIn 0.28s) for view/chart-type transitions
- *  - StaggerRow  (fadeSlideInRow 0.25s + 45ms index delay) for step table rows
+ * Data ownership:
+ *  - Standalone: consumes DashboardModule[] passed as prop — zero extra queries
+ *  - Drill-down: own two-phase fetch (fetchTestReportShell + streamTestReportResults)
+ *  - Session:    own independent query (fetchSessionSteps) — always fresh
  */
 import React, {
   useEffect,
@@ -30,44 +26,31 @@ import { exportReportCSV, exportReportPDF } from "../../utils/export";
 import type { FlatData } from "../../utils/export";
 import { getChartTheme } from "../../utils/chartTheme";
 import {
-  RBarChart,
-  RAreaChart,
-  RLineChart,
-  RPieChart,
-  RRadarChart,
+  RBarChart, RAreaChart, RLineChart, RPieChart, RRadarChart,
 } from "../ModuleDashboard/charts";
 import type { ChartRow, ChartType } from "../ModuleDashboard/charts/types";
 import { CHART_TYPES } from "../ModuleDashboard/charts";
 import {
-  FileSpreadsheet,
-  FileText,
-  CheckCircle2,
-  XCircle,
-  Clock,
-  BarChart2,
-  TableIcon,
-  Upload,
-  AlertTriangle,
-  User,
-  X,
-  ChevronRight,
-  GitBranch,
+  FileSpreadsheet, FileText, CheckCircle2, XCircle, Clock,
+  BarChart2, TableIcon, Upload, AlertTriangle, User, X,
+  ChevronRight, GitBranch,
 } from "lucide-react";
 import { supabase } from "../../supabase";
 import {
   fetchTestReportShell,
   streamTestReportResults,
   fetchModuleOptions,
-  fetchModuleReports,
   fetchSessionSteps,
   type ReportMeta,
   type ReportStepResult,
-  type ModuleRow,
   type ModuleOption,
   type SessionStepEntry,
   type SessionTestGroup,
   type StreamCancellationToken,
 } from "../../lib/supabase/queries.testreport";
+import type {
+  DashboardModule,
+} from "../../lib/supabase/queries.dashboard";
 
 
 // ─── Animation wrappers ───────────────────────────────────────────────────────
@@ -85,8 +68,7 @@ const FadeWrapper: React.FC<{
 );
 
 const StaggerRow: React.FC<{ index: number; children: React.ReactNode }> = ({
-  index,
-  children,
+  index, children,
 }) => (
   <div
     style={{
@@ -126,6 +108,10 @@ const STATUS_BADGE: Record<string, React.CSSProperties> = {
 };
 
 const SESSION_STORAGE_KEY = "testreport_session_start";
+
+function getNonDividerResultsFlat(rows: DashboardModule["step_results"]) {
+  return rows.filter((r) => !r.is_divider);
+}
 
 function getNonDividerResults(rows: ReportStepResult[]) {
   return rows.filter((r) => !r.step?.is_divider);
@@ -174,10 +160,7 @@ interface SessionModalProps {
 }
 
 const SessionDetailModal: React.FC<SessionModalProps> = ({
-  group,
-  displayName,
-  revisionLabel,
-  onClose,
+  group, displayName, revisionLabel, onClose,
 }) => {
   const sorted = useMemo(
     () => [...group.steps].sort((a, b) => a.serial_no - b.serial_no),
@@ -187,10 +170,7 @@ const SessionDetailModal: React.FC<SessionModalProps> = ({
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center p-4"
-      style={{
-        backgroundColor: "rgba(0,0,0,0.6)",
-        backdropFilter:  `blur(var(--glass-blur))`,
-      }}
+      style={{ backgroundColor: "rgba(0,0,0,0.6)", backdropFilter: "blur(var(--glass-blur))" }}
       onClick={onClose}
     >
       <div
@@ -199,7 +179,6 @@ const SessionDetailModal: React.FC<SessionModalProps> = ({
         style={{ animation: "fadeSlideIn 0.28s cubic-bezier(0.22,1,0.36,1) both" }}
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Header */}
         <div className="flex items-start justify-between gap-3 px-5 py-4 border-b border-(--border-color)">
           <div className="flex flex-col gap-1">
             <div className="flex items-center gap-2">
@@ -214,25 +193,16 @@ const SessionDetailModal: React.FC<SessionModalProps> = ({
               { label: "Fail", style: STATUS_BADGE.fail,    count: group.fail },
               { label: "Undo", style: STATUS_BADGE.pending, count: group.undo },
             ].map(({ label, style, count }) => (
-              <span
-                key={label}
-                className="text-[11px] font-bold px-2.5 py-0.5 rounded-full"
-                style={style}
-              >
+              <span key={label} className="text-[11px] font-bold px-2.5 py-0.5 rounded-full" style={style}>
                 {label}: {count}
               </span>
             ))}
-            <button
-              onClick={onClose}
-              className="ml-2 p-1.5 rounded-lg hover:bg-bg-surface text-t-muted
-                hover:text-t-primary transition"
-            >
+            <button onClick={onClose} className="ml-2 p-1.5 rounded-lg hover:bg-bg-surface text-t-muted hover:text-t-primary transition">
               <X size={15} />
             </button>
           </div>
         </div>
 
-        {/* Scrollable table */}
         <div className="overflow-y-auto flex-1">
           <table className="w-full text-xs">
             <thead className="sticky top-0 bg-bg-card z-10">
@@ -274,7 +244,6 @@ const SessionDetailModal: React.FC<SessionModalProps> = ({
           </table>
         </div>
 
-        {/* Footer */}
         <div className="px-5 py-3 border-t border-(--border-color) text-xs text-t-muted">
           {group.total} step{group.total !== 1 ? "s" : ""} executed this session
         </div>
@@ -289,6 +258,8 @@ const SessionDetailModal: React.FC<SessionModalProps> = ({
 interface Props {
   module_test_id?: string;
   onBack?:         () => void;
+  /** Dashboard passes its already-loaded modules — standalone uses this, no extra fetch */
+  modules?:        DashboardModule[];
 }
 
 type ViewMode = "table" | "chart";
@@ -298,7 +269,7 @@ type ViewMode = "table" | "chart";
 // MAIN COMPONENT
 // ══════════════════════════════════════════════════════════════════════════════
 
-const TestReport: React.FC<Props> = ({ module_test_id, onBack }) => {
+const TestReport: React.FC<Props> = ({ module_test_id, onBack, modules: propModules }) => {
   const { theme } = useTheme();
   const { user }  = useAuth();
   const ct        = useMemo(() => getChartTheme(theme), [theme]);
@@ -311,33 +282,37 @@ const TestReport: React.FC<Props> = ({ module_test_id, onBack }) => {
   const [refreshing, setRefreshing]= useState(false);
   const [viewMode,   setViewMode]  = useState<ViewMode>("chart");
 
-  // ── Standalone state ──────────────────────────────────────────────────────
-  const [moduleOptions,       setModuleOptions]       = useState<ModuleOption[]>([]);
-  const [modules,             setModules]             = useState<ModuleRow[]>([]);
-  const [selectedModuleName,  setSelectedModuleName]  = useState<string | null>(null);
-  const [showExportModal,     setShowExportModal]     = useState(false);
-  const [view,                setView]                = useState<"graph" | "table">("graph");
+  // ── Standalone state — sourced from props, no fetch ───────────────────────
+  const [modules,            setModules]           = useState<DashboardModule[]>(propModules ?? []);
+  const [moduleOptions,      setModuleOptions]     = useState<ModuleOption[]>([]);
+  const [selectedModuleName, setSelectedModuleName]= useState<string | null>(null);
+  const [showExportModal,    setShowExportModal]   = useState(false);
+  const [view,               setView]              = useState<"graph" | "table">("graph");
 
-  // ── Session state ─────────────────────────────────────────────────────────
+  // Keep modules in sync if dashboard re-streams and passes fresh data
+  useEffect(() => {
+    if (propModules) setModules(propModules);
+  }, [propModules]);
+
+  // ── Session state — own independent query ─────────────────────────────────
   const [sessionSteps,       setSessionSteps]       = useState<SessionStepEntry[]>([]);
   const [activeSessionGroup, setActiveSessionGroup] = useState<SessionTestGroup | null>(null);
 
   // ── Shared ────────────────────────────────────────────────────────────────
   const [chartType, setChartType] = useState<ChartType>("bar");
-  const [loading,   setLoading]   = useState(true);
+  const [loading,   setLoading]   = useState(!!module_test_id); // only drill-down loads
   const [error,     setError]     = useState<string | null>(null);
 
-  // Abort/cancel refs — mirrors ModuleDashboard pattern exactly
   const abortRef = useRef<AbortController | null>(null);
   const tokenRef = useRef<StreamCancellationToken>({ cancelled: false });
 
 
   // ── Inject animation keyframes once ──────────────────────────────────────
   useLayoutEffect(() => {
-    const id  = "__report_anim__";
+    const id = "__report_anim__";
     if (document.getElementById(id)) return;
-    const el  = document.createElement("style");
-    el.id     = id;
+    const el = document.createElement("style");
+    el.id    = id;
     el.textContent = `
       @keyframes fadeSlideIn {
         from { opacity: 0; transform: translateY(10px); }
@@ -365,7 +340,6 @@ const TestReport: React.FC<Props> = ({ module_test_id, onBack }) => {
   const loadDrillDown = useCallback(async () => {
     if (!module_test_id) return;
 
-    // Cancel any in-flight stream
     abortRef.current?.abort();
     tokenRef.current.cancelled = true;
 
@@ -378,15 +352,15 @@ const TestReport: React.FC<Props> = ({ module_test_id, onBack }) => {
     setError(null);
 
     try {
-      // ── Phase 1: shell — renders immediately with pending statuses ────────
+      // Phase 1 — shell renders immediately with all statuses as "pending"
       const shell = await fetchTestReportShell(module_test_id);
       if (token.cancelled) return;
 
       setMeta(shell.meta);
-      setResults(shell.results);    // all "pending" — step list appears at once
+      setResults(shell.results);
       setLoading(false);
 
-      // ── Phase 2: stream — statuses fill in progressively ─────────────────
+      // Phase 2 — real statuses stream in progressively
       setRefreshing(true);
       await streamTestReportResults(
         shell,
@@ -404,22 +378,7 @@ const TestReport: React.FC<Props> = ({ module_test_id, onBack }) => {
   }, [module_test_id]);
 
 
-  // ── Standalone fetch (unchanged — no streaming needed here) ──────────────
-  const fetchStandalone = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const data = await fetchModuleReports(null);
-      setModules(data);
-    } catch (err: any) {
-      setError(err.message ?? "Failed to load report data.");
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-
-  // ── Session fetch ─────────────────────────────────────────────────────────
+  // ── Session fetch — always independent ───────────────────────────────────
   const loadSessionSteps = useCallback(async (username: string) => {
     try {
       const sessionStart = getOrCreateSessionStart();
@@ -435,23 +394,26 @@ const TestReport: React.FC<Props> = ({ module_test_id, onBack }) => {
   }, [sessionUser, loadSessionSteps]);
 
 
-  // ── Initial load ──────────────────────────────────────────────────────────
+  // ── Standalone: module options for the filter dropdown ───────────────────
   useEffect(() => {
-    if (module_test_id) {
-      loadDrillDown();
-    } else {
+    if (!module_test_id) {
       setSelectedModuleName(null);
-      fetchModuleOptions().then(setModuleOptions);
-      fetchStandalone();
+      fetchModuleOptions().then(setModuleOptions).catch(() => {});
     }
+  }, [module_test_id]);
+
+
+  // ── Initial load (drill-down only) ───────────────────────────────────────
+  useEffect(() => {
+    if (module_test_id) loadDrillDown();
     return () => {
       abortRef.current?.abort();
       tokenRef.current.cancelled = true;
     };
-  }, [module_test_id, loadDrillDown, fetchStandalone]);
+  }, [module_test_id, loadDrillDown]);
 
 
-  // ── Realtime subscription (drill-down only) ───────────────────────────────
+  // ── Realtime (drill-down only) ───────────────────────────────────────────
   useEffect(() => {
     if (!module_test_id || !meta) return;
 
@@ -459,12 +421,7 @@ const TestReport: React.FC<Props> = ({ module_test_id, onBack }) => {
       .channel(`report-${module_test_id}-${Date.now()}`)
       .on(
         "postgres_changes",
-        {
-          event:  "UPDATE",
-          schema: "public",
-          table:  "step_results",
-          filter: `module_name=eq.${meta.module_name}`,
-        },
+        { event: "UPDATE", schema: "public", table: "step_results", filter: `module_name=eq.${meta.module_name}` },
         () => loadDrillDown()
       )
       .subscribe();
@@ -473,7 +430,7 @@ const TestReport: React.FC<Props> = ({ module_test_id, onBack }) => {
   }, [module_test_id, meta?.module_name, loadDrillDown]);
 
 
-  // ── Lookup maps ───────────────────────────────────────────────────────────
+  // ── Lookup maps (built from prop modules) ─────────────────────────────────
   const serialToNameMap = useMemo(() => {
     const map = new Map<string, string>();
     modules.forEach((m) => {
@@ -507,8 +464,7 @@ const TestReport: React.FC<Props> = ({ module_test_id, onBack }) => {
         const key = `${s.module_name}::${s.tests_serial_no}`;
         if (!map.has(key)) {
           map.set(key, {
-            module_name:     s.module_name,
-            tests_serial_no: s.tests_serial_no,
+            module_name: s.module_name, tests_serial_no: s.tests_serial_no,
             steps: [], pass: 0, fail: 0, undo: 0, total: 0,
           });
         }
@@ -547,7 +503,7 @@ const TestReport: React.FC<Props> = ({ module_test_id, onBack }) => {
   );
 
 
-  // ── Standalone chart data ─────────────────────────────────────────────────
+  // ── Standalone chart data (from prop modules — no fetch) ──────────────────
   const displayModules = useMemo(
     () => selectedModuleName ? modules.filter((m) => m.name === selectedModuleName) : modules,
     [modules, selectedModuleName]
@@ -555,12 +511,12 @@ const TestReport: React.FC<Props> = ({ module_test_id, onBack }) => {
 
   const moduleChartData = useMemo<ChartRow[]>(
     () => displayModules.map((m) => {
-      const r = getNonDividerResults(m.step_results ?? []);
+      const real = getNonDividerResultsFlat(m.step_results ?? []);
       return {
         name:    m.name,
-        pass:    r.filter((s) => s.status === "pass").length,
-        fail:    r.filter((s) => s.status === "fail").length,
-        pending: r.filter((s) => s.status === "pending").length,
+        pass:    real.filter((s) => s.status === "pass").length,
+        fail:    real.filter((s) => s.status === "fail").length,
+        pending: real.filter((s) => s.status === "pending").length,
       };
     }),
     [displayModules]
@@ -584,19 +540,17 @@ const TestReport: React.FC<Props> = ({ module_test_id, onBack }) => {
   );
 
   const toFlatData = useCallback((): FlatData[] =>
-    results
-      .filter((r) => !r.step?.is_divider)
-      .map((r) => ({
-        module:         meta?.module_name ?? "",
-        test:           meta?.test?.name ?? meta?.tests_name ?? "",
-        test_serial_no: meta?.test?.serial_no ?? "",
-        serial:         r.step?.serial_no ?? 0,
-        action:         r.step?.action ?? "",
-        expected:       r.step?.expected_result ?? "",
-        remarks:        r.remarks ?? "",
-        status:         r.status,
-        isdivider:      false,
-      })),
+    results.filter((r) => !r.step?.is_divider).map((r) => ({
+      module:         meta?.module_name ?? "",
+      test:           meta?.test?.name ?? meta?.tests_name ?? "",
+      test_serial_no: meta?.test?.serial_no ?? "",
+      serial:         r.step?.serial_no ?? 0,
+      action:         r.step?.action ?? "",
+      expected:       r.step?.expected_result ?? "",
+      remarks:        r.remarks ?? "",
+      status:         r.status,
+      isdivider:      false,
+    })),
   [results, meta]);
 
   const exportStats = () => {
@@ -627,9 +581,7 @@ const TestReport: React.FC<Props> = ({ module_test_id, onBack }) => {
           key={type}
           onClick={() => setChartType(type)}
           className={`text-xs font-semibold px-3 py-1 rounded-lg transition-colors ${
-            chartType === type
-              ? "bg-c-brand text-(--bg-surface)"
-              : "text-t-muted hover:text-t-primary"
+            chartType === type ? "bg-c-brand text-(--bg-surface)" : "text-t-muted hover:text-t-primary"
           }`}
         >
           {label}
@@ -709,8 +661,8 @@ const TestReport: React.FC<Props> = ({ module_test_id, onBack }) => {
   ) : null;
 
 
-  // ── Loading ───────────────────────────────────────────────────────────────
-  if (loading)
+  // ── Loading (drill-down only) ─────────────────────────────────────────────
+  if (loading && module_test_id)
     return (
       <div className="flex-1 flex flex-col">
         <Topbar title="Test Report" onBack={onBack} />
@@ -727,7 +679,7 @@ const TestReport: React.FC<Props> = ({ module_test_id, onBack }) => {
           <AlertTriangle size={32} style={{ color: "var(--color-fail)" }} />
           <p className="text-sm font-medium" style={{ color: "var(--color-fail)" }}>{error}</p>
           <button
-            onClick={() => module_test_id ? loadDrillDown() : fetchStandalone()}
+            onClick={loadDrillDown}
             className="px-4 py-2 rounded-xl bg-bg-card hover:bg-bg-surface text-sm
               text-t-secondary border border-(--border-color) transition"
           >
@@ -781,15 +733,14 @@ const TestReport: React.FC<Props> = ({ module_test_id, onBack }) => {
         />
 
         <div className="p-6 flex flex-col gap-5 pb-24 md:pb-6">
-          {/* Stat pills */}
           <FadeWrapper animKey="drill-stats">
             <div className="flex flex-wrap gap-2">
               {[
-                { label: "Total",   value: stats.total,           style: { background: "var(--bg-card)", color: "var(--text-primary)", border: "1px solid var(--border-color)" } as React.CSSProperties },
-                { label: "Pass",    value: stats.pass,            style: STATUS_BADGE.pass },
-                { label: "Fail",    value: stats.fail,            style: STATUS_BADGE.fail },
-                { label: "Pending", value: stats.pending,         style: STATUS_BADGE.pending },
-                { label: "Pass %",  value: `${stats.passRate}%`,  style: { background: "var(--color-brand-bg)", color: "var(--color-brand)", border: "1px solid color-mix(in srgb, var(--color-brand) 25%, transparent)" } as React.CSSProperties },
+                { label: "Total",   value: stats.total,          style: { background: "var(--bg-card)", color: "var(--text-primary)", border: "1px solid var(--border-color)" } as React.CSSProperties },
+                { label: "Pass",    value: stats.pass,           style: STATUS_BADGE.pass },
+                { label: "Fail",    value: stats.fail,           style: STATUS_BADGE.fail },
+                { label: "Pending", value: stats.pending,        style: STATUS_BADGE.pending },
+                { label: "Pass %",  value: `${stats.passRate}%`, style: { background: "var(--color-brand-bg)", color: "var(--color-brand)", border: "1px solid color-mix(in srgb, var(--color-brand) 25%, transparent)" } as React.CSSProperties },
               ].map((s) => (
                 <span key={s.label} className="flex items-center gap-1 text-xs font-bold px-3 py-1 rounded-full" style={s.style}>
                   {s.label}: {s.value}
@@ -798,7 +749,6 @@ const TestReport: React.FC<Props> = ({ module_test_id, onBack }) => {
             </div>
           </FadeWrapper>
 
-          {/* Progress bar */}
           <div>
             <div className="flex justify-between text-xs text-t-muted mb-1">
               <span>Overall Progress</span>
@@ -809,14 +759,17 @@ const TestReport: React.FC<Props> = ({ module_test_id, onBack }) => {
             <SegmentedBar passRate={stats.passRate} failPct={stats.failPct} pendingPct={stats.pendingPct} total={stats.total} />
           </div>
 
-          {/* View toggle */}
           <div className="flex items-center gap-2 bg-bg-base rounded-xl p-1 self-start">
-            {([ { mode: "chart", icon: <BarChart2 size={13} />, label: "Chart" }, { mode: "table", icon: <TableIcon size={13} />, label: "Table" } ] as const).map(({ mode, icon, label }) => (
+            {([
+              { mode: "chart", icon: <BarChart2  size={13} />, label: "Chart" },
+              { mode: "table", icon: <TableIcon  size={13} />, label: "Table" },
+            ] as const).map(({ mode, icon, label }) => (
               <button
                 key={mode}
                 onClick={() => setViewMode(mode)}
-                className={`flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5
-                  rounded-lg transition-colors ${viewMode === mode ? "bg-c-brand text-(--bg-surface)" : "text-t-muted hover:text-t-primary"}`}
+                className={`flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg transition-colors ${
+                  viewMode === mode ? "bg-c-brand text-(--bg-surface)" : "text-t-muted hover:text-t-primary"
+                }`}
               >
                 {icon}{label}
               </button>
@@ -862,7 +815,8 @@ const TestReport: React.FC<Props> = ({ module_test_id, onBack }) => {
                       <td className="px-4 py-3 text-center">
                         <div className="flex items-center gap-2 justify-center">
                           <div className="w-20 h-1.5 bg-(--border-color) rounded-full overflow-hidden">
-                            <div className="h-full rounded-full transition-all duration-500" style={{ width: `${stats.passRate}%`, backgroundColor: "var(--color-pass)" }} />
+                            <div className="h-full rounded-full transition-all duration-500"
+                              style={{ width: `${stats.passRate}%`, backgroundColor: "var(--color-pass)" }} />
                           </div>
                           <span className="font-bold text-t-primary">{stats.passRate}%</span>
                         </div>
@@ -882,7 +836,7 @@ const TestReport: React.FC<Props> = ({ module_test_id, onBack }) => {
 
 
   // ══════════════════════════════════════════════════════════════════════════
-  // STANDALONE MODE
+  // STANDALONE MODE — uses prop modules, no fetch
   // ══════════════════════════════════════════════════════════════════════════
   return (
     <>
@@ -919,7 +873,7 @@ const TestReport: React.FC<Props> = ({ module_test_id, onBack }) => {
         stats={exportStats()}
         options={[
           { label: "CSV", icon: <FileSpreadsheet size={16} />, color: "bg-(--bg-card) border border-(--border-color) text-(--text-primary)", hoverColor: "hover:bg-(--bg-surface) hover:border-(--color-brand)", onConfirm: () => exportReportCSV([], sessionFlatData) },
-          { label: "PDF", icon: <FileText size={16} />,        color: "bg-(--bg-card) border border-(--border-color) text-(--text-primary)", hoverColor: "hover:bg-(--bg-surface) hover:border-(--color-brand)", onConfirm: () => exportReportPDF([], sessionFlatData) },
+          { label: "PDF", icon: <FileText        size={16} />, color: "bg-(--bg-card) border border-(--border-color) text-(--text-primary)", hoverColor: "hover:bg-(--bg-surface) hover:border-(--color-brand)", onConfirm: () => exportReportPDF([], sessionFlatData) },
         ]}
       />
 
@@ -931,7 +885,9 @@ const TestReport: React.FC<Props> = ({ module_test_id, onBack }) => {
               <button
                 key={v}
                 onClick={() => setView(v)}
-                className={`px-4 py-2 rounded-lg text-sm font-semibold transition capitalize ${view === v ? "bg-c-brand text-(--bg-surface)" : "text-t-muted hover:text-t-primary"}`}
+                className={`px-4 py-2 rounded-lg text-sm font-semibold transition capitalize ${
+                  view === v ? "bg-c-brand text-(--bg-surface)" : "text-t-muted hover:text-t-primary"
+                }`}
               >
                 {v}
               </button>
@@ -967,8 +923,8 @@ const TestReport: React.FC<Props> = ({ module_test_id, onBack }) => {
                 <tbody className="divide-y divide-(--border-color)">
                   {displayModules.flatMap((m) =>
                     (m.module_tests ?? []).map((mt, idx) => {
-                      const testResults = getNonDividerResults(
-                        (m.step_results ?? []).filter((sr) => sr.step?.tests_serial_no === mt.test?.serial_no)
+                      const testResults = getNonDividerResultsFlat(
+                        (m.step_results ?? []).filter((sr) => sr.tests_serial_no === mt.test?.serial_no)
                       );
                       const pass     = testResults.filter((r) => r.status === "pass").length;
                       const fail     = testResults.filter((r) => r.status === "fail").length;
@@ -992,7 +948,8 @@ const TestReport: React.FC<Props> = ({ module_test_id, onBack }) => {
                             <td className="px-4 py-3 text-center">
                               <div className="flex items-center gap-2 justify-center">
                                 <div className="w-20 h-1.5 bg-(--border-color) rounded-full overflow-hidden">
-                                  <div className="h-full rounded-full transition-all duration-500" style={{ width: `${passRate}%`, backgroundColor: "var(--color-pass)" }} />
+                                  <div className="h-full rounded-full transition-all duration-500"
+                                    style={{ width: `${passRate}%`, backgroundColor: "var(--color-pass)" }} />
                                 </div>
                                 <span className="font-bold text-t-primary">{passRate}%</span>
                               </div>
