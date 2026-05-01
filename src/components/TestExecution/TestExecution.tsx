@@ -388,7 +388,6 @@ const TableStepRow = memo<TableStepRowProps>(({
 
   useEffect(() => { setRemarks(initialRemarks); }, [initialRemarks]);
 
-  // Stable ref callback — stepId and onRegisterRef are stable after load
   const handleRef = useCallback(
     (el: HTMLTableRowElement | null) => onRegisterRef(step.stepId, el),
     [step.stepId, onRegisterRef]
@@ -758,7 +757,7 @@ const TestExecution: React.FC<Props> = ({
   const [updatingStepIds, setUpdatingStepIds]   = useState<Set<string>>(new Set());
   const [isUndoingAll, setIsUndoingAll]         = useState(false);
 
-  // ── Stable refs — keep callbacks from getting stale without adding deps ────
+  // ── Stable refs ───────────────────────────────────────────────────────────
   const stepsRef          = useRef<ExecutionStep[]>([]);
   stepsRef.current        = steps;
   const updatingRef       = useRef<Set<string>>(new Set());
@@ -768,7 +767,6 @@ const TestExecution: React.FC<Props> = ({
   const remarksMap        = useRef<Record<string, string>>({});
 
   // ── Ref stores for row DOM elements ───────────────────────────────────────
-  // Stable callbacks so memo'd row components never get new ref-prop functions.
   const trRefs   = useRef<Record<string, HTMLTableRowElement | null>>({});
   const cardRefs = useRef<Record<string, HTMLDivElement | null>>({});
 
@@ -781,22 +779,17 @@ const TestExecution: React.FC<Props> = ({
     []
   );
 
-  // ── Stable onFocus / onRemarksChange ──────────────────────────────────────
   const handleFocus = useCallback((stepId: string) => setFocusedStepId(stepId), []);
   const handleRemarksChange = useCallback((stepId: string, val: string) => {
     remarksMap.current[stepId] = val;
   }, []);
 
-  // ── stepIdSet — filters realtime events to current test's steps only ──────
-  // Prevents unnecessary re-renders when other tests in the same module are
-  // updated by a concurrent user.
   const stepIdSetRef = useRef<Set<string>>(new Set());
 
-  const isLockedByOther   = !!(lock && lock.user_id !== user?.id);
+  const isLockedByOther    = !!(lock && lock.user_id !== user?.id);
   const isRevisionReadOnly = !isVisible;
 
-  // Keep refs in sync every render (cheap assignments, no effects needed)
-  isLockedRef.current  = isLockedByOther;
+  isLockedRef.current   = isLockedByOther;
   isReadOnlyRef.current = isRevisionReadOnly;
 
   const openImagePreview = useCallback(
@@ -825,7 +818,6 @@ const TestExecution: React.FC<Props> = ({
 
     (async () => {
       try {
-        // Round 1: RPC (steps+results) + module_tests + lock — all parallel
         const [execData, lockRes] = await Promise.all([
           fetchTestExecutionData(currentMtId, module_name),
           supabase
@@ -847,28 +839,26 @@ const TestExecution: React.FC<Props> = ({
         );
 
         const merged: ExecutionStep[] = ordered.map((sr, idx) => ({
-          stepId:           sr.step!.id,
-          stepResultId:     sr.id,
-          module_test_id:   currentMtId,
-          serial_no:        displaySerials[idx],
-          action:           sr.step!.action,
-          expected_result:  sr.step!.expected_result,
+          stepId:              sr.step!.id,
+          stepResultId:        sr.id,
+          module_test_id:      currentMtId,
+          serial_no:           displaySerials[idx],
+          action:              sr.step!.action,
+          expected_result:     sr.step!.expected_result,
           action_image_urls:   sr.step!.action_image_urls  || [],
           expected_image_urls: sr.step!.expected_image_urls || [],
-          is_divider:       sr.step!.is_divider,
-          status:           sr.status,
-          remarks:          sr.remarks,
-          display_name:     sr.display_name ?? "",
+          is_divider:          sr.step!.is_divider,
+          status:              sr.status,
+          remarks:             sr.remarks,
+          display_name:        sr.display_name ?? "",
         }));
 
-        // Populate stepIdSet for realtime filtering
         stepIdSetRef.current = new Set(merged.map((s) => s.stepId));
 
         setSteps(merged);
         setLock(lockRes.data?.[0] ?? null);
         setLoading(false);
 
-        // Autofocus first pending step — synchronous, no extra effect
         if (isVisibleNow) {
           const firstPending = merged.find((s) => !s.is_divider && s.status === "pending");
           if (firstPending) {
@@ -877,7 +867,6 @@ const TestExecution: React.FC<Props> = ({
           }
         }
 
-        // Acquire lock only when test is editable
         if (isVisibleNow && user) {
           const result = await acquireLock(
             currentMtId,
@@ -907,7 +896,8 @@ const TestExecution: React.FC<Props> = ({
     // ── Realtime: lock changes ─────────────────────────────────────────────
     const lockChannel = supabase
       .channel(`lock:${currentMtId}:${uid}`)
-      .on("postgres_changes", { event: "*", schema: "public", table: "test_locks", filter: `module_test_id=eq.${currentMtId}` },
+      .on("postgres_changes",
+        { event: "*", schema: "public", table: "test_locks", filter: `module_test_id=eq.${currentMtId}` },
         ({ eventType, new: newRow }: any) => {
           if (eventType === "DELETE") setLock(null);
           else setLock(newRow);
@@ -916,16 +906,18 @@ const TestExecution: React.FC<Props> = ({
       .subscribe();
 
     // ── Realtime: step_result updates ──────────────────────────────────────
-    // Filter by module_name (PostgREST max granularity). The stepIdSet guard
-    // below ignores rows that belong to other tests in this module — this
-    // prevents 5 000-row re-renders when a parallel session updates a
-    // different test.
+    // FIX: skip own writes — locks guarantee single executor so the only
+    // realtime events worth applying are from an admin force-reset. Skipping
+    // self-echoes eliminates the double-render on every pass/fail click.
     const srChannel = supabase
       .channel(`sr:${currentMtId}:${uid}`)
-      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "step_results", filter: `module_name=eq.${module_name}` },
+      .on("postgres_changes",
+        { event: "UPDATE", schema: "public", table: "step_results", filter: `module_name=eq.${module_name}` },
         ({ new: updated }: any) => {
-          // Guard: ignore events for steps not in the current test
+          // Skip: step belongs to a different test in this module
           if (!stepIdSetRef.current.has(updated.test_steps_id)) return;
+          // Skip: this is our own optimistic write echoing back — already applied
+          if (updatingRef.current.has(updated.test_steps_id)) return;
 
           setSteps((prev) =>
             prev.map((s) =>
@@ -945,9 +937,17 @@ const TestExecution: React.FC<Props> = ({
     };
   }, [module_name, currentMtId, user?.id]);
 
-  // ── Signed image URLs  ────────────────────────────────────────────────────
+  // ── Signed image URLs ─────────────────────────────────────────────────────
+  // FIX: key only on stepIds — image paths are immutable after load so this
+  // never re-fires on status/remarks changes (the hot path during execution).
+  const imagePathsKey = useMemo(
+    () => steps.map((s) => s.stepId).join(","),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [steps.map((s) => s.stepId).join(",")]
+  );
+
   useEffect(() => {
-    const allPaths = steps.flatMap((s) => [
+    const allPaths = stepsRef.current.flatMap((s) => [
       ...(s.action_image_urls  || []),
       ...(s.expected_image_urls || []),
     ]);
@@ -972,7 +972,7 @@ const TestExecution: React.FC<Props> = ({
     })();
 
     return () => { cancelled = true; };
-  }, [steps]);
+  }, [imagePathsKey]); // ← was [steps]; now only fires when step list changes, not on every pass/fail
 
   // ── Clean up stale refs ───────────────────────────────────────────────────
   useEffect(() => {
@@ -982,9 +982,6 @@ const TestExecution: React.FC<Props> = ({
   }, [steps]);
 
   // ── Scroll to target ──────────────────────────────────────────────────────
-  // Uses native scrollIntoView — no getBoundingClientRect math, no container
-  // traversal. Browser handles centering natively, which is ~10× faster at
-  // 5k DOM nodes because it avoids forced layout reflow on every scroll call.
   useEffect(() => {
     if (!scrollTarget || loading) return;
     let raf: number;
@@ -1000,10 +997,7 @@ const TestExecution: React.FC<Props> = ({
     return () => cancelAnimationFrame(raf);
   }, [scrollTarget, loading]);
 
-  // ── Update step  ──────────────────────────────────────────────────────────
-  // Uses stepsRef / updatingRef / isLockedRef so the callback is fully stable.
-  // React.memo on row components means only the changed row re-renders on each
-  // pass/fail click — critical for 5k-step performance.
+  // ── Update step ───────────────────────────────────────────────────────────
   const handleStepUpdate = useCallback(
     async (
       stepId: string,
@@ -1043,7 +1037,6 @@ const TestExecution: React.FC<Props> = ({
       try {
         await upsertStepResult({ test_steps_id: stepId, module_name, status, remarks, display_name });
       } catch {
-        // Rollback to pre-update state
         setSteps((prev) =>
           prev.map((s) => {
             if (s.stepId !== stepId) return s;
@@ -1061,8 +1054,6 @@ const TestExecution: React.FC<Props> = ({
       }
     },
     [module_name, user, addToast]
-    // Intentionally excludes steps/isLockedByOther/updatingStepIds —
-    // accessed via stable refs to keep the callback identity stable.
   );
 
   // ── Keyboard shortcuts ────────────────────────────────────────────────────
