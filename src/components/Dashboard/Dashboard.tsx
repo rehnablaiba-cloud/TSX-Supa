@@ -85,7 +85,7 @@ function useInjectStyle() {
     const el = document.createElement("style");
     el.textContent = ANIM_STYLE;
     document.head.appendChild(el);
-    return () => document.head.removeChild(el);
+    return () => { document.head.removeChild(el); };
   }, []);
 }
 
