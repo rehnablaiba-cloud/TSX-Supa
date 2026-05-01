@@ -47,23 +47,21 @@ export async function fetchSessionHistory(
   username:     string,
   sessionStart: string
 ): Promise<SessionHistoryEntry[]> {
+  // Step 1: Fetch step_results with test_steps join
+  // is_divider is on test_steps, not step_results
   const { data, error } = await supabase
     .from("step_results")
     .select(`
       id,
       status,
       updated_at,
-      is_divider,
       display_name,
       module_name,
       test_steps:test_steps_id(
         serial_no,
-        name,
+        is_divider,
         tests_serial_no,
         test:tests_serial_no(name)
-      ),
-      module_test:module_test_id(
-        active_revision:test_revisions!module_tests_active_revision_id_fkey(revision)
       )
     `)
     .eq("display_name", username)
@@ -72,15 +70,38 @@ export async function fetchSessionHistory(
 
   if (error) throw error;
 
-  return (data ?? []).map((row: any) => ({
+  const rows = (data ?? []) as any[];
+
+  // Step 2: Fetch active revisions for unique tests_serial_no
+  const uniqueSerialNos = Array.from(new Set(
+    rows.map((r) => r.test_steps?.tests_serial_no).filter(Boolean)
+  ));
+
+  const revisionMap = new Map<string, string>();
+  if (uniqueSerialNos.length > 0) {
+    const { data: revData, error: revErr } = await supabase
+      .from("test_revisions")
+      .select("revision, tests_serial_no")
+      .eq("status", "active")
+      .in("tests_serial_no", uniqueSerialNos);
+
+    if (revErr) throw revErr;
+
+    (revData ?? []).forEach((r: any) => {
+      revisionMap.set(r.tests_serial_no, r.revision);
+    });
+  }
+
+  // Flatten and merge
+  return rows.map((row: any) => ({
     id:              row.id,
     module_name:     row.module_name ?? "Unknown",
     tests_serial_no: row.test_steps?.tests_serial_no ?? "",
-    test_name:       row.test_steps?.test?.name ?? row.test_steps?.name ?? "Untitled",
+    test_name:       row.test_steps?.test?.name ?? "Untitled",
     status:          row.status,
     updated_at:      row.updated_at,
-    revision:        row.module_test?.active_revision?.revision ?? null,
-    is_divider:      row.is_divider ?? false,
+    revision:        revisionMap.get(row.test_steps?.tests_serial_no) ?? null,
+    is_divider:      row.test_steps?.is_divider ?? false,
   }));
 }
 
