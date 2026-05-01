@@ -107,23 +107,15 @@ export async function bulkCreateSteps(
 export * from "./queries.mobilenav";
 export * from "./queries.moduledashboard";
 
-// Selectively re-export from testreport to avoid ModuleOption collision
 export {
-  fetchTestReportData,
-  fetchReportStepResults,
-  fetchModuleReports,
-  fetchSessionSteps,
-  type ReportMeta,
-  type ReportStepResult,
-  type TestReportData,
-  type ModuleRow,
-  type ModuleTestMeta,
-  type StepResultRow,
-  type SessionStepEntry,
-  type SessionTestGroup,
+  fetchSessionHistory,
+  fetchModuleOptions,
+  type SessionHistoryEntry,
+  type SessionGroup,
+  type ModuleOption,
 } from "./queries.testreport";
 
-// Selectively re-export from testexecution to avoid conflicts
+// ── Selectively re-export from testexecution ──────────────────────────────────
 export {
   fetchTestExecution,
   acquireLock,
