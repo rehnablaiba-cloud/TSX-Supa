@@ -810,6 +810,10 @@ const TestExecution: React.FC<Props> = ({
   const isReadOnlyRef = useRef(false);
   const remarksMap    = useRef<Record<string, string>>({});
   const stepIdSetRef  = useRef<Set<string>>(new Set());
+  const heartbeatMutateRef = useRef(heartbeatMutation.mutate);
+  useEffect(() => {
+    heartbeatMutateRef.current = heartbeatMutation.mutate;
+  }, [heartbeatMutation.mutate]);
 
   const hasInitializedForRef       = useRef<string | null>(null);
   const lockAcquireAttemptedForRef = useRef<string | null>(null);
@@ -934,12 +938,11 @@ const TestExecution: React.FC<Props> = ({
     const interval = setInterval(() => {
       const u = userRef.current;
       if (!u) return;
-      heartbeatMutation.mutate({ module_test_id: currentMtId, user_id: u.id });
-    }, 60_000);
+      heartbeatMutateRef.current({ module_test_id: currentMtId, user_id: u.id });
+    }, 90_000);
     return () => clearInterval(interval);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentMtId, isLockedByOther, isRevisionReadOnly, lockAcquireAttempted]);
-
   // ── 5. Realtime subscriptions ─────────────────────────────────────────────
   // Lock changes only — invalidates the lock query so the UI reacts immediately.
   //
@@ -954,11 +957,16 @@ const TestExecution: React.FC<Props> = ({
 
     const lockChannel = supabase
       .channel(`lock:${currentMtId}:${uid}`)
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "test_locks", filter: `module_test_id=eq.${currentMtId}` },
-        () => { invalidateModuleLocks(module_name); }
-      )
+        .on(
+          "postgres_changes",
+          { event: "INSERT", schema: "public", table: "test_locks", filter: `module_test_id=eq.${currentMtId}` },
+          () => { invalidateModuleLocks(module_name); }
+        )
+        .on(
+          "postgres_changes",
+          { event: "DELETE", schema: "public", table: "test_locks", filter: `module_test_id=eq.${currentMtId}` },
+          () => { invalidateModuleLocks(module_name); }
+        )
       .subscribe();
 
     return () => {
