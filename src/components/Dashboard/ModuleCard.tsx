@@ -1,7 +1,7 @@
 // src/components/Dashboard/ModuleCard.tsx
 import React from "react";
 import { Lock } from "lucide-react";
-import type { DashboardModuleSummary } from "../../lib/supabase/queries.dashboard";
+import type { DashboardModuleSummary } from "../../lib/hooks";
 
 // ─── ModuleCard ───────────────────────────────────────────────────────────────
 interface ModuleCardProps {

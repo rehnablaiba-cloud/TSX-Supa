@@ -11,8 +11,8 @@ import {
 } from "lucide-react";
 import ModalShell from "../Layout/ModalShell";
 
-import { fetchAllTables, ALL_TABLES } from "../../lib/supabase/queries";
-import type { AllData } from "../../lib/supabase/queries";
+import { fetchAllTables, ALL_TABLES } from "../../lib/rpc.ts";
+import type { AllData } from "../../lib/rpc.ts";
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 

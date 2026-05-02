@@ -8,8 +8,8 @@ import {
   createTest,
   updateTest,
   deleteTestCascade,
-} from "../../lib/supabase/queries.mobilenav";
-import type { TestOption } from "../../lib/supabase/queries.mobilenav";
+} from "../../lib/rpc.ts";
+import type { TestOption } from "../../lib/rpc.ts";
 
 type TestOp = "create" | "update" | "delete";
 type Stage = "selectop" | "selecttest" | "fillform" | "confirm" | "submitting" | "done";

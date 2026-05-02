@@ -4,7 +4,7 @@ import { Package, Plus, Pencil, Trash2, CheckCircle, ArrowLeft } from "lucide-re
 import ModalShell from "../UI/ModalShell";
 
 import { supabase } from "../../supabase";
-import { fetchModuleOptions } from "../../lib/supabase/queries";
+import { fetchModuleOptions } from "../../lib/rpc.ts";
 import { Row } from "../UI/ReviewRow";
 import type { ModuleOption } from "../../types";
 

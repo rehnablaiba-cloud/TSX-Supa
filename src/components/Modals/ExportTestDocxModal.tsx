@@ -8,7 +8,7 @@ import { supabase } from "../../supabase";
 import {
   fetchModuleOptions,
   fetchTestsForModule,
-} from "../../lib/supabase/queries";
+} from "../../lib/rpc.ts";
 import { exportTestDocx, type StepRow } from "../../utils/exportTestDocx";
 
 // ── Types ──────────────────────────────────────────────────────────────────

@@ -9,7 +9,7 @@ import type { AuditEvent } from "../../types";
 import {
   fetchAuditLog,
   AuditLog as AuditLogRow,
-} from "../../lib/supabase/queries.auditlog";
+} from "../../lib/rpc.ts";
 
 const DOT: Record<string, string> = {
   pass: "bg-pass",

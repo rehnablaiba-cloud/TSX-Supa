@@ -33,7 +33,7 @@ import {
   type SessionHistoryEntry,
   type SessionGroup,
   type ModuleOption,
-} from "../../lib/supabase/queries.testreport";
+} from "../../lib/rpc.ts";
 
 // ─── Constants ─────────────────────────────────────────────────────────────────
 const SESSION_STORAGE_KEY = "testreport_session_start";

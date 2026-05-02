@@ -29,7 +29,7 @@ import type { ModuleOption } from "../../types";
 import {
   releaseLocksAndSignOut,
   fetchModuleOptions,
-} from "../../lib/supabase/queries";
+} from "../../lib/rpc.ts";
 
 import ExportDataModal from "../Modals/ExportAllModal";
 import ImportModulesModal from "../Modals/ImportModulesModal";

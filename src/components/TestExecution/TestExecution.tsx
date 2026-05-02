@@ -40,7 +40,7 @@ import {
   forceReleaseLock,
   upsertStepResult,
   resetAllStepResults,
-} from "../../lib/supabase/queries.testexecution";
+} from "../../lib/rpc.ts";
 import type { ActiveRevision } from "../../lib/supabase/queries.testexecution";
 
 // ─────────────────────────────────────────────────────────────────────────────

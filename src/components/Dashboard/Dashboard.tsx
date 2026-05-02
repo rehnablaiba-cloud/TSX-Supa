@@ -1,24 +1,21 @@
 // src/components/Dashboard/Dashboard.tsx
 //
-// CHANGES FROM PREVIOUS VERSION:
-//   - Replaced two-phase streaming with single fetchDashboardSummaries() call
-//   - Removed: streamStepResults, DashboardShell, StreamCancellationToken,
-//              FetchProgressCallback, QueryMonitor, stepsStreaming, streamTokenRef,
-//              totalStepIds, progressHistory, patchModuleStepStatus
-//   - Removed: Realtime subscription on step_results and modules
-//   - Kept:    Realtime subscription on test_locks (lock badges still live)
-//   - Added:   Manual refresh button with loading spinner
-//   - Module state is now DashboardModuleSummary[] (counts baked in, no step rows)
+// MIGRATION CHANGES (hooks.ts):
+//   - useDashboardSummaries / useActiveLocks / useOtherActiveLocks
+//     replace three inline useQuery calls — no QK / STALE / GC imports needed
+//   - invalidateModuleLocks helper replaces direct queryClient.invalidateQueries
+//   - All rpc / queryClient imports removed; types via "../../lib/hooks"
 //
 import React, {
   useEffect,
   useLayoutEffect,
   useRef,
   useState,
-  useCallback,
   useMemo,
+  useCallback,
 } from "react";
 import gsap from "gsap";
+import { useQueryClient } from "@tanstack/react-query";
 import ExportModal from "../UI/ExportModal";
 import LockWarningBanner from "../UI/LockWarningBanner";
 import SkeletonCard from "../UI/SkeletonCard";
@@ -39,24 +36,19 @@ import {
 import type { ModuleSummary } from "../../utils/export";
 import { getChartTheme } from "../../utils/chartTheme";
 import { useTheme } from "../../context/ThemeContext";
-import type { ActiveLock } from "../../types";
 import {
-  fetchDashboardSummaries,
-  fetchActiveLocks,
-  fetchOtherActiveLockModules,
-} from "../../lib/supabase/queries.dashboard";
-import type { DashboardModuleSummary } from "../../lib/supabase/queries.dashboard";
-import { idbGet, idbSet } from "../../lib/idbCache";
+  useDashboardSummaries,
+  useActiveLocks,
+  useOtherActiveLocks,
+} from "../../lib/hooks";
+import { QK } from "../../lib/queryClient";
 import RBarChart from "../ModuleDashboard/charts/RBarChart";
 import RPieChart from "../ModuleDashboard/charts/RPieChart";
 import RAreaChart from "../ModuleDashboard/charts/RAreaChart";
 import RLineChart from "../ModuleDashboard/charts/RLineChart";
 import RRadarChart from "../ModuleDashboard/charts/RRadarChart";
 
-// ─── IDB key ─────────────────────────────────────────────────────────────────
-const IDB_MODULES_KEY = "dashboard-modules-v2";   // bump version — new shape
-
-// ─── Animations ──────────────────────────────────────────────────────────────
+// ─── Animations ───────────────────────────────────────────────────────────────
 const ANIM_STYLE = `
 @keyframes neonPulse {
   0%,100% { box-shadow: 0 0 0 1.5px rgba(var(--neon-cyan),0.45), 0 0 12px 2px rgba(var(--neon-cyan),0.18); }
@@ -90,7 +82,7 @@ function useInjectStyle() {
   }, []);
 }
 
-// ─── Types ───────────────────────────────────────────────────────────────────
+// ─── Types ────────────────────────────────────────────────────────────────────
 interface Props {
   onNavigate: (page: string, module_name?: string) => void;
 }
@@ -119,90 +111,43 @@ class ChartErrorBoundary extends React.Component<
 const Dashboard: React.FC<Props> = ({ onNavigate }) => {
   useInjectStyle();
 
-  const { theme } = useTheme();
+  const { theme }   = useTheme();
+  const queryClient = useQueryClient();
+
   const [showExportModal, setShowExportModal] = useState(false);
-  const [modules, setModules]                 = useState<DashboardModuleSummary[]>([]);
-  const [initialLoad, setInitialLoad]         = useState(true);
-  const [refreshing, setRefreshing]           = useState(false);   // manual refresh spinner
-  const [error, setError]                     = useState<string | null>(null);
-  const [activeLocks, setActiveLocks]         = useState<ActiveLock[]>([]);
   const [activeChart, setActiveChart]         = useState<ChartTab>("bar");
-  const [otherLockedModules, setOtherLockedModules] = useState<Map<string, number>>(new Map());
 
   const gridRef         = useRef<HTMLDivElement>(null);
-  const mountedRef      = useRef(true);
   const entranceDoneRef = useRef(false);
 
-  useEffect(() => {
-    mountedRef.current = true;
-    return () => { mountedRef.current = false; };
-  }, []);
+  // ── Queries (via hooks.ts) ────────────────────────────────────────────────
+  const summariesQuery  = useDashboardSummaries();
+  const locksQuery      = useActiveLocks();
+  const otherLocksQuery = useOtherActiveLocks();
 
-  // ── Main fetch — single RPC + modules query in parallel ───────────────────
-  const fetchModules = useCallback(async (isInitial = false) => {
-    // IDB stale-while-revalidate on first load
-    if (isInitial) {
-      const cached = await idbGet<DashboardModuleSummary[]>(IDB_MODULES_KEY);
-      if (cached && cached.length > 0 && mountedRef.current) {
-        setModules(cached);
-        setInitialLoad(false);
-      }
-    }
-
-    if (!isInitial) setRefreshing(true);
-
-    try {
-      const summaries = await fetchDashboardSummaries();
-      if (!mountedRef.current) return;
-
-      setModules(summaries);
-      setError(null);
-      idbSet(IDB_MODULES_KEY, summaries).catch(() => {/* non-fatal */});
-    } catch (e: any) {
-      if (!mountedRef.current) return;
-      setError(e?.message ?? "Failed to load modules");
-    } finally {
-      if (!mountedRef.current) return;
-      setInitialLoad(false);
-      setRefreshing(false);
-    }
-  }, []);
-
-  const fetchActiveLocksData = useCallback(async () => {
-    try {
-      const [locks, otherModules] = await Promise.all([
-        fetchActiveLocks(),
-        fetchOtherActiveLockModules(),
-      ]);
-      if (!mountedRef.current) return;
-      setActiveLocks(locks);
-      setOtherLockedModules(otherModules);
-    } catch { /* non-critical */ }
-  }, []);
-
-  // Initial load
-  useEffect(() => {
-    Promise.all([fetchModules(true), fetchActiveLocksData()]);
-  }, [fetchModules, fetchActiveLocksData]);
-
-  // ── Realtime — locks only (no step_results subscription) ─────────────────
+  // ── Realtime — test_locks only ────────────────────────────────────────────
+  // Any change on test_locks invalidates both lock queries.
+  // summariesQuery is untouched — lock changes don't affect step counts.
   useEffect(() => {
     const channel = supabase
       .channel("dashboard-locks")
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "test_locks" },
-        fetchActiveLocksData
+        () => {
+          queryClient.invalidateQueries({ queryKey: QK.activeLocks() });
+          queryClient.invalidateQueries({ queryKey: QK.otherActiveLocks() });
+        }
       )
       .subscribe();
 
     return () => { supabase.removeChannel(channel); };
-  }, [fetchActiveLocksData]);
+  }, [queryClient]);
 
-  // ── GSAP entrance — once, after first data arrives ────────────────────────
+  // ── GSAP entrance — fires once after first data arrives ──────────────────
   useLayoutEffect(() => {
     if (
-      !initialLoad &&
+      !summariesQuery.isLoading &&
       !entranceDoneRef.current &&
       gridRef.current &&
       gridRef.current.children.length > 0
@@ -224,9 +169,13 @@ const Dashboard: React.FC<Props> = ({ onNavigate }) => {
       });
       return () => ctx.revert();
     }
-  }, [initialLoad, modules.length]);
+  }, [summariesQuery.isLoading, summariesQuery.data?.length]);
 
   // ── Derived data ──────────────────────────────────────────────────────────
+  const modules            = summariesQuery.data  ?? [];
+  const activeLocks        = locksQuery.data       ?? [];
+  const otherLockedModules = otherLocksQuery.data  ?? new Map<string, number>();
+
   const globalStats = useMemo(() => [
     { label: "Total Steps", value: modules.reduce((a, m) => a + m.total,   0) },
     { label: "Pass",        value: modules.reduce((a, m) => a + m.pass,    0) },
@@ -242,7 +191,6 @@ const Dashboard: React.FC<Props> = ({ onNavigate }) => {
 
   const chartTheme = useMemo(() => getChartTheme(theme), [theme]);
 
-  // Chart data — same shape the chart components already expect
   const chartData = useMemo(() =>
     modules.map((m) => ({
       name:    m.name,
@@ -253,7 +201,7 @@ const Dashboard: React.FC<Props> = ({ onNavigate }) => {
     [modules]
   );
 
-  // Export helpers — build ModuleSummary[] from DashboardModuleSummary[]
+  // ── Export ────────────────────────────────────────────────────────────────
   const buildSummariesWithTests = useCallback((): ModuleSummary[] =>
     modules.map((m) => ({
       name:     m.name,
@@ -266,27 +214,35 @@ const Dashboard: React.FC<Props> = ({ onNavigate }) => {
     [modules]
   );
 
-  const handleExportCSV  = useCallback(() =>
-    exportDashboardCSV(buildSummariesWithTests()), [buildSummariesWithTests]);
-  const handleExportPDF  = useCallback(() =>
-    exportDashboardPDF(buildSummariesWithTests()), [buildSummariesWithTests]);
-  const handleExportDOCX = useCallback(() =>
-    exportDashboardDocx(buildSummariesWithTests()), [buildSummariesWithTests]);
+  const handleExportCSV  = useCallback(() => exportDashboardCSV(buildSummariesWithTests()),  [buildSummariesWithTests]);
+  const handleExportPDF  = useCallback(() => exportDashboardPDF(buildSummariesWithTests()),  [buildSummariesWithTests]);
+  const handleExportDOCX = useCallback(() => exportDashboardDocx(buildSummariesWithTests()), [buildSummariesWithTests]);
 
-  // ── Render ────────────────────────────────────────────────────────────────
-  if (error)
+  // ── Loading / error states ────────────────────────────────────────────────
+  const isInitialLoad = summariesQuery.isLoading;
+  const isRefreshing  = summariesQuery.isFetching && !isInitialLoad;
+  const hasAnyLocks   = activeLocks.length > 0 || otherLockedModules.size > 0;
+
+  if (summariesQuery.isError)
     return (
       <div className="p-6">
-        <div className="rounded-xl p-4 text-sm" style={{
-          background: "color-mix(in srgb, var(--color-fail) 10%, transparent)",
-          border:     "1px solid color-mix(in srgb, var(--color-fail) 30%, transparent)",
-          color:      "var(--color-fail)",
-        }}>
-          Failed to load modules: {error}
+        <div
+          className="rounded-xl p-4 text-sm"
+          style={{
+            background: "color-mix(in srgb, var(--color-fail) 10%, transparent)",
+            border:     "1px solid color-mix(in srgb, var(--color-fail) 30%, transparent)",
+            color:      "var(--color-fail)",
+          }}
+        >
+          Failed to load modules:{" "}
+          {summariesQuery.error instanceof Error
+            ? summariesQuery.error.message
+            : "Unknown error"}
         </div>
       </div>
     );
 
+  // ── Chart tabs ────────────────────────────────────────────────────────────
   const chartTabs: { key: ChartTab; label: string }[] = [
     { key: "bar",   label: "Bar"   },
     { key: "area",  label: "Area"  },
@@ -295,8 +251,7 @@ const Dashboard: React.FC<Props> = ({ onNavigate }) => {
     { key: "pie",   label: "Pie"   },
   ];
 
-  const hasAnyLocks = activeLocks.length > 0 || otherLockedModules.size > 0;
-
+  // ── Render ────────────────────────────────────────────────────────────────
   return (
     <div className="p-6 flex flex-col gap-6 pb-24 md:pb-6">
       {/* Export Modal */}
@@ -308,22 +263,25 @@ const Dashboard: React.FC<Props> = ({ onNavigate }) => {
         stats={globalStats}
         options={[
           {
-            label: "CSV",  icon: <FileSpreadsheet size={16} />,
-            color: "bg-(--bg-card) border border-(--border-color) text-(--text-primary)",
+            label:      "CSV",
+            icon:       <FileSpreadsheet size={16} />,
+            color:      "bg-(--bg-card) border border-(--border-color) text-(--text-primary)",
             hoverColor: "hover:bg-(--bg-surface) hover:border-(--color-brand)",
-            onConfirm: handleExportCSV,
+            onConfirm:  handleExportCSV,
           },
           {
-            label: "PDF",  icon: <FileText size={16} />,
-            color: "bg-(--bg-card) border border-(--border-color) text-(--text-primary)",
+            label:      "PDF",
+            icon:       <FileText size={16} />,
+            color:      "bg-(--bg-card) border border-(--border-color) text-(--text-primary)",
             hoverColor: "hover:bg-(--bg-surface) hover:border-(--color-brand)",
-            onConfirm: handleExportPDF,
+            onConfirm:  handleExportPDF,
           },
           {
-            label: "DOCX", icon: <FileDown size={16} />,
-            color: "bg-(--bg-card) border border-(--border-color) text-(--text-primary)",
+            label:      "DOCX",
+            icon:       <FileDown size={16} />,
+            color:      "bg-(--bg-card) border border-(--border-color) text-(--text-primary)",
             hoverColor: "hover:bg-(--bg-surface) hover:border-(--color-brand)",
-            onConfirm: handleExportDOCX,
+            onConfirm:  handleExportDOCX,
           },
         ]}
       />
@@ -333,22 +291,21 @@ const Dashboard: React.FC<Props> = ({ onNavigate }) => {
         <div>
           <h2 className="text-xl font-bold text-t-primary">Fleet</h2>
           <p className="text-sm text-t-muted mt-1">
-            {initialLoad
+            {isInitialLoad
               ? "Loading…"
               : `${modules.length} Trainset${modules.length !== 1 ? "s" : ""} tracked`}
           </p>
         </div>
         <div className="flex items-center gap-2">
-          {/* Manual refresh */}
           <button
-            onClick={() => fetchModules(false)}
-            disabled={initialLoad || refreshing}
+            onClick={() => summariesQuery.refetch()}
+            disabled={summariesQuery.isFetching}
             title="Refresh"
             className="flex items-center gap-1.5 px-3 py-2 text-sm font-semibold rounded-lg transition bg-bg-card hover:bg-bg-surface border border-(--border-color) text-t-primary disabled:opacity-40 disabled:cursor-not-allowed"
           >
             <RefreshCw
               size={14}
-              style={{ animation: refreshing ? "refreshSpin 0.8s linear infinite" : "none" }}
+              style={{ animation: isRefreshing ? "refreshSpin 0.8s linear infinite" : "none" }}
             />
           </button>
           <button
@@ -361,7 +318,8 @@ const Dashboard: React.FC<Props> = ({ onNavigate }) => {
         </div>
       </div>
 
-      {!initialLoad && hasAnyLocks && (
+      {/* Lock warning banner */}
+      {!isInitialLoad && hasAnyLocks && (
         <LockWarningBanner
           locks={activeLocks}
           otherLockedModules={otherLockedModules}
@@ -370,12 +328,14 @@ const Dashboard: React.FC<Props> = ({ onNavigate }) => {
       )}
 
       {/* Fleet Overview Charts */}
-      {!initialLoad && modules.length > 0 && (
+      {!isInitialLoad && modules.length > 0 && (
         <div className="card p-4 flex flex-col gap-4">
           <div className="flex items-center justify-between flex-wrap gap-2">
             <div>
               <p className="text-sm font-semibold text-t-primary">Fleet Overview</p>
-              <p className="text-xs text-t-muted mt-0.5">Pass / Fail / Pending across all trainsets</p>
+              <p className="text-xs text-t-muted mt-0.5">
+                Pass / Fail / Pending across all trainsets
+              </p>
             </div>
             <div className="flex items-center gap-1 bg-bg-surface rounded-lg p-1 border border-(--border-color)">
               {chartTabs.map((tab) => (
@@ -418,10 +378,15 @@ const Dashboard: React.FC<Props> = ({ onNavigate }) => {
                       className="flex items-center justify-between px-4 py-3 rounded-xl border border-(--border-color) bg-bg-surface"
                     >
                       <div className="flex items-center gap-2">
-                        <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: stat.color }} />
+                        <span
+                          className="w-2.5 h-2.5 rounded-full shrink-0"
+                          style={{ background: stat.color }}
+                        />
                         <span className="text-sm text-t-muted">{stat.label}</span>
                       </div>
-                      <span className="text-sm font-bold text-t-primary tabular-nums">{stat.value}</span>
+                      <span className="text-sm font-bold text-t-primary tabular-nums">
+                        {stat.value}
+                      </span>
                     </div>
                   ))}
                 </div>
@@ -439,7 +404,7 @@ const Dashboard: React.FC<Props> = ({ onNavigate }) => {
       )}
 
       {/* Module grid */}
-      {initialLoad ? (
+      {isInitialLoad ? (
         <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
           {Array.from({ length: 6 }).map((_, i) => <SkeletonCard key={i} />)}
         </div>
@@ -468,7 +433,7 @@ const Dashboard: React.FC<Props> = ({ onNavigate }) => {
             return (
               <ModuleCard
                 key={m.name}
-                module={m}           // NOW: DashboardModuleSummary (counts baked in)
+                module={m}
                 myLockCount={myLockCount}
                 otherLockCount={otherLockCount}
                 cardStyle={cardStyle}
@@ -489,27 +454,3 @@ const Dashboard: React.FC<Props> = ({ onNavigate }) => {
 };
 
 export default Dashboard;
-
-/*
- * ── ModuleCard migration note ─────────────────────────────────────────────────
- *
- * ModuleCard previously received `module: DashboardModule` and used
- * `getModuleStats(module)` / `module.step_results` to compute pass/fail/total.
- *
- * It now receives `module: DashboardModuleSummary` where counts are pre-baked.
- * Update ModuleCard like so:
- *
- *   // Before
- *   const stats = getModuleStats(module);   // computed from step_results[]
- *
- *   // After
- *   const stats = {
- *     pass:    module.pass,
- *     fail:    module.fail,
- *     pending: module.pending,
- *     total:   module.total,
- *   };
- *
- * The `stepsStreaming` prop is removed — delete it from ModuleCard props too.
- * ─────────────────────────────────────────────────────────────────────────────
- */

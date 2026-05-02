@@ -1,4 +1,13 @@
 // src/components/ModuleDashboard/ModuleDashboard.tsx
+//
+// MIGRATION CHANGES (hooks.ts):
+//   - useModuleData         replaces useQuery(fetchModuleData)
+//   - useModuleLocks        replaces useQuery(getModuleLocks)
+//   - useModuleStepDetails  replaces useQuery(fetchModuleStepDetails)
+//   - useForceReleaseLock   replaces useMutation(forceReleaseLock)
+//   - All rpc / QK / STALE / GC imports removed
+//   - QK kept only for the Realtime invalidateQueries call
+//
 import React, {
   useEffect,
   useLayoutEffect,
@@ -6,6 +15,7 @@ import React, {
   useMemo,
   useCallback,
 } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { supabase } from "../../supabase";
 import Spinner from "../UI/Spinner";
 import Topbar from "../Layout/Topbar";
@@ -27,12 +37,14 @@ import {
   RRadarChart,
 } from "./charts";
 import type { ChartRow, ChartTheme } from "./charts";
-import type { LockRow, ModuleTestRow, ActiveRevision, TrimmedStepResult } from "./ModuleDashboard.types";
 import {
-  fetchModuleData,
-  fetchModuleStepDetails,
-} from "../../lib/supabase/queries.moduledashboard";
-
+  useModuleData,
+  useModuleLocks,
+  useModuleStepDetails,
+  useForceReleaseLock,
+  type TrimmedStepResult,
+} from "../../lib/hooks";
+import { QK } from "../../lib/queryClient";
 
 // ─── Animation wrappers ───────────────────────────────────────────────────────
 
@@ -62,7 +74,6 @@ const StaggerRow: React.FC<{ index: number; children: React.ReactNode }> = ({
   </div>
 );
 
-
 // ─── Chart type ───────────────────────────────────────────────────────────────
 
 type ChartType = "bar" | "area" | "line" | "pie" | "radar";
@@ -74,7 +85,6 @@ const CHART_TYPES: { type: ChartType; label: string }[] = [
   { type: "radar", label: "Radar" },
 ];
 
-
 // ─── Props ────────────────────────────────────────────────────────────────────
 
 interface Props {
@@ -84,7 +94,6 @@ interface Props {
   onViewReport: (module_test_id: string) => void;
 }
 
-
 // ─── ModuleDashboard ──────────────────────────────────────────────────────────
 
 const ModuleDashboard: React.FC<Props> = ({
@@ -93,20 +102,15 @@ const ModuleDashboard: React.FC<Props> = ({
   onExecute,
   onViewReport,
 }) => {
-  const { user }  = useAuth();
-  const { theme } = useTheme();
-  const isAdmin   = user?.role === "admin";
+  const { user }    = useAuth();
+  const { theme }   = useTheme();
+  const queryClient = useQueryClient();
+  const isAdmin     = user?.role === "admin";
 
-  const [module_tests, setModuleTests] = useState<ModuleTestRow[]>([]);
-  const [locks,        setLocks]       = useState<Record<string, LockRow>>({});
-  const [revisions,    setRevisions]   = useState<Record<string, ActiveRevision>>({});
-  const [loading,      setLoading]     = useState(true);
-  const [refreshing,   setRefreshing]  = useState(false);
-  const [error,        setError]       = useState<string | null>(null);
-  const [chartType,    setChartType]   = useState<ChartType>("bar");
-  const [showExport,   setShowExport]  = useState(false);
-  const [releaseError, setReleaseError]= useState<string | null>(null);
-  const [exporting,    setExporting]   = useState(false);
+  const [chartType,    setChartType]    = useState<ChartType>("bar");
+  const [showExport,   setShowExport]   = useState(false);
+  const [releaseError, setReleaseError] = useState<string | null>(null);
+  const [exporting,    setExporting]    = useState(false);
 
   const [ct, setCt] = useState<ChartTheme>({
     panel:       "#ffffff",
@@ -135,49 +139,57 @@ const ModuleDashboard: React.FC<Props> = ({
     });
   }, [theme]);
 
+  // ── Query 1: module tests + counts + revisions ────────────────────────────
+  const moduleDataQuery = useModuleData(module_name);
 
-  // ── Load ──────────────────────────────────────────────────────────────────
-  const loadDashboard = useCallback(async (isRefresh = false) => {
-    setError(null);
-    if (isRefresh) setRefreshing(true);
-    try {
-      const { module_tests: mts, locks: lockMap, revisions: revMap } =
-        await fetchModuleData(module_name);
-      setModuleTests(mts);
-      setLocks(lockMap);
-      setRevisions(revMap);
-    } catch (e: any) {
-      setError(e?.message ?? "Failed to load module data");
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
-    }
-  }, [module_name]);
-
-  useEffect(() => { loadDashboard(); }, [loadDashboard]);
-
-
-  // ── Force release (admin only) ────────────────────────────────────────────
-  const forceReleaseLock = useCallback(
-    async (module_test_id: string, lockedByName: string) => {
-      if (!confirm(`Force-release the lock held by ${lockedByName}?`)) return;
-      setReleaseError(null);
-      const { error } = await supabase
-        .from("test_locks")
-        .delete()
-        .eq("module_test_id", module_test_id);
-      if (error) {
-        setReleaseError(`Failed to release lock: ${error.message}`);
-        setTimeout(() => setReleaseError(null), 5000);
-      } else {
-        loadDashboard(true);
-      }
-    },
-    [loadDashboard]
+  // moduleTestIds — derived once data arrives
+  const moduleTestIds = useMemo(
+    () => (moduleDataQuery.data?.module_tests ?? []).map((mt) => mt.id),
+    [moduleDataQuery.data]
   );
 
+  // ── Query 2: locks — separate, staleTime 0 ────────────────────────────────
+  // Enabled only after moduleTestIds are known from Query 1.
+  // Falls back to locks baked into moduleData until this resolves.
+  const locksQuery = useModuleLocks(moduleTestIds, module_name, {
+    enabled: moduleTestIds.length > 0,
+  });
+
+  // ── Query 3: step details — disabled until export ─────────────────────────
+  const stepDetailsQuery = useModuleStepDetails(module_name, { enabled: false });
+
+  // ── Mutation: force release lock ──────────────────────────────────────────
+  const forceReleaseMutation = useForceReleaseLock(module_name, {
+    onError: (err: any) => {
+      setReleaseError(`Failed to release lock: ${err?.message ?? "Unknown error"}`);
+      setTimeout(() => setReleaseError(null), 5000);
+    },
+  });
+
+  // ── Realtime: test_locks ──────────────────────────────────────────────────
+  useEffect(() => {
+    if (moduleTestIds.length === 0) return;
+
+    const channel = supabase
+      .channel(`module-locks-${module_name}`)
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "test_locks" },
+        () => {
+          queryClient.invalidateQueries({ queryKey: QK.moduleLocks(module_name) });
+        }
+      )
+      .subscribe();
+
+    return () => { supabase.removeChannel(channel); };
+  }, [module_name, moduleTestIds.length, queryClient]);
 
   // ── Derived data ──────────────────────────────────────────────────────────
+  const module_tests = moduleDataQuery.data?.module_tests ?? [];
+  const revisions    = moduleDataQuery.data?.revisions    ?? {};
+  // Prefer the fresh locksQuery result; fall back to locks baked into moduleData
+  const locks = locksQuery.data ?? moduleDataQuery.data?.locks ?? {};
+
   const chartData = useMemo<ChartRow[]>(
     () =>
       module_tests.map((mt) => ({
@@ -194,7 +206,10 @@ const ModuleDashboard: React.FC<Props> = ({
     const fail    = module_tests.reduce((a, mt) => a + mt.fail,    0);
     const pending = module_tests.reduce((a, mt) => a + mt.pending, 0);
     const total   = pass + fail + pending;
-    return { pass, fail, pending, total, passRate: total > 0 ? Math.round((pass / total) * 100) : 0 };
+    return {
+      pass, fail, pending, total,
+      passRate: total > 0 ? Math.round((pass / total) * 100) : 0,
+    };
   }, [module_tests]);
 
   const exportStats = useMemo(() => [
@@ -203,22 +218,33 @@ const ModuleDashboard: React.FC<Props> = ({
     { label: "Fail",        value: globalStats.fail  },
   ], [globalStats]);
 
+  // ── Force release handler ─────────────────────────────────────────────────
+  const handleForceRelease = useCallback(
+    (module_test_id: string, lockedByName: string) => {
+      if (!confirm(`Force-release the lock held by ${lockedByName}?`)) return;
+      forceReleaseMutation.mutate({ module_test_id });
+    },
+    [forceReleaseMutation]
+  );
 
-  // ── Export — fetch step details lazily ───────────────────────────────────
+  // ── Export ────────────────────────────────────────────────────────────────
   const handleExport = useCallback(
     async (format: "csv" | "pdf") => {
       setExporting(true);
       try {
-        const bySerial = await fetchModuleStepDetails(module_name);
+        const result   = await stepDetailsQuery.refetch();
+        const bySerial = result.data ?? {};
 
         const flat: FlatData[] = module_tests.flatMap((mt) => {
           const serialNo = mt.test?.serial_no ?? "";
-          const results  = (bySerial[serialNo] ?? []).slice().sort((a: TrimmedStepResult, b: TrimmedStepResult) => {
-            const sa = a.step?.serial_no ?? 0;
-            const sb = b.step?.serial_no ?? 0;
-            if (sa !== sb) return sa - sb;
-            return (a.step?.is_divider ? 0 : 1) - (b.step?.is_divider ? 0 : 1);
-          });
+          const results  = (bySerial[serialNo] ?? [])
+            .slice()
+            .sort((a: TrimmedStepResult, b: TrimmedStepResult) => {
+              const sa = a.step?.serial_no ?? 0;
+              const sb = b.step?.serial_no ?? 0;
+              if (sa !== sb) return sa - sb;
+              return (a.step?.is_divider ? 0 : 1) - (b.step?.is_divider ? 0 : 1);
+            });
           return results.map((sr: TrimmedStepResult) => ({
             module:         module_name,
             test:           mt.test?.name ?? mt.tests_name ?? "Unnamed Test",
@@ -242,12 +268,11 @@ const ModuleDashboard: React.FC<Props> = ({
         setShowExport(false);
       }
     },
-    [module_name, module_tests]
+    [module_name, module_tests, stepDetailsQuery]
   );
 
-
-  // ── Render guards ─────────────────────────────────────────────────────────
-  if (loading)
+  // ── Loading / error guards ────────────────────────────────────────────────
+  if (moduleDataQuery.isLoading)
     return (
       <div className="flex-1 flex flex-col">
         <Topbar title={module_name} onBack={onBack} />
@@ -257,7 +282,7 @@ const ModuleDashboard: React.FC<Props> = ({
       </div>
     );
 
-  if (error)
+  if (moduleDataQuery.isError)
     return (
       <div className="flex-1 flex flex-col">
         <Topbar title={module_name} onBack={onBack} />
@@ -270,12 +295,16 @@ const ModuleDashboard: React.FC<Props> = ({
               color:      "var(--color-fail)",
             }}
           >
-            Failed to load module: {error}
+            Failed to load module:{" "}
+            {moduleDataQuery.error instanceof Error
+              ? moduleDataQuery.error.message
+              : "Unknown error"}
           </div>
         </div>
       </div>
     );
 
+  const isRefreshing = moduleDataQuery.isFetching && !moduleDataQuery.isLoading;
 
   // ── Main render ───────────────────────────────────────────────────────────
   return (
@@ -311,12 +340,12 @@ const ModuleDashboard: React.FC<Props> = ({
         actions={
           <div className="flex items-center gap-2">
             <button
-              onClick={() => loadDashboard(true)}
-              disabled={refreshing}
+              onClick={() => moduleDataQuery.refetch()}
+              disabled={moduleDataQuery.isFetching}
               className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg bg-bg-card hover:bg-bg-surface border border-(--border-color) text-t-primary transition disabled:opacity-50"
             >
-              <RefreshCw size={13} className={refreshing ? "animate-spin" : ""} />
-              {refreshing ? "Refreshing…" : "Refresh"}
+              <RefreshCw size={13} className={isRefreshing ? "animate-spin" : ""} />
+              {isRefreshing ? "Refreshing…" : "Refresh"}
             </button>
             {isAdmin && (
               <button
@@ -356,7 +385,10 @@ const ModuleDashboard: React.FC<Props> = ({
             { label: "Pending", value: globalStats.pending,        className: "bg-[color-mix(in_srgb,var(--color-pend)_10%,transparent)] text-[var(--color-pend)] border border-[color-mix(in_srgb,var(--color-pend)_25%,transparent)]" },
             { label: "Pass %",  value: `${globalStats.passRate}%`, className: "bg-[var(--color-brand-bg)] text-[var(--color-brand)] border border-[color-mix(in_srgb,var(--color-brand)_25%,transparent)]" },
           ].map((s) => (
-            <span key={s.label} className={`flex items-center gap-1 text-xs font-bold px-3 py-1 rounded-full ${s.className}`}>
+            <span
+              key={s.label}
+              className={`flex items-center gap-1 text-xs font-bold px-3 py-1 rounded-full ${s.className}`}
+            >
               {s.label}: {s.value}
             </span>
           ))}
@@ -420,7 +452,7 @@ const ModuleDashboard: React.FC<Props> = ({
                   isAdmin={isAdmin}
                   onExecute={onExecute}
                   onViewReport={onViewReport}
-                  onForceRelease={forceReleaseLock}
+                  onForceRelease={handleForceRelease}
                 />
               </StaggerRow>
             );
