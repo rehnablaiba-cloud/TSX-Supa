@@ -289,6 +289,12 @@ export type CsvStepRow = {
   is_divider:      boolean;
 };
 
+// ── NEW: Lock Status for Test Execution ─────────────────────────────────────
+
+export type LockStatus =
+  | { status: "free" }
+  | { status: "locked-by-self"; holderName?: string }
+  | { status: "locked-by-other"; holderName: string };
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 2. Internal helpers
@@ -313,7 +319,6 @@ function assertAdmin(): Promise<void> {
     if (!data) throw new Error("Forbidden: admin privileges required.");
   });
 }
-
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 3. Shared queries
@@ -411,7 +416,6 @@ export function getModuleLocks(
     );
   });
 }
-
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 4. Dashboard
@@ -548,7 +552,6 @@ export function fetchOtherActiveLockModules(): Promise<Map<string, number>> {
     return countMap;
   });
 }
-
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 5. Module Dashboard
@@ -711,7 +714,6 @@ export function fetchModuleStepDetails(
   });
 }
 
-
 // ─────────────────────────────────────────────────────────────────────────────
 // 6. Test Execution
 // ─────────────────────────────────────────────────────────────────────────────
@@ -855,6 +857,35 @@ export function fetchTestExecutionData(
       module_tests,
       step_results,
     };
+  });
+}
+
+// ── NEW: Lightweight lock check (runs BEFORE execution context fetch) ────────
+
+/**
+ * Check if a test is locked and by whom.
+ * Lightweight: only hits test_locks table, no step data.
+ * Called BEFORE fetchTestExecutionData to avoid wasted data loads.
+ */
+export function checkTestLock(module_test_id: string): Promise<LockStatus> {
+  return callRpc(async () => {
+    const { data: sessionData } = await supabase.auth.getSession();
+    const currentUserId = sessionData?.session?.user?.id;
+
+    const { data, error } = await supabase
+      .from("test_locks")
+      .select("user_id, locked_by_name")
+      .eq("module_test_id", module_test_id)
+      .maybeSingle();
+
+    if (error) throw error;
+    if (!data) return { status: "free" };
+
+    if ((data as any).user_id === currentUserId) {
+      return { status: "locked-by-self", holderName: (data as any).locked_by_name };
+    }
+
+    return { status: "locked-by-other", holderName: (data as any).locked_by_name };
   });
 }
 
@@ -1036,7 +1067,6 @@ export function fetchSignedUrls(
   });
 }
 
-
 // ─────────────────────────────────────────────────────────────────────────────
 // 7. Test Report
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1120,7 +1150,6 @@ export function fetchModuleOptions(): Promise<ModuleOption[]> {
   });
 }
 
-
 // ─────────────────────────────────────────────────────────────────────────────
 // 8. Audit Log  — minimal: test_started / test_finished only
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1184,7 +1213,6 @@ export function insertTestFinished(
       if (error) console.error("[audit_log] insertTestFinished error", error);
     });
 }
-
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 9. Admin
@@ -1419,6 +1447,11 @@ export function fetchStepOptions(tests_name: string): Promise<StepOption[]> {
   });
 }
 
+/** @deprecated Prefer fetchStepOptions — identical implementation. Kept for backward compat. */
+export function fetchStepsForTest(tests_name: string): Promise<StepOption[]> {
+  return fetchStepOptions(tests_name);
+}
+
 export function fetchTestsForModule(module_name: string): Promise<TestOption[]> {
   return callRpc(async () => {
     const { data, error } = await supabase
@@ -1436,25 +1469,6 @@ export function fetchTestsForModule(module_name: string): Promise<TestOption[]> 
       String(a.serial_no).localeCompare(String(b.serial_no), undefined, { numeric: true })
     );
     return tests;
-  });
-}
-
-export function fetchStepsForTest(tests_name: string): Promise<StepOption[]> {
-  return callRpc(async () => {
-    const { data: t, error: tErr } = await supabase
-      .from("tests")
-      .select("serial_no")
-      .eq("name", tests_name)
-      .single();
-    if (tErr) throw new Error(tErr.message);
-
-    const { data, error } = await supabase
-      .from("test_steps")
-      .select("id, serial_no, tests_serial_no, action, expected_result, is_divider")
-      .eq("tests_serial_no", (t as any).serial_no)
-      .order("serial_no", { ascending: true });
-    if (error) throw new Error(error.message);
-    return (data ?? []) as StepOption[];
   });
 }
 

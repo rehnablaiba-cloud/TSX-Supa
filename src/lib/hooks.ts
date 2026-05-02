@@ -3,15 +3,6 @@
  *
  * TanStack Query hooks — single import surface for all data access.
  * Components import ONLY from this file; never from rpc.ts or queryClient.ts directly.
- *
- * Sections:
- *   1.  Realtime helpers
- *   2.  Dashboard
- *   3.  Module Dashboard
- *   4.  Test Execution  — queries + lock mutations + step-result mutations
- *   5.  Test Report
- *   6.  Audit Log
- *   7.  Admin           — tables, modules, tests, steps
  */
 
 import {
@@ -37,6 +28,7 @@ import {
   getActiveRevisions,
   // Test Execution
   fetchTestExecutionData,
+  checkTestLock,
   acquireLock,
   releaseLock,
   forceReleaseLock,
@@ -72,7 +64,7 @@ import {
   deleteStepWithResults,
   replaceCsvSteps,
   releaseLocksAndSignOut,
-  // Types (re-export so callers only need one import)
+  // Types
   type DashboardModuleSummary,
   type ActiveLock,
   type ModuleData,
@@ -96,7 +88,6 @@ import {
   type TableName,
 } from "./rpc";
 
-// Re-export all types so consumers only need: `import { … } from "~/lib/hooks"`
 export type {
   DashboardModuleSummary,
   ActiveLock,
@@ -125,20 +116,8 @@ export type {
 // 1. Realtime helpers
 // ─────────────────────────────────────────────────────────────────────────────
 
-/**
- * Call from a Realtime subscription handler to refresh lock state for a
- * module without a full context reload.
- */
 export function invalidateModuleLocks(module_name: string): void {
   queryClient.invalidateQueries({ queryKey: QK.moduleLocks(module_name) });
-}
-
-/**
- * Invalidate the live execution context (e.g. after a Realtime step change
- * from another session in the same module).
- */
-export function invalidateExecutionContext(moduleTestId: string): void {
-  queryClient.invalidateQueries({ queryKey: QK.executionContext(moduleTestId) });
 }
 
 /** Flush all cached data — call on sign-out. */
@@ -150,12 +129,6 @@ export function clearQueryCache(): void {
 // 2. Dashboard
 // ─────────────────────────────────────────────────────────────────────────────
 
-/**
- * All modules with aggregated pass/fail/pending counts.
- *
- * Backed by `get_dashboard_counts` RPC + `modules` table.
- * Realtime: invalidate QK.dashboardSummaries() on any step_result change.
- */
 export function useDashboardSummaries(
   options?: Partial<UseQueryOptions<DashboardModuleSummary[]>>
 ) {
@@ -168,10 +141,6 @@ export function useDashboardSummaries(
   });
 }
 
-/**
- * Locks held by the currently authenticated user.
- * staleTime: 0 — Realtime is source of truth; cache is always considered stale.
- */
 export function useActiveLocks(
   options?: Partial<UseQueryOptions<ActiveLock[]>>
 ) {
@@ -184,10 +153,6 @@ export function useActiveLocks(
   });
 }
 
-/**
- * Count of other users' active locks keyed by module name.
- * Used to show the "N Locked" badge on Dashboard module cards.
- */
 export function useOtherActiveLocks(
   options?: Partial<UseQueryOptions<Map<string, number>>>
 ) {
@@ -204,10 +169,6 @@ export function useOtherActiveLocks(
 // 3. Module Dashboard
 // ─────────────────────────────────────────────────────────────────────────────
 
-/**
- * All data needed by ModuleDashboard in two round-trips.
- * Disabled when module_name is empty (route not yet resolved).
- */
 export function useModuleData(
   module_name: string,
   options?: Partial<UseQueryOptions<ModuleData>>
@@ -222,10 +183,6 @@ export function useModuleData(
   });
 }
 
-/**
- * Lightweight lock-only refresh — called from a Realtime subscription.
- * Prefer invalidating QK.moduleLocks(module_name) via invalidateModuleLocks().
- */
 export function useModuleLocks(
   moduleTestIds: string[],
   module_name:   string,
@@ -241,11 +198,6 @@ export function useModuleLocks(
   });
 }
 
-/**
- * Full step-result rows for CSV / PDF export.
- * Fetched lazily — only when the user opens the export modal.
- * Pass `enabled: false` until the modal opens, then flip to true.
- */
 export function useModuleStepDetails(
   module_name: string,
   options?: Partial<UseQueryOptions<Record<string, TrimmedStepResult[]>>>
@@ -254,16 +206,12 @@ export function useModuleStepDetails(
     queryKey:  QK.moduleStepDetails(module_name),
     queryFn:   () => fetchModuleStepDetails(module_name),
     enabled:   !!module_name,
-    staleTime: STALE.locks,   // treat as always-stale — export must be fresh
+    staleTime: STALE.locks,
     gcTime:    GC.locks,
     ...options,
   });
 }
 
-/**
- * Bare test list for a module (no counts).
- * Shared between ModuleDashboard sidebar and TestExecution nav.
- */
 export function useModuleTests(
   module_name: string,
   options?: Partial<UseQueryOptions<ModuleTestItem[]>>
@@ -278,10 +226,6 @@ export function useModuleTests(
   });
 }
 
-/**
- * Active revision map for a set of test serial numbers.
- * Pass includeStepOrder=true from ModuleDashboard (needs step_order for sorting).
- */
 export function useActiveRevisions(
   serialNos:        string[],
   includeStepOrder  = false,
@@ -302,34 +246,52 @@ export function useActiveRevisions(
 // 4. Test Execution
 // ─────────────────────────────────────────────────────────────────────────────
 
-// ── Context query ─────────────────────────────────────────────────────────────
+// ── Lock status query (lightweight, runs FIRST) ─────────────────────────────
+
+export type LockStatus =
+  | { status: "free" }
+  | { status: "locked-by-self"; holderName?: string }
+  | { status: "locked-by-other"; holderName: string };
 
 /**
- * All data for the TestExecution view.
- * Disabled when either param is empty — prevents the wrong RPC call that
- * silently returns results for a different module.
+ * Check lock status for a single test BEFORE fetching execution context.
+ * Lightweight: only checks test_locks table, no step data.
  */
+export function useTestLock(
+  module_test_id: string,
+  module_name:    string,
+  options?: Partial<UseQueryOptions<LockStatus>>
+) {
+  return useQuery<LockStatus>({
+    queryKey:  ["testLock", module_test_id],
+    queryFn:   () => checkTestLock(module_test_id),
+    enabled:   !!module_test_id && !!module_name,
+    staleTime: 0, // Always fresh — lock state changes rapidly
+    gcTime:    5 * 60 * 1000,
+    ...options,
+  });
+}
+
+// ── Context query (gated by lock resolution) ────────────────────────────────
+
 export function useTestExecutionData(
   module_test_id: string,
   module_name:    string,
+  enabled:        boolean,
   options?: Partial<UseQueryOptions<TestExecutionData>>
 ) {
   return useQuery<TestExecutionData>({
     queryKey:  QK.executionContext(module_test_id),
     queryFn:   () => fetchTestExecutionData(module_test_id, module_name),
-    enabled:   !!module_test_id && !!module_name,
+    enabled:   enabled && !!module_test_id && !!module_name,
     staleTime: STALE.execution,
     gcTime:    GC.execution,
     ...options,
   });
 }
 
-// ── Signed image URLs ─────────────────────────────────────────────────────────
+// ── Signed image URLs ───────────────────────────────────────────────────────
 
-/**
- * Signed storage URLs for step images.
- * Cached for 50 min (URLs are valid for 60 min, leaving a 10 min buffer).
- */
 export function useSignedUrls(
   paths:   string[],
   options?: Partial<UseQueryOptions<Record<string, string>>>
@@ -345,7 +307,7 @@ export function useSignedUrls(
   });
 }
 
-// ── Lock mutations ────────────────────────────────────────────────────────────
+// ── Lock mutations ──────────────────────────────────────────────────────────
 
 type AcquireLockVars = {
   module_test_id: string;
@@ -353,10 +315,6 @@ type AcquireLockVars = {
   display_name:   string;
 };
 
-/**
- * Acquire a test lock. On success invalidates active locks so the Dashboard
- * badge and ModuleDashboard lock indicators update immediately.
- */
 export function useAcquireLock(
   options?: UseMutationOptions<{ success: boolean; holder?: string }, Error, AcquireLockVars>
 ) {
@@ -374,10 +332,6 @@ export function useAcquireLock(
 
 type LockVars = { module_test_id: string; user_id: string };
 
-/**
- * Release the caller's lock. Invalidates lock-related queries and the
- * dashboard summary (lock badge).
- */
 export function useReleaseLock(
   module_name: string,
   options?: UseMutationOptions<void, Error, LockVars>
@@ -396,10 +350,6 @@ export function useReleaseLock(
   });
 }
 
-/**
- * Admin-only force release (removes another user's lock).
- * Invalidates module lock state and dashboard badge.
- */
 export function useForceReleaseLock(
   module_name?: string,
   options?: UseMutationOptions<void, Error, { module_test_id: string }>
@@ -418,10 +368,6 @@ export function useForceReleaseLock(
   });
 }
 
-/**
- * Heartbeat — refreshes locked_at to prevent server-side expiry.
- * Fire every 60 s while a lock is held. No cache invalidation needed.
- */
 export function useHeartbeatLock(
   options?: UseMutationOptions<void, Error, LockVars>
 ) {
@@ -431,7 +377,7 @@ export function useHeartbeatLock(
   });
 }
 
-// ── Step result mutations ─────────────────────────────────────────────────────
+// ── Step result mutations ───────────────────────────────────────────────────
 
 type UpdateStepResultVars = {
   test_steps_id: string;
@@ -444,11 +390,8 @@ type UpdateStepResultVars = {
 /**
  * Save a single step result.
  *
- * Invalidates:
- *  - executionContext  — so the status badge in the nav sidebar stays current
- *  - dashboardSummaries / moduleCounts — so pass/fail bars update after submit
- *
- * For optimistic updates override onMutate / onError in the component.
+ * Does NOT invalidate executionContext — TestExecution.tsx owns local state.
+ * Only invalidates aggregate dashboards so other views stay current.
  */
 export function useUpdateStepResult(
   module_test_id: string,
@@ -459,7 +402,7 @@ export function useUpdateStepResult(
   return useMutation<void, Error, UpdateStepResultVars>({
     mutationFn: updateStepResult,
     onSuccess:  () => {
-      qc.invalidateQueries({ queryKey: QK.executionContext(module_test_id) });
+      // REMOVED: qc.invalidateQueries({ queryKey: QK.executionContext(module_test_id) });
       qc.invalidateQueries({ queryKey: QK.dashboardSummaries() });
       qc.invalidateQueries({ queryKey: QK.moduleCounts(module_name) });
     },
@@ -473,10 +416,6 @@ type ResetStepResultsVars = {
   display_name:  string;
 };
 
-/**
- * Reset all step results for a test back to pending.
- * Invalidates execution context and aggregate counts.
- */
 export function useResetAllStepResults(
   module_test_id: string,
   options?: UseMutationOptions<void, Error, ResetStepResultsVars>
@@ -486,18 +425,15 @@ export function useResetAllStepResults(
     mutationFn: ({ module_name, stepResultIds, display_name }) =>
       resetAllStepResults(module_name, stepResultIds, display_name),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: QK.executionContext(module_test_id) });
+      // REMOVED: qc.invalidateQueries({ queryKey: QK.executionContext(module_test_id) });
       qc.invalidateQueries({ queryKey: QK.dashboardSummaries() });
     },
     ...options,
   });
 }
 
-// ── Sign-out ──────────────────────────────────────────────────────────────────
+// ── Sign-out ─────────────────────────────────────────────────────────────────
 
-/**
- * Release all locks held by user_id then sign out, clearing the query cache.
- */
 export function useReleaseLocksAndSignOut(
   options?: UseMutationOptions<
     void,
@@ -521,10 +457,6 @@ export function useReleaseLocksAndSignOut(
 // 5. Test Report
 // ─────────────────────────────────────────────────────────────────────────────
 
-/**
- * Step results touched by `username` since `sessionStart`.
- * staleTime: 0 — always refetch; the tester may have just submitted a result.
- */
 export function useSessionHistory(
   username:     string,
   sessionStart: string,
@@ -540,9 +472,6 @@ export function useSessionHistory(
   });
 }
 
-/**
- * Module name list for the TestReport filter dropdown.
- */
 export function useModuleOptions(
   options?: Partial<UseQueryOptions<ModuleOption[]>>
 ) {
@@ -559,10 +488,6 @@ export function useModuleOptions(
 // 6. Audit Log
 // ─────────────────────────────────────────────────────────────────────────────
 
-/**
- * Paginated audit log. Page 0 = newest.
- * Pass `page` as a reactive value; TanStack Query handles the key change.
- */
 export function useAuditLog(
   page    = 0,
   options?: Partial<UseQueryOptions<AuditLog[]>>
@@ -576,22 +501,12 @@ export function useAuditLog(
   });
 }
 
-/**
- * Fire-and-forget audit insertion. Not a mutation — has no loading/error state.
- * Call directly; TanStack Query is not involved.
- */
 export { insertTestStarted, insertTestFinished };
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 7. Admin
 // ─────────────────────────────────────────────────────────────────────────────
 
-// ── Full dump ─────────────────────────────────────────────────────────────────
-
-/**
- * Full data dump across all eight tables.
- * Enabled only for admins; the RPC enforces this server-side as well.
- */
 export function useAllTables(
   options?: Partial<UseQueryOptions<{ data: AllData; errors: string[] }>>
 ) {
@@ -604,9 +519,6 @@ export function useAllTables(
   });
 }
 
-// ── Tests ─────────────────────────────────────────────────────────────────────
-
-/** All tests — used by import modal and test management. */
 export function useTests(
   options?: Partial<UseQueryOptions<TestOption[]>>
 ) {
@@ -619,7 +531,6 @@ export function useTests(
   });
 }
 
-/** All tests belonging to a specific module. */
 export function useTestsForModule(
   module_name: string,
   options?: Partial<UseQueryOptions<TestOption[]>>
@@ -671,8 +582,6 @@ export function useDeleteTestCascade(
   });
 }
 
-// ── Modules ───────────────────────────────────────────────────────────────────
-
 export function useCreateModule(
   options?: UseMutationOptions<void, Error, { name: string }>
 ) {
@@ -706,9 +615,6 @@ export function useDeleteModule(
   });
 }
 
-// ── Steps ─────────────────────────────────────────────────────────────────────
-
-/** Steps for a test — used in the admin step editor and import modal. */
 export function useStepOptions(
   tests_name: string,
   options?: Partial<UseQueryOptions<StepOption[]>>
@@ -723,7 +629,6 @@ export function useStepOptions(
   });
 }
 
-/** Steps via the get_steps_by_test RPC (used in CsvGenerator / revision flow). */
 export function useStepsByTest(
   tests_name: string,
   options?: Partial<UseQueryOptions<StepOption[]>>
@@ -738,7 +643,6 @@ export function useStepsByTest(
   });
 }
 
-/** Steps for a test (direct table query variant). */
 export function useStepsForTest(
   tests_name: string,
   options?: Partial<UseQueryOptions<StepOption[]>>
@@ -774,7 +678,6 @@ export function useCreateStep(
   });
 }
 
-/** @deprecated test_steps are append-only per schema invariant. */
 export function useUpdateStep(
   options?: UseMutationOptions<
     void,
@@ -794,7 +697,6 @@ export function useUpdateStep(
   });
 }
 
-/** @deprecated test_steps must never be deleted per schema invariant. */
 export function useDeleteStep(
   options?: UseMutationOptions<void, Error, { id: string; tests_serial_no: string }>
 ) {
@@ -810,7 +712,6 @@ export function useDeleteStep(
   });
 }
 
-/** @deprecated See useDeleteStep. */
 export function useDeleteStepWithResults(
   options?: UseMutationOptions<void, Error, { id: string; tests_serial_no: string }>
 ) {
@@ -845,7 +746,6 @@ export function useBulkCreateSteps(
   });
 }
 
-/** @deprecated Use the revision-based import flow instead. */
 export function useReplaceCsvSteps(
   options?: UseMutationOptions<void, Error, { tests_name: string; rows: CsvStepRow[] }>
 ) {
