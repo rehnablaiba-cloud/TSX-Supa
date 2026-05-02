@@ -81,11 +81,11 @@ export const STALE = {
   /** Module list — changes rarely. */
   modules:        5  * 60 * 1000,
   /** Per-module test list — moderate change rate. */
-  moduleTests:    2  * 60 * 1000,
+  moduleTests:    Infinity,
   /** Dashboard summary — backed by materialized view. */
   dashboard:      30 *      1000,
   /** Active execution context — user is actively saving. */
-  execution:      30 *      1000,
+  execution:      Infinity,
   /** Lock state — Realtime is the source of truth; cache is never stale. */
   locks:          0,
   /** Admin data — always fresh, intent-fired only. */

@@ -210,11 +210,12 @@ export function useModuleData(
   options?: Partial<UseQueryOptions<ModuleData>>
 ) {
   return useQuery<ModuleData>({
-    queryKey:  QK.moduleCounts(module_name),
-    queryFn:   () => fetchModuleData(module_name),
-    enabled:   !!module_name,
-    staleTime: STALE.moduleTests,
-    gcTime:    GC.moduleTests,
+    queryKey:             QK.moduleCounts(module_name),
+    queryFn:              () => fetchModuleData(module_name),
+    enabled:              !!module_name,
+    staleTime:            Infinity,  // invalidated explicitly by step mutations
+    gcTime:               GC.moduleTests,
+    refetchOnWindowFocus: false,
     ...options,
   });
 }
@@ -316,11 +317,12 @@ export function useTestExecutionData(
   options?: Partial<UseQueryOptions<TestExecutionData>>
 ) {
   return useQuery<TestExecutionData>({
-    queryKey:  QK.executionContext(module_test_id),
-    queryFn:   () => fetchTestExecutionData(module_test_id, module_name),
-    enabled:   !!module_test_id && !!module_name,
-    staleTime: STALE.execution,
-    gcTime:    GC.execution,
+    queryKey:            QK.executionContext(module_test_id),
+    queryFn:             () => fetchTestExecutionData(module_test_id, module_name),
+    enabled:             !!module_test_id && !!module_name,
+    staleTime:           Infinity,   // optimistic after first load — never refetch
+    gcTime:              GC.execution,
+    refetchOnWindowFocus: false,     // override global — remount must not re-fetch
     ...options,
   });
 }
