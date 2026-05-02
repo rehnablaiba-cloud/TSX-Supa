@@ -287,11 +287,12 @@ export function useActiveRevisions(
 ) {
   const sorted = [...serialNos].sort();
   return useQuery<Record<string, ActiveRevision>>({
-    queryKey:  QK.activeRevisions(sorted),
-    queryFn:   () => getActiveRevisions(sorted, includeStepOrder),
-    enabled:   sorted.length > 0,
-    staleTime: STALE.moduleTests,
-    gcTime:    GC.moduleTests,
+    queryKey:             QK.activeRevisions(sorted),
+    queryFn:              () => getActiveRevisions(sorted, includeStepOrder),
+    enabled:              sorted.length > 0,
+    staleTime:            Infinity,  // revisions only change on admin action
+    gcTime:               GC.moduleTests,
+    refetchOnWindowFocus: false,
     ...options,
   });
 }
