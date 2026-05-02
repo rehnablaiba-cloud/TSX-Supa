@@ -9,8 +9,7 @@ import {
   RotateCcw,
 } from "lucide-react";
 import { useCountUp } from "../../hooks/useCountUp";
-import type { ActiveRevision, LockRow, ModuleTestRow } from "./ModuleDashboard.types";
-
+import type { ActiveRevision, LockRow, ModuleTestRow } from "../../lib/hooks";
 // ─── Shimmer style (injected once) ───────────────────────────────────────────
 const CARD_STYLE = `
 @keyframes neonPulse {

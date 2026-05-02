@@ -1,15 +1,15 @@
 // src/components/Modals/ImportTestsModal.tsx
-import React, { useEffect, useState } from "react";
+import React, { useState } from "react";
 import { FlaskConical, Plus, Pencil, Trash2, CheckCircle, ArrowLeft } from "lucide-react";
 import ModalShell from "../UI/ModalShell";
 import { Row, DiffRow } from "../UI/ReviewRow";
 import {
-  fetchTestOptions,
-  createTest,
-  updateTest,
-  deleteTestCascade,
-} from "../../lib/rpc.ts";
-import type { TestOption } from "../../lib/rpc.ts";
+  useTests,
+  useCreateTest,
+  useUpdateTest,
+  useDeleteTestCascade,
+  type TestOption,
+} from "../../lib/hooks";
 
 type TestOp = "create" | "update" | "delete";
 type Stage = "selectop" | "selecttest" | "fillform" | "confirm" | "submitting" | "done";
@@ -25,13 +25,18 @@ interface Props { onClose: () => void; onBack: () => void }
 const ImportTestsModal: React.FC<Props> = ({ onClose, onBack }) => {
   const [stage, setStage]           = useState<Stage>("selectop");
   const [op, setOp]                 = useState<TestOp>("create");
-  const [tests, setTests]           = useState<TestOption[]>([]);
   const [selectedTest, setSelected] = useState<TestOption | null>(null);
   const [sn, setSn]                 = useState("");
   const [name, setName]             = useState("");
   const [error, setError]           = useState<string | null>(null);
 
-  useEffect(() => { fetchTestOptions().then(setTests).catch(console.error); }, []);
+  // ✅ Data — from hooks, not rpc
+  const { data: tests = [] } = useTests();
+
+  // ✅ Mutations — from hooks, not rpc
+  const createTest       = useCreateTest();
+  const updateTest       = useUpdateTest();
+  const deleteTestCascade = useDeleteTestCascade();
 
   const handleBack = () => {
     switch (stage) {
@@ -58,11 +63,22 @@ const ImportTestsModal: React.FC<Props> = ({ onClose, onBack }) => {
     setStage("submitting");
     setError(null);
     try {
-      if (op === "create")                      await createTest(sn.trim(), name.trim());
-      else if (op === "update" && selectedTest) await updateTest(selectedTest.name, name.trim(), sn.trim());
-      else if (op === "delete" && selectedTest) await deleteTestCascade(selectedTest.name);
+      if (op === "create") {
+        await createTest.mutateAsync({ serial_no: sn.trim(), name: name.trim() });
+      } else if (op === "update" && selectedTest) {
+        await updateTest.mutateAsync({
+          oldName: selectedTest.name,
+          newName: name.trim(),
+          newSerialNo: sn.trim(),
+        });
+      } else if (op === "delete" && selectedTest) {
+       await deleteTestCascade.mutateAsync({ name: selectedTest.name });
+      }
       setStage("done");
-    } catch (e: any) { setError(e.message); setStage("confirm"); }
+    } catch (e: any) {
+      setError(e.message);
+      setStage("confirm");
+    }
   };
 
   const subtitle: Record<Stage, string> = {
@@ -81,7 +97,6 @@ const ImportTestsModal: React.FC<Props> = ({ onClose, onBack }) => {
       subtitle={subtitle[stage]}
       onClose={onClose}
     >
-      {/* back button */}
       {stage !== "submitting" && stage !== "done" && (
         <button onClick={handleBack}
           className="-mt-2 self-start flex items-center gap-1 text-xs text-t-muted

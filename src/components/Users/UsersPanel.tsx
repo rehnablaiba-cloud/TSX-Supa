@@ -1,13 +1,12 @@
+// src/components/Panels/UsersPanel.tsx
 import React, { useEffect, useState } from "react";
 import { useAuth } from "../../context/AuthContext";
 import { supabase } from "../../supabase";
 import ConfirmDialog from "../UI/ConfirmDialog";
 import Topbar from "../Layout/Topbar";
 import { useToast } from "../../context/ToastContext";
-import  useaudit_log  from "../../hooks/useAuditLog";
 import { AppUser, Role } from "../../types";
 
-// ─── Profile row shape returned by Supabase ───────────────────────────────────
 interface ProfileRow {
   id: string;
   display_name: string;
@@ -18,7 +17,6 @@ interface ProfileRow {
 const UsersPanel: React.FC = () => {
   const { user: currentUser } = useAuth();
   const { addToast } = useToast();
-  const log = useaudit_log();
   const [users, setUsers]               = useState<AppUser[]>([]);
   const [search, setSearch]             = useState("");
   const [showForm, setShowForm]         = useState(false);
@@ -29,10 +27,6 @@ const UsersPanel: React.FC = () => {
   const [deleteTarget, setDeleteTarget] = useState<AppUser | null>(null);
   const [loading, setLoading]           = useState(false);
 
-  // ── Admin guard ─────────────────────────────────────────────────────────────
-  // FIX: Non-admins cannot see or interact with this panel at all.
-  // RLS on profiles also blocks the underlying queries, but blocking at the
-  // component level gives a clear error instead of a confusing empty table.
   if (currentUser?.role !== "admin") {
     return (
       <div className="flex-1 flex flex-col">
@@ -55,8 +49,6 @@ const UsersPanel: React.FC = () => {
     u.display_name.toLowerCase().includes(search.toLowerCase())
   );
 
-  // ── Fetch from profiles table ────────────────────────────────────────────────
-  // FIX: include `disabled` so admins can see and toggle account status.
   const loadUsers = async () => {
     const { data, error } = await supabase
       .from("profiles")
@@ -81,11 +73,6 @@ const UsersPanel: React.FC = () => {
 
   useEffect(() => { loadUsers(); }, []);
 
-  // ── Edit ─────────────────────────────────────────────────────────────────────
-  // FIX: Re-fetch the target user's current values from the DB before opening
-  // the modal. The list state may be stale (another admin could have changed
-  // the role between page load and now). Using stale values would overwrite
-  // the latest DB state when Save is clicked.
   const openEdit = async (u: AppUser) => {
     setLoading(true);
     const { data, error } = await supabase
@@ -119,7 +106,6 @@ const UsersPanel: React.FC = () => {
 
       if (error) throw new Error(error.message);
 
-      log(`Edited user: ${editTarget.display_name}`, "info");
       addToast("User updated", "success");
       await loadUsers();
     } catch (e: any) {
@@ -130,7 +116,6 @@ const UsersPanel: React.FC = () => {
     setEditTarget(null);
   };
 
-  // ── Delete via edge function (cleans up auth.users too) ─────────────────────
   const getToken = async () => {
     const { data } = await supabase.auth.getSession();
     return data.session?.access_token ?? "";
@@ -151,7 +136,6 @@ const UsersPanel: React.FC = () => {
     if (data.error) {
       addToast("Delete failed: " + data.error, "error");
     } else {
-      log(`Deleted user: ${deleteTarget.display_name}`, "warn");
       addToast("User deleted", "success");
       await loadUsers();
     }
@@ -194,7 +178,6 @@ const UsersPanel: React.FC = () => {
                       {u.defaultRole}
                     </span>
                   </td>
-                  {/* FIX: show disabled status so admins can see locked-out accounts */}
                   <td className="py-3 pr-4">
                     {u.disabled
                       ? <span className="text-xs px-2 py-0.5 rounded-full bg-fail/15 text-fail">Disabled</span>
@@ -223,7 +206,6 @@ const UsersPanel: React.FC = () => {
         </div>
       </div>
 
-      {/* ── Edit modal ── */}
       {showForm && editTarget && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-[color-mix(in_srgb,var(--text-primary)_60%,transparent)] backdrop-blur-xs p-4">
           <div className="glass rounded-2xl p-6 w-full max-w-md">

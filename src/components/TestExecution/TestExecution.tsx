@@ -30,18 +30,17 @@ import Topbar from "../Layout/Topbar";
 import Spinner from "../UI/Spinner";
 import ExportModal from "../UI/ExportModal";
 import MassImageUploadModal from "../UI/MassImageUploadModal";
-import useAuditLog from "../../hooks/useAuditLog";
 import { exportExecutionCSV, exportExecutionPDF } from "../../utils/export";
 import type { FlatData } from "../../utils/export";
+
+// ─── All data access goes through hooks.ts — never rpc.ts or supabase directly ───
 import {
-  fetchTestExecutionData,
-  acquireLock,
-  releaseLock,
-  forceReleaseLock,
-  upsertStepResult,
-  resetAllStepResults,
-} from "../../lib/rpc.ts";
-import type { ActiveRevision } from "../../lib/supabase/queries.testexecution";
+  useTestExecutionData, useModuleLocks, useSignedUrls,
+  useAcquireLock, useReleaseLock, useForceReleaseLock,
+  useHeartbeatLock, useUpdateStepResult, useResetAllStepResults,
+  invalidateModuleLocks, insertTestFinished,
+} from "../../lib/hooks";
+import type { ActiveRevision, LockRow } from "../../lib/hooks";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Types
@@ -78,12 +77,6 @@ interface ModuleTestItem {
   test: { serial_no: string; name: string } | null;
 }
 
-interface TestLock {
-  module_test_id: string;
-  user_id: string;
-  locked_by_name: string;
-}
-
 type SignedImageMap = Record<string, string>;
 
 interface ImagePreviewState {
@@ -115,7 +108,7 @@ function computeDisplaySerials(steps: { is_divider: boolean }[]): number[] {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Divider configs
+// Divider configs  (unchanged)
 // ─────────────────────────────────────────────────────────────────────────────
 
 const DIVIDER_LEVELS: Record<
@@ -173,7 +166,7 @@ const cleanDividerLabel = (action: string): string =>
   action.replace(/^[^\p{L}\p{N}]+/u, "");
 
 // ─────────────────────────────────────────────────────────────────────────────
-// RevisionBadge
+// RevisionBadge  (unchanged)
 // ─────────────────────────────────────────────────────────────────────────────
 
 const RevisionBadge: React.FC<{ revision: ActiveRevision; isReadOnly?: boolean }> = ({
@@ -188,7 +181,7 @@ const RevisionBadge: React.FC<{ revision: ActiveRevision; isReadOnly?: boolean }
 );
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Sub-components
+// Sub-components  (all unchanged from original)
 // ─────────────────────────────────────────────────────────────────────────────
 
 const UndoAllModal: React.FC<{
@@ -363,7 +356,7 @@ const TesterBadge: React.FC<{ name: string; status: "pass" | "fail" | "pending" 
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Desktop Table Row  — memo'd; re-renders only when its own data changes
+// Desktop Table Row  (unchanged)
 // ─────────────────────────────────────────────────────────────────────────────
 
 interface TableStepRowProps {
@@ -501,7 +494,7 @@ const TableStepRow = memo<TableStepRowProps>(({
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Mobile Step Card  — memo'd
+// Mobile Step Card  (unchanged)
 // ─────────────────────────────────────────────────────────────────────────────
 
 interface MobileStepCardProps {
@@ -734,63 +727,98 @@ const TestExecution: React.FC<Props> = ({
   const { user } = useAuth();
   const { addToast } = useToast();
   const { setActiveLock, clearActiveLock } = useActiveLock();
-  const log = useAuditLog();
 
   const currentMtId = initialmodule_test_id;
 
-  const [filter, setFilter]                     = useState<Filter>("all");
-  const [search, setSearch]                     = useState("");
-  const [showExportModal, setShowExportModal]   = useState(false);
-  const [showUndoModal, setShowUndoModal]       = useState(false);
+  // ── UI state ──────────────────────────────────────────────────────────────
+  const [filter, setFilter]                           = useState<Filter>("all");
+  const [search, setSearch]                           = useState("");
+  const [showExportModal, setShowExportModal]         = useState(false);
+  const [showUndoModal, setShowUndoModal]             = useState(false);
   const [showMassImageUpload, setShowMassImageUpload] = useState(false);
-  const [scrollTarget, setScrollTarget]         = useState<string | null>(null);
-  const [focusedStepId, setFocusedStepId]       = useState<string | null>(null);
-  const [signedImageUrls, setSignedImageUrls]   = useState<SignedImageMap>({});
-  const [imagePreview, setImagePreview]         = useState<ImagePreviewState | null>(null);
-  const [moduleTests, setModuleTests]           = useState<ModuleTestItem[]>([]);
-  const [steps, setSteps]                       = useState<ExecutionStep[]>([]);
-  const [lock, setLock]                         = useState<TestLock | null>(null);
-  const [currentRevision, setCurrentRevision]   = useState<ActiveRevision | null>(null);
-  const [isVisible, setIsVisible]               = useState<boolean>(true);
-  const [loading, setLoading]                   = useState(true);
-  const [lockLoading, setLockLoading]           = useState(true);
-  const [updatingStepIds, setUpdatingStepIds]   = useState<Set<string>>(new Set());
-  const [isUndoingAll, setIsUndoingAll]         = useState(false);
+  const [scrollTarget, setScrollTarget]               = useState<string | null>(null);
+  const [focusedStepId, setFocusedStepId]             = useState<string | null>(null);
+  const [imagePreview, setImagePreview]               = useState<ImagePreviewState | null>(null);
+
+  // ── Data state (local — optimistic updates live here) ─────────────────────
+  const [moduleTests, setModuleTests]         = useState<ModuleTestItem[]>([]);
+  const [steps, setSteps]                     = useState<ExecutionStep[]>([]);
+  const [currentRevision, setCurrentRevision] = useState<ActiveRevision | null>(null);
+  const [isVisible, setIsVisible]             = useState<boolean>(true);
+
+  // ── Loading gates ─────────────────────────────────────────────────────────
+  // dataInitialized: true once steps have been derived from the first query result
+  // lockAcquireAttempted: true once the acquire mutation has settled (or was skipped)
+  const [dataInitialized, setDataInitialized]         = useState(false);
+  const [lockAcquireAttempted, setLockAcquireAttempted] = useState(false);
+
+  // ── Mutation state ────────────────────────────────────────────────────────
+  const [updatingStepIds, setUpdatingStepIds] = useState<Set<string>>(new Set());
+  const [isUndoingAll, setIsUndoingAll]       = useState(false);
+
+  // ── TanStack Query: data queries ──────────────────────────────────────────
+  // useTestExecutionData owns the RPC call; local `steps` is initialized from
+  // its result exactly once per test load and then managed optimistically.
+  const execQuery = useTestExecutionData(currentMtId, module_name);
+  const execData  = execQuery.data;
+
+  // Lock state is always-fresh (staleTime: 0) and Realtime-invalidated.
+  // Result is Record<module_test_id, LockRow>; we key into it for this test.
+  const lockQuery  = useModuleLocks([currentMtId], module_name);
+  const lockRecord: LockRow | null = lockQuery.data?.[currentMtId] ?? null;
+
+  // ── TanStack Query: mutations ─────────────────────────────────────────────
+  const acquireLockMutation  = useAcquireLock();
+  const releaseLockMutation  = useReleaseLock(module_name);
+  const forceReleaseMutation = useForceReleaseLock(module_name);
+  const heartbeatMutation    = useHeartbeatLock();
+  const updateStepMutation   = useUpdateStepResult(currentMtId, module_name);
+  const resetStepsMutation   = useResetAllStepResults(currentMtId);
+
+  // ── Signed image URLs via TanStack Query (staleTime: 50 min) ─────────────
+  // Key on stepId join so the query only re-runs when the step list changes,
+  // not on every status/remarks optimistic update.
+  const stepIdsStr = steps.map((s) => s.stepId).join(",");
+  const allImagePaths = useMemo(
+    () =>
+      steps.flatMap((s) => [
+        ...(s.action_image_urls  || []),
+        ...(s.expected_image_urls || []),
+      ]),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [stepIdsStr]
+  );
+  const { data: signedImageUrls = {} } = useSignedUrls(allImagePaths);
 
   // ── Stable refs ───────────────────────────────────────────────────────────
-  const stepsRef          = useRef<ExecutionStep[]>([]);
-  stepsRef.current        = steps;
-  const updatingRef       = useRef<Set<string>>(new Set());
-  updatingRef.current     = updatingStepIds;
-  const isLockedRef       = useRef(false);
-  const isReadOnlyRef     = useRef(false);
-  const remarksMap        = useRef<Record<string, string>>({});
+  const stepsRef      = useRef<ExecutionStep[]>([]);
+  stepsRef.current    = steps;
+  const updatingRef   = useRef<Set<string>>(new Set());
+  updatingRef.current = updatingStepIds;
+  const isLockedRef   = useRef(false);
+  const isReadOnlyRef = useRef(false);
+  const remarksMap    = useRef<Record<string, string>>({});
+  const stepIdSetRef  = useRef<Set<string>>(new Set());
 
-  // ── Ref stores for row DOM elements ───────────────────────────────────────
+  // Per-test guards: prevent duplicate initialisation / lock-acquire attempts
+  // across re-renders and React Strict Mode double-invocations.
+  const hasInitializedForRef       = useRef<string | null>(null);
+  const lockAcquireAttemptedForRef = useRef<string | null>(null);
+
+  // DOM element refs for scroll-to-step
   const trRefs   = useRef<Record<string, HTMLTableRowElement | null>>({});
   const cardRefs = useRef<Record<string, HTMLDivElement | null>>({});
 
-  const registerTrRef = useCallback(
-    (stepId: string, el: HTMLTableRowElement | null) => { trRefs.current[stepId] = el; },
-    []
-  );
-  const registerCardRef = useCallback(
-    (stepId: string, el: HTMLDivElement | null) => { cardRefs.current[stepId] = el; },
-    []
-  );
+  const registerTrRef   = useCallback((stepId: string, el: HTMLTableRowElement | null) => { trRefs.current[stepId]   = el; }, []);
+  const registerCardRef = useCallback((stepId: string, el: HTMLDivElement   | null) => { cardRefs.current[stepId] = el; }, []);
+  const handleFocus         = useCallback((stepId: string) => setFocusedStepId(stepId), []);
+  const handleRemarksChange = useCallback((stepId: string, val: string) => { remarksMap.current[stepId] = val; }, []);
 
-  const handleFocus = useCallback((stepId: string) => setFocusedStepId(stepId), []);
-  const handleRemarksChange = useCallback((stepId: string, val: string) => {
-    remarksMap.current[stepId] = val;
-  }, []);
-
-  const stepIdSetRef = useRef<Set<string>>(new Set());
-
-  const isLockedByOther    = !!(lock && lock.user_id !== user?.id);
+  // ── Derived flags ─────────────────────────────────────────────────────────
+  const isLockedByOther    = !!(lockRecord && lockRecord.user_id !== user?.id);
   const isRevisionReadOnly = !isVisible;
-
-  isLockedRef.current   = isLockedByOther;
-  isReadOnlyRef.current = isRevisionReadOnly;
+  isLockedRef.current      = isLockedByOther;
+  isReadOnlyRef.current    = isRevisionReadOnly;
 
   const openImagePreview = useCallback(
     (paths: string[], clickedIdx: number, label: string) => {
@@ -805,120 +833,129 @@ const TestExecution: React.FC<Props> = ({
     [signedImageUrls]
   );
 
-  // ── Load data ─────────────────────────────────────────────────────────────
+  // ── 1. Reset all local state when the active test changes ─────────────────
   useEffect(() => {
-    let cancelled = false;
-    setLoading(true);
-    setLockLoading(true);
+    hasInitializedForRef.current       = null;
+    lockAcquireAttemptedForRef.current = null;
+    setDataInitialized(false);
+    setLockAcquireAttempted(false);
     setFocusedStepId(null);
-    remarksMap.current = {};
+    setSteps([]);
+    remarksMap.current  = {};
     stepIdSetRef.current = new Set();
+  }, [currentMtId]);
 
+  // ── 2. Derive local steps from query data (once per test load) ────────────
+  // Subsequent query invalidations (from Realtime or mutation onSuccess) do NOT
+  // overwrite local steps — optimistic updates and the srChannel subscription
+  // own that path. The query cache stays fresh for navigation-back scenarios.
+  useEffect(() => {
+    if (!execData || hasInitializedForRef.current === currentMtId) return;
+    hasInitializedForRef.current = currentMtId;
+
+    const ordered = execData.step_results.filter((sr) => sr.step !== null);
+    const displaySerials = computeDisplaySerials(
+      ordered.map((sr) => ({ is_divider: sr.step!.is_divider }))
+    );
+    const merged: ExecutionStep[] = ordered.map((sr, idx) => ({
+      stepId:              sr.step!.id,
+      stepResultId:        sr.id,
+      module_test_id:      currentMtId,
+      serial_no:           displaySerials[idx],
+      action:              sr.step!.action,
+      expected_result:     sr.step!.expected_result,
+      action_image_urls:   sr.step!.action_image_urls  || [],
+      expected_image_urls: sr.step!.expected_image_urls || [],
+      is_divider:          sr.step!.is_divider,
+      status:              sr.status,
+      remarks:             sr.remarks,
+      display_name:        sr.display_name ?? "",
+    }));
+
+    stepIdSetRef.current = new Set(merged.map((s) => s.stepId));
+    setModuleTests(execData.module_tests as unknown as ModuleTestItem[]);
+    setCurrentRevision(execData.current_revision);
+    const isVisibleNow = execData.is_visible ?? true;
+    setIsVisible(isVisibleNow);
+    setSteps(merged);
+    setDataInitialized(true);
+
+    if (isVisibleNow) {
+      const firstPending = merged.find((s) => !s.is_divider && s.status === "pending");
+      if (firstPending) {
+        setFocusedStepId(firstPending.stepId);
+        setScrollTarget(firstPending.stepId);
+      }
+    }
+  }, [execData, currentMtId]);
+
+  // ── 3. Acquire lock once data is initialised ──────────────────────────────
+  // A ref guard prevents a second attempt if the effect re-runs (e.g. Strict Mode).
+  // Read-only revisions (is_visible=false) skip acquisition immediately.
+  useEffect(() => {
+    if (!dataInitialized || !user) return;
+    if (lockAcquireAttemptedForRef.current === currentMtId) return;
+    lockAcquireAttemptedForRef.current = currentMtId;
+
+    if (!isVisible) {
+      setLockAcquireAttempted(true);
+      return;
+    }
+
+    acquireLockMutation.mutate(
+      {
+        module_test_id: currentMtId,
+        user_id:        user.id,
+        display_name:   user.display_name ?? user.email ?? "User",
+      },
+      {
+        onSuccess: (result) => {
+          if (result.success) {
+            setActiveLock(currentMtId, user.id);
+          } else {
+            addToast(`Test is locked by ${result.holder ?? "another user"}. View only.`, "warning");
+          }
+        },
+        onSettled: () => setLockAcquireAttempted(true),
+      }
+    );
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dataInitialized, currentMtId, user?.id, isVisible]);
+
+  // ── 4. Heartbeat — refresh locked_at every 60 s to prevent server expiry ──
+  useEffect(() => {
+    if (!user || isLockedByOther || isRevisionReadOnly || !lockAcquireAttempted) return;
+    const interval = setInterval(() => {
+      heartbeatMutation.mutate({ module_test_id: currentMtId, user_id: user.id });
+    }, 60_000);
+    return () => clearInterval(interval);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentMtId, user?.id, isLockedByOther, isRevisionReadOnly, lockAcquireAttempted]);
+
+  // ── 5. Realtime subscriptions ─────────────────────────────────────────────
+  useEffect(() => {
     const uid = user?.id ?? "anon";
 
-    (async () => {
-      try {
-        const [execData, lockRes] = await Promise.all([
-          fetchTestExecutionData(currentMtId, module_name),
-          supabase
-            .from("test_locks")
-            .select("module_test_id, user_id, locked_by_name")
-            .eq("module_test_id", currentMtId),
-        ]);
-
-        if (cancelled) return;
-
-        setModuleTests(execData.module_tests);
-        setCurrentRevision(execData.current_revision);
-        const isVisibleNow = execData.is_visible ?? true;
-        setIsVisible(isVisibleNow);
-
-        const ordered = execData.step_results.filter((sr) => sr.step !== null);
-        const displaySerials = computeDisplaySerials(
-          ordered.map((sr) => ({ is_divider: sr.step!.is_divider }))
-        );
-
-        const merged: ExecutionStep[] = ordered.map((sr, idx) => ({
-          stepId:              sr.step!.id,
-          stepResultId:        sr.id,
-          module_test_id:      currentMtId,
-          serial_no:           displaySerials[idx],
-          action:              sr.step!.action,
-          expected_result:     sr.step!.expected_result,
-          action_image_urls:   sr.step!.action_image_urls  || [],
-          expected_image_urls: sr.step!.expected_image_urls || [],
-          is_divider:          sr.step!.is_divider,
-          status:              sr.status,
-          remarks:             sr.remarks,
-          display_name:        sr.display_name ?? "",
-        }));
-
-        stepIdSetRef.current = new Set(merged.map((s) => s.stepId));
-
-        setSteps(merged);
-        setLock(lockRes.data?.[0] ?? null);
-        setLoading(false);
-
-        if (isVisibleNow) {
-          const firstPending = merged.find((s) => !s.is_divider && s.status === "pending");
-          if (firstPending) {
-            setFocusedStepId(firstPending.stepId);
-            setScrollTarget(firstPending.stepId);
-          }
-        }
-
-        if (isVisibleNow && user) {
-          const result = await acquireLock(
-            currentMtId,
-            user.id,
-            user.display_name ?? user.email ?? "User"
-          );
-          if (!cancelled) {
-            if (result.success) {
-              setActiveLock(currentMtId, user.id);
-            } else {
-              addToast(`Test is locked by ${result.holder ?? "another user"}. View only.`, "warning");
-            }
-          }
-        }
-
-        setLockLoading(false);
-      } catch (err) {
-        if (!cancelled) {
-          console.error("[TestExecution] load failed:", err);
-          addToast("Failed to load test data. Please try again.", "error");
-          setLoading(false);
-          setLockLoading(false);
-        }
-      }
-    })();
-
-    // ── Realtime: lock changes ─────────────────────────────────────────────
+    // Lock changes → invalidate the lock query (no manual state needed)
     const lockChannel = supabase
       .channel(`lock:${currentMtId}:${uid}`)
-      .on("postgres_changes",
+      .on(
+        "postgres_changes",
         { event: "*", schema: "public", table: "test_locks", filter: `module_test_id=eq.${currentMtId}` },
-        ({ eventType, new: newRow }: any) => {
-          if (eventType === "DELETE") setLock(null);
-          else setLock(newRow);
-        }
+        () => { invalidateModuleLocks(module_name); }
       )
       .subscribe();
 
-    // ── Realtime: step_result updates ──────────────────────────────────────
-    // FIX: skip own writes — locks guarantee single executor so the only
-    // realtime events worth applying are from an admin force-reset. Skipping
-    // self-echoes eliminates the double-render on every pass/fail click.
+    // Step result changes from other sessions.
+    // Own writes are skipped (updatingRef guard) — they're already applied optimistically.
     const srChannel = supabase
       .channel(`sr:${currentMtId}:${uid}`)
-      .on("postgres_changes",
+      .on(
+        "postgres_changes",
         { event: "UPDATE", schema: "public", table: "step_results", filter: `module_name=eq.${module_name}` },
         ({ new: updated }: any) => {
-          // Skip: step belongs to a different test in this module
           if (!stepIdSetRef.current.has(updated.test_steps_id)) return;
-          // Skip: this is our own optimistic write echoing back — already applied
-          if (updatingRef.current.has(updated.test_steps_id)) return;
-
+          if (updatingRef.current.has(updated.test_steps_id))   return;
           setSteps((prev) =>
             prev.map((s) =>
               s.stepResultId === updated.id
@@ -931,95 +968,50 @@ const TestExecution: React.FC<Props> = ({
       .subscribe();
 
     return () => {
-      cancelled = true;
       supabase.removeChannel(lockChannel);
       supabase.removeChannel(srChannel);
     };
   }, [module_name, currentMtId, user?.id]);
 
-  // ── Signed image URLs ─────────────────────────────────────────────────────
-  // FIX: key only on stepIds — image paths are immutable after load so this
-  // never re-fires on status/remarks changes (the hot path during execution).
-  const imagePathsKey = useMemo(
-    () => steps.map((s) => s.stepId).join(","),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [steps.map((s) => s.stepId).join(",")]
-  );
-
-  useEffect(() => {
-    const allPaths = stepsRef.current.flatMap((s) => [
-      ...(s.action_image_urls  || []),
-      ...(s.expected_image_urls || []),
-    ]);
-    if (!allPaths.length) { setSignedImageUrls({}); return; }
-    let cancelled = false;
-
-    (async () => {
-      const unique = Array.from(new Set(allPaths.filter(Boolean)));
-      const chunks: string[][] = [];
-      for (let i = 0; i < unique.length; i += 500) chunks.push(unique.slice(i, i + 500));
-
-      const allEntries: [string, string][] = [];
-      for (const chunk of chunks) {
-        const { data, error } = await supabase.storage
-          .from("test_steps").createSignedUrls(chunk, 3600);
-        if (error || !data) continue;
-        for (const entry of data) {
-          if (entry.signedUrl) allEntries.push([entry.path!, entry.signedUrl!]);
-        }
-      }
-      if (!cancelled) setSignedImageUrls(Object.fromEntries(allEntries));
-    })();
-
-    return () => { cancelled = true; };
-  }, [imagePathsKey]); // ← was [steps]; now only fires when step list changes, not on every pass/fail
-
-  // ── Clean up stale refs ───────────────────────────────────────────────────
+  // ── 6. Clean up stale DOM refs when step list changes ────────────────────
   useEffect(() => {
     const live = new Set(steps.map((s) => s.stepId));
     for (const id of Object.keys(trRefs.current))   { if (!live.has(id)) delete trRefs.current[id]; }
     for (const id of Object.keys(cardRefs.current)) { if (!live.has(id)) delete cardRefs.current[id]; }
   }, [steps]);
 
-  // ── Scroll to target ──────────────────────────────────────────────────────
+  // ── 7. Scroll to target step ──────────────────────────────────────────────
   useEffect(() => {
-    if (!scrollTarget || loading) return;
-    let raf: number;
-    raf = requestAnimationFrame(() => {
+    if (!scrollTarget || !dataInitialized) return;
+    const raf = requestAnimationFrame(() => {
       const isDesktop = window.innerWidth >= 768;
-      const el = isDesktop
-        ? trRefs.current[scrollTarget]
-        : cardRefs.current[scrollTarget];
+      const el = isDesktop ? trRefs.current[scrollTarget] : cardRefs.current[scrollTarget];
       if (!el) return;
       el.scrollIntoView({ behavior: "smooth", block: "center" });
       setScrollTarget(null);
     });
     return () => cancelAnimationFrame(raf);
-  }, [scrollTarget, loading]);
+  }, [scrollTarget, dataInitialized]);
 
-  // ── Update step ───────────────────────────────────────────────────────────
+  // ── Handle step update (optimistic) ──────────────────────────────────────
   const handleStepUpdate = useCallback(
-    async (
-      stepId: string,
-      status: "pass" | "fail" | "pending",
-      remarks: string
-    ) => {
+    (stepId: string, status: "pass" | "fail" | "pending", remarks: string) => {
       if (isLockedRef.current || isReadOnlyRef.current) return;
       if (updatingRef.current.has(stepId)) return;
 
-      setUpdatingStepIds((prev) => new Set(prev).add(stepId));
-
       const currentSteps = stepsRef.current;
-      const idx = currentSteps.findIndex((s) => s.stepId === stepId);
-      const nextPending = currentSteps
+      // Capture original before optimistic mutation for potential rollback
+      const originalStep  = currentSteps.find((s) => s.stepId === stepId) ?? null;
+      const idx           = currentSteps.findIndex((s) => s.stepId === stepId);
+      const nextPending   = currentSteps
         .slice(idx + 1)
         .find((s) => !s.is_divider && s.status === "pending");
-      const display_name = user?.display_name ?? user?.email ?? "User";
+      const display_name  = user?.display_name ?? user?.email ?? "User";
 
+      // Optimistic update
+      setUpdatingStepIds((prev) => new Set(prev).add(stepId));
       setSteps((prev) =>
-        prev.map((s) =>
-          s.stepId === stepId ? { ...s, status, remarks, display_name } : s
-        )
+        prev.map((s) => s.stepId === stepId ? { ...s, status, remarks, display_name } : s)
       );
 
       if (status !== "pending") {
@@ -1034,26 +1026,33 @@ const TestExecution: React.FC<Props> = ({
         setScrollTarget(stepId);
       }
 
-      try {
-        await upsertStepResult({ test_steps_id: stepId, module_name, status, remarks, display_name });
-      } catch {
-        setSteps((prev) =>
-          prev.map((s) => {
-            if (s.stepId !== stepId) return s;
-            const original = stepsRef.current.find((os) => os.stepId === stepId);
-            return original ? { ...s, status: original.status, remarks: original.remarks } : s;
-          })
-        );
-        addToast("Failed to save step result. Please try again.", "error");
-      } finally {
-        setUpdatingStepIds((prev) => {
-          const next = new Set(prev);
-          next.delete(stepId);
-          return next;
-        });
-      }
+      updateStepMutation.mutate(
+        { test_steps_id: stepId, module_name, status, remarks, display_name },
+        {
+          onError: () => {
+            // Roll back to server state on failure
+            if (originalStep) {
+              setSteps((prev) =>
+                prev.map((s) =>
+                  s.stepId === stepId
+                    ? { ...s, status: originalStep.status, remarks: originalStep.remarks }
+                    : s
+                )
+              );
+            }
+            addToast("Failed to save step result. Please try again.", "error");
+          },
+          onSettled: () => {
+            setUpdatingStepIds((prev) => {
+              const next = new Set(prev);
+              next.delete(stepId);
+              return next;
+            });
+          },
+        }
+      );
     },
-    [module_name, user, addToast]
+    [module_name, user, addToast, updateStepMutation]
   );
 
   // ── Keyboard shortcuts ────────────────────────────────────────────────────
@@ -1076,18 +1075,21 @@ const TestExecution: React.FC<Props> = ({
     return () => document.removeEventListener("keydown", onKeyDown);
   }, [focusedStepId, handleStepUpdate]);
 
-  // ── Reset all ─────────────────────────────────────────────────────────────
-  const handleUndoAll = useCallback(async () => {
+  // ── Reset all steps ───────────────────────────────────────────────────────
+  const handleUndoAll = useCallback(() => {
     if (isUndoingAll) return;
     setIsUndoingAll(true);
     setShowUndoModal(false);
-    const currentSteps = stepsRef.current;
-    const display_name = user?.display_name ?? user?.email ?? "User";
 
+    const currentSteps  = stepsRef.current;
+    const display_name  = user?.display_name ?? user?.email ?? "User";
+    const stepResultIds = currentSteps
+      .filter((s) => !s.is_divider && s.stepResultId)
+      .map((s) => s.stepResultId);
+
+    // Optimistic: mark all pending locally
     setSteps((prev) =>
-      prev.map((s) =>
-        s.is_divider ? s : { ...s, status: "pending", remarks: "", display_name }
-      )
+      prev.map((s) => s.is_divider ? s : { ...s, status: "pending", remarks: "", display_name })
     );
     remarksMap.current = {};
     const first = currentSteps.filter((s) => !s.is_divider)[0];
@@ -1096,65 +1098,74 @@ const TestExecution: React.FC<Props> = ({
       setScrollTarget(first.stepId);
     }
 
-    try {
-      const stepResultIds = currentSteps
-        .filter((s) => !s.is_divider && s.stepResultId)
-        .map((s) => s.stepResultId);
-      await resetAllStepResults(module_name, stepResultIds, display_name);
-      addToast("All steps reset to pending.", "info");
-      log("Undo all steps");
-    } catch {
-      setSteps((prev) =>
-        prev.map((s) => {
-          if (s.is_divider) return s;
-          const original = currentSteps.find((os) => os.stepId === s.stepId);
-          return original ? { ...s, status: original.status, remarks: original.remarks } : s;
-        })
-      );
-      addToast("Failed to reset steps. Please try again.", "error");
-    } finally {
-      setIsUndoingAll(false);
-    }
-  }, [module_name, user, addToast, log, isUndoingAll]);
+    resetStepsMutation.mutate(
+      { module_name, stepResultIds, display_name },
+      {
+        onSuccess: () => {
+          addToast("All steps reset to pending.", "info");
+        },
+        onError: () => {
+          // Roll back to pre-reset state
+          setSteps((prev) =>
+            prev.map((s) => {
+              if (s.is_divider) return s;
+              const original = currentSteps.find((os) => os.stepId === s.stepId);
+              return original ? { ...s, status: original.status, remarks: original.remarks } : s;
+            })
+          );
+          addToast("Failed to reset steps. Please try again.", "error");
+        },
+        onSettled: () => setIsUndoingAll(false),
+      }
+    );
+  }, [module_name, user, addToast, isUndoingAll, resetStepsMutation]);
 
   // ── Force release (admin) ─────────────────────────────────────────────────
-  const handleForceRelease = useCallback(async () => {
+  const handleForceRelease = useCallback(() => {
     if (!isAdmin) return;
-    try {
-      await forceReleaseLock(currentMtId);
-      addToast("Lock force-released", "success");
-    } catch (e: any) {
-      addToast(e?.message ?? "Failed to force-release lock", "error");
-    }
-  }, [isAdmin, currentMtId, addToast]);
+    forceReleaseMutation.mutate(
+      { module_test_id: currentMtId },
+      {
+        onSuccess: () => addToast("Lock force-released", "success"),
+        onError:   (e: any) => addToast(e?.message ?? "Failed to force-release lock", "error"),
+      }
+    );
+  }, [isAdmin, currentMtId, forceReleaseMutation, addToast]);
 
-  // ── Finish ────────────────────────────────────────────────────────────────
-  const handleFinish = async () => {
-    if (user && isVisible) {
-      await releaseLock(currentMtId, user.id).catch(() => {});
-    }
-    clearActiveLock();
-    log(`Finished test: ${currentTest?.name ?? "Unknown"}`);
-    addToast(`Test "${currentTest?.name ?? "Unknown"}" completed!`, "success");
-    onBack();
-  };
-
-  // ── Derived state ─────────────────────────────────────────────────────────
+  // ── Finish test ───────────────────────────────────────────────────────────
   const currentMt   = moduleTests.find((mt) => mt.id === currentMtId);
   const currentTest = currentMt?.test;
+  const handleFinish = useCallback(() => {
+    if (user && isVisible) {
+      releaseLockMutation.mutate({ module_test_id: currentMtId, user_id: user.id });
+      clearActiveLock();
+      insertTestFinished(
+        module_name,
+        currentTest?.name ?? "Unknown",
+        user.display_name ?? user.email ?? "User",
+        "pending"
+      );
+    }
+    addToast(`Test "${currentTest?.name}" completed!`, "success");
+    onBack();
+  }, [user, isVisible, currentMtId, releaseLockMutation, clearActiveLock,
+      currentTest?.name, module_name, addToast, onBack]);
+
+  // ── Derived UI data ──────────────────────────────────────────────────────
+
 
   const { passCount, failCount, totalCount, doneCount, passPct, failPct, progressPct } =
     useMemo(() => {
-      const nd   = steps.filter((s) => !s.is_divider);
-      const pass = nd.filter((s) => s.status === "pass").length;
-      const fail = nd.filter((s) => s.status === "fail").length;
+      const nd    = steps.filter((s) => !s.is_divider);
+      const pass  = nd.filter((s) => s.status === "pass").length;
+      const fail  = nd.filter((s) => s.status === "fail").length;
       const total = nd.length;
       const done  = pass + fail;
       return {
         passCount: pass, failCount: fail, totalCount: total, doneCount: done,
-        progressPct: total > 0 ? Math.round((done  / total) * 100) : 0,
-        passPct:     total > 0 ? Math.round((pass  / total) * 100) : 0,
-        failPct:     total > 0 ? Math.round((fail  / total) * 100) : 0,
+        progressPct: total > 0 ? Math.round((done / total) * 100) : 0,
+        passPct:     total > 0 ? Math.round((pass / total) * 100) : 0,
+        failPct:     total > 0 ? Math.round((fail / total) * 100) : 0,
       };
     }, [steps]);
 
@@ -1191,23 +1202,38 @@ const TestExecution: React.FC<Props> = ({
 
   const exportTestName = currentTest ? `${currentTest.serial_no}. ${currentTest.name}` : "test";
 
-  // ── Render ────────────────────────────────────────────────────────────────
-  if (lockLoading)
+  // ── Render: loading gate ──────────────────────────────────────────────────
+  // Show spinner until:
+  //   (a) exec query has returned AND steps have been derived into local state
+  //   (b) lock acquisition has been attempted (or skipped for read-only)
+  const isGlobalLoading = execQuery.isLoading || !dataInitialized || !lockAcquireAttempted;
+
+  if (isGlobalLoading)
     return (
       <div className="flex flex-col items-center justify-center gap-3" style={{ height: "100dvh" }}>
         <Spinner />
-        <p className="text-xs text-t-muted">Checking lock status…</p>
+        <p className="text-xs text-t-muted">
+          {execQuery.isLoading || !dataInitialized ? "Loading test…" : "Checking lock status…"}
+        </p>
       </div>
     );
 
+  // ── Render: locked by another user ────────────────────────────────────────
   if (isLockedByOther)
     return (
       <div className="flex flex-col" style={{ height: "100dvh" }}>
         <Topbar title={currentTest?.name ?? "Test Execution"} subtitle={module_name} onBack={onBack} />
-        <LockedScreen locked_by_name={lock.locked_by_name} test_name={currentTest?.name ?? "this test"} onBack={onBack} />
+        <LockedScreen
+          locked_by_name={lockRecord!.locked_by_name}
+          test_name={currentTest?.name ?? "this test"}
+          onBack={onBack}
+        />
         {isAdmin && (
           <div className="p-4 flex justify-center">
-            <button onClick={handleForceRelease} className="text-xs text-fail hover:text-[color-mix(in_srgb,var(--color-fail),white_50%)] underline underline-offset-2 transition-colors">
+            <button
+              onClick={handleForceRelease}
+              className="text-xs text-fail hover:text-[color-mix(in_srgb,var(--color-fail),white_50%)] underline underline-offset-2 transition-colors"
+            >
               Force-release lock (admin)
             </button>
           </div>
@@ -1215,13 +1241,24 @@ const TestExecution: React.FC<Props> = ({
       </div>
     );
 
+  // ── Render: main view ─────────────────────────────────────────────────────
   return (
     <div className="flex flex-col" style={{ height: "100dvh" }}>
       {imagePreview && (
-        <ImagePreviewModal images={imagePreview.urls} initialIndex={imagePreview.idx} label={imagePreview.label} onClose={() => setImagePreview(null)} />
+        <ImagePreviewModal
+          images={imagePreview.urls}
+          initialIndex={imagePreview.idx}
+          label={imagePreview.label}
+          onClose={() => setImagePreview(null)}
+        />
       )}
       {showUndoModal && (
-        <UndoAllModal doneCount={doneCount} totalCount={totalCount} onConfirm={handleUndoAll} onCancel={() => setShowUndoModal(false)} />
+        <UndoAllModal
+          doneCount={doneCount}
+          totalCount={totalCount}
+          onConfirm={handleUndoAll}
+          onCancel={() => setShowUndoModal(false)}
+        />
       )}
 
       <ExportModal
@@ -1338,9 +1375,7 @@ const TestExecution: React.FC<Props> = ({
 
       {/* ── Scroll container ─────────────────────────────────────────────── */}
       <div className="flex-1 min-h-0 overflow-y-auto">
-        {loading ? (
-          <div className="flex items-center justify-center py-20"><Spinner /></div>
-        ) : filtered.length === 0 ? (
+        {filtered.length === 0 ? (
           <div className="text-center text-t-muted py-20 text-sm">No steps match your filter.</div>
         ) : (
           <>
