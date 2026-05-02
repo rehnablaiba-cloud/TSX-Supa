@@ -386,7 +386,6 @@ export function getActiveRevisions(
           id:              r.id,
           revision:        r.revision,
           tests_serial_no: r.tests_serial_no,
-          step_order:      Array.isArray(r.step_order) ? r.step_order : [],
         } satisfies ActiveRevision,
       ])
     );
@@ -796,7 +795,7 @@ export function fetchTestExecutionData(
           id:              first.revision_id,
           revision:        first.revision_label     ?? "",
           tests_serial_no: first.revision_serial_no ?? "",
-          step_order:      [],
+
         }
       : null;
 
@@ -846,7 +845,6 @@ export function fetchTestExecutionData(
           id:              r.id,
           revision:        r.revision,
           tests_serial_no: r.tests_serial_no,
-          step_order:      [],
         };
       }
     }
