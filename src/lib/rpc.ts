@@ -107,7 +107,10 @@ export type ActiveRevision = {
   id:              string;
   revision:        string;
   tests_serial_no: string;
-  step_order:      string[];
+};
+
+export type ActiveRevisionWithSteps = ActiveRevision & {
+  step_order: string[];
 };
 
 export type LockRow = {
@@ -606,7 +609,7 @@ export function fetchModuleData(module_name: string): Promise<ModuleData> {
       serialNos.length > 0
         ? supabase
             .from("test_revisions")
-            .select("id, revision, tests_serial_no, step_order")
+            .select("id, revision, tests_serial_no")
             .eq("status", "active")
             .in("tests_serial_no", serialNos)   // ← scoped to this module's tests
         : Promise.resolve({ data: [] as any[], error: null }),
@@ -634,7 +637,6 @@ export function fetchModuleData(module_name: string): Promise<ModuleData> {
         id:              r.id,
         revision:        r.revision,
         tests_serial_no: r.tests_serial_no,
-        step_order:      Array.isArray(r.step_order) ? r.step_order : [],
       };
     }
 
