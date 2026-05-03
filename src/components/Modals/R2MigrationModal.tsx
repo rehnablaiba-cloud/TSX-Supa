@@ -235,11 +235,16 @@ async function chunkedDeepDiff(
 
   const normalize = (row: Record<string, unknown>): Record<string, unknown> => {
     const out: Record<string, unknown> = {}
-    for (const [k, v] of Object.entries(row)) {
+    const allKeys = new Set([
+      ...Object.keys(row),
+      "action_image_urls",
+      "expected_image_urls",
+    ])
+    for (const k of allKeys) {
       if (k === "action_image_urls" || k === "expected_image_urls") {
-        out[k] = Array.isArray(v) ? v : []
+        out[k] = Array.isArray(row[k]) ? row[k] : []
       } else {
-        out[k] = v ?? null
+        out[k] = row[k] ?? null
       }
     }
     return out
