@@ -1379,7 +1379,7 @@ export function fetchTestsForModule(module_name: string): Promise<TestOption[]> 
   return callRpc(async () => {
     const { data, error } = await supabase
       .from("module_tests")
-      .select("test_name, tests(serial_no, name)")
+      .select("tests_name, tests(serial_no, name)")
       .eq("module_name", module_name);
     if (error) throw new Error(error.message);
 

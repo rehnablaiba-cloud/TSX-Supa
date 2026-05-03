@@ -1,6 +1,6 @@
 // src/components/Modals/ImportStepsManualModal.tsx
 import React, { useEffect, useState } from "react";
-import { Hash, ArrowLeft, CheckCircle, AlertCircle } from "lucide-react";
+import { Hash, ArrowLeft, CheckCircle, AlertCircle, Lock } from "lucide-react";
 import ModalShell from "../UI/ModalShell";
 import { supabase } from "../../supabase";
 import {
@@ -46,22 +46,13 @@ type Stage =
 
 interface Props { onClose: () => void; onBack: () => void }
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
-
-/** Rebuild a step-order array from a steps list sorted by serial_no. */
-function buildStepOrder(steps: R2Step[]): string[] {
-  return [...steps]
-    .sort((a, b) => a.serial_no - b.serial_no)
-    .map((s) => s.id);
-}
-
 // ── Component ─────────────────────────────────────────────────────────────────
 const ImportStepsManualModal: React.FC<Props> = ({ onClose, onBack }) => {
   const [stage,        setStage]        = useState<Stage>("loadingRevisions");
   const [revisions,    setRevisions]    = useState<R2Revision[]>([]);
   const [selRevision,  setSelRevision]  = useState<R2Revision | null>(null);
-  const [allSteps,     setAllSteps]     = useState<R2Step[]>([]);   // full list for this revision
-  const [stepOrder,    setStepOrder]    = useState<string[]>([]);   // current ordered IDs
+  const [allSteps,     setAllSteps]     = useState<R2Step[]>([]);
+  const [stepOrder,    setStepOrder]    = useState<string[]>([]);
   const [original,     setOriginal]     = useState<R2Step | null>(null);
   const [serialNo,     setSerialNo]     = useState("");
   const [action,       setAction]       = useState("");
@@ -123,47 +114,33 @@ const ImportStepsManualModal: React.FC<Props> = ({ onClose, onBack }) => {
     setStage("saving");
     setError(null);
 
-    const newSn       = parseFloat(serialNo);
     const newAction   = action.trim();
     const newExpected = expected.trim();
 
     try {
-      // 4. Build updated step
+      // 1. Build updated step (serial_no LOCKED — never changes)
       const updatedStep: R2Step = {
         ...original,
-        serial_no:       newSn,
+        serial_no:       original.serial_no,  // ← RESTRICTED
         action:          newAction,
         expected_result: newExpected,
         is_divider:      isDivider,
       };
 
-      // 4. Build updated steps list and recalculate step order
+      // 2. Build updated steps list for R2 (full JSON rewrite, same order)
       const updatedSteps: R2Step[] = allSteps.map((s) =>
         s.id === original.id ? updatedStep : s
       );
-      const newStepOrder: string[] = buildStepOrder(updatedSteps);
 
-      // 5+6. Push updated test_steps and step_order to R2
-      await Promise.all([
-        r2Write(`test_steps/${selRevision.id}.json`,  updatedSteps),
-        r2Write(`step_orders/${selRevision.id}.json`, newStepOrder),
-      ]);
+      // 3. Push updated test_steps to R2 (full rewrite, NO step_order update)
+      await r2Write(`test_steps/${selRevision.id}.json`, updatedSteps);
       r2Invalidate(`test_steps/${selRevision.id}.json`);
-      r2Invalidate(`step_orders/${selRevision.id}.json`);
 
-      // 7. Push new step order to Supabase revisions table
-      const { error: revErr } = await supabase
-        .from("test_revisions")
-        .update({ step_order: newStepOrder })
-        .eq("id", selRevision.id);
-      if (revErr) throw new Error(`Supabase revisions: ${revErr.message}`);
-
-      // 8. Patch only changed fields on the specific step in Supabase test_steps
+      // 4. Patch ONLY changed content columns in Supabase (after R2, no fetch)
       const patch: Partial<R2Step> = {};
-      if (newSn       !== original.serial_no)                              patch.serial_no       = newSn;
-      if (newAction   !== (original.action ?? ""))                         patch.action          = newAction;
-      if (newExpected !== (original.expected_result ?? ""))                patch.expected_result = newExpected;
-      if (isDivider   !== original.is_divider)                             patch.is_divider      = isDivider;
+      if (newAction   !== (original.action ?? ""))          patch.action          = newAction;
+      if (newExpected !== (original.expected_result ?? "")) patch.expected_result = newExpected;
+      if (isDivider   !== original.is_divider)              patch.is_divider      = isDivider;
 
       if (Object.keys(patch).length > 0) {
         const { error: stepErr } = await supabase
@@ -173,6 +150,10 @@ const ImportStepsManualModal: React.FC<Props> = ({ onClose, onBack }) => {
         if (stepErr) throw new Error(`Supabase test_steps: ${stepErr.message}`);
       }
 
+      // 5. Update local state to reflect saved changes
+      setAllSteps(updatedSteps);
+      setOriginal(updatedStep);
+
       setStage("done");
     } catch (e: any) {
       setError(e.message ?? "Save failed");
@@ -181,15 +162,13 @@ const ImportStepsManualModal: React.FC<Props> = ({ onClose, onBack }) => {
   };
 
   // ── Derived ──────────────────────────────────────────────────────────────────
-
-  /** Steps displayed in step-order sequence */
   const orderedSteps: R2Step[] = stepOrder
     .map((id) => allSteps.find((s) => s.id === id))
     .filter((s): s is R2Step => s !== undefined);
 
+  // Dirty check: only content fields (serial_no excluded)
   const isDirty =
     original !== null && (
-      parseFloat(serialNo) !== original.serial_no ||
       action.trim()        !== (original.action ?? "") ||
       expected.trim()      !== (original.expected_result ?? "") ||
       isDivider            !== original.is_divider
@@ -231,7 +210,7 @@ const ImportStepsManualModal: React.FC<Props> = ({ onClose, onBack }) => {
         </button>
       )}
 
-      {/* Loading revisions */}
+      {/* Loading */}
       {(stage === "loadingRevisions" || stage === "loadingSteps") && (
         <div className="flex flex-col items-center gap-3 py-10">
           <div className="w-8 h-8 border-4 border-c-brand border-t-transparent rounded-full animate-spin" />
@@ -300,16 +279,20 @@ const ImportStepsManualModal: React.FC<Props> = ({ onClose, onBack }) => {
       {/* Edit */}
       {stage === "edit" && original && (
         <div className="flex flex-col gap-3">
+          {/* Serial No — READ ONLY */}
           <div>
-            <label className="block text-xs text-t-muted mb-1">Serial No</label>
+            <label className="block text-xs text-t-muted mb-1 flex items-center gap-1">
+              <Lock size={10} /> Serial No <span className="text-t-muted/50">(locked)</span>
+            </label>
             <input
-              type="number"
-              step="0.01"
+              type="text"
               value={serialNo}
-              onChange={(e) => setSerialNo(e.target.value)}
-              className="input text-sm font-mono"
+              readOnly
+              disabled
+              className="input text-sm font-mono bg-bg-base/50 opacity-60 cursor-not-allowed"
             />
           </div>
+
           <div>
             <label className="block text-xs text-t-muted mb-1">Action</label>
             <textarea
@@ -346,7 +329,7 @@ const ImportStepsManualModal: React.FC<Props> = ({ onClose, onBack }) => {
 
           <button
             onClick={handleSave}
-            disabled={!serialNo || !isDirty}
+            disabled={!isDirty}
             className="btn-primary text-sm disabled:opacity-40"
           >
             Save &amp; Upload
@@ -359,7 +342,7 @@ const ImportStepsManualModal: React.FC<Props> = ({ onClose, onBack }) => {
         <div className="flex flex-col items-center gap-3 py-8">
           <div className="w-8 h-8 border-4 border-c-brand border-t-transparent rounded-full animate-spin" />
           <p className="text-xs text-t-muted text-center">
-            R2 test_steps · R2 step_order · Supabase revisions · Supabase test_steps
+            R2 test_steps · Supabase test_steps
           </p>
         </div>
       )}
@@ -370,7 +353,7 @@ const ImportStepsManualModal: React.FC<Props> = ({ onClose, onBack }) => {
           <CheckCircle size={32} className="text-green-400" />
           <p className="text-sm font-semibold text-t-primary">Saved!</p>
           <p className="text-xs text-t-muted text-center">
-            R2 updated · step order recalculated · Supabase patched
+            R2 updated · Supabase patched
           </p>
           <button onClick={onClose} className="btn-primary text-sm px-6">Close</button>
         </div>
