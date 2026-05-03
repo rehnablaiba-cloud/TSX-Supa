@@ -241,6 +241,7 @@ const Sidebar: React.FC<Props> = ({ activePage, onNavigate, modules }) => {
       {showMassImgModal && (
         <MassImageUploadModal
           onClose={() => setShowMassImgModal(false)}
+          onBack={() => setShowMassImgModal(false)}
         />
       )}
     </>
