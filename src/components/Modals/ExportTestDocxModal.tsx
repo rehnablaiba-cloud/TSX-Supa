@@ -268,7 +268,7 @@ const ExportTestDocxModal: React.FC<Props> = ({ onClose }) => {
               }`}
             >
               <div className="flex flex-col gap-0.5">
-                <span className="text-sm font-medium">{r.test_name ?? r.tests_serial_no}</span>
+                <span className="text-sm font-medium">{r.tests_name ?? r.tests_serial_no}</span>
                 <span className="text-[11px] opacity-60">rev {r.revision}</span>
               </div>
               {active && <ChevronRight size={14} className="opacity-60 shrink-0" />}
