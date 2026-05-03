@@ -153,7 +153,7 @@ const ImportStepsManualModal: React.FC<Props> = ({ onClose, onBack }) => {
 
       // 7. Push new step order to Supabase revisions table
       const { error: revErr } = await supabase
-        .from("revisions")
+        .from("test_revisions")
         .update({ step_order: newStepOrder })
         .eq("id", selRevision.id);
       if (revErr) throw new Error(`Supabase revisions: ${revErr.message}`);
