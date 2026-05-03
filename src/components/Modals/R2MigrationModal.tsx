@@ -88,8 +88,8 @@ interface ProgressItem {
 
 // ── Validation targets ────────────────────────────────────────────────────────
 const VALIDATION_TARGETS: Pick<ValidationEntry, "key" | "label" | "table" | "pkField" | "icon">[] = [
-  { key: "modules/all.json",   label: "Modules",   table: "modules",        pkField: "id", icon: <Package size={15} /> },
-  { key: "tests/all.json",     label: "Tests",     table: "tests",          pkField: "id", icon: <FlaskConical size={15} /> },
+  { key: "modules/all.json",   label: "Modules",   table: "modules",        pkField: "name", icon: <Package size={15} /> },
+  { key: "tests/all.json",     label: "Tests",     table: "tests",          pkField: "name, icon: <FlaskConical size={15} /> },
   { key: "revisions/all.json", label: "Revisions", table: "test_revisions", pkField: "id", icon: <GitBranch size={15} /> },
 ]
 
