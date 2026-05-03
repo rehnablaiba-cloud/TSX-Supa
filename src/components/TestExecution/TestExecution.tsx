@@ -29,7 +29,6 @@ import { supabase } from "../../supabase";
 import Topbar from "../Layout/Topbar";
 import Spinner from "../UI/Spinner";
 import ExportModal from "../UI/ExportModal";
-import MassImageUploadModal from "../UI/MassImageUploadModal";
 import { exportExecutionCSV, exportExecutionPDF } from "../../utils/export";
 import type { FlatData } from "../../utils/export";
 
@@ -108,7 +107,7 @@ function computeDisplaySerials(steps: { is_divider: boolean }[]): number[] {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Divider configs  (unchanged)
+// Divider configs
 // ─────────────────────────────────────────────────────────────────────────────
 
 const DIVIDER_LEVELS: Record<
@@ -166,7 +165,7 @@ const cleanDividerLabel = (action: string): string =>
   action.replace(/^[^\p{L}\p{N}]+/u, "");
 
 // ─────────────────────────────────────────────────────────────────────────────
-// RevisionBadge  (unchanged)
+// RevisionBadge
 // ─────────────────────────────────────────────────────────────────────────────
 
 const RevisionBadge: React.FC<{ revision: ActiveRevision; isReadOnly?: boolean }> = ({
@@ -181,7 +180,7 @@ const RevisionBadge: React.FC<{ revision: ActiveRevision; isReadOnly?: boolean }
 );
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Sub-components  (all unchanged from original)
+// Sub-components
 // ─────────────────────────────────────────────────────────────────────────────
 
 const UndoAllModal: React.FC<{
@@ -356,7 +355,7 @@ const TesterBadge: React.FC<{ name: string; status: "pass" | "fail" | "pending" 
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Desktop Table Row  (unchanged)
+// Desktop Table Row
 // ─────────────────────────────────────────────────────────────────────────────
 
 interface TableStepRowProps {
@@ -494,7 +493,7 @@ const TableStepRow = memo<TableStepRowProps>(({
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Mobile Step Card  (unchanged)
+// Mobile Step Card
 // ─────────────────────────────────────────────────────────────────────────────
 
 interface MobileStepCardProps {
@@ -730,51 +729,40 @@ const TestExecution: React.FC<Props> = ({
 
   const currentMtId = initialmodule_test_id;
 
-  // ── Stable user ref ───────────────────────────────────────────────────────
-  // Survives a logout-without-unmount: once non-null it stays non-null.
-  // Heartbeat and lock-release read from this ref so they never see a null
-  // user mid-session even if useAuth() returns null after logout fires.
   const userRef = useRef(user);
   useEffect(() => {
     if (user != null) userRef.current = user;
   }, [user]);
 
   // ── UI state ──────────────────────────────────────────────────────────────
-  const [filter, setFilter]                           = useState<Filter>("all");
-  const [search, setSearch]                           = useState("");
-  const [showExportModal, setShowExportModal]         = useState(false);
-  const [showUndoModal, setShowUndoModal]             = useState(false);
-  const [showMassImageUpload, setShowMassImageUpload] = useState(false);
-  const [scrollTarget, setScrollTarget]               = useState<string | null>(null);
-  const [focusedStepId, setFocusedStepId]             = useState<string | null>(null);
-  const [imagePreview, setImagePreview]               = useState<ImagePreviewState | null>(null);
+  const [filter, setFilter]                   = useState<Filter>("all");
+  const [search, setSearch]                   = useState("");
+  const [showExportModal, setShowExportModal] = useState(false);
+  const [showUndoModal, setShowUndoModal]     = useState(false);
+  const [scrollTarget, setScrollTarget]       = useState<string | null>(null);
+  const [focusedStepId, setFocusedStepId]     = useState<string | null>(null);
+  const [imagePreview, setImagePreview]       = useState<ImagePreviewState | null>(null);
 
-  // ── Data state (local — optimistic updates live here) ─────────────────────
+  // ── Data state ────────────────────────────────────────────────────────────
   const [moduleTests, setModuleTests]         = useState<ModuleTestItem[]>([]);
   const [steps, setSteps]                     = useState<ExecutionStep[]>([]);
   const [currentRevision, setCurrentRevision] = useState<ActiveRevision | null>(null);
   const [isVisible, setIsVisible]             = useState<boolean>(true);
 
   // ── Loading gates ─────────────────────────────────────────────────────────
-  const [dataInitialized, setDataInitialized]             = useState(false);
-  const [lockAcquireAttempted, setLockAcquireAttempted]   = useState(false);
+  const [dataInitialized, setDataInitialized]           = useState(false);
+  const [lockAcquireAttempted, setLockAcquireAttempted] = useState(false);
 
   // ── Mutation state ────────────────────────────────────────────────────────
   const [updatingStepIds, setUpdatingStepIds] = useState<Set<string>>(new Set());
   const [isUndoingAll, setIsUndoingAll]       = useState(false);
 
-  // ── TanStack Query: lock check runs FIRST ─────────────────────────────────
-  // staleTime: 0 — always fresh. Resolves before execution data is fetched,
-  // so we never load heavy step data for a test already locked by someone else.
+  // ── TanStack Query: lock check ────────────────────────────────────────────
   const lockQuery  = useModuleLocks([currentMtId], module_name);
   const lockRecord: LockRow | null = lockQuery.data?.[currentMtId] ?? null;
   const isLockedByOther = !!(lockRecord && lockRecord.user_id !== user?.id);
 
-  // ── TanStack Query: execution data — gated on lock resolution ────────────
-  // enabled fires only after:
-  //   (a) lock check has settled (!lockQuery.isLoading)
-  //   (b) no other user holds the lock (!isLockedByOther)
-  // This avoids fetching megabytes of step data that would be thrown away.
+  // ── TanStack Query: execution data ───────────────────────────────────────
   const execQuery = useTestExecutionData(currentMtId, module_name, {
     enabled: !lockQuery.isLoading && !isLockedByOther,
   });
@@ -788,7 +776,7 @@ const TestExecution: React.FC<Props> = ({
   const updateStepMutation   = useUpdateStepResult(currentMtId, module_name);
   const resetStepsMutation   = useResetAllStepResults(currentMtId);
 
-  // ── Signed image URLs via TanStack Query (staleTime: 50 min) ─────────────
+  // ── Signed image URLs ─────────────────────────────────────────────────────
   const stepIdsStr = steps.map((s) => s.stepId).join(",");
   const allImagePaths = useMemo(
     () =>
@@ -818,7 +806,6 @@ const TestExecution: React.FC<Props> = ({
   const hasInitializedForRef       = useRef<string | null>(null);
   const lockAcquireAttemptedForRef = useRef<string | null>(null);
 
-  // DOM element refs for scroll-to-step
   const trRefs   = useRef<Record<string, HTMLTableRowElement | null>>({});
   const cardRefs = useRef<Record<string, HTMLDivElement | null>>({});
 
@@ -828,7 +815,6 @@ const TestExecution: React.FC<Props> = ({
   const handleRemarksChange = useCallback((stepId: string, val: string) => { remarksMap.current[stepId] = val; }, []);
 
   // ── Derived flags ─────────────────────────────────────────────────────────
-  // isLockedByOther is computed above (before execQuery) for the enabled gate.
   const isRevisionReadOnly = !isVisible;
   isLockedRef.current      = isLockedByOther;
   isReadOnlyRef.current    = isRevisionReadOnly;
@@ -846,7 +832,7 @@ const TestExecution: React.FC<Props> = ({
     [signedImageUrls]
   );
 
-  // ── 1. Reset all local state when the active test changes ─────────────────
+  // ── 1. Reset state on test change ─────────────────────────────────────────
   useEffect(() => {
     hasInitializedForRef.current       = null;
     lockAcquireAttemptedForRef.current = null;
@@ -858,7 +844,7 @@ const TestExecution: React.FC<Props> = ({
     stepIdSetRef.current = new Set();
   }, [currentMtId]);
 
-  // ── 2. Derive local steps from query data (once per test load) ────────────
+  // ── 2. Derive local steps from query data ─────────────────────────────────
   useEffect(() => {
     if (!execData || hasInitializedForRef.current === currentMtId) return;
     hasInitializedForRef.current = currentMtId;
@@ -932,24 +918,23 @@ const TestExecution: React.FC<Props> = ({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dataInitialized, currentMtId, isVisible]);
 
-  // ── 4. Heartbeat — refresh locked_at every 60 s to prevent server expiry ──
+  // ── 4. Heartbeat ──────────────────────────────────────────────────────────
   const heartbeatIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
-    // Clear any existing interval first
     if (heartbeatIntervalRef.current) {
       clearInterval(heartbeatIntervalRef.current);
       heartbeatIntervalRef.current = null;
     }
-  
+
     if (isLockedByOther || isRevisionReadOnly || !lockAcquireAttempted) return;
-  
+
     heartbeatIntervalRef.current = setInterval(() => {
       const u = userRef.current;
       if (!u) return;
       heartbeatMutateRef.current({ module_test_id: currentMtId, user_id: u.id });
     }, 90_000);
-  
+
     return () => {
       if (heartbeatIntervalRef.current) {
         clearInterval(heartbeatIntervalRef.current);
@@ -957,15 +942,8 @@ const TestExecution: React.FC<Props> = ({
       }
     };
   }, [currentMtId, isLockedByOther, isRevisionReadOnly, lockAcquireAttempted]);
-  // ── 5. Realtime subscriptions ─────────────────────────────────────────────
-  // Lock changes only — invalidates the lock query so the UI reacts immediately.
-  //
-  // srChannel (step_results) has been intentionally removed:
-  //   - The lock guarantees single-writer access; no other session can write
-  //     step results while this component holds the lock.
-  //   - The updatingRef guard it previously relied on exists only to skip the
-  //     current user's own writes, which are already applied optimistically.
-  //   - Keeping it would waste a Supabase connection for provably dead traffic.
+
+  // ── 5. Realtime: lock changes only ────────────────────────────────────────
   useEffect(() => {
     const uid = user?.id ?? "anon";
 
@@ -988,7 +966,7 @@ const TestExecution: React.FC<Props> = ({
     };
   }, [module_name, currentMtId, user?.id]);
 
-  // ── 6. Clean up stale DOM refs when step list changes ────────────────────
+  // ── 6. Clean up stale DOM refs ────────────────────────────────────────────
   useEffect(() => {
     const live = new Set(steps.map((s) => s.stepId));
     for (const id of Object.keys(trRefs.current))   { if (!live.has(id)) delete trRefs.current[id]; }
@@ -1164,8 +1142,7 @@ const TestExecution: React.FC<Props> = ({
   }, [isVisible, currentMtId, releaseLockMutation, clearActiveLock,
       currentTest?.name, module_name, addToast, onBack]);
 
-  // ── Derived UI data ──────────────────────────────────────────────────────
-
+  // ── Derived UI data ───────────────────────────────────────────────────────
   const { passCount, failCount, totalCount, doneCount, passPct, failPct, progressPct } =
     useMemo(() => {
       const nd    = steps.filter((s) => !s.is_divider);
@@ -1215,8 +1192,6 @@ const TestExecution: React.FC<Props> = ({
   const exportTestName = currentTest ? `${currentTest.serial_no}. ${currentTest.name}` : "test";
 
   // ── Render: loading gate ──────────────────────────────────────────────────
-  // Phase 1: lock check (fast — hits only test_locks)
-  // Phase 2: data + acquire (only runs if not locked by other)
   const isGlobalLoading =
     lockQuery.isLoading ||
     (!isLockedByOther && (execQuery.isLoading || !dataInitialized || !lockAcquireAttempted));
@@ -1300,8 +1275,6 @@ const TestExecution: React.FC<Props> = ({
         ]}
       />
 
-      <MassImageUploadModal isOpen={showMassImageUpload} onClose={() => setShowMassImageUpload(false)} />
-
       {/* ── Fixed header ─────────────────────────────────────────────────── */}
       <div className="shrink-0">
         <Topbar
@@ -1310,12 +1283,6 @@ const TestExecution: React.FC<Props> = ({
           onBack={onBack}
           actions={
             <>
-              {isAdmin && (
-                <button onClick={() => setShowMassImageUpload(true)}
-                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg bg-bg-card hover:bg-bg-surface border border-(--border-color) text-t-primary transition">
-                  Mass Upload Images
-                </button>
-              )}
               <button onClick={() => setShowExportModal(true)} disabled={steps.length === 0}
                 className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg bg-bg-card hover:bg-bg-surface border border-(--border-color) text-t-primary transition disabled:opacity-40 disabled:cursor-not-allowed">
                 <Upload size={13} /> Export

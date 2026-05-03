@@ -1,252 +1,504 @@
-import React, { useState } from "react";
-import { supabase } from "../../supabase";
+// src/components/Modals/StepImageUploadModal.tsx
+const WORKER_URL = "https://shrill-thunder-6fdf.rehnab-rk.workers.dev"
+const IMAGE_PREFIX = "step-images"
 
-interface Props {
-  isOpen: boolean;
-  onClose: () => void;
+import React, { useState, useRef } from "react"
+import {
+  Images, ArrowLeft, CheckCircle, Upload, AlertCircle,
+  GitBranch, Search, X, ImagePlus, Layers, ChevronDown,
+} from "lucide-react"
+import ModalShell from "../UI/ModalShell"
+import { supabase } from "../../supabase"
+
+// ── Types ─────────────────────────────────────────────────────────────────────
+
+type Stage = "selectrevision" | "selectstep" | "upload"
+
+interface Revision {
+  id:              string
+  revision:        string
+  tests_serial_no: number
 }
 
-type UploadRow = {
-  fileName: string;
-  status: "pending" | "done" | "error" | "skipped";
-  message?: string;
-};
+interface StepItem {
+  id:              string
+  serial_no:       number
+  action:          string
+  expected_result: string
+  is_divider:      boolean
+  tests_serial_no: string
+}
 
-const BUCKET = "test_steps";
+interface UploadEntry {
+  fileName: string
+  path:     string
+  status:   "pending" | "uploading" | "done" | "error"
+  message?: string
+}
 
-const MassImageUploadModal: React.FC<Props> = ({ isOpen, onClose }) => {
-  const [rows, setRows] = useState<UploadRow[]>([]);
-  const [uploading, setUploading] = useState(false);
+interface Props {
+  onClose: () => void
+  onBack:  () => void
+}
 
-  if (!isOpen) return null;
+// ── Helpers ───────────────────────────────────────────────────────────────────
 
-  const updateRow = (fileName: string, patch: Partial<UploadRow>) => {
-    setRows((prev) =>
-      prev.map((row) =>
-        row.fileName === fileName ? { ...row, ...patch } : row
-      )
-    );
-  };
+async function getToken(): Promise<string> {
+  const { data: { session } } = await supabase.auth.getSession()
+  if (!session?.access_token) throw new Error("Not logged in")
+  return session.access_token
+}
 
-  const handleFiles = async (files: FileList | null) => {
-    if (!files?.length) return;
+async function r2WriteImage(token: string, key: string, file: File): Promise<void> {
+  // Convert to base64 for JSON transport — worker must handle write_binary type
+  const buffer = await file.arrayBuffer()
+  const bytes  = new Uint8Array(buffer)
+  let binary   = ""
+  for (let i = 0; i < bytes.byteLength; i++) binary += String.fromCharCode(bytes[i])
+  const base64 = btoa(binary)
 
-    const fileArray = Array.from(files);
+  const res = await fetch(WORKER_URL, {
+    method:  "POST",
+    headers: { "Authorization": `Bearer ${token}`, "Content-Type": "application/json" },
+    body: JSON.stringify({
+      type:        "write_binary",
+      key,
+      data:        base64,
+      contentType: file.type || "image/jpeg",
+    }),
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error((err as any).error || `Worker ${res.status}`)
+  }
+}
 
-    setRows(
-      fileArray.map((file) => ({
-        fileName: file.name,
-        status: "pending",
-      }))
-    );
+async function fetchRevisionList(): Promise<Revision[]> {
+  const { data, error } = await supabase
+    .from("test_revisions")
+    .select("id, revision, tests_serial_no, status")
+    .eq("status", "active")
+    .order("tests_serial_no")
+  if (error) throw new Error(error.message)
+  return (data ?? []) as Revision[]
+}
 
-    setUploading(true);
+async function fetchStepsForRevision(revisionId: string): Promise<StepItem[]> {
+  const { data, error } = await supabase
+    .rpc("get_ordered_steps", { p_revision_id: revisionId })
+  if (error) throw new Error(error.message)
+  return ((data ?? []) as StepItem[]).filter(s => !s.is_divider)
+}
 
-    for (const file of fileArray) {
+function fileExt(file: File): string {
+  return file.name.split(".").pop()?.toLowerCase() || "jpg"
+}
+
+// ── Sub-components ────────────────────────────────────────────────────────────
+
+function UploadZone({
+  label,
+  accent,
+  entries,
+  disabled,
+  onFiles,
+}: {
+  label:    string
+  accent:   string  // tailwind color token e.g. "c-brand" or "green-400"
+  entries:  UploadEntry[]
+  disabled: boolean
+  onFiles:  (files: FileList) => void
+}) {
+  const inputRef = useRef<HTMLInputElement>(null)
+
+  const doneCount  = entries.filter(e => e.status === "done").length
+  const errorCount = entries.filter(e => e.status === "error").length
+  const busy       = entries.some(e => e.status === "uploading" || e.status === "pending")
+
+  return (
+    <div className="flex flex-col gap-2">
+      <div className="flex items-center justify-between">
+        <p className="text-xs font-bold uppercase tracking-widest text-t-muted">{label}</p>
+        {entries.length > 0 && (
+          <span className="text-[10px] text-t-muted">
+            {doneCount} done{errorCount > 0 ? ` · ${errorCount} error` : ""}
+          </span>
+        )}
+      </div>
+
+      {/* Drop zone */}
+      <button
+        type="button"
+        disabled={disabled}
+        onClick={() => inputRef.current?.click()}
+        className={`flex flex-col items-center justify-center gap-2 px-4 py-5 rounded-xl border-2 border-dashed transition-all
+          disabled:opacity-40 disabled:cursor-not-allowed
+          hover:bg-c-brand/5 border-(--border-color) hover:border-c-brand/40`}
+      >
+        <ImagePlus size={20} className="text-t-muted" />
+        <span className="text-xs text-t-muted">
+          {busy ? "Uploading…" : "Click to select images"}
+        </span>
+        <span className="text-[10px] text-t-muted/60">jpg · png · webp · gif</span>
+      </button>
+
+      <input
+        ref={inputRef}
+        type="file"
+        multiple
+        accept="image/*"
+        className="hidden"
+        onChange={e => e.target.files?.length && onFiles(e.target.files)}
+      />
+
+      {/* Upload list */}
+      {entries.length > 0 && (
+        <div className="flex flex-col gap-1 max-h-36 overflow-y-auto">
+          {entries.map(e => (
+            <div key={e.path}
+              className={`flex items-center gap-2 px-2.5 py-1.5 rounded-lg border text-[10px] font-mono
+                ${e.status === "done"      ? "border-green-500/20 bg-green-500/5 text-green-400" :
+                  e.status === "error"     ? "border-red-500/20 bg-red-500/5 text-red-400" :
+                  e.status === "uploading" ? "border-c-brand/20 bg-c-brand/5 text-c-brand" :
+                  "border-(--border-color) bg-bg-card text-t-muted"}`}
+            >
+              {e.status === "uploading" && (
+                <div className="w-3 h-3 border border-current border-t-transparent rounded-full animate-spin shrink-0" />
+              )}
+              {e.status === "done"    && <CheckCircle size={11} className="shrink-0" />}
+              {e.status === "error"   && <AlertCircle size={11} className="shrink-0" />}
+              {e.status === "pending" && <div className="w-3 h-3 rounded-full border border-current shrink-0" />}
+              <span className="flex-1 truncate">{e.path.split("/").pop()}</span>
+              {e.message && <span className="opacity-70 shrink-0">{e.message}</span>}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ── Main Component ────────────────────────────────────────────────────────────
+
+const StepImageUploadModal: React.FC<Props> = ({ onClose, onBack }) => {
+  const [stage,        setStage]        = useState<Stage>("selectrevision")
+  const [revisions,    setRevisions]    = useState<Revision[]>([])
+  const [revLoading,   setRevLoading]   = useState(false)
+  const [revError,     setRevError]     = useState<string | null>(null)
+  const [selRevision,  setSelRevision]  = useState<Revision | null>(null)
+
+  const [steps,        setSteps]        = useState<StepItem[]>([])
+  const [stepsLoading, setStepsLoading] = useState(false)
+  const [stepsError,   setStepsError]   = useState<string | null>(null)
+  const [selStep,      setSelStep]      = useState<StepItem | null>(null)
+  const [dropOpen,     setDropOpen]     = useState(false)
+
+  // Per-step image counters (odd = action, even = expected)
+  const actionCounterRef   = useRef<number>(1)  // next odd: 1, 3, 5…
+  const expectedCounterRef = useRef<number>(2)  // next even: 2, 4, 6…
+
+  const [actionEntries,   setActionEntries]   = useState<UploadEntry[]>([])
+  const [expectedEntries, setExpectedEntries] = useState<UploadEntry[]>([])
+
+  const subtitle: Record<Stage, string> = {
+    selectrevision: "Select revision",
+    selectstep:     "Select step",
+    upload:         "Upload images",
+  }
+
+  // ── Load revisions ──────────────────────────────────────────────────────────
+  const loadRevisions = async () => {
+    setRevLoading(true)
+    setRevError(null)
+    try {
+      const data = await fetchRevisionList()
+      setRevisions(data)
+    } catch (e: any) {
+      setRevError(e.message)
+    } finally {
+      setRevLoading(false)
+    }
+  }
+
+  // ── Pick revision → load steps ─────────────────────────────────────────────
+  const pickRevision = async (rev: Revision) => {
+    setSelRevision(rev)
+    setStepsLoading(true)
+    setStepsError(null)
+    setStage("selectstep")
+    setSelStep(null)
+    setDropOpen(false)
+    try {
+      const data = await fetchStepsForRevision(rev.id)
+      setSteps(data)
+    } catch (e: any) {
+      setStepsError(e.message)
+    } finally {
+      setStepsLoading(false)
+    }
+  }
+
+  // ── Pick step ───────────────────────────────────────────────────────────────
+  const pickStep = (step: StepItem) => {
+    setSelStep(step)
+    setDropOpen(false)
+    setActionEntries([])
+    setExpectedEntries([])
+    actionCounterRef.current   = 1
+    expectedCounterRef.current = 2
+    setStage("upload")
+  }
+
+  // ── Upload handler ──────────────────────────────────────────────────────────
+  const handleUpload = async (files: FileList, type: "action" | "expected") => {
+    if (!selStep) return
+
+    const arr      = Array.from(files)
+    const counter  = type === "action" ? actionCounterRef : expectedCounterRef
+    const setEntries = type === "action" ? setActionEntries : setExpectedEntries
+
+    // Build initial entries
+    const initial: UploadEntry[] = arr.map((file, i) => {
+      const n    = counter.current + i * 2
+      const ext  = fileExt(file)
+      const path = `${IMAGE_PREFIX}/${selStep.id}_${selStep.serial_no}_${n}.${ext}`
+      return { fileName: file.name, path, status: "pending" }
+    })
+
+    setEntries(prev => [...prev, ...initial])
+
+    let token: string
+    try { token = await getToken() } catch (e: any) {
+      setEntries(prev => prev.map(e =>
+        initial.find(i => i.path === e.path) ? { ...e, status: "error", message: "Auth failed" } : e
+      ))
+      return
+    }
+
+    for (let i = 0; i < arr.length; i++) {
+      const file  = arr[i]
+      const entry = initial[i]
+
+      setEntries(prev => prev.map(e =>
+        e.path === entry.path ? { ...e, status: "uploading" } : e
+      ))
+
       try {
-        // CORRECT: anchor on the _false/_true suffix so digits after it are unambiguously the image number
-        const match = file.name.match(
-          /^(.+_(true|false))(\d+)\.(jpg|jpeg|png|webp|gif)$/i
-        );
-        if (!match) {
-          updateRow(file.name, {
-            status: "skipped",
-            message: "Wrong filename format",
-          });
-          continue;
-        }
-
-        const stepId = match[1]; // e.g. "Water Tightness Test_106_false"
-        const imageNumber = Number(match[3]); // e.g. 1, 2, 3...
-        const ext = match[4].toLowerCase();
-        const path = `${stepId}_${imageNumber}.${ext}`;
-
-        const { error: uploadError } = await supabase.storage
-          .from(BUCKET)
-          .upload(path, file, { upsert: true });
-
-        if (uploadError) throw uploadError;
-
-        const columnName =
-          imageNumber % 2 === 0 ? "expected_image_urls" : "action_image_urls";
-
-        const { data: stepRow, error: fetchError } = await supabase
-          .from("test_steps")
-          .select("id, action_image_urls, expected_image_urls")
-          .eq("id", stepId)
-          .single();
-
-        if (fetchError || !stepRow) {
-          updateRow(file.name, {
-            status: "error",
-            message: "Step ID not found in test_steps",
-          });
-          continue;
-        }
-
-        const existing =
-          columnName === "action_image_urls"
-            ? stepRow.action_image_urls || []
-            : stepRow.expected_image_urls || [];
-
-        const next = Array.from(new Set([...existing, path])).sort((a, b) => {
-          const aNum = Number(a.split("_").pop()?.split(".")[0] || 0);
-          const bNum = Number(b.split("_").pop()?.split(".")[0] || 0);
-          return aNum - bNum;
-        });
-
-        const { error: updateError } = await supabase
-          .from("test_steps")
-          .update({ [columnName]: next })
-          .eq("id", stepId);
-
-        if (updateError) throw updateError;
-
-        updateRow(file.name, {
-          status: "done",
-          message:
-            columnName === "action_image_urls"
-              ? "Saved to Action"
-              : "Saved to Expected",
-        });
+        await r2WriteImage(token, entry.path, file)
+        setEntries(prev => prev.map(e =>
+          e.path === entry.path ? { ...e, status: "done", message: "Saved to R2" } : e
+        ))
       } catch (err: any) {
-        updateRow(file.name, {
-          status: "error",
-          message: err?.message || "Upload failed",
-        });
+        setEntries(prev => prev.map(e =>
+          e.path === entry.path ? { ...e, status: "error", message: err.message } : e
+        ))
       }
     }
 
-    setUploading(false);
-  };
+    // Advance counter past used numbers
+    counter.current += arr.length * 2
+  }
+
+  const handleBack = () => {
+    if (stage === "selectrevision") { onBack(); return }
+    if (stage === "selectstep")     { setStage("selectrevision"); setSteps([]); setSelRevision(null) }
+    if (stage === "upload")         { setStage("selectstep"); setSelStep(null); setActionEntries([]); setExpectedEntries([]) }
+  }
+
+  const isUploading =
+    actionEntries.some(e => e.status === "uploading" || e.status === "pending") ||
+    expectedEntries.some(e => e.status === "uploading" || e.status === "pending")
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4"
-      style={{
-        backgroundColor: "rgba(0,0,0,0.55)",
-        backdropFilter: `blur(var(--glass-blur))`,
-      }}
-      onClick={onClose}
+    <ModalShell
+      title="Step Image Upload"
+      icon={<Images size={16} />}
+      subtitle={subtitle[stage]}
+      onClose={onClose}
     >
-      <div
-        className="relative w-full max-w-2xl rounded-2xl border shadow-2xl p-6 flex flex-col gap-4"
-        style={{
-          backgroundColor: "var(--bg-surface)",
-          borderColor: "var(--border-color)",
-        }}
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <h2 className="text-base font-bold text-t-primary">
-              Mass Upload Images
-            </h2>
-            <p className="text-sm text-t-muted mt-1">
-              File name must be: stepId_number.jpg
-            </p>
-            <p className="text-xs text-t-muted mt-1">
-              Odd number = Action, Even number = Expected Result
-            </p>
+      {/* Back */}
+      <button onClick={handleBack}
+        className="-mt-2 self-start flex items-center gap-1 text-xs text-t-muted hover:text-t-primary transition-colors">
+        <ArrowLeft size={13} /> Back
+      </button>
+
+      {/* ── Select Revision ── */}
+      {stage === "selectrevision" && (
+        <div className="flex flex-col gap-3">
+          <p className="text-xs text-t-muted">
+            Select an active test revision to browse its steps.
+          </p>
+
+          {revisions.length === 0 && !revLoading && !revError && (
+            <button onClick={loadRevisions}
+              className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl border border-(--border-color) bg-bg-card hover:bg-bg-base text-sm text-t-muted transition-colors">
+              <Search size={13} /> Load Revisions
+            </button>
+          )}
+
+          {revLoading && (
+            <div className="flex items-center justify-center py-8">
+              <div className="w-6 h-6 border-2 border-c-brand border-t-transparent rounded-full animate-spin" />
+            </div>
+          )}
+
+          {revError && (
+            <div className="flex items-center gap-2 px-3 py-2.5 rounded-xl bg-red-500/10 border border-red-500/20">
+              <AlertCircle size={13} className="text-red-400 shrink-0" />
+              <span className="text-xs text-red-400">{revError}</span>
+            </div>
+          )}
+
+          {!revLoading && revisions.length > 0 && (
+            <div className="flex flex-col gap-1 max-h-80 overflow-y-auto">
+              {revisions.map(r => (
+                <button key={r.id} onClick={() => pickRevision(r)}
+                  className="flex items-center gap-3 px-3 py-2.5 rounded-xl border border-(--border-color) bg-bg-card hover:bg-bg-base hover:border-c-brand/40 text-left transition-all">
+                  <GitBranch size={14} className="text-t-muted shrink-0" />
+                  <span className="flex-1 text-sm font-medium text-t-primary truncate">
+                    {r.revision || r.id.slice(0, 12)}
+                  </span>
+                  <span className="text-[10px] font-mono text-t-muted shrink-0">
+                    T{String(r.tests_serial_no).padStart(3, "0")}
+                  </span>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── Select Step ── */}
+      {stage === "selectstep" && (
+        <div className="flex flex-col gap-3">
+          {/* Revision badge */}
+          {selRevision && (
+            <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-c-brand/5 border border-c-brand/15">
+              <GitBranch size={12} className="text-c-brand shrink-0" />
+              <span className="text-xs font-semibold text-c-brand">{selRevision.revision}</span>
+              <span className="text-[10px] text-t-muted ml-auto font-mono">{selRevision.id.slice(0, 12)}…</span>
+            </div>
+          )}
+
+          {stepsLoading && (
+            <div className="flex items-center justify-center py-8">
+              <div className="w-6 h-6 border-2 border-c-brand border-t-transparent rounded-full animate-spin" />
+            </div>
+          )}
+
+          {stepsError && (
+            <div className="flex items-center gap-2 px-3 py-2.5 rounded-xl bg-red-500/10 border border-red-500/20">
+              <AlertCircle size={13} className="text-red-400 shrink-0" />
+              <span className="text-xs text-red-400">{stepsError}</span>
+            </div>
+          )}
+
+          {!stepsLoading && steps.length > 0 && (
+            <>
+              <p className="text-xs text-t-muted">
+                Select a step to upload images for.
+              </p>
+
+              {/* Dropdown */}
+              <div className="relative">
+                <button onClick={() => setDropOpen(o => !o)}
+                  className="w-full flex items-center gap-2 px-3 py-2.5 rounded-xl border border-(--border-color) bg-bg-card hover:bg-bg-base text-left transition-all">
+                  <Layers size={13} className="text-t-muted shrink-0" />
+                  <span className="flex-1 text-sm text-t-primary truncate">
+                    {selStep
+                      ? `#${selStep.serial_no} — ${selStep.action.slice(0, 48)}${selStep.action.length > 48 ? "…" : ""}`
+                      : "Choose a step…"}
+                  </span>
+                  <ChevronDown size={13} className={`text-t-muted shrink-0 transition-transform ${dropOpen ? "rotate-180" : ""}`} />
+                </button>
+
+                {dropOpen && (
+                  <div className="absolute top-full left-0 right-0 mt-1 z-20 rounded-xl border border-(--border-color) bg-bg-surface shadow-2xl max-h-64 overflow-y-auto">
+                    {steps.map(step => (
+                      <button key={step.id} onClick={() => pickStep(step)}
+                        className={`w-full flex items-start gap-2.5 px-3 py-2.5 text-left hover:bg-bg-card transition-colors border-b border-(--border-color) last:border-b-0
+                          ${selStep?.id === step.id ? "bg-c-brand/5" : ""}`}>
+                        <span className="font-mono text-[10px] text-t-muted shrink-0 mt-0.5 w-6 text-right">
+                          {step.serial_no}
+                        </span>
+                        <span className="text-xs text-t-primary leading-snug line-clamp-2">
+                          {step.action}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {selStep && (
+                <button onClick={() => setStage("upload")}
+                  className="btn-primary text-sm flex items-center justify-center gap-2">
+                  <ImagePlus size={14} /> Upload for Step #{selStep.serial_no}
+                </button>
+              )}
+            </>
+          )}
+        </div>
+      )}
+
+      {/* ── Upload ── */}
+      {stage === "upload" && selStep && (
+        <div className="flex flex-col gap-4">
+          {/* Step info */}
+          <div className="flex flex-col gap-1.5 px-3 py-2.5 rounded-xl border border-(--border-color) bg-bg-card">
+            <div className="flex items-center gap-2">
+              <span className="font-mono text-[10px] text-t-muted">#{selStep.serial_no}</span>
+              <GitBranch size={10} className="text-t-muted" />
+              <span className="text-[10px] font-mono text-t-muted truncate">{selStep.id}</span>
+            </div>
+            <p className="text-xs text-t-primary leading-snug line-clamp-2">{selStep.action}</p>
+            {selStep.expected_result && (
+              <p className="text-[10px] text-t-muted leading-snug line-clamp-1">{selStep.expected_result}</p>
+            )}
           </div>
 
-          <button
-            onClick={onClose}
-            className="px-3 py-1.5 rounded-lg border text-sm font-semibold text-t-secondary hover:text-t-primary"
-            style={{ borderColor: "var(--border-color)" }}
-          >
-            Close
+          {/* Naming info */}
+          <div className="flex items-start gap-2 px-3 py-2 rounded-xl bg-c-brand/5 border border-c-brand/15">
+            <span className="text-[10px] text-t-muted leading-relaxed">
+              Files saved as{" "}
+              <code className="font-mono text-c-brand">
+                {`step-images/${selStep.id}_${selStep.serial_no}_N.ext`}
+              </code>
+              {" "}— odd N = Action · even N = Expected
+            </span>
+          </div>
+
+          {/* Action upload */}
+          <UploadZone
+            label="Action Images"
+            accent="c-brand"
+            entries={actionEntries}
+            disabled={isUploading}
+            onFiles={files => handleUpload(files, "action")}
+          />
+
+          {/* Divider */}
+          <div className="border-t border-(--border-color)" />
+
+          {/* Expected upload */}
+          <UploadZone
+            label="Expected Result Images"
+            accent="green-400"
+            entries={expectedEntries}
+            disabled={isUploading}
+            onFiles={files => handleUpload(files, "expected")}
+          />
+
+          {/* Change step */}
+          <button onClick={() => setStage("selectstep")}
+            disabled={isUploading}
+            className="text-xs text-t-muted hover:text-t-primary transition-colors self-center disabled:opacity-40">
+            ← Change step
           </button>
         </div>
+      )}
+    </ModalShell>
+  )
+}
 
-        <div
-          className="rounded-xl border border-dashed p-6 text-center"
-          style={{
-            borderColor: "var(--border-color)",
-            backgroundColor: "var(--bg-card)",
-          }}
-        >
-          <input
-            type="file"
-            multiple
-            accept="image/*"
-            onChange={(e) => handleFiles(e.target.files)}
-            disabled={uploading}
-            className="block w-full text-sm text-t-primary"
-          />
-          <p className="text-xs text-t-muted mt-3">
-            Example: 123e4567-e89b-12d3-a456-426614174000_1.jpg
-          </p>
-        </div>
-
-        <div
-          className="max-h-80 overflow-auto rounded-xl border"
-          style={{ borderColor: "var(--border-color)" }}
-        >
-          <table className="w-full text-sm">
-            <thead>
-              <tr
-                className="border-b"
-                style={{ borderColor: "var(--border-color)" }}
-              >
-                <th className="text-left px-3 py-2 text-xs text-t-muted">
-                  File
-                </th>
-                <th className="text-left px-3 py-2 text-xs text-t-muted">
-                  Status
-                </th>
-                <th className="text-left px-3 py-2 text-xs text-t-muted">
-                  Message
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.length === 0 ? (
-                <tr>
-                  <td
-                    colSpan={3}
-                    className="px-3 py-6 text-center text-t-muted text-sm"
-                  >
-                    No files selected yet
-                  </td>
-                </tr>
-              ) : (
-                rows.map((row) => (
-                  <tr
-                    key={row.fileName}
-                    className="border-b last:border-b-0"
-                    style={{ borderColor: "var(--border-color)" }}
-                  >
-                    <td className="px-3 py-2 text-t-primary break-all">
-                      {row.fileName}
-                    </td>
-                    <td className="px-3 py-2">
-                      <span
-                        className={`text-xs font-semibold px-2 py-1 rounded-full ${
-                          row.status === "done"
-                            ? "bg-[color-mix(in_srgb,var(--color-pass)_15%,transparent)] text-[color-mix(in_srgb,var(--color-pass),white_30%)]"
-                            : row.status === "error"
-                            ? "bg-fail/15 text-fail"
-                            : row.status === "skipped"
-                            ? "bg-[color-mix(in_srgb,var(--color-warn)_15%,transparent)] text-[color-mix(in_srgb,var(--color-warn),white_30%)]"
-                            : "bg-(--border-color) text-t-muted"
-                        }`}
-                      >
-                        {row.status}
-                      </span>
-                    </td>
-                    <td className="px-3 py-2 text-t-muted text-xs">
-                      {row.message || "-"}
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
-    </div>
-  );
-};
-
-export default MassImageUploadModal;
+export default StepImageUploadModal

@@ -11,12 +11,14 @@ import {
   LogOut,
   Search,
   CloudUpload,
+  Images,
 } from "lucide-react";
 import { useAuth } from "../../context/AuthContext";
 import { supabase } from "../../supabase";
 import { Module } from "../../types";
 import ThemeToggle from "../UI/ThemeToggle";
 import R2MigrationModal from "../Modals/R2MigrationModal";
+import MassImageUploadModal from "../UI/MassImageUploadModal";
 
 interface Props {
   activePage: string;
@@ -35,9 +37,10 @@ const ADMIN_NAV = [
 ];
 
 const Sidebar: React.FC<Props> = ({ activePage, onNavigate, modules }) => {
-  const [collapsed,    setCollapsed]    = useState(false);
-  const [search,       setSearch]       = useState("");
-  const [showR2Modal,  setShowR2Modal]  = useState(false);
+  const [collapsed,         setCollapsed]         = useState(false);
+  const [search,            setSearch]            = useState("");
+  const [showR2Modal,       setShowR2Modal]       = useState(false);
+  const [showMassImgModal,  setShowMassImgModal]  = useState(false);
   const { user, signOut, isLoading } = useAuth();
   const isAdmin = user?.role === "admin";
 
@@ -165,16 +168,28 @@ const Sidebar: React.FC<Props> = ({ activePage, onNavigate, modules }) => {
           <div className={`flex ${collapsed ? "justify-center" : "justify-between"} items-center`}>
             <ThemeToggle />
 
-            {/* R2 Migration button — admin only */}
             {isAdmin && (
-              <button
-                onClick={() => setShowR2Modal(true)}
-                title="R2 Migration"
-                aria-label="R2 Migration"
-                className="p-1.5 text-t-muted hover:text-c-brand hover:bg-bg-card rounded-lg transition-colors"
-              >
-                <CloudUpload size={15} />
-              </button>
+              <div className="flex items-center gap-1">
+                {/* Mass Image Upload — admin only */}
+                <button
+                  onClick={() => setShowMassImgModal(true)}
+                  title="Mass Image Upload"
+                  aria-label="Mass Image Upload"
+                  className="p-1.5 text-t-muted hover:text-c-brand hover:bg-bg-card rounded-lg transition-colors"
+                >
+                  <Images size={15} />
+                </button>
+
+                {/* R2 Migration — admin only */}
+                <button
+                  onClick={() => setShowR2Modal(true)}
+                  title="R2 Migration"
+                  aria-label="R2 Migration"
+                  className="p-1.5 text-t-muted hover:text-c-brand hover:bg-bg-card rounded-lg transition-colors"
+                >
+                  <CloudUpload size={15} />
+                </button>
+              </div>
             )}
           </div>
 
@@ -219,6 +234,13 @@ const Sidebar: React.FC<Props> = ({ activePage, onNavigate, modules }) => {
         <R2MigrationModal
           onClose={() => setShowR2Modal(false)}
           onBack={() => setShowR2Modal(false)}
+        />
+      )}
+
+      {/* Mass Image Upload Modal */}
+      {showMassImgModal && (
+        <MassImageUploadModal
+          onClose={() => setShowMassImgModal(false)}
         />
       )}
     </>
