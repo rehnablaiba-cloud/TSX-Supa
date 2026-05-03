@@ -351,8 +351,12 @@ function RevisionValidationRow({ item }: { item: RevisionValidationItem }) {
     )
   }
 
+  const hasError =
+    (item.tsStatus === "deep_diff_failed" || item.tsStatus === "error") && item.tsError ||
+    (item.soStatus === "error") && item.soError
+
   return (
-    <div className={`flex items-center gap-2.5 px-3 py-2 rounded-xl border text-xs transition-all
+    <div className={`flex flex-wrap items-center gap-2.5 px-3 py-2 rounded-xl border text-xs transition-all
       ${
         item.soStatus === "missing_r2"       || item.tsStatus === "missing_r2"       ? "border-red-500/20 bg-red-500/5" :
         item.soStatus === "deep_diff_failed" || item.tsStatus === "deep_diff_failed" ? "border-orange-500/20 bg-orange-500/5" :
@@ -369,6 +373,12 @@ function RevisionValidationRow({ item }: { item: RevisionValidationItem }) {
       </span>
       {pill(item.soStatus, item.soR2Count, item.soDbCount, "SO", item.soError)}
       {pill(item.tsStatus, item.tsR2Count, item.tsDbCount, "TS", item.tsError)}
+
+      {hasError && (
+        <span className="w-full text-[9px] font-mono text-orange-400 break-all mt-0.5 px-1">
+          {item.tsError || item.soError}
+        </span>
+      )}
     </div>
   )
 }
