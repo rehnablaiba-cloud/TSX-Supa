@@ -446,6 +446,10 @@ interface MobileStepCardProps {
   onImageClick:   (urls: string[], idx: number, label: string) => void;
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Mobile Step Card — FIXED
+// ─────────────────────────────────────────────────────────────────────────────
+
 const MobileStepCard = memo<MobileStepCardProps>(({
   step, initialRemarks, actionImageUrls, expectedImageUrls,
   isFocused, isUpdating, isReadOnly,
@@ -476,7 +480,7 @@ const MobileStepCard = memo<MobileStepCardProps>(({
   }, [showRemarksDialog]);
 
   const rowBg      = step.status === "pass" ? "bg-[color-mix(in_srgb,var(--color-pass)_5%,transparent)]" : step.status === "fail" ? "bg-fail/5" : "";
-  const accentColor = isFocused ? "var(--color-brand)" : step.status === "pass" ? "var(--color-pass)" : step.status === "fail" ? "var(--color-fail)" : "#374151";
+  const accentColor = isFocused ? "var(--color-brand)" : step.status === "pass" ? "var(--color-pass)" : step.status === "fail" ? "var(--color-fail)" : "var(--border-color)";
 
   return (
     <>
@@ -508,10 +512,16 @@ const MobileStepCard = memo<MobileStepCardProps>(({
       )}
 
       <div onClick={() => onFocus(step.stepId)}
-        className={`rounded-xl overflow-hidden border border-(--border-color) w-full cursor-pointer transition-shadow ${rowBg} ${isFocused ? "ring-2 ring-[color-mix(in_srgb,var(--color-brand),white_30%)]" : ""}`}
-        style={{ borderLeftColor: accentColor, borderLeftWidth: 3 }}>
+        className={`rounded-xl overflow-hidden border w-full cursor-pointer transition-shadow ${rowBg} ${isFocused ? "ring-2 ring-[color-mix(in_srgb,var(--color-brand),white_30%)]" : ""}`}
+        style={{ 
+          backgroundColor: "var(--bg-surface)", // SOLID background to prevent bleed-through
+          borderLeftColor: accentColor, 
+          borderLeftWidth: 3,
+          borderColor: "var(--border-color)",
+          isolation: "isolate", // Create new stacking context
+        }}>
         {/* Header */}
-        <div className="flex items-center justify-between px-3 py-2 border-b border-(--border-color) bg-bg-card">
+        <div className="flex items-center justify-between px-3 py-2 border-b border-(--border-color)" style={{ backgroundColor: "var(--bg-card)" }}>
           <span className="text-xs font-mono text-t-muted tracking-wide">#{step.serial_no}</span>
           <div className="flex items-center gap-2 min-w-0">
             {isFocused && !isReadOnly && (
@@ -532,11 +542,11 @@ const MobileStepCard = memo<MobileStepCardProps>(({
         </div>
 
         {/* Action */}
-        <div className="grid grid-cols-[80px_1fr] border-b border-(--border-color)">
-          <div className="px-3 py-2.5 border-r border-(--border-color) bg-bg-card flex items-start">
+        <div className="grid grid-cols-[72px_1fr] border-b border-(--border-color)">
+          <div className="px-3 py-2.5 border-r border-(--border-color) flex items-start" style={{ backgroundColor: "var(--bg-card)" }}>
             <span className="text-[10px] font-semibold text-t-muted uppercase tracking-wider mt-0.5">Action</span>
           </div>
-          <div className="px-3 py-2.5 min-w-0">
+          <div className="px-3 py-2.5 min-w-0" style={{ backgroundColor: "var(--bg-surface)" }}>
             <p className="text-sm leading-snug wrap-break-word text-t-primary whitespace-pre-wrap">{step.action}</p>
             {!!actionImageUrls.length && (
               <div className="mt-2 flex flex-wrap gap-2">
@@ -551,11 +561,11 @@ const MobileStepCard = memo<MobileStepCardProps>(({
         </div>
 
         {/* Expected */}
-        <div className="grid grid-cols-[80px_1fr] border-b border-(--border-color)">
-          <div className="px-3 py-2.5 border-r border-(--border-color) bg-bg-card flex items-start">
+        <div className="grid grid-cols-[72px_1fr] border-b border-(--border-color)">
+          <div className="px-3 py-2.5 border-r border-(--border-color) flex items-start" style={{ backgroundColor: "var(--bg-card)" }}>
             <span className="text-[10px] font-semibold text-t-muted uppercase tracking-wider mt-0.5">Expected</span>
           </div>
-          <div className="px-3 py-2.5 min-w-0">
+          <div className="px-3 py-2.5 min-w-0" style={{ backgroundColor: "var(--bg-surface)" }}>
             <p className="text-sm leading-snug wrap-break-word text-t-secondary whitespace-pre-wrap">{step.expected_result}</p>
             {!!expectedImageUrls.length && (
               <div className="mt-2 flex flex-wrap gap-2">
@@ -570,11 +580,11 @@ const MobileStepCard = memo<MobileStepCardProps>(({
         </div>
 
         {/* Controls */}
-        <div className="flex items-center gap-2 px-3 py-2 bg-bg-card">
+        <div className="flex items-center gap-2 px-3 py-2" style={{ backgroundColor: "var(--bg-card)" }}>
           <button onClick={openDialog} disabled={isUpdating || isReadOnly}
             className={`flex-1 min-w-0 flex items-center gap-1.5 px-3 h-8 rounded-full border text-xs font-medium transition-colors truncate disabled:opacity-40 disabled:cursor-not-allowed ${
               remarks ? "border-c-brand/40 bg-c-brand/8 text-t-primary hover:bg-c-brand/15"
-              : "border-(--border-color) bg-bg-surface text-t-muted hover:border-c-brand/40 hover:text-t-primary"
+              : "border-(--border-color) text-t-muted hover:border-c-brand/40 hover:text-t-primary"
             }`}>
             <span className="truncate">{isReadOnly && !remarks ? "No remarks" : remarks || "Add remarks…"}</span>
             {remarks && <span className="shrink-0 w-1.5 h-1.5 rounded-full bg-c-brand" />}
@@ -582,7 +592,8 @@ const MobileStepCard = memo<MobileStepCardProps>(({
           {step.status !== "pending" && (
             <button onClick={(e) => { e.stopPropagation(); onUpdate(step.stepId, "pending", ""); }}
               disabled={isUpdating || isReadOnly}
-              className="shrink-0 px-2.5 h-8 rounded-md text-xs font-semibold text-t-muted hover:text-t-primary bg-bg-surface hover:bg-bg-card border border-(--border-color) transition-colors disabled:opacity-40 disabled:cursor-not-allowed">
+              className="shrink-0 px-2.5 h-8 rounded-md text-xs font-semibold text-t-muted hover:text-t-primary border border-(--border-color) transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+              style={{ backgroundColor: "var(--bg-surface)" }}>
               Undo
             </button>
           )}
@@ -602,7 +613,6 @@ const MobileStepCard = memo<MobileStepCardProps>(({
     </>
   );
 });
-
 // ─────────────────────────────────────────────────────────────────────────────
 // Main Component
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1238,57 +1248,75 @@ const TestExecution: React.FC<Props> = ({
             </table>
 
             {/* ── Mobile cards (virtualised with absolute positioning) ──── */}
-            <div className="md:hidden flex flex-col">
-              <div className="sticky top-0 z-10 grid grid-cols-[64px_1fr] border-b border-(--border-color) bg-bg-surface/80 backdrop-blur-md">
-                <div className="px-3 py-2 border-r border-(--border-color)">
-                  <span className="text-[10px] font-semibold text-t-muted uppercase tracking-wider">S.No</span>
-                </div>
-                <div className="px-3 py-2">
-                  <span className="text-[10px] font-semibold text-t-muted uppercase tracking-wider">Step Details</span>
-                </div>
-              </div>
+            {/* ── Mobile cards (virtualised with absolute positioning) ──── */}
+<div className="md:hidden flex flex-col">
+  <div className="sticky top-0 z-10 grid grid-cols-[72px_1fr] border-b border-(--border-color)" 
+    style={{ backgroundColor: "var(--bg-surface)" }}>
+    <div className="px-3 py-2 border-r border-(--border-color)">
+      <span className="text-[10px] font-semibold text-t-muted uppercase tracking-wider">S.No</span>
+    </div>
+    <div className="px-3 py-2">
+      <span className="text-[10px] font-semibold text-t-muted uppercase tracking-wider">Step Details</span>
+    </div>
+  </div>
 
-              <div style={{ height: totalSize, position: "relative" }}>
-                {virtualItems.map((vItem) => {
-                  const step = filtered[vItem.index];
-                  if (!step) return null;
+  <div style={{ height: totalSize, position: "relative" }}>
+    {virtualItems.map((vItem) => {
+      const step = filtered[vItem.index];
+      if (!step) return null;
 
-                  if (step.is_divider) {
-                    const level = getDividerLevel(step);
-                    const ms    = MOBILE_DIVIDER_LEVELS[level] ?? MOBILE_DIVIDER_LEVELS[1];
-                    return (
-                      <div key={step.stepId}
-                        style={{ position: "absolute", top: 0, left: 0, width: "100%", transform: `translateY(${vItem.start}px)` }}>
-                        <div className={`flex items-center gap-2 ${ms.py} pl-3 pr-3 rounded-r-lg ${ms.ml} mx-3`}
-                          style={{ ...ms.bgStyle, ...ms.borderStyle }}>
-                          <span className={`rounded-full shrink-0 ${ms.dotClass}`} style={{ width: ms.dotSize, height: ms.dotSize }} />
-                          <span className={`${ms.fontSize} ${ms.textClass}`}>{cleanDividerLabel(step.action)}</span>
-                        </div>
-                      </div>
-                    );
-                  }
-
-                  return (
-                    <div key={step.stepId}
-                      style={{ position: "absolute", top: 0, left: 0, width: "100%", transform: `translateY(${vItem.start}px)`, padding: "0 12px 8px" }}>
-                      <MobileStepCard
-                        step={step}
-                        initialRemarks={remarksMap.current[step.stepId] ?? step.remarks ?? ""}
-                        actionImageUrls={stepImageUrls[step.stepId]?.actionUrls   ?? EMPTY_URLS}
-                        expectedImageUrls={stepImageUrls[step.stepId]?.expectedUrls ?? EMPTY_URLS}
-                        isFocused={focusedStepId === step.stepId}
-                        isUpdating={updatingStepIds.has(step.stepId)}
-                        isReadOnly={isRevisionReadOnly}
-                        onUpdate={handleStepUpdate}
-                        onFocus={handleFocus}
-                        onRemarksChange={handleRemarksChange}
-                        onImageClick={openImagePreview}
-                      />
-                    </div>
-                  );
-                })}
-              </div>
+      if (step.is_divider) {
+        const level = getDividerLevel(step);
+        const ms    = MOBILE_DIVIDER_LEVELS[level] ?? MOBILE_DIVIDER_LEVELS[1];
+        return (
+          <div key={step.stepId}
+            style={{ 
+              position: "absolute", 
+              top: 0, 
+              left: 0, 
+              width: "100%", 
+              transform: `translateY(${vItem.start}px)`,
+              padding: "0 12px",
+              zIndex: 1, // Ensure dividers stay above cards
+            }}>
+            <div className={`flex items-center gap-2 ${ms.py} pl-3 pr-3 rounded-r-lg ${ms.ml}`}
+              style={{ ...ms.bgStyle, ...ms.borderStyle, backgroundColor: "var(--bg-surface)" }}> {/* Solid bg */}
+              <span className={`rounded-full shrink-0 ${ms.dotClass}`} style={{ width: ms.dotSize, height: ms.dotSize }} />
+              <span className={`${ms.fontSize} ${ms.textClass}`}>{cleanDividerLabel(step.action)}</span>
             </div>
+          </div>
+        );
+      }
+
+      return (
+        <div key={step.stepId}
+          style={{ 
+            position: "absolute", 
+            top: 0, 
+            left: 0, 
+            width: "100%", 
+            transform: `translateY(${vItem.start}px)`, 
+            padding: "0 12px 8px",
+            zIndex: 2, // Cards above dividers
+          }}>
+          <MobileStepCard
+            step={step}
+            initialRemarks={remarksMap.current[step.stepId] ?? step.remarks ?? ""}
+            actionImageUrls={stepImageUrls[step.stepId]?.actionUrls   ?? EMPTY_URLS}
+            expectedImageUrls={stepImageUrls[step.stepId]?.expectedUrls ?? EMPTY_URLS}
+            isFocused={focusedStepId === step.stepId}
+            isUpdating={updatingStepIds.has(step.stepId)}
+            isReadOnly={isRevisionReadOnly}
+            onUpdate={handleStepUpdate}
+            onFocus={handleFocus}
+            onRemarksChange={handleRemarksChange}
+            onImageClick={openImagePreview}
+          />
+        </div>
+      );
+    })}
+  </div>
+</div>
 
             {/* Undo All — admin only */}
             {isAdmin && doneCount > 0 && !isRevisionReadOnly && (
