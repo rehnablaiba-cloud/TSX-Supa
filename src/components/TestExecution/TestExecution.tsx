@@ -334,99 +334,136 @@ interface TableStepRowProps {
   onImageClick:   (urls: string[], idx: number, label: string) => void;
 }
 
-const TableStepRow = memo<TableStepRowProps>(({
-  step, initialRemarks, actionImageUrls, expectedImageUrls,
-  isFocused, isUpdating, isReadOnly,
-  onUpdate, onFocus, onRemarksChange, onImageClick,
-}) => {
-  const [remarks, setRemarks] = useState(initialRemarks);
-  useEffect(() => { setRemarks(initialRemarks); }, [initialRemarks]);
+// ─────────────────────────────────────────────────────────────────────────────
+// Desktop Table Row
+// ─────────────────────────────────────────────────────────────────────────────
 
-  const rowBg     = step.status === "pass" ? "bg-[color-mix(in_srgb,var(--color-pass)_5%,transparent)]" : step.status === "fail" ? "bg-fail/5" : "";
-  const focusStyle = isFocused ? { outline: "2px solid var(--color-brand)", outlineOffset: "-2px" } : {};
+interface TableStepRowProps {
+  step:              ExecutionStep;
+  initialRemarks:    string;
+  actionImageUrls:   string[];
+  expectedImageUrls: string[];
+  isFocused:   boolean;
+  isUpdating:  boolean;
+  isReadOnly:  boolean;
+  onUpdate:       (stepId: string, status: "pass" | "fail" | "pending", remarks: string) => void;
+  onFocus:        (stepId: string) => void;
+  onRemarksChange:(stepId: string, val: string) => void;
+  onImageClick:   (urls: string[], idx: number, label: string) => void;
+}
 
-  return (
-    <tr onClick={() => onFocus(step.stepId)} style={focusStyle}
-      className={`border-b border-(--border-color) hover:bg-bg-card transition-colors cursor-pointer ${rowBg}`}>
-      <td className="px-2 py-3 text-center border-r border-(--border-color)">
-        <span className="text-xs font-mono text-t-muted">{step.serial_no}</span>
-      </td>
-      <td className="px-4 py-3 border-r border-(--border-color) align-top">
-        <p className="text-sm text-t-primary leading-snug wrap-break-word whitespace-pre-wrap">{step.action}</p>
-        {!!actionImageUrls.length && (
-          <div className="mt-2 flex flex-wrap gap-2">
-            {actionImageUrls.map((url, i) => (
-              <img key={url} src={url} alt={`Action ${i + 1}`}
-                onClick={(e) => { e.stopPropagation(); onImageClick(actionImageUrls, i, "Action"); }}
-                className="w-16 h-16 rounded-lg object-cover border border-(--border-color) cursor-zoom-in hover:opacity-90 hover:scale-105 transition-transform" />
-            ))}
-          </div>
-        )}
-      </td>
-      <td className="px-4 py-3 border-r border-(--border-color) align-top">
-        <p className="text-sm text-t-secondary leading-snug wrap-break-word whitespace-pre-wrap">{step.expected_result}</p>
-        {!!expectedImageUrls.length && (
-          <div className="mt-2 flex flex-wrap gap-2">
-            {expectedImageUrls.map((url, i) => (
-              <img key={url} src={url} alt={`Expected ${i + 1}`}
-                onClick={(e) => { e.stopPropagation(); onImageClick(expectedImageUrls, i, "Expected"); }}
-                className="w-16 h-16 rounded-lg object-cover border border-(--border-color) cursor-zoom-in hover:opacity-90 hover:scale-105 transition-transform" />
-            ))}
-          </div>
-        )}
-      </td>
-      <td className="px-3 py-3 border-r border-(--border-color)">
-        <textarea
-          value={remarks}
-          onChange={(e) => { if (isReadOnly) return; setRemarks(e.target.value); onRemarksChange(step.stepId, e.target.value); }}
-          onFocus={() => onFocus(step.stepId)}
-          onKeyDown={(e) => { if (isReadOnly) return; if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); onUpdate(step.stepId, "pass", remarks); } }}
-          placeholder={isReadOnly ? "Read-only" : "Remarks… (Enter to pass)"}
-          rows={2} disabled={isReadOnly}
-          className="input text-sm resize-none w-full disabled:opacity-50 disabled:cursor-not-allowed"
-        />
-      </td>
-      <td className="px-2 py-3 text-center border-r border-(--border-color)">
-        <div className="flex flex-col items-center gap-1.5">
-          <span className={`text-xs font-bold px-2 py-0.5 rounded-full capitalize ${
-            step.status === "pass" ? "bg-[color-mix(in_srgb,var(--color-pass)_15%,transparent)] text-[color-mix(in_srgb,var(--color-pass),white_30%)]"
-            : step.status === "fail" ? "bg-fail/15 text-fail"
-            : "bg-(--border-color) text-t-muted"
-          }`}>{step.status}</span>
-          <TesterBadge name={step.display_name} status={step.status} />
-        </div>
-      </td>
-      <td className="px-2 py-3">
-        <div className="flex flex-col items-center gap-1">
-          <div className="flex gap-1 w-full">
-            <button onClick={(e) => { e.stopPropagation(); onUpdate(step.stepId, "pass", remarks); }}
-              disabled={isUpdating || isReadOnly}
-              className={`flex-1 h-7 rounded-md text-xs font-bold transition-colors flex items-center justify-center disabled:opacity-40 disabled:cursor-not-allowed ${
-                step.status === "pass" ? "bg-pass text-(--bg-surface)"
-                : "bg-[color-mix(in_srgb,var(--color-pass)_10%,transparent)] hover:bg-[color-mix(in_srgb,var(--color-pass)_25%,transparent)] text-[color-mix(in_srgb,var(--color-pass),white_30%)] border border-[color-mix(in_srgb,var(--color-pass)_20%,transparent)]"
-              }`}>
-              <Check size={13} />
-            </button>
-            <button onClick={(e) => { e.stopPropagation(); onUpdate(step.stepId, "fail", remarks); }}
-              disabled={isUpdating || isReadOnly}
-              className={`flex-1 h-7 rounded-md text-xs font-bold transition-colors flex items-center justify-center disabled:opacity-40 disabled:cursor-not-allowed ${
-                step.status === "fail" ? "bg-fail text-(--bg-surface)" : "bg-fail/10 hover:bg-fail/25 text-fail border border-fail/20"
-              }`}>
-              <X size={13} />
-            </button>
-          </div>
-          {step.status !== "pending" && (
-            <button onClick={(e) => { e.stopPropagation(); onUpdate(step.stepId, "pending", ""); }}
-              disabled={isUpdating || isReadOnly}
-              className="w-full h-7 rounded-md text-xs font-semibold text-t-muted hover:text-t-primary bg-bg-card hover:bg-bg-surface border border-(--border-color) transition-colors flex items-center justify-center disabled:opacity-40 disabled:cursor-not-allowed">
-              Undo
-            </button>
+const TableStepRow = memo(
+  React.forwardRef<HTMLTableRowElement, TableStepRowProps & { "data-index"?: number }>(({
+    step, initialRemarks, actionImageUrls, expectedImageUrls,
+    isFocused, isUpdating, isReadOnly,
+    onUpdate, onFocus, onRemarksChange, onImageClick,
+    "data-index": dataIndex,
+  }, ref) => {
+    const [remarks, setRemarks] = useState(initialRemarks);
+    useEffect(() => { setRemarks(initialRemarks); }, [initialRemarks]);
+
+    const rowBg     = step.status === "pass" ? "bg-[color-mix(in_srgb,var(--color-pass)_5%,transparent)]" : step.status === "fail" ? "bg-fail/5" : "";
+    const focusStyle = isFocused ? { outline: "2px solid var(--color-brand)", outlineOffset: "-2px" } : {};
+
+    return (
+      <tr ref={ref} data-index={dataIndex} onClick={() => onFocus(step.stepId)} style={focusStyle}
+        className={`border-b border-(--border-color) hover:bg-bg-card transition-colors cursor-pointer ${rowBg}`}>
+        <td className="px-2 py-3 text-center border-r border-(--border-color)">
+          <span className="text-xs font-mono text-t-muted">{step.serial_no}</span>
+        </td>
+        <td className="px-4 py-3 border-r border-(--border-color) align-top">
+          <p className="text-sm text-t-primary leading-snug wrap-break-word whitespace-pre-wrap">{step.action}</p>
+          {!!actionImageUrls.length && (
+            <div className="mt-2 flex flex-wrap gap-2">
+              {actionImageUrls.map((url, i) => (
+                <img key={url} src={url} alt={`Action ${i + 1}`}
+                  onClick={(e) => { e.stopPropagation(); onImageClick(actionImageUrls, i, "Action"); }}
+                  className="w-16 h-16 rounded-lg object-cover border border-(--border-color) cursor-zoom-in hover:opacity-90 hover:scale-105 transition-transform" />
+              ))}
+            </div>
           )}
-        </div>
-      </td>
-    </tr>
-  );
-});
+        </td>
+        <td className="px-4 py-3 border-r border-(--border-color) align-top">
+          <p className="text-sm text-t-secondary leading-snug wrap-break-word whitespace-pre-wrap">{step.expected_result}</p>
+          {!!expectedImageUrls.length && (
+            <div className="mt-2 flex flex-wrap gap-2">
+              {expectedImageUrls.map((url, i) => (
+                <img key={url} src={url} alt={`Expected ${i + 1}`}
+                  onClick={(e) => { e.stopPropagation(); onImageClick(expectedImageUrls, i, "Expected"); }}
+                  className="w-16 h-16 rounded-lg object-cover border border-(--border-color) cursor-zoom-in hover:opacity-90 hover:scale-105 transition-transform" />
+              ))}
+            </div>
+          )}
+        </td>
+        <td className="px-3 py-3 border-r border-(--border-color)">
+          <textarea
+            value={remarks}
+            onChange={(e) => { if (isReadOnly) return; setRemarks(e.target.value); onRemarksChange(step.stepId, e.target.value); }}
+            onFocus={() => onFocus(step.stepId)}
+            onKeyDown={(e) => { if (isReadOnly) return; if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); onUpdate(step.stepId, "pass", remarks); } }}
+            placeholder={isReadOnly ? "Read-only" : "Remarks… (Enter to pass)"}
+            rows={2} disabled={isReadOnly}
+            className="input text-sm resize-none w-full disabled:opacity-50 disabled:cursor-not-allowed"
+          />
+        </td>
+        <td className="px-2 py-3 text-center border-r border-(--border-color)">
+          <div className="flex flex-col items-center gap-1.5">
+            <span className={`text-xs font-bold px-2 py-0.5 rounded-full capitalize ${
+              step.status === "pass" ? "bg-[color-mix(in_srgb,var(--color-pass)_15%,transparent)] text-[color-mix(in_srgb,var(--color-pass),white_30%)]"
+              : step.status === "fail" ? "bg-fail/15 text-fail"
+              : "bg-(--border-color) text-t-muted"
+            }`}>{step.status}</span>
+            <TesterBadge name={step.display_name} status={step.status} />
+          </div>
+        </td>
+        <td className="px-2 py-3">
+          <div className="flex flex-col items-center gap-1">
+            <div className="flex gap-1 w-full">
+              <button onClick={(e) => { e.stopPropagation(); onUpdate(step.stepId, "pass", remarks); }}
+                disabled={isUpdating || isReadOnly}
+                className={`flex-1 h-7 rounded-md text-xs font-bold transition-colors flex items-center justify-center disabled:opacity-40 disabled:cursor-not-allowed ${
+                  step.status === "pass" ? "bg-pass text-(--bg-surface)"
+                  : "bg-[color-mix(in_srgb,var(--color-pass)_10%,transparent)] hover:bg-[color-mix(in_srgb,var(--color-pass)_25%,transparent)] text-[color-mix(in_srgb,var(--color-pass),white_30%)] border border-[color-mix(in_srgb,var(--color-pass)_20%,transparent)]"
+                }`}>
+                <Check size={13} />
+              </button>
+              <button onClick={(e) => { e.stopPropagation(); onUpdate(step.stepId, "fail", remarks); }}
+                disabled={isUpdating || isReadOnly}
+                className={`flex-1 h-7 rounded-md text-xs font-bold transition-colors flex items-center justify-center disabled:opacity-40 disabled:cursor-not-allowed ${
+                  step.status === "fail" ? "bg-fail text-(--bg-surface)" : "bg-fail/10 hover:bg-fail/25 text-fail border border-fail/20"
+                }`}>
+                <X size={13} />
+              </button>
+            </div>
+            {step.status !== "pending" && (
+              <button onClick={(e) => { e.stopPropagation(); onUpdate(step.stepId, "pending", ""); }}
+                disabled={isUpdating || isReadOnly}
+                className="w-full h-7 rounded-md text-xs font-semibold text-t-muted hover:text-t-primary bg-bg-card hover:bg-bg-surface border border-(--border-color) transition-colors flex items-center justify-center disabled:opacity-40 disabled:cursor-not-allowed">
+                Undo
+              </button>
+            )}
+          </div>
+        </td>
+      </tr>
+    );
+  })
+);// ─────────────────────────────────────────────────────────────────────────────
+// Mobile Step Card
+// ─────────────────────────────────────────────────────────────────────────────
+
+interface MobileStepCardProps {
+  step:              ExecutionStep;
+  initialRemarks:    string;
+  actionImageUrls:   string[];
+  expectedImageUrls: string[];
+  isFocused:   boolean;
+  isUpdating:  boolean;
+  isReadOnly:  boolean;
+  onUpdate:       (stepId: string, status: "pass" | "fail" | "pending", remarks: string) => void;
+  onFocus:        (stepId: string) => void;
+  onRemarksChange:(stepId: string, val: string) => void;
+  onImageClick:   (urls: string[], idx: number, label: string) => void;
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Mobile Step Card
@@ -446,174 +483,175 @@ interface MobileStepCardProps {
   onImageClick:   (urls: string[], idx: number, label: string) => void;
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Mobile Step Card — FIXED
-// ─────────────────────────────────────────────────────────────────────────────
+const MobileStepCard = memo(
+  React.forwardRef<HTMLDivElement, MobileStepCardProps & { "data-index"?: number }>(({
+    step, initialRemarks, actionImageUrls, expectedImageUrls,
+    isFocused, isUpdating, isReadOnly,
+    onUpdate, onFocus, onRemarksChange, onImageClick,
+    "data-index": dataIndex,
+  }, ref) => {
+    const [remarks,           setRemarks]           = useState(initialRemarks);
+    const [showRemarksDialog, setShowRemarksDialog] = useState(false);
+    const [draftRemarks,      setDraftRemarks]      = useState(initialRemarks);
+    const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-const MobileStepCard = memo<MobileStepCardProps>(({
-  step, initialRemarks, actionImageUrls, expectedImageUrls,
-  isFocused, isUpdating, isReadOnly,
-  onUpdate, onFocus, onRemarksChange, onImageClick,
-}) => {
-  const [remarks,           setRemarks]           = useState(initialRemarks);
-  const [showRemarksDialog, setShowRemarksDialog] = useState(false);
-  const [draftRemarks,      setDraftRemarks]      = useState(initialRemarks);
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
+    useEffect(() => { setRemarks(initialRemarks); }, [initialRemarks]);
 
-  useEffect(() => { setRemarks(initialRemarks); }, [initialRemarks]);
+    const openDialog = (e: React.MouseEvent) => {
+      if (isReadOnly) return;
+      e.stopPropagation();
+      setDraftRemarks(remarks);
+      setShowRemarksDialog(true);
+      requestAnimationFrame(() => textareaRef.current?.focus());
+    };
+    const saveRemarks    = () => { setRemarks(draftRemarks); onRemarksChange(step.stepId, draftRemarks); setShowRemarksDialog(false); };
+    const discardRemarks = () => { setDraftRemarks(remarks); setShowRemarksDialog(false); };
 
-  const openDialog = (e: React.MouseEvent) => {
-    if (isReadOnly) return;
-    e.stopPropagation();
-    setDraftRemarks(remarks);
-    setShowRemarksDialog(true);
-    requestAnimationFrame(() => textareaRef.current?.focus());
-  };
-  const saveRemarks    = () => { setRemarks(draftRemarks); onRemarksChange(step.stepId, draftRemarks); setShowRemarksDialog(false); };
-  const discardRemarks = () => { setDraftRemarks(remarks); setShowRemarksDialog(false); };
+    useEffect(() => {
+      if (!showRemarksDialog) return;
+      const original = document.body.style.overflow;
+      document.body.style.overflow = "hidden";
+      return () => { document.body.style.overflow = original; };
+    }, [showRemarksDialog]);
 
-  useEffect(() => {
-    if (!showRemarksDialog) return;
-    const original = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    return () => { document.body.style.overflow = original; };
-  }, [showRemarksDialog]);
+    const rowBg      = step.status === "pass" ? "bg-[color-mix(in_srgb,var(--color-pass)_5%,transparent)]" : step.status === "fail" ? "bg-fail/5" : "";
+    const accentColor = isFocused ? "var(--color-brand)" : step.status === "pass" ? "var(--color-pass)" : step.status === "fail" ? "var(--color-fail)" : "var(--border-color)";
 
-  const rowBg      = step.status === "pass" ? "bg-[color-mix(in_srgb,var(--color-pass)_5%,transparent)]" : step.status === "fail" ? "bg-fail/5" : "";
-  const accentColor = isFocused ? "var(--color-brand)" : step.status === "pass" ? "var(--color-pass)" : step.status === "fail" ? "var(--color-fail)" : "var(--border-color)";
-
-  return (
-    <>
-      {showRemarksDialog && (
-        <div role="dialog" aria-modal="true" aria-label={`Remarks for step ${step.serial_no}`}
-          className="fixed inset-0 flex items-end justify-center"
-          style={{ zIndex: 200, backgroundColor: "color-mix(in srgb, var(--bg-base) 55%, transparent)", backdropFilter: "blur(var(--glass-blur))" }}
-          onClick={discardRemarks}>
-          <div className="w-full max-w-lg rounded-t-2xl border border-(--border-color) shadow-2xl p-4 flex flex-col gap-3"
-            style={{ backgroundColor: "var(--bg-surface)" }} onClick={(e) => e.stopPropagation()}>
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-semibold text-t-muted uppercase tracking-wider">Remarks — Step #{step.serial_no}</span>
-              <button onClick={discardRemarks} aria-label="Discard remarks"
-                className="w-7 h-7 rounded-full bg-(--border-color) flex items-center justify-center text-t-muted hover:text-t-primary transition-colors">
-                <X size={13} />
-              </button>
-            </div>
-            <textarea ref={textareaRef} value={draftRemarks}
-              onChange={(e) => setDraftRemarks(e.target.value)}
-              onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); saveRemarks(); } if (e.key === "Escape") discardRemarks(); }}
-              placeholder="Enter remarks… (Enter to save, Shift+Enter for new line)"
-              rows={4} className="input text-sm resize-none w-full" />
-            <div className="flex gap-2">
-              <button onClick={discardRemarks} className="flex-1 px-4 py-2.5 rounded-xl border border-(--border-color) text-sm font-semibold text-t-secondary hover:text-t-primary transition-colors">Discard</button>
-              <button onClick={saveRemarks}    className="flex-1 px-4 py-2.5 rounded-xl text-sm font-bold text-(--bg-surface) bg-c-brand hover:bg-c-brand/90 transition-colors">Save</button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      <div onClick={() => onFocus(step.stepId)}
-        className={`rounded-xl overflow-hidden border w-full cursor-pointer transition-shadow ${rowBg} ${isFocused ? "ring-2 ring-[color-mix(in_srgb,var(--color-brand),white_30%)]" : ""}`}
-        style={{ 
-          backgroundColor: "var(--bg-surface)", // SOLID background to prevent bleed-through
-          borderLeftColor: accentColor, 
-          borderLeftWidth: 3,
-          borderColor: "var(--border-color)",
-          isolation: "isolate", // Create new stacking context
-        }}>
-        {/* Header */}
-        <div className="flex items-center justify-between px-3 py-2 border-b border-(--border-color)" style={{ backgroundColor: "var(--bg-card)" }}>
-          <span className="text-xs font-mono text-t-muted tracking-wide">#{step.serial_no}</span>
-          <div className="flex items-center gap-2 min-w-0">
-            {isFocused && !isReadOnly && (
-              <span className="flex items-center gap-1.5 text-[10px] font-medium shrink-0">
-                <kbd className="px-1 py-0.5 rounded-sm bg-[color-mix(in_srgb,var(--color-pass)_10%,transparent)] text-[color-mix(in_srgb,var(--color-pass),white_30%)] border border-[color-mix(in_srgb,var(--color-pass)_20%,transparent)] font-mono text-[9px]">P</kbd>
-                <span className="text-[color-mix(in_srgb,var(--color-pass),white_30%)]">pass</span>
-                <span className="text-t-muted opacity-40">·</span>
-                <kbd className="px-1 py-0.5 rounded-sm bg-fail/10 text-fail border border-fail/20 font-mono text-[9px]">F</kbd>
-                <span className="text-fail">fail</span>
-              </span>
-            )}
-            <span className={`shrink-0 text-xs font-bold px-2 py-0.5 rounded-full capitalize ${
-              step.status === "pass" ? "bg-[color-mix(in_srgb,var(--color-pass)_15%,transparent)] text-[color-mix(in_srgb,var(--color-pass),white_30%)]"
-              : step.status === "fail" ? "bg-fail/15 text-fail" : "bg-(--border-color) text-t-muted"
-            }`}>{step.status}</span>
-            <TesterBadge name={step.display_name} status={step.status} />
-          </div>
-        </div>
-
-        {/* Action */}
-        <div className="grid grid-cols-[72px_1fr] border-b border-(--border-color)">
-          <div className="px-3 py-2.5 border-r border-(--border-color) flex items-start" style={{ backgroundColor: "var(--bg-card)" }}>
-            <span className="text-[10px] font-semibold text-t-muted uppercase tracking-wider mt-0.5">Action</span>
-          </div>
-          <div className="px-3 py-2.5 min-w-0" style={{ backgroundColor: "var(--bg-surface)" }}>
-            <p className="text-sm leading-snug wrap-break-word text-t-primary whitespace-pre-wrap">{step.action}</p>
-            {!!actionImageUrls.length && (
-              <div className="mt-2 flex flex-wrap gap-2">
-                {actionImageUrls.map((url, i) => (
-                  <img key={url} src={url} alt={`Action ${i + 1}`}
-                    onClick={(e) => { e.stopPropagation(); onImageClick(actionImageUrls, i, "Action"); }}
-                    className="w-[72px] h-[72px] rounded-lg object-cover border border-(--border-color) cursor-zoom-in hover:opacity-90 hover:scale-105 transition-transform" />
-                ))}
+    return (
+      <div ref={ref} data-index={dataIndex}>
+        {showRemarksDialog && (
+          <div role="dialog" aria-modal="true" aria-label={`Remarks for step ${step.serial_no}`}
+            className="fixed inset-0 flex items-end justify-center"
+            style={{ zIndex: 200, backgroundColor: "color-mix(in srgb, var(--bg-base) 55%, transparent)", backdropFilter: "blur(var(--glass-blur))" }}
+            onClick={discardRemarks}>
+            <div className="w-full max-w-lg rounded-t-2xl border border-(--border-color) shadow-2xl p-4 flex flex-col gap-3"
+              style={{ backgroundColor: "var(--bg-surface)" }} onClick={(e) => e.stopPropagation()}>
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-semibold text-t-muted uppercase tracking-wider">Remarks — Step #{step.serial_no}</span>
+                <button onClick={discardRemarks} aria-label="Discard remarks"
+                  className="w-7 h-7 rounded-full bg-(--border-color) flex items-center justify-center text-t-muted hover:text-t-primary transition-colors">
+                  <X size={13} />
+                </button>
               </div>
-            )}
-          </div>
-        </div>
-
-        {/* Expected */}
-        <div className="grid grid-cols-[72px_1fr] border-b border-(--border-color)">
-          <div className="px-3 py-2.5 border-r border-(--border-color) flex items-start" style={{ backgroundColor: "var(--bg-card)" }}>
-            <span className="text-[10px] font-semibold text-t-muted uppercase tracking-wider mt-0.5">Expected</span>
-          </div>
-          <div className="px-3 py-2.5 min-w-0" style={{ backgroundColor: "var(--bg-surface)" }}>
-            <p className="text-sm leading-snug wrap-break-word text-t-secondary whitespace-pre-wrap">{step.expected_result}</p>
-            {!!expectedImageUrls.length && (
-              <div className="mt-2 flex flex-wrap gap-2">
-                {expectedImageUrls.map((url, i) => (
-                  <img key={url} src={url} alt={`Expected ${i + 1}`}
-                    onClick={(e) => { e.stopPropagation(); onImageClick(expectedImageUrls, i, "Expected"); }}
-                    className="w-[72px] h-[72px] rounded-lg object-cover border border-(--border-color) cursor-zoom-in hover:opacity-90 hover:scale-105 transition-transform" />
-                ))}
+              <textarea ref={textareaRef} value={draftRemarks}
+                onChange={(e) => setDraftRemarks(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); saveRemarks(); } if (e.key === "Escape") discardRemarks(); }}
+                placeholder="Enter remarks… (Enter to save, Shift+Enter for new line)"
+                rows={4} className="input text-sm resize-none w-full" />
+              <div className="flex gap-2">
+                <button onClick={discardRemarks} className="flex-1 px-4 py-2.5 rounded-xl border border-(--border-color) text-sm font-semibold text-t-secondary hover:text-t-primary transition-colors">Discard</button>
+                <button onClick={saveRemarks}    className="flex-1 px-4 py-2.5 rounded-xl text-sm font-bold text-(--bg-surface) bg-c-brand hover:bg-c-brand/90 transition-colors">Save</button>
               </div>
-            )}
+            </div>
           </div>
-        </div>
+        )}
 
-        {/* Controls */}
-        <div className="flex items-center gap-2 px-3 py-2" style={{ backgroundColor: "var(--bg-card)" }}>
-          <button onClick={openDialog} disabled={isUpdating || isReadOnly}
-            className={`flex-1 min-w-0 flex items-center gap-1.5 px-3 h-8 rounded-full border text-xs font-medium transition-colors truncate disabled:opacity-40 disabled:cursor-not-allowed ${
-              remarks ? "border-c-brand/40 bg-c-brand/8 text-t-primary hover:bg-c-brand/15"
-              : "border-(--border-color) text-t-muted hover:border-c-brand/40 hover:text-t-primary"
-            }`}>
-            <span className="truncate">{isReadOnly && !remarks ? "No remarks" : remarks || "Add remarks…"}</span>
-            {remarks && <span className="shrink-0 w-1.5 h-1.5 rounded-full bg-c-brand" />}
-          </button>
-          {step.status !== "pending" && (
-            <button onClick={(e) => { e.stopPropagation(); onUpdate(step.stepId, "pending", ""); }}
-              disabled={isUpdating || isReadOnly}
-              className="shrink-0 px-2.5 h-8 rounded-md text-xs font-semibold text-t-muted hover:text-t-primary border border-(--border-color) transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-              style={{ backgroundColor: "var(--bg-surface)" }}>
-              Undo
+        <div onClick={() => onFocus(step.stepId)}
+          className={`rounded-xl overflow-hidden border w-full cursor-pointer transition-shadow ${rowBg} ${isFocused ? "ring-2 ring-[color-mix(in_srgb,var(--color-brand),white_30%)]" : ""}`}
+          style={{
+            backgroundColor: "var(--bg-surface)",
+            borderLeftColor: accentColor,
+            borderLeftWidth: 3,
+            borderColor: "var(--border-color)",
+            isolation: "isolate",
+          }}>
+          {/* Header */}
+          <div className="flex items-center justify-between px-3 py-2 border-b border-(--border-color)"
+            style={{ backgroundColor: "var(--bg-card)" }}>
+            <span className="text-xs font-mono text-t-muted tracking-wide">#{step.serial_no}</span>
+            <div className="flex items-center gap-2 min-w-0">
+              {isFocused && !isReadOnly && (
+                <span className="flex items-center gap-1.5 text-[10px] font-medium shrink-0">
+                  <kbd className="px-1 py-0.5 rounded-sm bg-[color-mix(in_srgb,var(--color-pass)_10%,transparent)] text-[color-mix(in_srgb,var(--color-pass),white_30%)] border border-[color-mix(in_srgb,var(--color-pass)_20%,transparent)] font-mono text-[9px]">P</kbd>
+                  <span className="text-[color-mix(in_srgb,var(--color-pass),white_30%)]">pass</span>
+                  <span className="text-t-muted opacity-40">·</span>
+                  <kbd className="px-1 py-0.5 rounded-sm bg-fail/10 text-fail border border-fail/20 font-mono text-[9px]">F</kbd>
+                  <span className="text-fail">fail</span>
+                </span>
+              )}
+              <span className={`shrink-0 text-xs font-bold px-2 py-0.5 rounded-full capitalize ${
+                step.status === "pass" ? "bg-[color-mix(in_srgb,var(--color-pass)_15%,transparent)] text-[color-mix(in_srgb,var(--color-pass),white_30%)]"
+                : step.status === "fail" ? "bg-fail/15 text-fail" : "bg-(--border-color) text-t-muted"
+              }`}>{step.status}</span>
+              <TesterBadge name={step.display_name} status={step.status} />
+            </div>
+          </div>
+
+          {/* Action */}
+          <div className="grid grid-cols-[72px_1fr] border-b border-(--border-color)">
+            <div className="px-3 py-2.5 border-r border-(--border-color) flex items-start"
+              style={{ backgroundColor: "var(--bg-card)" }}>
+              <span className="text-[10px] font-semibold text-t-muted uppercase tracking-wider mt-0.5">Action</span>
+            </div>
+            <div className="px-3 py-2.5 min-w-0" style={{ backgroundColor: "var(--bg-surface)" }}>
+              <p className="text-sm leading-snug wrap-break-word text-t-primary whitespace-pre-wrap">{step.action}</p>
+              {!!actionImageUrls.length && (
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {actionImageUrls.map((url, i) => (
+                    <img key={url} src={url} alt={`Action ${i + 1}`}
+                      onClick={(e) => { e.stopPropagation(); onImageClick(actionImageUrls, i, "Action"); }}
+                      className="w-[72px] h-[72px] rounded-lg object-cover border border-(--border-color) cursor-zoom-in hover:opacity-90 hover:scale-105 transition-transform" />
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Expected */}
+          <div className="grid grid-cols-[72px_1fr] border-b border-(--border-color)">
+            <div className="px-3 py-2.5 border-r border-(--border-color) flex items-start"
+              style={{ backgroundColor: "var(--bg-card)" }}>
+              <span className="text-[10px] font-semibold text-t-muted uppercase tracking-wider mt-0.5">Expected</span>
+            </div>
+            <div className="px-3 py-2.5 min-w-0" style={{ backgroundColor: "var(--bg-surface)" }}>
+              <p className="text-sm leading-snug wrap-break-word text-t-secondary whitespace-pre-wrap">{step.expected_result}</p>
+              {!!expectedImageUrls.length && (
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {expectedImageUrls.map((url, i) => (
+                    <img key={url} src={url} alt={`Expected ${i + 1}`}
+                      onClick={(e) => { e.stopPropagation(); onImageClick(expectedImageUrls, i, "Expected"); }}
+                      className="w-[72px] h-[72px] rounded-lg object-cover border border-(--border-color) cursor-zoom-in hover:opacity-90 hover:scale-105 transition-transform" />
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Controls */}
+          <div className="flex items-center gap-2 px-3 py-2" style={{ backgroundColor: "var(--bg-card)" }}>
+            <button onClick={openDialog} disabled={isUpdating || isReadOnly}
+              className={`flex-1 min-w-0 flex items-center gap-1.5 px-3 h-8 rounded-full border text-xs font-medium transition-colors truncate disabled:opacity-40 disabled:cursor-not-allowed ${
+                remarks ? "border-c-brand/40 bg-c-brand/8 text-t-primary hover:bg-c-brand/15"
+                : "border-(--border-color) text-t-muted hover:border-c-brand/40 hover:text-t-primary"
+              }`}>
+              <span className="truncate">{isReadOnly && !remarks ? "No remarks" : remarks || "Add remarks…"}</span>
+              {remarks && <span className="shrink-0 w-1.5 h-1.5 rounded-full bg-c-brand" />}
             </button>
-          )}
-          <button onClick={(e) => { e.stopPropagation(); onUpdate(step.stepId, "pass", remarks); }}
-            disabled={isUpdating || isReadOnly}
-            className={`shrink-0 w-8 h-8 rounded-md text-xs font-bold transition-colors flex items-center justify-center disabled:opacity-40 disabled:cursor-not-allowed ${
-              step.status === "pass" ? "bg-pass text-(--bg-surface)"
-              : "bg-[color-mix(in_srgb,var(--color-pass)_10%,transparent)] hover:bg-[color-mix(in_srgb,var(--color-pass)_25%,transparent)] text-[color-mix(in_srgb,var(--color-pass),white_30%)] border border-[color-mix(in_srgb,var(--color-pass)_20%,transparent)]"
-            }`}><Check size={14} /></button>
-          <button onClick={(e) => { e.stopPropagation(); onUpdate(step.stepId, "fail", remarks); }}
-            disabled={isUpdating || isReadOnly}
-            className={`shrink-0 w-8 h-8 rounded-md text-xs font-bold transition-colors flex items-center justify-center disabled:opacity-40 disabled:cursor-not-allowed ${
-              step.status === "fail" ? "bg-fail text-(--bg-surface)" : "bg-fail/10 hover:bg-fail/25 text-fail border border-fail/20"
-            }`}><X size={14} /></button>
+            {step.status !== "pending" && (
+              <button onClick={(e) => { e.stopPropagation(); onUpdate(step.stepId, "pending", ""); }}
+                disabled={isUpdating || isReadOnly}
+                className="shrink-0 px-2.5 h-8 rounded-md text-xs font-semibold text-t-muted hover:text-t-primary border border-(--border-color) transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                style={{ backgroundColor: "var(--bg-surface)" }}>
+                Undo
+              </button>
+            )}
+            <button onClick={(e) => { e.stopPropagation(); onUpdate(step.stepId, "pass", remarks); }}
+              disabled={isUpdating || isReadOnly}
+              className={`shrink-0 w-8 h-8 rounded-md text-xs font-bold transition-colors flex items-center justify-center disabled:opacity-40 disabled:cursor-not-allowed ${
+                step.status === "pass" ? "bg-pass text-(--bg-surface)"
+                : "bg-[color-mix(in_srgb,var(--color-pass)_10%,transparent)] hover:bg-[color-mix(in_srgb,var(--color-pass)_25%,transparent)] text-[color-mix(in_srgb,var(--color-pass),white_30%)] border border-[color-mix(in_srgb,var(--color-pass)_20%,transparent)]"
+              }`}><Check size={14} /></button>
+            <button onClick={(e) => { e.stopPropagation(); onUpdate(step.stepId, "fail", remarks); }}
+              disabled={isUpdating || isReadOnly}
+              className={`shrink-0 w-8 h-8 rounded-md text-xs font-bold transition-colors flex items-center justify-center disabled:opacity-40 disabled:cursor-not-allowed ${
+                step.status === "fail" ? "bg-fail text-(--bg-surface)" : "bg-fail/10 hover:bg-fail/25 text-fail border border-fail/20"
+              }`}><X size={14} /></button>
+          </div>
         </div>
       </div>
-    </>
-  );
-});
-// ─────────────────────────────────────────────────────────────────────────────
+    );
+  })
+);// ─────────────────────────────────────────────────────────────────────────────
 // Main Component
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -837,11 +875,21 @@ const TestExecution: React.FC<Props> = ({
   const rowVirtualizer = useVirtualizer({
     count:           filtered.length,
     getScrollElement:() => scrollRef.current,
-    estimateSize:    () => 72,   // conservative; actual heights vary
-    overscan:        8,
-  });
-
-  const virtualItems  = rowVirtualizer.getVirtualItems();
+    estimateSize:    (index) => {
+      const step = filtered[index];
+      if (!step) return 200;
+      if (step.is_divider) return 36;
+      // Mobile cards need larger estimates; desktop rows are more uniform
+      const actionLines = Math.max(1, Math.ceil(step.action.length / 42));
+      const expectedLines = Math.max(1, Math.ceil(step.expected_result.length / 42));
+      const actionImgH = step.action_image_urls?.length ? 84 : 0;
+      const expectedImgH = step.expected_image_urls?.length ? 84 : 0;
+      // header(36) + action label(20) + text + images + expected label(20) + text + images + controls(44) + padding(20)
+      return Math.max(200, 36 + 20 + actionLines * 20 + actionImgH + 20 + expectedLines * 20 + expectedImgH + 44 + 20);
+    },
+    overscan:        5,
+    measureElement:  typeof window !== "undefined" && window.innerWidth < 768 ? (el) => el.getBoundingClientRect().height : undefined,
+  });  const virtualItems  = rowVirtualizer.getVirtualItems();
   const totalSize     = rowVirtualizer.getTotalSize();
   const paddingTop    = virtualItems.length > 0 ? (virtualItems[0]?.start ?? 0) : 0;
   const paddingBottom = virtualItems.length > 0
@@ -1210,7 +1258,12 @@ const TestExecution: React.FC<Props> = ({
                     const level = getDividerLevel(step);
                     const s     = DIVIDER_LEVELS[level] ?? DIVIDER_LEVELS[1];
                     return (
-                      <tr key={step.stepId} className="border-b border-(--border-color)" style={s.bgStyle}>
+                      <tr
+                        ref={rowVirtualizer.measureElement}
+                        data-index={vItem.index}
+                        key={step.stepId}
+                        className="border-b border-(--border-color)"
+                        style={s.bgStyle}>
                         <td colSpan={6} className={`py-2 ${s.indent} ${s.border}`}>
                           <div className="flex items-center gap-2">
                             <span className={`rounded-full ${s.dot} inline-block shrink-0`}
@@ -1224,6 +1277,8 @@ const TestExecution: React.FC<Props> = ({
 
                   return (
                     <TableStepRow
+                      ref={rowVirtualizer.measureElement}
+                      data-index={vItem.index}
                       key={step.stepId}
                       step={step}
                       initialRemarks={remarksMap.current[step.stepId] ?? step.remarks ?? ""}
@@ -1247,78 +1302,81 @@ const TestExecution: React.FC<Props> = ({
               </tbody>
             </table>
 
-            {/* ── Mobile cards (virtualised with absolute positioning) ──── */}
-            {/* ── Mobile cards (virtualised with absolute positioning) ──── */}
-<div className="md:hidden flex flex-col">
-  <div className="sticky top-0 z-10 grid grid-cols-[72px_1fr] border-b border-(--border-color)" 
-    style={{ backgroundColor: "var(--bg-surface)" }}>
-    <div className="px-3 py-2 border-r border-(--border-color)">
-      <span className="text-[10px] font-semibold text-t-muted uppercase tracking-wider">S.No</span>
-    </div>
-    <div className="px-3 py-2">
-      <span className="text-[10px] font-semibold text-t-muted uppercase tracking-wider">Step Details</span>
-    </div>
-  </div>
+                        {/* ── Mobile cards (virtualised with absolute positioning) ──── */}
+            <div className="md:hidden flex flex-col">
+              <div className="sticky top-0 z-10 grid grid-cols-[72px_1fr] border-b border-(--border-color)"
+                style={{ backgroundColor: "var(--bg-surface)" }}>
+                <div className="px-3 py-2 border-r border-(--border-color)">
+                  <span className="text-[10px] font-semibold text-t-muted uppercase tracking-wider">S.No</span>
+                </div>
+                <div className="px-3 py-2">
+                  <span className="text-[10px] font-semibold text-t-muted uppercase tracking-wider">Step Details</span>
+                </div>
+              </div>
 
-  <div style={{ height: totalSize, position: "relative" }}>
-    {virtualItems.map((vItem) => {
-      const step = filtered[vItem.index];
-      if (!step) return null;
+              <div style={{ height: totalSize, position: "relative" }}>
+                {virtualItems.map((vItem) => {
+                  const step = filtered[vItem.index];
+                  if (!step) return null;
 
-      if (step.is_divider) {
-        const level = getDividerLevel(step);
-        const ms    = MOBILE_DIVIDER_LEVELS[level] ?? MOBILE_DIVIDER_LEVELS[1];
-        return (
-          <div key={step.stepId}
-            style={{ 
-              position: "absolute", 
-              top: 0, 
-              left: 0, 
-              width: "100%", 
-              transform: `translateY(${vItem.start}px)`,
-              padding: "0 12px",
-              zIndex: 1, // Ensure dividers stay above cards
-            }}>
-            <div className={`flex items-center gap-2 ${ms.py} pl-3 pr-3 rounded-r-lg ${ms.ml}`}
-              style={{ ...ms.bgStyle, ...ms.borderStyle, backgroundColor: "var(--bg-surface)" }}> {/* Solid bg */}
-              <span className={`rounded-full shrink-0 ${ms.dotClass}`} style={{ width: ms.dotSize, height: ms.dotSize }} />
-              <span className={`${ms.fontSize} ${ms.textClass}`}>{cleanDividerLabel(step.action)}</span>
-            </div>
-          </div>
-        );
-      }
+                  if (step.is_divider) {
+                    const level = getDividerLevel(step);
+                    const ms    = MOBILE_DIVIDER_LEVELS[level] ?? MOBILE_DIVIDER_LEVELS[1];
+                    return (
+                      <div
+                        ref={rowVirtualizer.measureElement}
+                        data-index={vItem.index}
+                        key={step.stepId}
+                        style={{
+                          position: "absolute",
+                          top: 0,
+                          left: 0,
+                          width: "100%",
+                          transform: `translateY(${vItem.start}px)`,
+                          padding: "0 12px",
+                          zIndex: 1,
+                        }}>
+                        <div className={`flex items-center gap-2 ${ms.py} pl-3 pr-3 rounded-r-lg ${ms.ml}`}
+                          style={{ ...ms.bgStyle, ...ms.borderStyle, backgroundColor: "var(--bg-surface)" }}>
+                          <span className={`rounded-full shrink-0 ${ms.dotClass}`} style={{ width: ms.dotSize, height: ms.dotSize }} />
+                          <span className={`${ms.fontSize} ${ms.textClass}`}>{cleanDividerLabel(step.action)}</span>
+                        </div>
+                      </div>
+                    );
+                  }
 
-      return (
-        <div key={step.stepId}
-          style={{ 
-            position: "absolute", 
-            top: 0, 
-            left: 0, 
-            width: "100%", 
-            transform: `translateY(${vItem.start}px)`, 
-            padding: "0 12px 8px",
-            zIndex: 2, // Cards above dividers
-          }}>
-          <MobileStepCard
-            step={step}
-            initialRemarks={remarksMap.current[step.stepId] ?? step.remarks ?? ""}
-            actionImageUrls={stepImageUrls[step.stepId]?.actionUrls   ?? EMPTY_URLS}
-            expectedImageUrls={stepImageUrls[step.stepId]?.expectedUrls ?? EMPTY_URLS}
-            isFocused={focusedStepId === step.stepId}
-            isUpdating={updatingStepIds.has(step.stepId)}
-            isReadOnly={isRevisionReadOnly}
-            onUpdate={handleStepUpdate}
-            onFocus={handleFocus}
-            onRemarksChange={handleRemarksChange}
-            onImageClick={openImagePreview}
-          />
-        </div>
-      );
-    })}
-  </div>
-</div>
-
-            {/* Undo All — admin only */}
+                  return (
+                    <div
+                      ref={rowVirtualizer.measureElement}
+                      data-index={vItem.index}
+                      key={step.stepId}
+                      style={{
+                        position: "absolute",
+                        top: 0,
+                        left: 0,
+                        width: "100%",
+                        transform: `translateY(${vItem.start}px)`,
+                        padding: "0 12px 8px",
+                        zIndex: 2,
+                      }}>
+                      <MobileStepCard
+                        step={step}
+                        initialRemarks={remarksMap.current[step.stepId] ?? step.remarks ?? ""}
+                        actionImageUrls={stepImageUrls[step.stepId]?.actionUrls   ?? EMPTY_URLS}
+                        expectedImageUrls={stepImageUrls[step.stepId]?.expectedUrls ?? EMPTY_URLS}
+                        isFocused={focusedStepId === step.stepId}
+                        isUpdating={updatingStepIds.has(step.stepId)}
+                        isReadOnly={isRevisionReadOnly}
+                        onUpdate={handleStepUpdate}
+                        onFocus={handleFocus}
+                        onRemarksChange={handleRemarksChange}
+                        onImageClick={openImagePreview}
+                      />
+                    </div>
+                  );
+                })}
+              </div>
+            </div>            {/* Undo All — admin only */}
             {isAdmin && doneCount > 0 && !isRevisionReadOnly && (
               <div className="flex items-center justify-center py-6 px-4">
                 <div className="flex items-center gap-3 px-4 py-3 rounded-xl border border-dashed border-[color-mix(in_srgb,var(--color-pend)_30%,transparent)] bg-[color-mix(in_srgb,var(--color-pend)_5%,transparent)]">
