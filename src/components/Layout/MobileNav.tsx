@@ -33,7 +33,6 @@ import {
   fetchModuleOptions,
 } from "../../lib/rpc.ts";
 
-import ExportDataModal from "../Modals/ExportAllModal";
 import ImportModulesModal from "../Modals/ImportModulesModal";
 import ImportTestsModal from "../Modals/ImportTestsModal";
 import ImportStepsModal from "../Modals/ImportStepsModal";
@@ -48,7 +47,6 @@ interface Props {
 }
 
 type ActiveModal =
-  | "export"
   | "modules"
   | "tests"
   | "steps-csv"
@@ -248,12 +246,6 @@ const MobileNav: React.FC<Props> = ({ activePage, onNavigate }) => {
 
           {isAdmin && (
             <>
-              {/* Export All */}
-              <button onClick={() => { setModal("export");      setMoreOpen(false); }} className={trayBtn} style={{ width: 72 }}>
-                <div className={trayIcon} style={trayIconBg}><span className="text-t-secondary"><Download size={16} /></span></div>
-                <span className={trayLabel}>Export</span>
-              </button>
-
               {/* Export Test Docx */}
               <button onClick={() => { setModal("test-docx");   setMoreOpen(false); }} className={trayBtn} style={{ width: 72 }}>
                 <div className={trayIcon} style={trayIconBg}><span className="text-t-secondary"><FileText size={16} /></span></div>
@@ -400,7 +392,6 @@ const MobileNav: React.FC<Props> = ({ activePage, onNavigate }) => {
       </nav>
 
       {/* ── Modals ───────────────────────────────────────────── */}
-      {activeModal === "export"       && <ExportDataModal          onClose={close} />}
       {activeModal === "test-docx"    && <ExportTestDocxModal       onClose={close} />}
       {activeModal === "modules"      && <ImportModulesModal        onClose={close} onBack={close} />}
       {activeModal === "tests"        && <ImportTestsModal          onClose={close} onBack={close} />}
