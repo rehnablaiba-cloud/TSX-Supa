@@ -5,14 +5,28 @@ import React, { useState, useEffect } from "react"
 import {
   Database, ArrowLeft, CheckCircle, CloudUpload, Eye,
   Package, FlaskConical, ListOrdered, Layers, AlertCircle,
-  Square, CheckSquare, ChevronDown, ChevronUp,
+  Square, CheckSquare, ChevronDown, ChevronUp, GitBranch,
 } from "lucide-react"
 import ModalShell from "../UI/ModalShell"
 import { supabase } from "../../supabase"
+import { r2InvalidateAll } from "../../lib/r2"
 
 // ── Types ─────────────────────────────────────────────────────────────────────
-type MigrationType = "modules" | "tests" | "step_orders" | "test_steps" | "reader"
-type Stage = "selecttype" | "selectrevisions" | "uploading" | "done" | "reader" | "error"
+type MigrationType =
+  | "modules"
+  | "tests"
+  | "revisions"
+  | "step_orders"
+  | "test_steps"
+  | "reader"
+
+type Stage =
+  | "selecttype"
+  | "selectrevisions"
+  | "uploading"
+  | "done"
+  | "reader"
+  | "error"
 
 interface TestRevision {
   id:              string
@@ -44,7 +58,7 @@ async function r2Write(token: string, key: string, data: unknown) {
   })
   if (!res.ok) {
     const err = await res.json().catch(() => ({}))
-    throw new Error(err.error || `Worker ${res.status}`)
+    throw new Error((err as any).error || `Worker ${res.status}`)
   }
 }
 
@@ -56,7 +70,7 @@ async function r2Read(token: string, key: string) {
   })
   if (!res.ok) {
     const err = await res.json().catch(() => ({}))
-    throw new Error(err.error || `Worker ${res.status}`)
+    throw new Error((err as any).error || `Worker ${res.status}`)
   }
   return res.json()
 }
@@ -85,42 +99,92 @@ function ProgressRow({ item }: { item: ProgressItem }) {
   )
 }
 
-const TYPE_META = [
-  { id: "modules"     as MigrationType, label: "Modules",     icon: <Package size={18} />,      desc: "Upload all modules → modules/all.json" },
-  { id: "tests"       as MigrationType, label: "Tests",       icon: <FlaskConical size={18} />,  desc: "Upload all tests → tests/all.json" },
-  { id: "step_orders" as MigrationType, label: "Step Orders", icon: <ListOrdered size={18} />,   desc: "Upload step_order per revision → step_orders/{id}.json" },
-  { id: "test_steps"  as MigrationType, label: "Test Steps",  icon: <Layers size={18} />,        desc: "Upload test_steps per revision → test_steps/{id}.json" },
-  { id: "reader"      as MigrationType, label: "Read from R2",icon: <Eye size={18} />,           desc: "Fetch any R2 key and inspect its JSON" },
+// ── Migration type definitions ────────────────────────────────────────────────
+//
+// Execution flow:
+//   "direct"   → handleDirectUpload (modules, tests, revisions — no revision selection)
+//   "revision" → show selectrevisions stage (step_orders, test_steps)
+//   "reader"   → show R2 reader UI
+
+const TYPE_META: {
+  id:   MigrationType
+  label: string
+  icon:  React.ReactNode
+  desc:  string
+  flow:  "direct" | "revision" | "reader"
+}[] = [
+  {
+    id:   "modules",
+    label: "Modules",
+    icon:  <Package size={18} />,
+    desc:  "Upload all modules → modules/all.json",
+    flow:  "direct",
+  },
+  {
+    id:   "tests",
+    label: "Tests",
+    icon:  <FlaskConical size={18} />,
+    desc:  "Upload all tests → tests/all.json",
+    flow:  "direct",
+  },
+  {
+    id:   "revisions",
+    label: "Revisions",
+    icon:  <GitBranch size={18} />,
+    desc:  "Upload all test revisions → revisions/all.json",
+    flow:  "direct",
+  },
+  {
+    id:   "step_orders",
+    label: "Step Orders",
+    icon:  <ListOrdered size={18} />,
+    desc:  "Upload step_order per revision → step_orders/{id}.json",
+    flow:  "revision",
+  },
+  {
+    id:   "test_steps",
+    label: "Test Steps",
+    icon:  <Layers size={18} />,
+    desc:  "Upload test_steps per revision → test_steps/{id}.json",
+    flow:  "revision",
+  },
+  {
+    id:   "reader",
+    label: "Read from R2",
+    icon:  <Eye size={18} />,
+    desc:  "Fetch any R2 key and inspect its JSON",
+    flow:  "reader",
+  },
 ]
 
 // ── Component ─────────────────────────────────────────────────────────────────
 interface Props { onClose: () => void; onBack: () => void }
 
 const R2MigrationModal: React.FC<Props> = ({ onClose, onBack }) => {
-  const [stage,       setStage]       = useState<Stage>("selecttype")
-  const [migrType,    setMigrType]    = useState<MigrationType | null>(null)
-  const [revisions,   setRevisions]   = useState<TestRevision[]>([])
-  const [selected,    setSelected]    = useState<Set<string>>(new Set())
-  const [revLoading,  setRevLoading]  = useState(false)
-  const [progress,    setProgress]    = useState<ProgressItem[]>([])
-  const [summary,     setSummary]     = useState<{ label: string; count: number }[]>([])
-  const [error,       setError]       = useState<string | null>(null)
-  const [readerKey,   setReaderKey]   = useState("")
-  const [readerData,  setReaderData]  = useState<unknown>(null)
+  const [stage,         setStage]         = useState<Stage>("selecttype")
+  const [migrType,      setMigrType]      = useState<MigrationType | null>(null)
+  const [revisions,     setRevisions]     = useState<TestRevision[]>([])
+  const [selected,      setSelected]      = useState<Set<string>>(new Set())
+  const [revLoading,    setRevLoading]    = useState(false)
+  const [progress,      setProgress]      = useState<ProgressItem[]>([])
+  const [summary,       setSummary]       = useState<{ label: string; count: number }[]>([])
+  const [error,         setError]         = useState<string | null>(null)
+  const [readerKey,     setReaderKey]     = useState("")
+  const [readerData,    setReaderData]    = useState<unknown>(null)
   const [readerLoading, setReaderLoading] = useState(false)
-  const [readerError, setReaderError] = useState<string | null>(null)
-  const [showFull,    setShowFull]    = useState(false)
+  const [readerError,   setReaderError]   = useState<string | null>(null)
+  const [showFull,      setShowFull]      = useState(false)
 
   const subtitle: Record<Stage, string> = {
-    selecttype:       "Choose type",
-    selectrevisions:  "Select revisions",
-    uploading:        "Uploading…",
-    done:             "Done",
-    reader:           "R2 Reader",
-    error:            "Something went wrong",
+    selecttype:      "Choose type",
+    selectrevisions: "Select revisions",
+    uploading:       "Uploading…",
+    done:            "Done",
+    reader:          "R2 Reader",
+    error:           "Something went wrong",
   }
 
-  // ── Load revisions when needed ───────────────────────────────────────────────
+  // ── Load revisions when entering selectrevisions stage ───────────────────────
   useEffect(() => {
     if (stage !== "selectrevisions") return
     setRevLoading(true)
@@ -132,7 +196,6 @@ const R2MigrationModal: React.FC<Props> = ({ onClose, onBack }) => {
         if (e) setError(e.message)
         else {
           setRevisions((data ?? []) as TestRevision[])
-          // Default: select all
           setSelected(new Set((data ?? []).map((r: any) => r.id)))
         }
         setRevLoading(false)
@@ -146,32 +209,56 @@ const R2MigrationModal: React.FC<Props> = ({ onClose, onBack }) => {
   const handleTypeSelect = (t: MigrationType) => {
     setMigrType(t)
     setError(null)
-    if (t === "reader") { setStage("reader"); return }
-    if (t === "step_orders" || t === "test_steps") { setStage("selectrevisions"); return }
-    // modules / tests → go straight to upload
+    const meta = TYPE_META.find(m => m.id === t)
+    if (meta?.flow === "reader")   { setStage("reader");           return }
+    if (meta?.flow === "revision") { setStage("selectrevisions");  return }
     handleDirectUpload(t)
   }
 
-  // ── Direct upload (modules / tests) ─────────────────────────────────────────
+  // ── Direct upload (modules / tests / revisions) ───────────────────────────────
   const handleDirectUpload = async (t: MigrationType) => {
     setStage("uploading")
-    setProgress([{ label: t === "modules" ? "Modules" : "Tests", status: "running" }])
+
+    const labelMap: Partial<Record<MigrationType, string>> = {
+      modules:   "Modules",
+      tests:     "Tests",
+      revisions: "Revisions",
+    }
+    const label = labelMap[t] ?? t
+    setProgress([{ label, status: "running" }])
+
     const done: { label: string; count: number }[] = []
     try {
       const token = await getToken()
+
       if (t === "modules") {
         const { data, error: e } = await supabase.from("modules").select("*")
         if (e) throw new Error(e.message)
         await r2Write(token, "modules/all.json", data)
-        patch("Modules", { status: "done", count: data?.length ?? 0 })
-        done.push({ label: "Modules", count: data?.length ?? 0 })
-      } else {
+        patch(label, { status: "done", count: data?.length ?? 0 })
+        done.push({ label, count: data?.length ?? 0 })
+
+      } else if (t === "tests") {
         const { data, error: e } = await supabase.from("tests").select("*")
         if (e) throw new Error(e.message)
         await r2Write(token, "tests/all.json", data)
-        patch("Tests", { status: "done", count: data?.length ?? 0 })
-        done.push({ label: "Tests", count: data?.length ?? 0 })
+        patch(label, { status: "done", count: data?.length ?? 0 })
+        done.push({ label, count: data?.length ?? 0 })
+
+      } else if (t === "revisions") {
+        const { data, error: e } = await supabase
+          .from("test_revisions")
+          .select("*")
+          .order("tests_serial_no")
+        if (e) throw new Error(e.message)
+        await r2Write(token, "revisions/all.json", data)
+        patch(label, { status: "done", count: data?.length ?? 0 })
+        done.push({ label, count: data?.length ?? 0 })
       }
+
+      // Bust in-memory R2 cache so subsequent reads pick up fresh data
+      r2InvalidateAll()
+
       setSummary(done)
       setStage("done")
     } catch (e: any) {
@@ -188,7 +275,7 @@ const R2MigrationModal: React.FC<Props> = ({ onClose, onBack }) => {
     setStage("uploading")
     const label = migrType === "step_orders" ? "Step Orders" : "Test Steps"
     setProgress(chosenRevs.map(r => ({
-      label: `${label} — rev ${r.revision || r.id.slice(0, 8)}`,
+      label:  `${label} — rev ${r.revision || r.id.slice(0, 8)}`,
       status: "pending" as const,
     })))
 
@@ -201,8 +288,6 @@ const R2MigrationModal: React.FC<Props> = ({ onClose, onBack }) => {
       patch(rowLabel, { status: "running" })
       try {
         if (migrType === "step_orders") {
-          // Use step_order from test_revisions directly
-          // Fallback: fetch ordered step IDs from test_steps
           let order: string[] = []
           if (rev.step_order && rev.step_order.length > 0) {
             order = rev.step_order
@@ -218,8 +303,8 @@ const R2MigrationModal: React.FC<Props> = ({ onClose, onBack }) => {
           await r2Write(token, `step_orders/${rev.id}.json`, order)
           patch(rowLabel, { status: "done", count: order.length })
           done.push({ label: rowLabel, count: order.length })
+
         } else {
-          // test_steps — fetch all steps for this revision's tests_serial_no
           const { data: steps, error: se } = await supabase
             .from("test_steps")
             .select("*")
@@ -234,6 +319,10 @@ const R2MigrationModal: React.FC<Props> = ({ onClose, onBack }) => {
         patch(rowLabel, { status: "error", error: e.message })
       }
     }
+
+    // Bust in-memory R2 cache for uploaded revision keys
+    r2InvalidateAll()
+
     setSummary(done)
     setStage("done")
   }
@@ -263,9 +352,9 @@ const R2MigrationModal: React.FC<Props> = ({ onClose, onBack }) => {
     if (stage === "reader")          { setStage("selecttype"); setReaderData(null); setReaderKey("") }
   }
 
-  const allSelected   = revisions.length > 0 && selected.size === revisions.length
-  const toggleAll     = () => setSelected(allSelected ? new Set() : new Set(revisions.map(r => r.id)))
-  const toggleOne     = (id: string) => setSelected(prev => {
+  const allSelected = revisions.length > 0 && selected.size === revisions.length
+  const toggleAll   = () => setSelected(allSelected ? new Set() : new Set(revisions.map(r => r.id)))
+  const toggleOne   = (id: string) => setSelected(prev => {
     const next = new Set(prev)
     next.has(id) ? next.delete(id) : next.add(id)
     return next
@@ -273,11 +362,9 @@ const R2MigrationModal: React.FC<Props> = ({ onClose, onBack }) => {
 
   const totalRows = summary.reduce((a, s) => a + s.count, 0)
 
-  const previewJson = readerData
-    ? JSON.stringify(readerData, null, 2)
-    : ""
+  const previewJson  = readerData ? JSON.stringify(readerData, null, 2) : ""
   const previewLines = previewJson.split("\n")
-  const isLong = previewLines.length > 30
+  const isLong       = previewLines.length > 30
 
   return (
     <ModalShell
@@ -288,8 +375,10 @@ const R2MigrationModal: React.FC<Props> = ({ onClose, onBack }) => {
     >
       {/* Back */}
       {stage !== "uploading" && (
-        <button onClick={handleBack}
-          className="-mt-2 self-start flex items-center gap-1 text-xs text-t-muted hover:text-t-primary transition-colors">
+        <button
+          onClick={handleBack}
+          className="-mt-2 self-start flex items-center gap-1 text-xs text-t-muted hover:text-t-primary transition-colors"
+        >
           <ArrowLeft size={13} /> Back
         </button>
       )}
@@ -298,9 +387,12 @@ const R2MigrationModal: React.FC<Props> = ({ onClose, onBack }) => {
       {stage === "selecttype" && (
         <div className="flex flex-col gap-2">
           {TYPE_META.map(m => (
-            <button key={m.id} onClick={() => handleTypeSelect(m.id)}
+            <button
+              key={m.id}
+              onClick={() => handleTypeSelect(m.id)}
               className="flex items-center gap-3 px-4 py-3 rounded-xl border border-(--border-color)
-                bg-bg-card hover:bg-bg-base text-left transition-all">
+                bg-bg-card hover:bg-bg-base text-left transition-all"
+            >
               <span className="text-t-muted shrink-0">{m.icon}</span>
               <div>
                 <p className="text-sm font-semibold text-t-primary">{m.label}</p>
@@ -308,6 +400,11 @@ const R2MigrationModal: React.FC<Props> = ({ onClose, onBack }) => {
               </div>
             </button>
           ))}
+
+          {/* Migrate all hint */}
+          <p className="text-xs text-t-muted text-center pt-1">
+            Run <span className="font-medium text-t-primary">Modules → Tests → Revisions → Step Orders → Test Steps</span> in order for a full migration.
+          </p>
         </div>
       )}
 
@@ -326,23 +423,26 @@ const R2MigrationModal: React.FC<Props> = ({ onClose, onBack }) => {
             </div>
           ) : (
             <>
-              {/* Select all */}
-              <button onClick={toggleAll}
-                className="flex items-center gap-2 text-xs text-t-muted hover:text-t-primary transition-colors px-1">
+              <button
+                onClick={toggleAll}
+                className="flex items-center gap-2 text-xs text-t-muted hover:text-t-primary transition-colors px-1"
+              >
                 {allSelected
                   ? <CheckSquare size={14} className="text-c-brand" />
                   : <Square size={14} />}
                 {allSelected ? "Deselect all" : "Select all"} ({revisions.length})
               </button>
 
-              {/* List */}
               <div className="flex flex-col gap-1 max-h-64 overflow-y-auto">
                 {revisions.map(r => (
-                  <button key={r.id} onClick={() => toggleOne(r.id)}
+                  <button
+                    key={r.id}
+                    onClick={() => toggleOne(r.id)}
                     className={`flex items-center gap-2.5 px-3 py-2 rounded-xl border text-left text-sm transition-all
                       ${selected.has(r.id)
                         ? "border-c-brand/40 bg-c-brand-bg text-t-primary"
-                        : "border-(--border-color) bg-bg-card text-t-muted hover:bg-bg-base"}`}>
+                        : "border-(--border-color) bg-bg-card text-t-muted hover:bg-bg-base"}`}
+                  >
                     {selected.has(r.id)
                       ? <CheckSquare size={14} className="text-c-brand shrink-0" />
                       : <Square size={14} className="shrink-0" />}
@@ -362,7 +462,8 @@ const R2MigrationModal: React.FC<Props> = ({ onClose, onBack }) => {
               <button
                 onClick={handleRevisionUpload}
                 disabled={selected.size === 0}
-                className="btn-primary text-sm flex items-center justify-center gap-2 disabled:opacity-50">
+                className="btn-primary text-sm flex items-center justify-center gap-2 disabled:opacity-50"
+              >
                 <CloudUpload size={14} />
                 Upload {selected.size} revision{selected.size !== 1 ? "s" : ""}
               </button>
@@ -395,9 +496,16 @@ const R2MigrationModal: React.FC<Props> = ({ onClose, onBack }) => {
               <span className="text-c-brand font-semibold">{totalRows} rows</span>
             </div>
           </div>
+          <p className="text-xs text-t-muted text-center">
+            R2 cache cleared — live reads will pick up fresh data immediately.
+          </p>
           <div className="flex gap-2 w-full">
-            <button onClick={() => { setStage("selecttype"); setSummary([]) }}
-              className="flex-1 btn-ghost text-sm">Migrate more</button>
+            <button
+              onClick={() => { setStage("selecttype"); setSummary([]) }}
+              className="flex-1 btn-ghost text-sm"
+            >
+              Migrate more
+            </button>
             <button onClick={onClose} className="flex-1 btn-primary text-sm">Close</button>
           </div>
         </div>
@@ -412,8 +520,12 @@ const R2MigrationModal: React.FC<Props> = ({ onClose, onBack }) => {
           </div>
           <div className="flex gap-2">
             <button onClick={onBack} className="flex-1 btn-ghost text-sm">Back</button>
-            <button onClick={() => { setStage("selecttype"); setError(null) }}
-              className="flex-1 btn-primary text-sm">Retry</button>
+            <button
+              onClick={() => { setStage("selecttype"); setError(null) }}
+              className="flex-1 btn-primary text-sm"
+            >
+              Retry
+            </button>
           </div>
         </div>
       )}
@@ -423,14 +535,17 @@ const R2MigrationModal: React.FC<Props> = ({ onClose, onBack }) => {
         <div className="flex flex-col gap-3">
           <p className="text-xs text-t-muted">Enter the R2 key to fetch and inspect its contents</p>
 
-          {/* Quick key suggestions */}
           <div className="flex flex-wrap gap-1.5">
             {[
               "modules/all.json",
               "tests/all.json",
+              "revisions/all.json",
             ].map(k => (
-              <button key={k} onClick={() => setReaderKey(k)}
-                className="text-xs px-2 py-1 rounded-lg border border-(--border-color) bg-bg-card hover:bg-bg-base text-t-muted hover:text-t-primary transition-colors font-mono">
+              <button
+                key={k}
+                onClick={() => setReaderKey(k)}
+                className="text-xs px-2 py-1 rounded-lg border border-(--border-color) bg-bg-card hover:bg-bg-base text-t-muted hover:text-t-primary transition-colors font-mono"
+              >
                 {k}
               </button>
             ))}
@@ -444,8 +559,11 @@ const R2MigrationModal: React.FC<Props> = ({ onClose, onBack }) => {
               placeholder="e.g. step_orders/abc-123.json"
               className="input text-sm font-mono flex-1"
             />
-            <button onClick={handleRead} disabled={!readerKey.trim() || readerLoading}
-              className="btn-primary text-sm px-4 disabled:opacity-50 shrink-0">
+            <button
+              onClick={handleRead}
+              disabled={!readerKey.trim() || readerLoading}
+              className="btn-primary text-sm px-4 disabled:opacity-50 shrink-0"
+            >
               {readerLoading
                 ? <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
                 : "Fetch"}
@@ -463,9 +581,13 @@ const R2MigrationModal: React.FC<Props> = ({ onClose, onBack }) => {
                   {Array.isArray(readerData) ? `${(readerData as unknown[]).length} items` : "object"}
                 </span>
                 {isLong && (
-                  <button onClick={() => setShowFull(p => !p)}
-                    className="flex items-center gap-1 text-xs text-c-brand hover:underline">
-                    {showFull ? <><ChevronUp size={12} /> Collapse</> : <><ChevronDown size={12} /> Expand all</>}
+                  <button
+                    onClick={() => setShowFull(p => !p)}
+                    className="flex items-center gap-1 text-xs text-c-brand hover:underline"
+                  >
+                    {showFull
+                      ? <><ChevronUp size={12} /> Collapse</>
+                      : <><ChevronDown size={12} /> Expand all</>}
                   </button>
                 )}
               </div>

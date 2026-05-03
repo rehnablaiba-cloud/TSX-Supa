@@ -2,7 +2,12 @@
  * src/lib/rpc.ts
  *
  * Single import surface for all Supabase queries and mutations.
- * Components import ONLY from this file — never from supabase directly.
+ * Components import ONLY from this file — never from supabase or r2 directly.
+ *
+ * Data routing:
+ *   R2  (static / non-changing) → modules · tests · revisions · step_orders · test_steps
+ *   Supabase (dynamic)          → module_tests · step_results · test_locks ·
+ *                                  profiles · audit_log · count RPCs
  *
  * Sections:
  *   1.  Shared types
@@ -17,28 +22,29 @@
  */
 
 import { supabase } from "../supabase";
+import {
+  r2GetModules,
+  r2GetTests,
+  r2GetActiveRevisions,
+  r2GetStepOrder,
+  r2GetTestSteps,
+  type R2Step,
+} from "./r2";
 
 // ═════════════════════════════════════════════════════════════════════════════
 // Session Expired Signal  (merged from rpc.interceptor.ts)
 // ═════════════════════════════════════════════════════════════════════════════
-// A lightweight pub/sub used to notify the UI when a session is unrecoverable.
-// Any component (or the AppShell) subscribes and shows the re-auth modal.
-//
-// Using a plain EventTarget keeps this zero-dependency and framework-agnostic.
-// Alternatively replace with a Zustand atom: `sessionExpiredStore.setState(true)`.
 
 type SessionExpiredListener = () => void;
 
 class SessionExpiredSignal {
   private listeners = new Set<SessionExpiredListener>();
 
-  /** Subscribe. Returns an unsubscribe function. */
   subscribe(fn: SessionExpiredListener): () => void {
     this.listeners.add(fn);
     return () => this.listeners.delete(fn);
   }
 
-  /** Called by callRpc when the refresh token is expired / invalid. */
   emit(): void {
     this.listeners.forEach((fn) => fn());
   }
@@ -49,18 +55,6 @@ export const sessionExpiredSignal = new SessionExpiredSignal();
 // ═════════════════════════════════════════════════════════════════════════════
 // callRpc — global 401 interceptor
 // ═════════════════════════════════════════════════════════════════════════════
-//
-// Wraps every RPC call. On a 401 / PGRST301 response it:
-//   1. Attempts a silent session refresh (Supabase rotates the JWT in place).
-//   2. If refresh succeeds → retries the original call exactly once.
-//   3. If refresh fails (token truly expired / revoked) → emits
-//      sessionExpiredSignal so the UI can show the re-auth modal.
-//
-// The caller (useQuery / useMutation) never sees a raw 401 — either the
-// retry succeeds transparently, or the modal intercepts the session.
-//
-// TanStack Query is configured with `retry: false` for 401 (queryClient.ts)
-// so it never races with this interceptor.
 
 function is401(err: unknown): boolean {
   if (!err || typeof err !== "object") return false;
@@ -74,18 +68,13 @@ export async function callRpc<T>(fn: () => Promise<T>): Promise<T> {
   } catch (err) {
     if (!is401(err)) throw err;
 
-    // ── Attempt a silent JWT refresh ──────────────────────────────────────
     const { error: refreshError } = await supabase.auth.refreshSession();
 
     if (refreshError) {
-      // Refresh token is expired / revoked — session is unrecoverable.
-      // Emit signal so the AppShell shows the re-auth modal.
       sessionExpiredSignal.emit();
-      throw err; // surface original error for TanStack error state
+      throw err;
     }
 
-    // ── Retry original call once with fresh JWT ───────────────────────────
-    // If this also throws, it propagates normally — no infinite loop.
     return await fn();
   }
 }
@@ -109,6 +98,7 @@ export type ActiveRevision = {
   tests_serial_no: string;
 };
 
+/** @deprecated step_order is fetched separately from R2 via r2GetStepOrder(). */
 export type ActiveRevisionWithSteps = ActiveRevision & {
   step_order: string[];
 };
@@ -292,7 +282,7 @@ export type CsvStepRow = {
   is_divider:      boolean;
 };
 
-// ── NEW: Lock Status for Test Execution ─────────────────────────────────────
+// ── Lock Status ───────────────────────────────────────────────────────────────
 
 export type LockStatus =
   | { status: "free" }
@@ -329,7 +319,7 @@ function assertAdmin(): Promise<void> {
 
 /**
  * All tests in a module with their test metadata.
- * Shared between ModuleDashboard and TestExecution (sidebar).
+ * Source: Supabase — module_tests is dynamic (is_visible can change).
  *
  * Cache key: ['moduleTests', module_name]
  * staleTime: 2 min  |  gcTime: 30 min
@@ -352,50 +342,28 @@ export function getModuleTests(
 
 /**
  * Active revision for each test in serialNos.
- * Shared between ModuleDashboard, TestExecution, and TestReport.
+ * Source: R2 (revisions/all.json) — revisions are static once published.
  *
- * Pass includeStepOrder = true from ModuleDashboard (needs step_order).
- * TestExecution and TestReport pass false.
+ * The `includeStepOrder` parameter is retained for API compatibility but is
+ * a no-op. Step order is fetched separately from R2 via r2GetStepOrder().
  *
  * Cache key: ['activeRevisions', ...serialNos.sort()]
  * staleTime: 5 min  |  gcTime: 30 min
  */
 export function getActiveRevisions(
   serialNos: string[],
-  includeStepOrder = false
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  _includeStepOrder = false
 ): Promise<Record<string, ActiveRevision>> {
   return callRpc(async () => {
     if (!serialNos.length) return {};
-
-    const select = includeStepOrder
-      ? "id, revision, tests_serial_no, step_order"
-      : "id, revision, tests_serial_no";
-
-    const { data, error } = await supabase
-      .from("test_revisions")
-      .select(select)
-      .eq("status", "active")
-      .in("tests_serial_no", serialNos);
-
-    if (error) throw new Error(error.message);
-
-    return Object.fromEntries(
-      ((data ?? []) as any[]).map((r) => [
-        r.tests_serial_no,
-        {
-          id:              r.id,
-          revision:        r.revision,
-          tests_serial_no: r.tests_serial_no,
-        } satisfies ActiveRevision,
-      ])
-    );
+    return r2GetActiveRevisions(serialNos) as Promise<Record<string, ActiveRevision>>;
   });
 }
 
 /**
  * All locks for the given module_test_ids.
- * Shared between ModuleDashboard and TestExecution.
- * Realtime subscription invalidates ['moduleLocks', module_name] on change.
+ * Source: Supabase — locks are purely dynamic.
  *
  * Cache key: ['moduleLocks', module_name]
  * staleTime: 0  |  gcTime: 5 min
@@ -423,7 +391,6 @@ export function getModuleLocks(
 // 4. Dashboard
 // ─────────────────────────────────────────────────────────────────────────────
 
-// Internal — shape returned by get_dashboard_counts RPC
 type RpcDashboardCountRow = {
   module_name:   string;
   test_count:    number;
@@ -435,31 +402,33 @@ type RpcDashboardCountRow = {
 
 /**
  * All modules with aggregated pass/fail/pending counts.
- * Two parallel queries — RPC + modules table.
+ *
+ * Parallel:
+ *   - get_dashboard_counts RPC  (Supabase — live counts)
+ *   - modules/all.json          (R2 — module names + descriptions)
  *
  * Cache key: ['dashboardSummaries']
  * staleTime: 30s  |  gcTime: 10 min
  */
 export function fetchDashboardSummaries(): Promise<DashboardModuleSummary[]> {
   return callRpc(async () => {
-    const [countsResult, modulesResult] = await Promise.all([
+    const [countsResult, r2Modules] = await Promise.all([
       supabase.rpc("get_dashboard_counts"),
-      supabase.from("modules").select("name, description").order("name"),
+      r2GetModules(),
     ]);
 
     if (countsResult.error) throw new Error(countsResult.error.message);
-    if (modulesResult.error) throw new Error(modulesResult.error.message);
 
     const countMap = new Map<string, RpcDashboardCountRow>();
     for (const row of (countsResult.data ?? []) as RpcDashboardCountRow[]) {
       countMap.set(row.module_name, row);
     }
 
-    return ((modulesResult.data ?? []) as any[]).map((mod): DashboardModuleSummary => {
-      const cnt = countMap.get(mod.name as string);
+    return r2Modules.map((mod): DashboardModuleSummary => {
+      const cnt = countMap.get(mod.name);
       return {
-        name:        mod.name        as string,
-        description: (mod.description as string | null) ?? null,
+        name:        mod.name,
+        description: mod.description,
         test_count:  Number(cnt?.test_count    ?? 0),
         pass:        Number(cnt?.pass_count    ?? 0),
         fail:        Number(cnt?.fail_count    ?? 0),
@@ -472,6 +441,7 @@ export function fetchDashboardSummaries(): Promise<DashboardModuleSummary[]> {
 
 /**
  * Current user's active locks with module + test names resolved.
+ * Source: Supabase — fully dynamic.
  *
  * Cache key: ['activeLocks']
  * staleTime: 0  |  gcTime: 5 min
@@ -515,6 +485,7 @@ export function fetchActiveLocks(): Promise<ActiveLock[]> {
 
 /**
  * Count of other users' active locks per module name.
+ * Source: Supabase — fully dynamic.
  *
  * Cache key: ['otherActiveLocks']
  * staleTime: 0  |  gcTime: 5 min
@@ -559,7 +530,6 @@ export function fetchOtherActiveLockModules(): Promise<Map<string, number>> {
 // 5. Module Dashboard
 // ─────────────────────────────────────────────────────────────────────────────
 
-// Internal — shape returned by get_module_counts RPC
 type RpcModuleCountRow = {
   tests_serial_no: string;
   pass_count:      number;
@@ -569,22 +539,21 @@ type RpcModuleCountRow = {
 };
 
 /**
- * All data for ModuleDashboard in two round-trips.
+ * All data for ModuleDashboard in one parallel round-trip.
  *
- * Round 1 (parallel): module_counts RPC + module_tests list
- * Round 2 (parallel, uses serialNos from round 1):
- *   active revisions SCOPED to this module's tests + locks for this module
- *
- * Bug fixed: revision fetch was previously unfiltered (all active revisions
- * across the entire database). Now scoped to serialNos of this module only.
+ * Parallel:
+ *   - get_module_counts RPC  (Supabase — live counts)
+ *   - module_tests list      (Supabase — visibility + test assignments)
+ *   - test_locks             (Supabase — who holds locks)
+ *   - revisions/all.json     (R2 — active revisions, filtered to this module)
  *
  * Cache key: compose from ['moduleTests', name] + ['moduleCounts', name] +
  *            ['activeRevisions', ...sns] + ['moduleLocks', name]
  */
 export function fetchModuleData(module_name: string): Promise<ModuleData> {
   return callRpc(async () => {
-    // ── Round 1: parallel ──────────────────────────────────────────────────────
-    const [countsResult, testsResult] = await Promise.all([
+    // ── Round 1: all sources in parallel ──────────────────────────────────────
+    const [countsResult, testsResult, allRevisions] = await Promise.all([
       supabase.rpc("get_module_counts", { p_module_name: module_name }),
       supabase
         .from("module_tests")
@@ -592,36 +561,28 @@ export function fetchModuleData(module_name: string): Promise<ModuleData> {
           "id, tests_name, is_visible, test:tests!module_tests_tests_name_fkey(serial_no, name)"
         )
         .eq("module_name", module_name),
+      r2GetActiveRevisions(), // cached — cheap if already warm
     ]);
 
     if (countsResult.error) throw new Error(countsResult.error.message);
     if (testsResult.error)  throw new Error(testsResult.error.message);
 
-    const rawTests    = (testsResult.data ?? []) as any[];
-    const moduleTestIds: string[] = rawTests.map((mt) => mt.id as string);
-    const serialNos:     string[] = rawTests
+    const rawTests      = (testsResult.data ?? []) as any[];
+    const moduleTestIds = rawTests.map((mt) => mt.id as string);
+    const serialNos: string[] = rawTests
       .map((mt) => mt.test?.serial_no as string | undefined)
       .filter((s): s is string => !!s);
 
-    // ── Round 2: parallel, now that we have the IDs ────────────────────────────
-    const [revisionsResult, locksResult] = await Promise.all([
-      serialNos.length > 0
-        ? supabase
-            .from("test_revisions")
-            .select("id, revision, tests_serial_no")
-            .eq("status", "active")
-            .in("tests_serial_no", serialNos)   // ← scoped to this module's tests
-        : Promise.resolve({ data: [] as any[], error: null }),
+    // ── Round 2: locks (needs moduleTestIds from round 1) ─────────────────────
+    const locksResult =
       moduleTestIds.length > 0
-        ? supabase
+        ? await supabase
             .from("test_locks")
             .select("module_test_id, user_id, locked_by_name, locked_at")
             .in("module_test_id", moduleTestIds)
-        : Promise.resolve({ data: [] as any[], error: null }),
-    ]);
+        : { data: [] as any[], error: null };
 
-    if (revisionsResult.error) throw new Error(revisionsResult.error.message);
-    if (locksResult.error)     throw new Error(locksResult.error.message);
+    if (locksResult.error) throw new Error(locksResult.error.message);
 
     // ── Count map ──────────────────────────────────────────────────────────────
     const countMap = new Map<string, RpcModuleCountRow>();
@@ -629,14 +590,11 @@ export function fetchModuleData(module_name: string): Promise<ModuleData> {
       countMap.set(row.tests_serial_no, row);
     }
 
-    // ── Revision map ───────────────────────────────────────────────────────────
+    // ── Revision map — scoped to this module's tests ───────────────────────────
     const revisions: Record<string, ActiveRevision> = {};
-    for (const r of (revisionsResult.data ?? []) as any[]) {
-      revisions[r.tests_serial_no] = {
-        id:              r.id,
-        revision:        r.revision,
-        tests_serial_no: r.tests_serial_no,
-      };
+    for (const sno of serialNos) {
+      const rev = allRevisions[sno];
+      if (rev) revisions[sno] = rev as ActiveRevision;
     }
 
     // ── Lock map ───────────────────────────────────────────────────────────────
@@ -673,7 +631,6 @@ export function fetchModuleData(module_name: string): Promise<ModuleData> {
 
 /**
  * Lightweight lock refresh — called by Realtime subscription in ModuleDashboard.
- * Prefer invalidating ['moduleLocks', module_name] via TanStack Query instead.
  */
 export function fetchModuleLocks(
   moduleTestIds: string[]
@@ -683,6 +640,7 @@ export function fetchModuleLocks(
 
 /**
  * Full step-result rows for CSV / PDF export.
+ * Source: Supabase join — step_results + test_steps (both still in Supabase for server-side joins).
  * Only called when the user opens the export modal.
  *
  * Cache key: ['moduleStepDetails', module_name]
@@ -719,59 +677,33 @@ export function fetchModuleStepDetails(
 // 6. Test Execution
 // ─────────────────────────────────────────────────────────────────────────────
 
-// Internal — shape returned by get_test_execution RPC
-type RpcStepRow = {
-  step_id:             string;
-  ord_idx:             number;
-  serial_no:           number;
-  is_divider:          boolean;
-  action:              string;
-  expected_result:     string;
-  action_image_urls:   string[] | null;
-  expected_image_urls: string[] | null;
-  tests_serial_no:     string;
-  result_id:           string;
-  status:              string;
-  remarks:             string;
-  display_name:        string;
-  is_visible:          boolean;
-  revision_id:         string | null;
-  revision_label:      string | null;
-  revision_serial_no:  string | null;
-};
-
 /**
- * All data for TestExecution in two round-trips.
+ * All data for TestExecution.
  *
- * Round 1 (parallel):
- *   - get_test_execution RPC — steps + results joined in Postgres
- *   - module_tests for the sidebar
+ * Replaces the former get_test_execution RPC with a split approach:
+ *   Static  (R2)      → active revisions · step_order · test_steps
+ *   Dynamic (Supabase) → module_tests (is_visible) · step_results (tester state)
  *
- * Round 2 (sequential, needs serialNos from round 1):
- *   - active revisions for nav badges
- *   - Current test's revision is seeded from row[0] scalar — NOT re-fetched.
+ * Round 1 — parallel:
+ *   - module_tests            (Supabase)
+ *   - step_results by module  (Supabase)
+ *   - active revisions        (R2 — typically a warm cache hit)
  *
- * Bug fixed: removed deprecated fetchTestExecution alias that passed an empty
- * module_name default, silently producing wrong step_results from the RPC.
- * Both params are now required.
- *
- * Bug fixed: Round 2 excludes the current test's serial_no (already in hand
- * from row[0]) to avoid a redundant refetch.
+ * Round 2 — parallel, after resolving current revision from round 1:
+ *   - step_order/{revId}.json  (R2)
+ *   - test_steps/{revId}.json  (R2)
+ *   Both are immutable keys — near-certain cache hits after first migration.
  *
  * Cache key: ['executionContext', module_test_id]
  * staleTime: 0  |  gcTime: 10 min
  */
 export function fetchTestExecutionData(
   module_test_id: string,
-  module_name:    string    // required — no default, empty string produces wrong RPC results
+  module_name: string // required — no default
 ): Promise<TestExecutionData> {
   return callRpc(async () => {
     // ── Round 1: parallel ──────────────────────────────────────────────────────
-    const [stepsRes, allMtRes] = await Promise.all([
-      supabase.rpc("get_test_execution", {
-        p_module_test_id: module_test_id,
-        p_module_name:    module_name,
-      }),
+    const [allMtRes, stepResultsRes, allRevisions] = await Promise.all([
       supabase
         .from("module_tests")
         .select(
@@ -779,74 +711,74 @@ export function fetchTestExecutionData(
         )
         .eq("module_name", module_name)
         .order("tests_name"),
+      supabase
+        .from("step_results")
+        .select("id, status, remarks, display_name, test_steps_id")
+        .eq("module_name", module_name),
+      r2GetActiveRevisions(),
     ]);
 
-    if (stepsRes.error) throw new Error(stepsRes.error.message);
-    if (allMtRes.error) throw new Error(allMtRes.error.message);
+    if (allMtRes.error)       throw new Error(allMtRes.error.message);
+    if (stepResultsRes.error) throw new Error(stepResultsRes.error.message);
 
-    const rows  = (stepsRes.data ?? []) as RpcStepRow[];
-    const first = rows[0] ?? null;
-
-    // ── Scalar metadata from row[0] ────────────────────────────────────────────
-    const is_visible: boolean = first?.is_visible ?? true;
-
-    const current_revision: ActiveRevision | null = first?.revision_id
-      ? {
-          id:              first.revision_id,
-          revision:        first.revision_label     ?? "",
-          tests_serial_no: first.revision_serial_no ?? "",
-
-        }
-      : null;
-
-    // ── Build RawStepResult[] ──────────────────────────────────────────────────
-    const step_results: RawStepResult[] = rows.map((r) => ({
-      id:           r.result_id,
-      status:       r.status as "pass" | "fail" | "pending",
-      remarks:      r.remarks,
-      display_name: r.display_name,
-      step: {
-        id:                  r.step_id,
-        serial_no:           r.serial_no,
-        action:              r.action,
-        expected_result:     r.expected_result,
-        is_divider:          r.is_divider,
-        action_image_urls:   r.action_image_urls   ?? [],
-        expected_image_urls: r.expected_image_urls ?? [],
-        tests_serial_no:     r.tests_serial_no,
-      },
-    }));
-
-    // ── module_tests & serialNos ───────────────────────────────────────────────
     const module_tests = (allMtRes.data ?? []) as unknown as RawModuleTestItem[];
 
-    // Exclude current test's serial_no — already seeded from row[0], no refetch needed
-    const currentSerialNo = current_revision?.tests_serial_no;
-    const serialNos: string[] = module_tests
-      .map((mt) => (mt as any).test?.serial_no as string | undefined)
-      .filter((s): s is string => !!s && s !== currentSerialNo);
+    // Locate current module_test
+    const currentMt       = module_tests.find((mt) => mt.id === module_test_id);
+    const is_visible      = currentMt?.is_visible ?? true;
+    const currentSerialNo = (currentMt as any)?.test?.serial_no as string | undefined;
 
-    // ── Round 2: remaining revisions for nav badges ────────────────────────────
+    // Current test's active revision (from R2)
+    const current_revision: ActiveRevision | null = currentSerialNo
+      ? (allRevisions[currentSerialNo] as ActiveRevision) ?? null
+      : null;
+
+    // active_revisions map for nav badges — all tests in this module
     const active_revisions: Record<string, ActiveRevision> = {};
-
-    if (current_revision) {
-      active_revisions[current_revision.tests_serial_no] = current_revision;
+    for (const [sno, rev] of Object.entries(allRevisions)) {
+      active_revisions[sno] = rev as ActiveRevision;
     }
 
-    if (serialNos.length > 0) {
-      const { data: revData } = await supabase
-        .from("test_revisions")
-        .select("id, revision, tests_serial_no")
-        .eq("status", "active")
-        .in("tests_serial_no", serialNos);
+    // ── Round 2: steps from R2 (parallel, likely cache hits) ──────────────────
+    let step_results: RawStepResult[] = [];
 
-      for (const r of (revData ?? []) as any[]) {
-        active_revisions[r.tests_serial_no] = {
-          id:              r.id,
-          revision:        r.revision,
-          tests_serial_no: r.tests_serial_no,
-        };
-      }
+    if (current_revision) {
+      const [stepOrder, r2Steps] = await Promise.all([
+        r2GetStepOrder(current_revision.id),
+        r2GetTestSteps(current_revision.id),
+      ]);
+
+      // Build lookup maps for O(1) join
+      const stepMap   = new Map<string, R2Step>(r2Steps.map((s) => [s.id, s]));
+      const resultMap = new Map<string, any>(
+        ((stepResultsRes.data ?? []) as any[]).map((r) => [r.test_steps_id, r])
+      );
+
+      // Materialise in step_order sequence, skip orphaned step IDs
+      step_results = stepOrder
+        .map((stepId): RawStepResult | null => {
+          const step   = stepMap.get(stepId);
+          const result = resultMap.get(stepId);
+          if (!step || !result) return null;
+
+          return {
+            id:           result.id,
+            status:       result.status as "pass" | "fail" | "pending",
+            remarks:      result.remarks      ?? "",
+            display_name: result.display_name ?? "",
+            step: {
+              id:                  step.id,
+              serial_no:           step.serial_no,
+              action:              step.action,
+              expected_result:     step.expected_result,
+              is_divider:          step.is_divider,
+              action_image_urls:   step.action_image_urls   ?? [],
+              expected_image_urls: step.expected_image_urls ?? [],
+              tests_serial_no:     step.tests_serial_no,
+            },
+          };
+        })
+        .filter((r): r is RawStepResult => r !== null);
     }
 
     return {
@@ -860,13 +792,8 @@ export function fetchTestExecutionData(
   });
 }
 
-// ── NEW: Lightweight lock check (runs BEFORE execution context fetch) ────────
+// ── Lock check ────────────────────────────────────────────────────────────────
 
-/**
- * Check if a test is locked and by whom.
- * Lightweight: only hits test_locks table, no step data.
- * Called BEFORE fetchTestExecutionData to avoid wasted data loads.
- */
 export function checkTestLock(module_test_id: string): Promise<LockStatus> {
   return callRpc(async () => {
     const { data: sessionData } = await supabase.auth.getSession();
@@ -966,10 +893,6 @@ export function forceReleaseLock(module_test_id: string): Promise<void> {
   });
 }
 
-/**
- * Refreshes locked_at to prevent server-side lock expiry.
- * Called every 60s while a lock is held.
- */
 export function heartbeatLock(
   module_test_id: string,
   user_id:        string
@@ -986,14 +909,6 @@ export function heartbeatLock(
 
 // ── Step results ──────────────────────────────────────────────────────────────
 
-/**
- * Update an existing step result row.
- * Rows are pre-seeded at test initialisation — this is UPDATE only.
- * If the row doesn't exist, the update silently affects 0 rows; that is a
- * schema invariant violation, not a silent success.
- *
- * Renamed from upsertStepResult — there is no insert path in the tester flow.
- */
 export function updateStepResult(payload: {
   test_steps_id: string;
   module_name:   string;
@@ -1050,7 +965,7 @@ export function fetchSignedUrls(
     const unique = Array.from(new Set(paths.filter(Boolean)));
     if (!unique.length) return {};
 
-    const batches  = chunkArray(unique, 500);
+    const batches    = chunkArray(unique, 500);
     const allEntries: [string, string][] = [];
 
     for (const batch of batches) {
@@ -1073,7 +988,9 @@ export function fetchSignedUrls(
 
 /**
  * Session history for the current user since sessionStart.
- * Two round-trips: step_results + active revisions for unique tests.
+ *
+ * step_results — Supabase (dynamic)
+ * revision labels — R2 via getActiveRevisions (static, typically cached)
  *
  * Cache key: ['sessionHistory', username, sessionStart]
  * staleTime: 0  |  gcTime: 5 min
@@ -1135,18 +1052,15 @@ export function fetchSessionHistory(
 
 /**
  * Module names for the filter dropdown in TestReport.
+ * Source: R2 (modules/all.json).
  *
  * Cache key: ['modules']
  * staleTime: 5 min  |  gcTime: 30 min
  */
 export function fetchModuleOptions(): Promise<ModuleOption[]> {
   return callRpc(async () => {
-    const { data, error } = await supabase
-      .from("modules")
-      .select("name")
-      .order("name");
-    if (error) throw error;
-    return (data ?? []) as ModuleOption[];
+    const modules = await r2GetModules();
+    return modules.map((m) => ({ name: m.name }));
   });
 }
 
@@ -1156,12 +1070,6 @@ export function fetchModuleOptions(): Promise<ModuleOption[]> {
 
 const AUDIT_PAGE_SIZE = 25;
 
-/**
- * Paginated audit log. Page 0 = newest entries.
- *
- * Cache key: ['auditLog', page]
- * staleTime: 30s  |  gcTime: 10 min
- */
 export function fetchAuditLog(page = 0): Promise<AuditLog[]> {
   return callRpc(async () => {
     const from = page * AUDIT_PAGE_SIZE;
@@ -1178,10 +1086,6 @@ export function fetchAuditLog(page = 0): Promise<AuditLog[]> {
   });
 }
 
-/**
- * Fire-and-forget — logged when a tester opens a test for execution.
- * NOT wrapped with callRpc — swallows its own errors and a 401 here is harmless.
- */
 export function insertTestStarted(
   module_name:  string,
   test_name:    string,
@@ -1195,11 +1099,6 @@ export function insertTestStarted(
     });
 }
 
-/**
- * Fire-and-forget — logged when a tester submits / closes a test.
- * result reflects the overall outcome at the time of finishing.
- * NOT wrapped with callRpc — swallows its own errors and a 401 here is harmless.
- */
 export function insertTestFinished(
   module_name:  string,
   test_name:    string,
@@ -1220,10 +1119,6 @@ export function insertTestFinished(
 
 // ── Auth ──────────────────────────────────────────────────────────────────────
 
-/**
- * Releases all locks held by user_id then calls signOut.
- * locked_by_name stores email, not UUID.
- */
 export function releaseLocksAndSignOut(
   user_id: string,
   signOut:  () => Promise<void>
@@ -1314,19 +1209,16 @@ export function deleteModule(name: string): Promise<void> {
 // ── Tests CRUD ────────────────────────────────────────────────────────────────
 
 /**
- * All tests — used by the import modal and admin test management.
+ * All tests.
+ * Source: R2 (tests/all.json) — tests are static reference data.
  *
  * Cache key: ['tests']
  * staleTime: 5 min  |  gcTime: 30 min
  */
 export function getTests(): Promise<TestOption[]> {
   return callRpc(async () => {
-    const { data, error } = await supabase
-      .from("tests")
-      .select("serial_no, name")
-      .order("serial_no");
-    if (error) throw error;
-    return (data ?? []) as TestOption[];
+    const tests = await r2GetTests();
+    return tests as TestOption[];
   });
 }
 
@@ -1357,16 +1249,12 @@ export function updateTest(
  * Fully delete a test and all child rows in FK dependency order.
  *
  * Deletion order:
- *  1. step_results       (FK → test_steps.id)
- *  2. test_revisions     (FK → tests.serial_no)
- *  3. test_steps         (FK → tests.serial_no)
- *  4. module_tests       (FK → tests.serial_no via tests_name)
- *  5. test_locks         (FK → tests.serial_no via tests_name)
+ *  1. step_results
+ *  2. test_revisions
+ *  3. test_steps
+ *  4. module_tests
+ *  5. test_locks
  *  6. tests
- *
- * Note: steps 4 and 5 use the column name that matches the actual FK in the
- * schema. Verify `module_tests.tests_name` and `test_locks.tests_name` store
- * the serial_no value — this was introduced during the text-PK migration.
  */
 export function deleteTestCascade(name: string): Promise<void> {
   return callRpc(async () => {
@@ -1416,7 +1304,7 @@ export function deleteTestCascade(name: string): Promise<void> {
   });
 }
 
-// ── Steps — fetch ─────────────────────────────────────────────────────────────
+// ── Steps — fetch (admin / import — reads from Supabase, not R2) ──────────────
 
 export function fetchStepsByTest(tests_name: string): Promise<StepOption[]> {
   return callRpc(async () => {
@@ -1447,7 +1335,7 @@ export function fetchStepOptions(tests_name: string): Promise<StepOption[]> {
   });
 }
 
-/** @deprecated Prefer fetchStepOptions — identical implementation. Kept for backward compat. */
+/** @deprecated Prefer fetchStepOptions — identical implementation. */
 export function fetchStepsForTest(tests_name: string): Promise<StepOption[]> {
   return fetchStepOptions(tests_name);
 }
