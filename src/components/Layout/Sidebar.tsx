@@ -12,7 +12,7 @@ import {
   Search,
   CloudUpload,
   Images,
-  PackageDown,
+  Download,
   FileDown,
   FolderInput,
   Layers,
@@ -52,7 +52,7 @@ const ADMIN_NAV = [
 
 /** Admin toolbar buttons — order: exports first, then imports, then migration utils */
 const ADMIN_TOOLS = [
-  { key: "exportAll",         label: "Export All",              Icon: PackageDown    },
+  { key: "exportAll",         label: "Export All",              Icon: Download       },
   { key: "exportDocx",        label: "Export Test Docx",        Icon: FileDown       },
   { key: "import",            label: "Import",                  Icon: FolderInput    },
   { key: "importModules",     label: "Import Modules",          Icon: Layers         },
@@ -256,9 +256,9 @@ const Sidebar: React.FC<Props> = ({ activePage, onNavigate, modules }) => {
       {/* ── Modals ───────────────────────────────────────────── */}
       {openModal === "r2"                && <R2MigrationModal        onClose={close} onBack={close} />}
       {openModal === "massImage"         && <MassImageUploadModal     onClose={close} onBack={close} />}
-      {openModal === "exportAll"         && <ExportAllModal           onClose={close} onBack={close} />}
-      {openModal === "exportDocx"        && <ExportTestDocxModal      onClose={close} onBack={close} />}
-      {openModal === "import"            && <ImportModal              onClose={close} onBack={close} />}
+      {openModal === "exportAll"         && <ExportAllModal           onClose={close} />}
+      {openModal === "exportDocx"        && <ExportTestDocxModal      onClose={close} />}
+      {openModal === "import"            && <ImportModal              onClose={close} />}
       {openModal === "importModules"     && <ImportModulesModal       onClose={close} onBack={close} />}
       {openModal === "importStepsManual" && <ImportStepsManualModal   onClose={close} onBack={close} />}
       {openModal === "importSteps"       && <ImportStepsModal         onClose={close} onBack={close} />}
