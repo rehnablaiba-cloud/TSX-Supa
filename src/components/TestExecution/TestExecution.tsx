@@ -888,8 +888,14 @@ const TestExecution: React.FC<Props> = ({
       return Math.max(200, 36 + 20 + actionLines * 20 + actionImgH + 20 + expectedLines * 20 + expectedImgH + 44 + 20);
     },
     overscan:        5,
-    measureElement:  typeof window !== "undefined" && window.innerWidth < 768 ? (el) => el.getBoundingClientRect().height : undefined,
-  });  const virtualItems  = rowVirtualizer.getVirtualItems();
+    measureElement:  (el) => el.getBoundingClientRect().height,
+  });
+
+  // Stable ref to virtualizer for effects that shouldn't re-run on every render
+  const virtualizerRef = useRef(rowVirtualizer);
+  useEffect(() => { virtualizerRef.current = rowVirtualizer; }, [rowVirtualizer]);
+
+  const virtualItems  = rowVirtualizer.getVirtualItems();
   const totalSize     = rowVirtualizer.getTotalSize();
   const paddingTop    = virtualItems.length > 0 ? (virtualItems[0]?.start ?? 0) : 0;
   const paddingBottom = virtualItems.length > 0
@@ -900,9 +906,29 @@ const TestExecution: React.FC<Props> = ({
   useEffect(() => {
     if (!scrollTarget || !dataInitialized) return;
     const idx = filtered.findIndex((s) => s.stepId === scrollTarget);
-    if (idx !== -1) rowVirtualizer.scrollToIndex(idx, { align: "center" });
-    setScrollTarget(null);
-  }, [scrollTarget, dataInitialized, filtered, rowVirtualizer]);
+    if (idx === -1) {
+      setScrollTarget(null);
+      return;
+    }
+    // Defer scroll so the virtualizer has time to measure elements first
+    // (critical when measureElement is active). We use rAF + setTimeout
+    // to ensure React has flushed the DOM and the virtualizer has measured.
+    let timeout: ReturnType<typeof setTimeout> | null = null;
+    const raf = requestAnimationFrame(() => {
+      timeout = setTimeout(() => {
+        virtualizerRef.current.scrollToIndex(idx, { align: "center" });
+        setScrollTarget(null);
+      }, 50);
+    });
+    return () => {
+      cancelAnimationFrame(raf);
+      if (timeout) clearTimeout(timeout);
+    };
+    // NOTE: rowVirtualizer is intentionally omitted from deps to prevent
+    // the effect from re-running (and cancelling its pending timeout) on
+    // every render. We use virtualizerRef to always access the latest instance.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [scrollTarget, dataInitialized, filtered]);
 
   // ── Lazy image loading — only fetch for steps seen by the virtualizer ─────
   //
@@ -1396,4 +1422,4 @@ const TestExecution: React.FC<Props> = ({
   );
 };
 
-export default TestExecution;
+export default TestExecution;cs
