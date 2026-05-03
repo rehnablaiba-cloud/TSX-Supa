@@ -233,13 +233,14 @@ async function chunkedDeepDiff(
     return { result: "failed", dbCount: dbRows.length, detail: `Count mismatch: R2=${r2Rows.length} DB=${dbRows.length}` }
   }
 
-  const normalize = (row: Record<string, unknown>): Record<string, unknown> => {
-    const out: Record<string, unknown> = {}
-    const allKeys = new Set([
+  const normalize = (row: Record<string, unknown>): string => {
+    const allKeys = Array.from(new Set([
       ...Object.keys(row),
       "action_image_urls",
       "expected_image_urls",
-    ])
+    ])).sort()
+
+    const out: Record<string, unknown> = {}
     for (const k of allKeys) {
       if (k === "action_image_urls" || k === "expected_image_urls") {
         out[k] = Array.isArray(row[k]) ? row[k] : []
@@ -247,20 +248,21 @@ async function chunkedDeepDiff(
         out[k] = row[k] ?? null
       }
     }
-    return out
+    return JSON.stringify(out)
   }
 
-  const r2Map = new Map(r2Rows.map(r => [String(r["id"]), JSON.stringify(normalize(r))]))
+  const r2Map = new Map(r2Rows.map(r => [String(r["id"]), normalize(r)]))
 
   for (const row of dbRows) {
     const id    = String((row as any).id)
     const r2Val = r2Map.get(id)
     if (!r2Val) return { result: "failed", dbCount: dbRows.length, detail: `Row ${id} in DB but not in R2` }
     const dbNorm = normalize(row as any)
-    if (r2Val !== JSON.stringify(dbNorm)) {
+    if (r2Val !== dbNorm) {
       const r2Parsed = JSON.parse(r2Val)
-      const diffKey  = Object.keys({ ...r2Parsed, ...dbNorm }).find(k => JSON.stringify(r2Parsed[k]) !== JSON.stringify(dbNorm[k]))
-      return { result: "failed", dbCount: dbRows.length, detail: `Row ${id} key "${diffKey}": R2=${JSON.stringify(r2Parsed[diffKey!])} DB=${JSON.stringify(dbNorm[diffKey!])}` }
+      const dbParsed = JSON.parse(dbNorm)
+      const diffKey  = Object.keys(r2Parsed).find(k => JSON.stringify(r2Parsed[k]) !== JSON.stringify(dbParsed[k]))
+      return { result: "failed", dbCount: dbRows.length, detail: `Row ${(row as any).id} key "${diffKey}": R2=${JSON.stringify(r2Parsed[diffKey!])} DB=${JSON.stringify(dbParsed[diffKey!])}` }
     }
   }
 
