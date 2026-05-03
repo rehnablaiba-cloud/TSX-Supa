@@ -753,21 +753,13 @@ export function fetchTestExecutionData(
 
       // ── Round 4: step_results scoped to this revision's steps only ──────────
       // ── Round 4: step_results scoped to this revision's steps only ──────────
-const chunks = chunkArray(stepOrder, 200);
-const chunkResults = await Promise.all(
-  chunks.map((chunk) =>
-    supabase
-      .from("step_results")
-      .select("id, status, remarks, display_name, test_steps_id")
-      .in("test_steps_id", chunk)
-  )
-);
-
-const srData: any[] = [];
-for (const { data, error } of chunkResults) {
-  if (error) throw new Error(error.message);
-  srData.push(...(data ?? []));
-}
+      const { data: srData, error: srError } = await supabase
+      .rpc("get_step_results", {
+        p_module_name: module_name,
+        p_step_ids:    stepOrder,
+      });
+    
+    if (srError) throw new Error(srError.message);
 
       const stepMap   = new Map<string, R2Step>(r2Steps.map((s) => [s.id, s]));
       const resultMap = new Map<string, any>(
