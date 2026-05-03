@@ -32,7 +32,7 @@ interface RevisionEntry {
   id:              string;
   revision:        string;
   tests_serial_no: string;
-  test_name?:      string; // enriched locally
+  tests_name?:      string; // enriched locally
 }
 
 interface Props {
@@ -112,7 +112,7 @@ const ExportTestDocxModal: React.FC<Props> = ({ onClose }) => {
           id:              r.id,
           revision:        r.revision,
           tests_serial_no: r.tests_serial_no,
-          test_name:       r.test_name ?? r.tests_serial_no,
+          tests_name:       r.tests_name ?? r.tests_serial_no,
         }));
         // Sort by tests_serial_no numerically
         entries.sort((a, b) =>
@@ -215,7 +215,7 @@ const ExportTestDocxModal: React.FC<Props> = ({ onClose }) => {
 
       await exportTestDocx({
         moduleName: moduleName ?? "—",
-        testName:   rev.test_name ?? rev.tests_serial_no,
+        testName:   rev.tests_name ?? rev.tests_serial_no,
         steps,
       });
 
