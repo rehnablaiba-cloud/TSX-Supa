@@ -697,49 +697,50 @@ export function fetchModuleStepDetails(
  * Cache key: ['executionContext', module_test_id]
  * staleTime: 0  |  gcTime: 10 min
  */
+// ── Round 1: parallel ──────────────────────────────────────────────
 export function fetchTestExecutionData(
   module_test_id: string,
-  module_name: string // required — no default
+  module_name: string
 ): Promise<TestExecutionData> {
   return callRpc(async () => {
-    // ── Round 1: parallel ──────────────────────────────────────────────────────
-    const [allMtRes, stepResultsRes, allRevisions] = await Promise.all([
-      supabase
-        .from("module_tests")
-        .select(
-          "id, tests_name, is_visible, test:tests!module_tests_tests_name_fkey(serial_no, name)"
-        )
-        .eq("module_name", module_name)
-        .order("tests_name"),
-      supabase
-        .from("step_results")
-        .select("id, status, remarks, display_name, test_steps_id")
-        .eq("module_name", module_name),
-      r2GetActiveRevisions(),
-    ]);
 
-    if (allMtRes.error)       throw new Error(allMtRes.error.message);
-    if (stepResultsRes.error) throw new Error(stepResultsRes.error.message);
+    // ── Round 1: module_tests ────────────────────────────────────────────────
+    const { data: mtData, error: mtError } = await supabase
+      .from("module_tests")
+      .select("id, tests_name, is_visible, test:tests!module_tests_tests_name_fkey(serial_no, name)")
+      .eq("module_name", module_name)
+      .order("tests_name");
 
-    const module_tests = (allMtRes.data ?? []) as unknown as RawModuleTestItem[];
+    if (mtError) throw new Error(mtError.message);
 
-    // Locate current module_test
+    const module_tests = (mtData ?? []) as unknown as RawModuleTestItem[];
     const currentMt       = module_tests.find((mt) => mt.id === module_test_id);
     const is_visible      = currentMt?.is_visible ?? true;
     const currentSerialNo = (currentMt as any)?.test?.serial_no as string | undefined;
 
-    // Current test's active revision (from R2)
-    const current_revision: ActiveRevision | null = currentSerialNo
-      ? (allRevisions[currentSerialNo] as ActiveRevision) ?? null
-      : null;
+    // ── Round 2: active revision from Supabase + nothing else yet ────────────
+    let current_revision: ActiveRevision | null = null;
 
-    // active_revisions map for nav badges — all tests in this module
+    if (currentSerialNo) {
+      const { data: revData, error: revError } = await supabase
+        .from("test_revisions")
+        .select("id, revision, tests_serial_no")
+        .eq("tests_serial_no", currentSerialNo)
+        .eq("status", "active")
+        .maybeSingle();
+
+      if (revError) throw new Error(revError.message);
+      current_revision = revData as ActiveRevision | null;
+    }
+
+    // active_revisions map for nav badges — still from R2 (cached, cheap)
+    const allRevisions = await r2GetActiveRevisions();
     const active_revisions: Record<string, ActiveRevision> = {};
     for (const [sno, rev] of Object.entries(allRevisions)) {
       active_revisions[sno] = rev as ActiveRevision;
     }
 
-    // ── Round 2: steps from R2 (parallel, likely cache hits) ──────────────────
+    // ── Round 3: step_order + test_steps from R2 (parallel) ─────────────────
     let step_results: RawStepResult[] = [];
 
     if (current_revision) {
@@ -748,19 +749,24 @@ export function fetchTestExecutionData(
         r2GetTestSteps(current_revision.id),
       ]);
 
-      // Build lookup maps for O(1) join
+      // ── Round 4: step_results scoped to this revision's steps only ──────────
+      const { data: srData, error: srError } = await supabase
+        .from("step_results")
+        .select("id, status, remarks, display_name, test_steps_id")
+        .in("test_steps_id", stepOrder);
+
+      if (srError) throw new Error(srError.message);
+
       const stepMap   = new Map<string, R2Step>(r2Steps.map((s) => [s.id, s]));
       const resultMap = new Map<string, any>(
-        ((stepResultsRes.data ?? []) as any[]).map((r) => [r.test_steps_id, r])
+        ((srData ?? []) as any[]).map((r) => [r.test_steps_id, r])
       );
 
-      // Materialise in step_order sequence, skip orphaned step IDs
       step_results = stepOrder
         .map((stepId): RawStepResult | null => {
           const step   = stepMap.get(stepId);
           const result = resultMap.get(stepId);
           if (!step || !result) return null;
-
           return {
             id:           result.id,
             status:       result.status as "pass" | "fail" | "pending",
@@ -791,7 +797,6 @@ export function fetchTestExecutionData(
     };
   });
 }
-
 // ── Lock check ────────────────────────────────────────────────────────────────
 
 export function checkTestLock(module_test_id: string): Promise<LockStatus> {
