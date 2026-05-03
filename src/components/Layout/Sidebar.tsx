@@ -12,6 +12,13 @@ import {
   Search,
   CloudUpload,
   Images,
+  PackageDown,
+  FileDown,
+  FolderInput,
+  Layers,
+  ClipboardEdit,
+  ListChecks,
+  FlaskConical,
 } from "lucide-react";
 import { useAuth } from "../../context/AuthContext";
 import { supabase } from "../../supabase";
@@ -19,6 +26,13 @@ import { Module } from "../../types";
 import ThemeToggle from "../UI/ThemeToggle";
 import R2MigrationModal from "../Modals/R2MigrationModal";
 import MassImageUploadModal from "../UI/MassImageUploadModal";
+import ExportAllModal from "../Modals/ExportAllModal";
+import ExportTestDocxModal from "../Modals/ExportTestDocxModal";
+import ImportModal from "../Modals/ImportModal";
+import ImportModulesModal from "../Modals/ImportModulesModal";
+import ImportStepsManualModal from "../Modals/ImportStepsManualModal";
+import ImportStepsModal from "../Modals/ImportStepsModal";
+import ImportTestsModal from "../Modals/ImportTestsModal";
 
 interface Props {
   activePage: string;
@@ -36,11 +50,25 @@ const ADMIN_NAV = [
   { id: "users",     label: "Users",     Icon: Users },
 ];
 
+/** Admin toolbar buttons — order: exports first, then imports, then migration utils */
+const ADMIN_TOOLS = [
+  { key: "exportAll",         label: "Export All",              Icon: PackageDown    },
+  { key: "exportDocx",        label: "Export Test Docx",        Icon: FileDown       },
+  { key: "import",            label: "Import",                  Icon: FolderInput    },
+  { key: "importModules",     label: "Import Modules",          Icon: Layers         },
+  { key: "importStepsManual", label: "Import Steps (Manual)",   Icon: ClipboardEdit  },
+  { key: "importSteps",       label: "Import Steps",            Icon: ListChecks     },
+  { key: "importTests",       label: "Import Tests",            Icon: FlaskConical   },
+  { key: "massImage",         label: "Mass Image Upload",       Icon: Images         },
+  { key: "r2",                label: "R2 Migration",            Icon: CloudUpload    },
+];
+
+type ModalKey = typeof ADMIN_TOOLS[number]["key"] | null;
+
 const Sidebar: React.FC<Props> = ({ activePage, onNavigate, modules }) => {
-  const [collapsed,         setCollapsed]         = useState(false);
-  const [search,            setSearch]            = useState("");
-  const [showR2Modal,       setShowR2Modal]       = useState(false);
-  const [showMassImgModal,  setShowMassImgModal]  = useState(false);
+  const [collapsed,    setCollapsed]    = useState(false);
+  const [search,       setSearch]       = useState("");
+  const [openModal,    setOpenModal]    = useState<ModalKey>(null);
   const { user, signOut, isLoading } = useAuth();
   const isAdmin = user?.role === "admin";
 
@@ -67,6 +95,8 @@ const Sidebar: React.FC<Props> = ({ activePage, onNavigate, modules }) => {
     setCollapsed((p) => !p);
     setSearch("");
   };
+
+  const close = () => setOpenModal(null);
 
   return (
     <>
@@ -165,34 +195,28 @@ const Sidebar: React.FC<Props> = ({ activePage, onNavigate, modules }) => {
 
         {/* Footer */}
         <div className="border-t border-(--border-color) p-3 flex flex-col gap-2">
-          <div className={`flex ${collapsed ? "justify-center" : "justify-between"} items-center`}>
+          {/* Theme toggle + admin tool buttons */}
+          <div className={`flex ${collapsed ? "justify-center" : "justify-between"} items-start`}>
             <ThemeToggle />
 
             {isAdmin && (
-              <div className="flex items-center gap-1">
-                {/* Mass Image Upload — admin only */}
-                <button
-                  onClick={() => setShowMassImgModal(true)}
-                  title="Mass Image Upload"
-                  aria-label="Mass Image Upload"
-                  className="p-1.5 text-t-muted hover:text-c-brand hover:bg-bg-card rounded-lg transition-colors"
-                >
-                  <Images size={15} />
-                </button>
-
-                {/* R2 Migration — admin only */}
-                <button
-                  onClick={() => setShowR2Modal(true)}
-                  title="R2 Migration"
-                  aria-label="R2 Migration"
-                  className="p-1.5 text-t-muted hover:text-c-brand hover:bg-bg-card rounded-lg transition-colors"
-                >
-                  <CloudUpload size={15} />
-                </button>
+              <div className="flex flex-wrap justify-end gap-0.5 max-w-[140px]">
+                {ADMIN_TOOLS.map(({ key, label, Icon }) => (
+                  <button
+                    key={key}
+                    onClick={() => setOpenModal(key as ModalKey)}
+                    title={label}
+                    aria-label={label}
+                    className="p-1.5 text-t-muted hover:text-c-brand hover:bg-bg-card rounded-lg transition-colors"
+                  >
+                    <Icon size={15} />
+                  </button>
+                ))}
               </div>
             )}
           </div>
 
+          {/* User row */}
           {!isLoading &&
             (!collapsed ? (
               <div className="flex items-center gap-3">
@@ -229,21 +253,16 @@ const Sidebar: React.FC<Props> = ({ activePage, onNavigate, modules }) => {
         </div>
       </aside>
 
-      {/* R2 Migration Modal */}
-      {showR2Modal && (
-        <R2MigrationModal
-          onClose={() => setShowR2Modal(false)}
-          onBack={() => setShowR2Modal(false)}
-        />
-      )}
-
-      {/* Mass Image Upload Modal */}
-      {showMassImgModal && (
-        <MassImageUploadModal
-          onClose={() => setShowMassImgModal(false)}
-          onBack={() => setShowMassImgModal(false)}
-        />
-      )}
+      {/* ── Modals ───────────────────────────────────────────── */}
+      {openModal === "r2"                && <R2MigrationModal        onClose={close} onBack={close} />}
+      {openModal === "massImage"         && <MassImageUploadModal     onClose={close} onBack={close} />}
+      {openModal === "exportAll"         && <ExportAllModal           onClose={close} onBack={close} />}
+      {openModal === "exportDocx"        && <ExportTestDocxModal      onClose={close} onBack={close} />}
+      {openModal === "import"            && <ImportModal              onClose={close} onBack={close} />}
+      {openModal === "importModules"     && <ImportModulesModal       onClose={close} onBack={close} />}
+      {openModal === "importStepsManual" && <ImportStepsManualModal   onClose={close} onBack={close} />}
+      {openModal === "importSteps"       && <ImportStepsModal         onClose={close} onBack={close} />}
+      {openModal === "importTests"       && <ImportTestsModal         onClose={close} onBack={close} />}
     </>
   );
 };

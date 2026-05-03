@@ -21,6 +21,8 @@ import {
   LayoutDashboard,
   ClipboardList,
   FileText,
+  CloudUpload,
+  Images,
 } from "lucide-react";
 import gsap from "gsap";
 
@@ -37,6 +39,8 @@ import ImportTestsModal from "../Modals/ImportTestsModal";
 import ImportStepsModal from "../Modals/ImportStepsModal";
 import ImportStepsManualModal from "../Modals/ImportStepsManualModal";
 import ExportTestDocxModal from "../Modals/ExportTestDocxModal";
+import R2MigrationModal from "../Modals/R2MigrationModal";
+import MassImageUploadModal from "../UI/MassImageUploadModal";
 
 interface Props {
   activePage: string;
@@ -51,6 +55,8 @@ type ActiveModal =
   | "steps-manual"
   | "test-docx"
   | "theme"
+  | "r2"
+  | "mass-image"
   | null;
 
 const MobileNav: React.FC<Props> = ({ activePage, onNavigate }) => {
@@ -195,6 +201,14 @@ const MobileNav: React.FC<Props> = ({ activePage, onNavigate }) => {
     { id: "__more__", label: "More", icon: <MoreHorizontal size={19} /> },
   ];
 
+  /** Shared class for every tray button */
+  const trayBtn =
+    "more-item flex flex-col items-center justify-center gap-1 p-2 rounded-xl transition-all duration-200 hover:bg-[color-mix(in_srgb,var(--bg-surface)_5%,transparent)] active:scale-90";
+  const trayIcon =
+    "w-10 h-10 rounded-xl flex items-center justify-center";
+  const trayIconBg = { background: "color-mix(in srgb, var(--bg-card) 50%, transparent)" };
+  const trayLabel = "text-[9px] font-medium text-t-muted leading-tight text-center";
+
   return (
     <>
       {/* More tray */}
@@ -213,224 +227,93 @@ const MobileNav: React.FC<Props> = ({ activePage, onNavigate }) => {
         <div className="absolute inset-0 rounded-2xl backdrop-dim -z-10" />
 
         <div className="flex flex-wrap justify-center gap-x-2 gap-y-3">
+          {/* Theme toggle */}
           <button
             onClick={() => {
               setTheme(theme === "dark" ? "light" : "dark");
               setMoreOpen(false);
             }}
-            className="more-item flex flex-col items-center justify-center gap-1 p-2 rounded-xl transition-all duration-200 hover:bg-[color-mix(in_srgb,var(--bg-surface)_5%,transparent)] active:scale-90"
+            className={trayBtn}
             style={{ width: 72 }}
           >
-            <div
-              className="w-10 h-10 rounded-xl flex items-center justify-center"
-              style={{
-                background:
-                  "color-mix(in srgb, var(--bg-card) 50%, transparent)",
-              }}
-            >
+            <div className={trayIcon} style={trayIconBg}>
               <span className="text-t-secondary">
                 {theme === "dark" ? <Sun size={16} /> : <Moon size={16} />}
               </span>
             </div>
-            <span className="text-[9px] font-medium text-t-muted leading-tight text-center">
+            <span className={trayLabel}>
               {theme === "dark" ? "Light" : "Dark"}
             </span>
           </button>
 
           {isAdmin && (
             <>
-              <button
-                onClick={() => {
-                  setModal("export");
-                  setMoreOpen(false);
-                }}
-                className="more-item flex flex-col items-center justify-center gap-1 p-2 rounded-xl transition-all duration-200 hover:bg-[color-mix(in_srgb,var(--bg-surface)_5%,transparent)] active:scale-90"
-                style={{ width: 72 }}
-              >
-                <div
-                  className="w-10 h-10 rounded-xl flex items-center justify-center"
-                  style={{
-                    background:
-                      "color-mix(in srgb, var(--bg-card) 50%, transparent)",
-                  }}
-                >
-                  <span className="text-t-secondary">
-                    <Download size={16} />
-                  </span>
-                </div>
-                <span className="text-[9px] font-medium text-t-muted leading-tight text-center">
-                  Export
-                </span>
+              {/* Export All */}
+              <button onClick={() => { setModal("export");      setMoreOpen(false); }} className={trayBtn} style={{ width: 72 }}>
+                <div className={trayIcon} style={trayIconBg}><span className="text-t-secondary"><Download size={16} /></span></div>
+                <span className={trayLabel}>Export</span>
               </button>
 
-              <button
-                onClick={() => {
-                  setModal("test-docx");
-                  setMoreOpen(false);
-                }}
-                className="more-item flex flex-col items-center justify-center gap-1 p-2 rounded-xl transition-all duration-200 hover:bg-[color-mix(in_srgb,var(--bg-surface)_5%,transparent)] active:scale-90"
-                style={{ width: 72 }}
-              >
-                <div
-                  className="w-10 h-10 rounded-xl flex items-center justify-center"
-                  style={{
-                    background:
-                      "color-mix(in srgb, var(--bg-card) 50%, transparent)",
-                  }}
-                >
-                  <span className="text-t-secondary">
-                    <FileText size={16} />
-                  </span>
-                </div>
-                <span className="text-[9px] font-medium text-t-muted leading-tight text-center">
-                  DOCX
-                </span>
+              {/* Export Test Docx */}
+              <button onClick={() => { setModal("test-docx");   setMoreOpen(false); }} className={trayBtn} style={{ width: 72 }}>
+                <div className={trayIcon} style={trayIconBg}><span className="text-t-secondary"><FileText size={16} /></span></div>
+                <span className={trayLabel}>DOCX</span>
               </button>
 
-              <button
-                onClick={() => {
-                  setModal("modules");
-                  setMoreOpen(false);
-                }}
-                className="more-item flex flex-col items-center justify-center gap-1 p-2 rounded-xl transition-all duration-200 hover:bg-[color-mix(in_srgb,var(--bg-surface)_5%,transparent)] active:scale-90"
-                style={{ width: 72 }}
-              >
-                <div
-                  className="w-10 h-10 rounded-xl flex items-center justify-center"
-                  style={{
-                    background:
-                      "color-mix(in srgb, var(--bg-card) 50%, transparent)",
-                  }}
-                >
-                  <span className="text-t-secondary">
-                    <Package size={16} />
-                  </span>
-                </div>
-                <span className="text-[9px] font-medium text-t-muted leading-tight text-center">
-                  Modules
-                </span>
+              {/* Import Modules */}
+              <button onClick={() => { setModal("modules");     setMoreOpen(false); }} className={trayBtn} style={{ width: 72 }}>
+                <div className={trayIcon} style={trayIconBg}><span className="text-t-secondary"><Package size={16} /></span></div>
+                <span className={trayLabel}>Modules</span>
               </button>
 
-              <button
-                onClick={() => {
-                  setModal("tests");
-                  setMoreOpen(false);
-                }}
-                className="more-item flex flex-col items-center justify-center gap-1 p-2 rounded-xl transition-all duration-200 hover:bg-[color-mix(in_srgb,var(--bg-surface)_5%,transparent)] active:scale-90"
-                style={{ width: 72 }}
-              >
-                <div
-                  className="w-10 h-10 rounded-xl flex items-center justify-center"
-                  style={{
-                    background:
-                      "color-mix(in srgb, var(--bg-card) 50%, transparent)",
-                  }}
-                >
-                  <span className="text-t-secondary">
-                    <FlaskConical size={16} />
-                  </span>
-                </div>
-                <span className="text-[9px] font-medium text-t-muted leading-tight text-center">
-                  Tests
-                </span>
+              {/* Import Tests */}
+              <button onClick={() => { setModal("tests");       setMoreOpen(false); }} className={trayBtn} style={{ width: 72 }}>
+                <div className={trayIcon} style={trayIconBg}><span className="text-t-secondary"><FlaskConical size={16} /></span></div>
+                <span className={trayLabel}>Tests</span>
               </button>
 
-              <button
-                onClick={() => {
-                  setModal("steps-csv");
-                  setMoreOpen(false);
-                }}
-                className="more-item flex flex-col items-center justify-center gap-1 p-2 rounded-xl transition-all duration-200 hover:bg-[color-mix(in_srgb,var(--bg-surface)_5%,transparent)] active:scale-90"
-                style={{ width: 72 }}
-              >
-                <div
-                  className="w-10 h-10 rounded-xl flex items-center justify-center"
-                  style={{
-                    background:
-                      "color-mix(in srgb, var(--bg-card) 50%, transparent)",
-                  }}
-                >
-                  <span className="text-t-secondary">
-                    <Upload size={16} />
-                  </span>
-                </div>
-                <span className="text-[9px] font-medium text-t-muted leading-tight text-center">
-                  Import
-                </span>
+              {/* Import Steps CSV */}
+              <button onClick={() => { setModal("steps-csv");   setMoreOpen(false); }} className={trayBtn} style={{ width: 72 }}>
+                <div className={trayIcon} style={trayIconBg}><span className="text-t-secondary"><Upload size={16} /></span></div>
+                <span className={trayLabel}>Import</span>
               </button>
 
-              <button
-                onClick={() => {
-                  setModal("steps-manual");
-                  setMoreOpen(false);
-                }}
-                className="more-item flex flex-col items-center justify-center gap-1 p-2 rounded-xl transition-all duration-200 hover:bg-[color-mix(in_srgb,var(--bg-surface)_5%,transparent)] active:scale-90"
-                style={{ width: 72 }}
-              >
-                <div
-                  className="w-10 h-10 rounded-xl flex items-center justify-center"
-                  style={{
-                    background:
-                      "color-mix(in srgb, var(--bg-card) 50%, transparent)",
-                  }}
-                >
-                  <span className="text-t-secondary">
-                    <Hash size={16} />
-                  </span>
-                </div>
-                <span className="text-[9px] font-medium text-t-muted leading-tight text-center">
-                  Steps
-                </span>
+              {/* Import Steps Manual */}
+              <button onClick={() => { setModal("steps-manual"); setMoreOpen(false); }} className={trayBtn} style={{ width: 72 }}>
+                <div className={trayIcon} style={trayIconBg}><span className="text-t-secondary"><Hash size={16} /></span></div>
+                <span className={trayLabel}>Steps</span>
               </button>
 
-              <button
-                onClick={() => {
-                  setModal("theme");
-                  setMoreOpen(false);
-                }}
-                className="more-item flex flex-col items-center justify-center gap-1 p-2 rounded-xl transition-all duration-200 hover:bg-[color-mix(in_srgb,var(--bg-surface)_5%,transparent)] active:scale-90"
-                style={{ width: 72 }}
-              >
-                <div
-                  className="w-10 h-10 rounded-xl flex items-center justify-center"
-                  style={{
-                    background:
-                      "color-mix(in srgb, var(--bg-card) 50%, transparent)",
-                  }}
-                >
-                  <span className="text-t-secondary">
-                    <Palette size={16} />
-                  </span>
-                </div>
-                <span className="text-[9px] font-medium text-t-muted leading-tight text-center">
-                  Theme
-                </span>
+              {/* Mass Image Upload — same Images icon as Sidebar */}
+              <button onClick={() => { setModal("mass-image");  setMoreOpen(false); }} className={trayBtn} style={{ width: 72 }}>
+                <div className={trayIcon} style={trayIconBg}><span className="text-t-secondary"><Images size={16} /></span></div>
+                <span className={trayLabel}>Images</span>
+              </button>
+
+              {/* R2 Migration — same CloudUpload icon as Sidebar */}
+              <button onClick={() => { setModal("r2");          setMoreOpen(false); }} className={trayBtn} style={{ width: 72 }}>
+                <div className={trayIcon} style={trayIconBg}><span className="text-t-secondary"><CloudUpload size={16} /></span></div>
+                <span className={trayLabel}>R2</span>
+              </button>
+
+              {/* Theme Editor */}
+              <button onClick={() => { setModal("theme");       setMoreOpen(false); }} className={trayBtn} style={{ width: 72 }}>
+                <div className={trayIcon} style={trayIconBg}><span className="text-t-secondary"><Palette size={16} /></span></div>
+                <span className={trayLabel}>Theme</span>
               </button>
             </>
           )}
 
+          {/* Sign out */}
           <button
-            onClick={() => {
-              handleSignOut();
-              setMoreOpen(false);
-            }}
+            onClick={() => { handleSignOut(); setMoreOpen(false); }}
             className="more-item flex flex-col items-center justify-center gap-1 p-2 rounded-xl transition-all duration-200 hover:bg-fail/10 active:scale-90"
             style={{ width: 72 }}
           >
-            <div
-              className="w-10 h-10 rounded-xl flex items-center justify-center"
-              style={{
-                background:
-                  "color-mix(in srgb, var(--color-fail) 12%, transparent)",
-              }}
-            >
-              <span className="text-fail/80">
-                <LogOut size={16} />
-              </span>
+            <div className={trayIcon} style={{ background: "color-mix(in srgb, var(--color-fail) 12%, transparent)" }}>
+              <span className="text-fail/80"><LogOut size={16} /></span>
             </div>
-            <span className="text-[9px] font-medium text-fail/70 leading-tight text-center">
-              Exit
-            </span>
+            <span className="text-[9px] font-medium text-fail/70 leading-tight text-center">Exit</span>
           </button>
         </div>
       </div>
@@ -460,9 +343,7 @@ const MobileNav: React.FC<Props> = ({ activePage, onNavigate }) => {
           return (
             <button
               key={item.id}
-              ref={(el) => {
-                itemRefs.current[i] = el;
-              }}
+              ref={(el) => { itemRefs.current[i] = el; }}
               onClick={(e: React.MouseEvent<HTMLButtonElement>) => {
                 if (isMore) {
                   e.stopPropagation();
@@ -471,11 +352,7 @@ const MobileNav: React.FC<Props> = ({ activePage, onNavigate }) => {
                 }
 
                 if (isModule && modules[0]) {
-                  handleNavPress(
-                    itemRefs.current[i],
-                    "module",
-                    modules[0].name
-                  );
+                  handleNavPress(itemRefs.current[i], "module", modules[0].name);
                   return;
                 }
 
@@ -485,10 +362,8 @@ const MobileNav: React.FC<Props> = ({ activePage, onNavigate }) => {
               style={
                 isActive
                   ? {
-                      background:
-                        "color-mix(in srgb, var(--color-brand) 16%, transparent)",
-                      boxShadow:
-                        "0 0 14px color-mix(in srgb, var(--color-brand) 22%, transparent)",
+                      background: "color-mix(in srgb, var(--color-brand) 16%, transparent)",
+                      boxShadow: "0 0 14px color-mix(in srgb, var(--color-brand) 22%, transparent)",
                     }
                   : undefined
               }
@@ -496,19 +371,14 @@ const MobileNav: React.FC<Props> = ({ activePage, onNavigate }) => {
               {isActive && (
                 <span
                   className="absolute bottom-1 left-1/2 -translate-x-1/2 w-5 h-0.5 rounded-full"
-                  style={{
-                    background: "var(--color-brand)",
-                    boxShadow: "0 0 8px var(--color-brand)",
-                  }}
+                  style={{ background: "var(--color-brand)", boxShadow: "0 0 8px var(--color-brand)" }}
                 />
               )}
 
               <span
                 className="transition-colors duration-200"
                 style={{
-                  color: highlighted
-                    ? "var(--color-brand)"
-                    : "var(--text-secondary)",
+                  color: highlighted ? "var(--color-brand)" : "var(--text-secondary)",
                   opacity: highlighted ? 1 : 0.75,
                 }}
               >
@@ -518,9 +388,7 @@ const MobileNav: React.FC<Props> = ({ activePage, onNavigate }) => {
               <span
                 className="text-[9.5px] font-semibold tracking-wide transition-colors duration-200"
                 style={{
-                  color: highlighted
-                    ? "var(--color-brand)"
-                    : "var(--text-secondary)",
+                  color: highlighted ? "var(--color-brand)" : "var(--text-secondary)",
                   opacity: highlighted ? 1 : 0.65,
                 }}
               >
@@ -531,21 +399,16 @@ const MobileNav: React.FC<Props> = ({ activePage, onNavigate }) => {
         })}
       </nav>
 
-      {activeModal === "export" && <ExportDataModal onClose={close} />}
-      {activeModal === "test-docx" && <ExportTestDocxModal onClose={close} />}
-      {activeModal === "modules" && (
-        <ImportModulesModal onClose={close} onBack={close} />
-      )}
-      {activeModal === "tests" && (
-        <ImportTestsModal onClose={close} onBack={close} />
-      )}
-      {activeModal === "steps-csv" && (
-        <ImportStepsModal onClose={close} onBack={close} />
-      )}
-      {activeModal === "steps-manual" && (
-        <ImportStepsManualModal onClose={close} onBack={close} />
-      )}
-      {activeModal === "theme" && <ThemeEditor onClose={close} />}
+      {/* ── Modals ───────────────────────────────────────────── */}
+      {activeModal === "export"       && <ExportDataModal          onClose={close} />}
+      {activeModal === "test-docx"    && <ExportTestDocxModal       onClose={close} />}
+      {activeModal === "modules"      && <ImportModulesModal        onClose={close} onBack={close} />}
+      {activeModal === "tests"        && <ImportTestsModal          onClose={close} onBack={close} />}
+      {activeModal === "steps-csv"    && <ImportStepsModal          onClose={close} onBack={close} />}
+      {activeModal === "steps-manual" && <ImportStepsManualModal    onClose={close} onBack={close} />}
+      {activeModal === "theme"        && <ThemeEditor               onClose={close} />}
+      {activeModal === "r2"           && <R2MigrationModal          onClose={close} onBack={close} />}
+      {activeModal === "mass-image"   && <MassImageUploadModal      onClose={close} onBack={close} />}
     </>
   );
 };
