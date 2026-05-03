@@ -933,15 +933,29 @@ const TestExecution: React.FC<Props> = ({
   }, [dataInitialized, currentMtId, isVisible]);
 
   // ── 4. Heartbeat — refresh locked_at every 60 s to prevent server expiry ──
+  const heartbeatIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
   useEffect(() => {
+    // Clear any existing interval first
+    if (heartbeatIntervalRef.current) {
+      clearInterval(heartbeatIntervalRef.current);
+      heartbeatIntervalRef.current = null;
+    }
+  
     if (isLockedByOther || isRevisionReadOnly || !lockAcquireAttempted) return;
-    const interval = setInterval(() => {
+  
+    heartbeatIntervalRef.current = setInterval(() => {
       const u = userRef.current;
       if (!u) return;
       heartbeatMutateRef.current({ module_test_id: currentMtId, user_id: u.id });
     }, 90_000);
-    return () => clearInterval(interval);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+  
+    return () => {
+      if (heartbeatIntervalRef.current) {
+        clearInterval(heartbeatIntervalRef.current);
+        heartbeatIntervalRef.current = null;
+      }
+    };
   }, [currentMtId, isLockedByOther, isRevisionReadOnly, lockAcquireAttempted]);
   // ── 5. Realtime subscriptions ─────────────────────────────────────────────
   // Lock changes only — invalidates the lock query so the UI reacts immediately.

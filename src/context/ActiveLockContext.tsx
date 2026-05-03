@@ -23,8 +23,8 @@ import {
   Settings,
 } from "lucide-react";
 
-const HEARTBEAT_MS = 30_000;
-const STALE_MS = 2 * 60 * 1000;
+const HEARTBEAT_MS = 6*30_000;
+const STALE_MS = 5 * 60 * 1000;
 const STORAGE_KEY = "lock-monitor-pos";
 
 interface ActiveLockContextValue {
