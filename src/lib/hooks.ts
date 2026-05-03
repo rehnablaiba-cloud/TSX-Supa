@@ -213,7 +213,7 @@ export function useModuleData(
     queryKey:             QK.moduleCounts(module_name),
     queryFn:              () => fetchModuleData(module_name),
     enabled:              !!module_name,
-    staleTime:            Infinity,  // invalidated explicitly by step mutations
+    staleTime:            STALE.moduleTests,  // invalidated explicitly by step mutations
     gcTime:               GC.moduleTests,
     refetchOnWindowFocus: false,
     ...options,
@@ -321,7 +321,7 @@ export function useTestExecutionData(
     queryKey:            QK.executionContext(module_test_id),
     queryFn:             () => fetchTestExecutionData(module_test_id, module_name),
     enabled:             !!module_test_id && !!module_name,
-    staleTime:           Infinity,   // optimistic after first load — never refetch
+    staleTime:           STALE.execution,   // optimistic after first load — never refetch
     gcTime:              GC.execution,
     refetchOnWindowFocus: false,     // override global — remount must not re-fetch
     ...options,

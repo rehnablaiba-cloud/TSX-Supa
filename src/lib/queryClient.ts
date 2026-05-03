@@ -58,7 +58,7 @@ export const queryClient = new QueryClient({
       // Do NOT refetch on reconnect by default — the Realtime reconnect handler
       // in each component issues targeted invalidations instead (§16 of plan).
       // Prevents a thundering herd of RPCs when the network comes back.
-      refetchOnReconnect: false,
+      refetchOnReconnect: true,
     },
 
     mutations: {
@@ -81,11 +81,11 @@ export const STALE = {
   /** Module list — changes rarely. */
   modules:        5  * 60 * 1000,
   /** Per-module test list — moderate change rate. */
-  moduleTests:    Infinity,
+  moduleTests:    10  * 60 * 1000,
   /** Dashboard summary — backed by materialized view. */
   dashboard:      30 *      1000,
   /** Active execution context — user is actively saving. */
-  execution:      Infinity,
+  execution:      10  * 60 * 1000,
   /** Lock state — Realtime is the source of truth; cache is never stale. */
   locks:          0,
   /** Admin data — always fresh, intent-fired only. */
