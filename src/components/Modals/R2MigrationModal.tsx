@@ -1,631 +1,179 @@
 // src/components/Modals/R2MigrationModal.tsx
+// ─── Adjust these to match your actual Supabase table names ───────────────────
+const TABLE_MODULES        = "modules"
+const TABLE_TESTS          = "tests"
+const TABLE_REVISIONS      = "test_revisions"   // ← update if different
+const TABLE_STEP_ORDERS    = "step_orders"       // ← update if different
+const TABLE_TEST_STEPS     = "test_steps"        // ← update if different
+const REVISION_FK          = "revision_id"       // FK column name in step_orders & test_steps
+// ─────────────────────────────────────────────────────────────────────────────
+
 const WORKER_URL = "https://shrill-thunder-6fdf.rehnab-rk.workers.dev"
 
-import React, { useState, useEffect, useCallback } from "react"
-import {
-  Database, ArrowLeft, CheckCircle, CloudUpload, Eye,
-  Package, FlaskConical, ListOrdered, Layers, AlertCircle,
-  Square, CheckSquare, ChevronDown, ChevronUp, GitBranch,
-  Trash2, RefreshCw, CheckSquare2, MinusSquare,
-  ShieldCheck, Diff, Hash, Rows, Zap, AlertTriangle,
-  ArrowRight, RotateCcw,
-} from "lucide-react"
+import React, { useState } from "react"
+import { Database, ArrowLeft, CheckCircle, CloudUpload, Wifi, WifiOff, AlertCircle } from "lucide-react"
 import ModalShell from "../UI/ModalShell"
 import { supabase } from "../../supabase"
-import { r2InvalidateAll } from "../../lib/r2"
 
-// ── Types ─────────────────────────────────────────────────────────────────────
-type MigrationType =
-  | "modules"
-  | "tests"
-  | "revisions"
-  | "step_orders"
-  | "test_steps"
-  | "delete_step_orders"
-  | "delete_test_steps"
-  | "reader"
-  | "validate"
+type Stage = "connect" | "connecting" | "ready" | "migrating" | "done" | "error"
 
-type Stage =
-  | "selecttype"
-  | "selectrevisions"
-  | "uploading"
-  | "deleting"
-  | "done"
-  | "reader"
-  | "error"
-  | "validating"
-  | "validation_done"
-
-type R2FileStatus = "unknown" | "checking" | "exists" | "missing"
-
-// Validation status after all tiers
-type SyncStatus =
-  | "unknown"
-  | "checking_r2"
-  | "checking_db"
-  | "in_sync"
-  | "count_mismatch"
-  | "id_mismatch"
-  | "missing_r2"
-  | "error"
-
-interface ValidationEntry {
-  key:      string
-  label:    string
-  table:    string
-  pkField:  string
-  icon:     React.ReactNode
-  // Tier 0: R2 data (always fetched upfront)
-  r2Data:   Record<string, unknown>[] | null
-  r2Count:  number | null
-  r2Ids:    Set<string> | null
-  // Tier 1 / 1.5: Supabase lightweight
-  dbCount:  number | null
-  dbIds:    Set<string> | null
-  // Tier 2: on-demand deep diff
-  diff:     { added: string[]; removed: string[]; modified: string[] } | null
-  tier2:    "idle" | "running" | "done" | "error"
-  // Overall
-  status:   SyncStatus
-  error?:   string
-}
-
-interface TestRevision {
-  id:              string
-  revision:        string
-  tests_serial_no: number
-  step_order:      string[] | null
-  status:          string
-}
-
-interface ProgressItem {
+interface MigrationStep {
+  id:     string
   label:  string
+  r2Key?: string
   status: "pending" | "running" | "done" | "error"
   count?: number
   error?: string
 }
 
-// ── Validation targets ────────────────────────────────────────────────────────
-const VALIDATION_TARGETS: Pick<ValidationEntry, "key" | "label" | "table" | "pkField" | "icon">[] = [
-  { key: "modules/all.json",   label: "Modules",   table: "modules",        pkField: "name", icon: <Package size={15} /> },
-  { key: "tests/all.json",     label: "Tests",     table: "tests",          pkField: "name", icon: <FlaskConical size={15} /> },
-  { key: "revisions/all.json", label: "Revisions", table: "test_revisions", pkField: "id", icon: <GitBranch size={15} /> },
-]
+interface Props { onClose: () => void; onBack: () => void }
 
-// ── R2 helpers ────────────────────────────────────────────────────────────────
-async function getToken() {
-  const { data: { session } } = await supabase.auth.getSession()
-  if (!session?.access_token) throw new Error("Not logged in")
-  return session.access_token
-}
-
+// ── R2 helper ──────────────────────────────────────────────────────────────────
 async function r2Write(token: string, key: string, data: unknown) {
   const res = await fetch(WORKER_URL, {
     method: "POST",
-    headers: { "Authorization": `Bearer ${token}`, "Content-Type": "application/json" },
+    headers: {
+      "Authorization": `Bearer ${token}`,
+      "Content-Type":  "application/json",
+    },
     body: JSON.stringify({ type: "write", key, data }),
   })
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}))
-    throw new Error((err as any).error || `Worker ${res.status}`)
-  }
-}
-
-async function r2Read(token: string, key: string) {
-  const res = await fetch(WORKER_URL, {
-    method: "POST",
-    headers: { "Authorization": `Bearer ${token}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ type: "read", key }),
-  })
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}))
-    throw new Error((err as any).error || `Worker ${res.status}`)
-  }
+  if (!res.ok) throw new Error(`Worker error ${res.status}`)
   return res.json()
 }
 
-async function r2Delete(token: string, key: string) {
-  const res = await fetch(WORKER_URL, {
-    method: "POST",
-    headers: { "Authorization": `Bearer ${token}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ type: "delete", key }),
-  })
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}))
-    throw new Error((err as any).error || `Worker ${res.status}`)
-  }
+async function r2Ping(token: string) {
+  await r2Write(token, "_ping/test.json", { ok: true, ts: Date.now() })
 }
 
-async function r2Check(token: string, key: string): Promise<boolean> {
-  try { await r2Read(token, key); return true } catch { return false }
-}
-
-// ── Sub-components ────────────────────────────────────────────────────────────
-function ProgressRow({ item }: { item: ProgressItem }) {
-  return (
-    <div className="flex items-center gap-3 px-3 py-2.5 text-sm">
-      {item.status === "pending" && <div className="w-4 h-4 rounded-full border-2 border-(--border-color) shrink-0" />}
-      {item.status === "running" && <div className="w-4 h-4 border-2 border-c-brand border-t-transparent rounded-full animate-spin shrink-0" />}
-      {item.status === "done"    && <CheckCircle size={16} className="text-green-400 shrink-0" />}
-      {item.status === "error"   && <AlertCircle size={16} className="text-red-400 shrink-0" />}
-      <span className={
-        item.status === "running" ? "text-c-brand font-medium flex-1" :
-        item.status === "done"    ? "text-t-primary flex-1" :
-        item.status === "error"   ? "text-red-400 flex-1" :
-        "text-t-muted flex-1"
-      }>
-        {item.label}
-        {item.error && <span className="ml-1 text-xs">— {item.error}</span>}
-      </span>
-      {item.status === "done" && item.count !== undefined && (
-        <span className="text-xs text-t-muted">{item.count} rows</span>
-      )}
-    </div>
-  )
-}
-
-function R2StatusBadge({ status }: { status: R2FileStatus }) {
-  if (status === "unknown")   return null
-  if (status === "checking")  return (
-    <span className="flex items-center gap-1 text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-c-brand/10 text-c-brand shrink-0">
-      <div className="w-2 h-2 border border-c-brand border-t-transparent rounded-full animate-spin" />
-      checking
-    </span>
-  )
-  if (status === "exists") return (
-    <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-green-500/10 text-green-400 border border-green-500/20 shrink-0">
-      ✓ in R2
-    </span>
-  )
-  return (
-    <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-yellow-500/10 text-yellow-400 border border-yellow-500/20 shrink-0">
-      ✗ missing
-    </span>
-  )
-}
-
-// ── Validation Card ───────────────────────────────────────────────────────────
-function ValidationCard({
-  entry,
-  onDeepDiff,
-  onSyncNow,
-}: {
-  entry:       ValidationEntry
-  onDeepDiff:  () => void
-  onSyncNow:   () => void
-}) {
-  const [expanded, setExpanded] = useState(false)
-
-  const statusConfig: Record<SyncStatus, {
-    badge:    string
-    badgeBg:  string
-    dot:      string
-    label:    string
-  }> = {
-    unknown:         { badge: "text-t-muted",    badgeBg: "bg-bg-card",          dot: "bg-t-muted",    label: "Not checked" },
-    checking_r2:     { badge: "text-c-brand",    badgeBg: "bg-c-brand/10",       dot: "bg-c-brand",    label: "Fetching R2…" },
-    checking_db:     { badge: "text-c-brand",    badgeBg: "bg-c-brand/10",       dot: "bg-c-brand",    label: "Querying DB…" },
-    in_sync:         { badge: "text-green-400",  badgeBg: "bg-green-500/10",     dot: "bg-green-400",  label: "In sync" },
-    count_mismatch:  { badge: "text-yellow-400", badgeBg: "bg-yellow-500/10",    dot: "bg-yellow-400", label: "Count drift" },
-    id_mismatch:     { badge: "text-orange-400", badgeBg: "bg-orange-500/10",    dot: "bg-orange-400", label: "ID mismatch" },
-    missing_r2:      { badge: "text-red-400",    badgeBg: "bg-red-500/10",       dot: "bg-red-400",    label: "Missing in R2" },
-    error:           { badge: "text-red-400",    badgeBg: "bg-red-500/10",       dot: "bg-red-400",    label: "Error" },
-  }
-
-  const cfg       = statusConfig[entry.status]
-  const isChecking = entry.status === "checking_r2" || entry.status === "checking_db"
-  const isDrifted  = entry.status === "count_mismatch" || entry.status === "id_mismatch"
-  const isMissing  = entry.status === "missing_r2"
-  const isInSync   = entry.status === "in_sync"
-
-  return (
-    <div className={`rounded-xl border overflow-hidden transition-all
-      ${isMissing  ? "border-red-500/20 bg-red-500/5" :
-        isDrifted  ? "border-yellow-500/20 bg-yellow-500/5" :
-        isInSync   ? "border-green-500/20 bg-green-500/5" :
-        "border-(--border-color) bg-bg-card"}`}
-    >
-      {/* Header row */}
-      <div className="flex items-center gap-3 px-3 py-2.5">
-        <span className="text-t-muted shrink-0">{entry.icon}</span>
-
-        <span className="text-sm font-semibold text-t-primary flex-1">{entry.label}</span>
-
-        {/* Tier progress pills */}
-        <div className="flex items-center gap-1 text-[10px] font-mono">
-          {/* R2 count pill */}
-          {entry.r2Count !== null ? (
-            <span className="px-1.5 py-0.5 rounded-md bg-c-brand/10 text-c-brand border border-c-brand/20">
-              R2 {entry.r2Count}
-            </span>
-          ) : isChecking && entry.status === "checking_r2" ? (
-            <span className="px-1.5 py-0.5 rounded-md bg-c-brand/10 text-c-brand border border-c-brand/20 flex items-center gap-1">
-              <div className="w-2 h-2 border border-c-brand border-t-transparent rounded-full animate-spin" />
-              R2
-            </span>
-          ) : null}
-
-          {/* DB count pill */}
-          {entry.dbCount !== null ? (
-            <span className={`px-1.5 py-0.5 rounded-md border
-              ${entry.dbCount !== entry.r2Count
-                ? "bg-yellow-500/10 text-yellow-400 border-yellow-500/20"
-                : "bg-bg-base text-t-muted border-(--border-color)"}`}>
-              DB {entry.dbCount}
-            </span>
-          ) : isChecking && entry.status === "checking_db" ? (
-            <span className="px-1.5 py-0.5 rounded-md bg-bg-base text-t-muted border-(--border-color) flex items-center gap-1">
-              <div className="w-2 h-2 border border-t-muted border-t-transparent rounded-full animate-spin" />
-              DB
-            </span>
-          ) : null}
-        </div>
-
-        {/* Status badge */}
-        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full shrink-0 ${cfg.badge} ${cfg.badgeBg}`}>
-          {isChecking
-            ? <span className="flex items-center gap-1">
-                <div className={`w-2 h-2 border ${entry.status === "checking_r2" ? "border-c-brand" : "border-t-muted"} border-t-transparent rounded-full animate-spin`} />
-                {cfg.label}
-              </span>
-            : cfg.label
-          }
-        </span>
-      </div>
-
-      {/* Detail / action row — only when not checking */}
-      {!isChecking && entry.status !== "unknown" && (
-        <div className="px-3 pb-2.5 flex flex-wrap items-center gap-2 border-t border-(--border-color)/50">
-
-          {/* In sync details */}
-          {isInSync && (
-            <span className="text-xs text-t-muted flex items-center gap-1 mr-auto">
-              <Hash size={10} /> {entry.r2Count} rows · all IDs match
-            </span>
-          )}
-
-          {/* Count mismatch detail */}
-          {entry.status === "count_mismatch" && entry.r2Count !== null && entry.dbCount !== null && (
-            <span className="text-xs text-yellow-400 flex items-center gap-1 mr-auto">
-              <AlertTriangle size={10} />
-              {entry.dbCount > entry.r2Count
-                ? `DB has ${entry.dbCount - entry.r2Count} more rows than R2`
-                : `R2 has ${entry.r2Count - entry.dbCount} stale rows`}
-            </span>
-          )}
-
-          {/* ID mismatch detail */}
-          {entry.status === "id_mismatch" && (
-            <span className="text-xs text-orange-400 flex items-center gap-1 mr-auto">
-              <AlertTriangle size={10} /> Same count but IDs differ — rows replaced or swapped
-            </span>
-          )}
-
-          {/* Missing in R2 */}
-          {isMissing && (
-            <span className="text-xs text-red-400 flex items-center gap-1 mr-auto">
-              <AlertCircle size={10} /> Key not found in R2
-            </span>
-          )}
-
-          {/* Error */}
-          {entry.status === "error" && (
-            <span className="text-xs text-red-400 flex items-center gap-1 mr-auto truncate">
-              <AlertCircle size={10} /> {entry.error || "Unknown error"}
-            </span>
-          )}
-
-          {/* Deep diff section */}
-          {(isInSync || isDrifted) && entry.r2Data && (
-            <>
-              {entry.tier2 === "idle" && (
-                <button
-                  onClick={onDeepDiff}
-                  className="flex items-center gap-1 text-[10px] font-semibold px-2 py-1 rounded-lg
-                    bg-bg-base hover:bg-bg-card text-t-muted hover:text-t-primary border border-(--border-color) transition-colors"
-                >
-                  <Diff size={10} /> Deep diff
-                </button>
-              )}
-
-              {entry.tier2 === "running" && (
-                <span className="flex items-center gap-1 text-[10px] text-c-brand">
-                  <div className="w-3 h-3 border border-c-brand border-t-transparent rounded-full animate-spin" />
-                  Comparing rows…
-                </span>
-              )}
-
-              {entry.tier2 === "done" && entry.diff && (
-                <div className="w-full mt-1">
-                  <button
-                    onClick={() => setExpanded(e => !e)}
-                    className="flex items-center gap-1.5 text-[10px] text-t-muted hover:text-t-primary transition-colors"
-                  >
-                    {expanded ? <ChevronUp size={10} /> : <ChevronDown size={10} />}
-                    Deep diff:
-                    {entry.diff.added.length > 0    && <span className="text-green-400 font-bold">+{entry.diff.added.length} added</span>}
-                    {entry.diff.removed.length > 0  && <span className="text-red-400 font-bold">−{entry.diff.removed.length} removed</span>}
-                    {entry.diff.modified.length > 0 && <span className="text-yellow-400 font-bold">~{entry.diff.modified.length} modified</span>}
-                    {entry.diff.added.length === 0 && entry.diff.removed.length === 0 && entry.diff.modified.length === 0 && (
-                      <span className="text-green-400 font-bold">all rows identical</span>
-                    )}
-                  </button>
-
-                  {expanded && (
-                    <div className="mt-1.5 flex flex-col gap-1 max-h-32 overflow-y-auto">
-                      {entry.diff.added.map(id => (
-                        <div key={id} className="flex items-center gap-1.5 text-[10px] font-mono text-green-400 bg-green-500/5 px-2 py-1 rounded-lg">
-                          <span className="font-bold">+</span> {id} <span className="text-t-muted ml-auto">in DB, not in R2</span>
-                        </div>
-                      ))}
-                      {entry.diff.removed.map(id => (
-                        <div key={id} className="flex items-center gap-1.5 text-[10px] font-mono text-red-400 bg-red-500/5 px-2 py-1 rounded-lg">
-                          <span className="font-bold">−</span> {id} <span className="text-t-muted ml-auto">in R2, not in DB</span>
-                        </div>
-                      ))}
-                      {entry.diff.modified.map(id => (
-                        <div key={id} className="flex items-center gap-1.5 text-[10px] font-mono text-yellow-400 bg-yellow-500/5 px-2 py-1 rounded-lg">
-                          <span className="font-bold">~</span> {id} <span className="text-t-muted ml-auto">values differ</span>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              )}
-            </>
-          )}
-
-          {/* Sync now button — for drifted or missing */}
-          {(isDrifted || isMissing) && (
-            <button
-              onClick={onSyncNow}
-              className="flex items-center gap-1 text-[10px] font-bold px-2.5 py-1 rounded-lg ml-auto
-                bg-c-brand/10 hover:bg-c-brand/20 text-c-brand border border-c-brand/20 transition-colors"
-            >
-              <CloudUpload size={10} /> Upload to sync
-              <ArrowRight size={9} />
-            </button>
-          )}
-        </div>
-      )}
-    </div>
-  )
-}
-
-// ── Migration type definitions ────────────────────────────────────────────────
-const TYPE_META: {
-  id:       MigrationType
-  label:    string
-  icon:     React.ReactNode
-  desc:     string
-  flow:     "direct" | "revision" | "delete_revision" | "reader" | "validate"
-  danger?:  boolean
-  group:    "sync" | "manage" | "util"
-}[] = [
-  {
-    id:    "validate",
-    label: "Validate",
-    icon:  <ShieldCheck size={18} />,
-    desc:  "Compare R2 snapshots vs live Supabase — tiered, zero-waste checks",
-    flow:  "validate",
-    group: "sync",
-  },
-  {
-    id:    "modules",
-    label: "Modules",
-    icon:  <Package size={18} />,
-    desc:  "Upload all modules → modules/all.json",
-    flow:  "direct",
-    group: "sync",
-  },
-  {
-    id:    "tests",
-    label: "Tests",
-    icon:  <FlaskConical size={18} />,
-    desc:  "Upload all tests → tests/all.json",
-    flow:  "direct",
-    group: "sync",
-  },
-  {
-    id:    "revisions",
-    label: "Revisions",
-    icon:  <GitBranch size={18} />,
-    desc:  "Upload all test revisions → revisions/all.json",
-    flow:  "direct",
-    group: "sync",
-  },
-  {
-    id:    "step_orders",
-    label: "Step Orders",
-    icon:  <ListOrdered size={18} />,
-    desc:  "Upload step_order per revision → step_orders/{id}.json",
-    flow:  "revision",
-    group: "manage",
-  },
-  {
-    id:    "test_steps",
-    label: "Test Steps",
-    icon:  <Layers size={18} />,
-    desc:  "Upload test_steps per revision → test_steps/{id}.json",
-    flow:  "revision",
-    group: "manage",
-  },
-  {
-    id:     "delete_step_orders",
-    label:  "Delete Step Orders",
-    icon:   <Trash2 size={18} />,
-    desc:   "Delete step_orders/{id}.json files from R2",
-    flow:   "delete_revision",
-    danger: true,
-    group:  "util",
-  },
-  {
-    id:     "delete_test_steps",
-    label:  "Delete Test Steps",
-    icon:   <Trash2 size={18} />,
-    desc:   "Delete test_steps/{id}.json files from R2",
-    flow:   "delete_revision",
-    danger: true,
-    group:  "util",
-  },
-  {
-    id:    "reader",
-    label: "Read from R2",
-    icon:  <Eye size={18} />,
-    desc:  "Fetch any R2 key and inspect its JSON",
-    flow:  "reader",
-    group: "util",
-  },
-]
-
-// ── Component ─────────────────────────────────────────────────────────────────
-interface Props { onClose: () => void; onBack: () => void }
-
+// ── Component ──────────────────────────────────────────────────────────────────
 const R2MigrationModal: React.FC<Props> = ({ onClose, onBack }) => {
-  const [stage,              setStage]              = useState<Stage>("selecttype")
-  const [migrType,           setMigrType]           = useState<MigrationType | null>(null)
-  const [revisions,          setRevisions]          = useState<TestRevision[]>([])
-  const [selected,           setSelected]           = useState<Set<string>>(new Set())
-  const [revLoading,         setRevLoading]         = useState(false)
-  const [progress,           setProgress]           = useState<ProgressItem[]>([])
-  const [summary,            setSummary]            = useState<{ label: string; count: number }[]>([])
-  const [error,              setError]              = useState<string | null>(null)
-  const [readerKey,          setReaderKey]          = useState("")
-  const [readerData,         setReaderData]         = useState<unknown>(null)
-  const [readerLoading,      setReaderLoading]      = useState(false)
-  const [readerError,        setReaderError]        = useState<string | null>(null)
-  const [showFull,           setShowFull]           = useState(false)
-  const [r2Status,           setR2Status]           = useState<Map<string, R2FileStatus>>(new Map())
-  const [checkingAll,        setCheckingAll]        = useState(false)
-  const [validationEntries,  setValidationEntries]  = useState<ValidationEntry[]>([])
-  const [validationError,    setValidationError]    = useState<string | null>(null)
+  const [stage,   setStage]   = useState<Stage>("connect")
+  const [token,   setToken]   = useState<string>("")
+  const [steps,   setSteps]   = useState<MigrationStep[]>([])
+  const [error,   setError]   = useState<string | null>(null)
+  const [current, setCurrent] = useState<string>("")   // currently uploading label
 
   const subtitle: Record<Stage, string> = {
-    selecttype:       "Choose operation",
-    selectrevisions:  "Select revisions",
-    uploading:        "Uploading…",
-    deleting:         "Deleting…",
-    done:             "Done",
-    reader:           "R2 Reader",
-    error:            "Something went wrong",
-    validating:       "Validating…",
-    validation_done:  "Validation complete",
+    connect:    "Test connection",
+    connecting: "Connecting…",
+    ready:      "Ready to migrate",
+    migrating:  current || "Uploading…",
+    done:       "Migration complete",
+    error:      "Something went wrong",
   }
 
-  const r2Prefix = (mt: MigrationType | null): string => {
-    if (mt === "step_orders" || mt === "delete_step_orders") return "step_orders"
-    if (mt === "test_steps"  || mt === "delete_test_steps")  return "test_steps"
-    return ""
-  }
-
-  // ── Load revisions ──────────────────────────────────────────────────────────
-  useEffect(() => {
-    if (stage !== "selectrevisions") return
-    setRevLoading(true)
-    setSelected(new Set())
-    setR2Status(new Map())
-    supabase
-      .from("test_revisions")
-      .select("id, revision, tests_serial_no, step_order, status")
-      .order("tests_serial_no")
-      .then(({ data, error: e }) => {
-        if (e) setError(e.message)
-        else setRevisions((data ?? []) as TestRevision[])
-        setRevLoading(false)
-      })
-  }, [stage])
-
-  const patch = (label: string, changes: Partial<ProgressItem>) =>
-    setProgress(prev => prev.map(p => p.label === label ? { ...p, ...changes } : p))
-
-  const patchEntry = (idx: number, changes: Partial<ValidationEntry>) =>
-    setValidationEntries(prev => prev.map((e, i) => i === idx ? { ...e, ...changes } : e))
-
-  // ── R2 check helpers ────────────────────────────────────────────────────────
-  const checkOne = useCallback(async (rev: TestRevision) => {
-    const prefix = r2Prefix(migrType)
-    if (!prefix) return
-    setR2Status(prev => new Map(prev).set(rev.id, "checking"))
-    try {
-      const token = await getToken()
-      const exists = await r2Check(token, `${prefix}/${rev.id}.json`)
-      setR2Status(prev => new Map(prev).set(rev.id, exists ? "exists" : "missing"))
-    } catch {
-      setR2Status(prev => new Map(prev).set(rev.id, "missing"))
-    }
-  }, [migrType])
-
-  const checkAll = useCallback(async () => {
-    if (!revisions.length) return
-    setCheckingAll(true)
-    const prefix = r2Prefix(migrType)
-    if (!prefix) { setCheckingAll(false); return }
-    setR2Status(new Map(revisions.map(r => [r.id, "checking"])))
-    try {
-      const token = await getToken()
-      await Promise.all(revisions.map(async (rev) => {
-        const exists = await r2Check(token, `${prefix}/${rev.id}.json`)
-        setR2Status(prev => new Map(prev).set(rev.id, exists ? "exists" : "missing"))
-      }))
-    } catch {
-      setR2Status(prev => {
-        const next = new Map(prev)
-        revisions.forEach(r => { if (next.get(r.id) === "checking") next.set(r.id, "missing") })
-        return next
-      })
-    } finally {
-      setCheckingAll(false)
-    }
-  }, [revisions, migrType])
-
-  const selectMissing  = useCallback(() => setSelected(new Set(revisions.filter(r => r2Status.get(r.id) === "missing").map(r => r.id))),  [revisions, r2Status])
-  const selectExisting = useCallback(() => setSelected(new Set(revisions.filter(r => r2Status.get(r.id) === "exists").map(r => r.id))),   [revisions, r2Status])
-
-  // ── Type select ──────────────────────────────────────────────────────────────
-  const handleTypeSelect = (t: MigrationType) => {
-    setMigrType(t)
+  // ── Step 1: Connect ──────────────────────────────────────────────────────────
+  const handleConnect = async () => {
+    setStage("connecting")
     setError(null)
-    const meta = TYPE_META.find(m => m.id === t)
-    if (meta?.flow === "reader")          { setStage("reader");           return }
-    if (meta?.flow === "validate")        { handleValidate();             return }
-    if (meta?.flow === "revision")        { setStage("selectrevisions");  return }
-    if (meta?.flow === "delete_revision") { setStage("selectrevisions");  return }
-    handleDirectUpload(t)
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session?.access_token) throw new Error("Not logged in to Supabase")
+      await r2Ping(session.access_token)
+      setToken(session.access_token)
+
+      // Build step list (revision-level steps are added dynamically during migration)
+      setSteps([
+        { id: "modules",   label: "Modules",           r2Key: "modules/all.json",        status: "pending" },
+        { id: "tests",     label: "Tests",              r2Key: "tests/all.json",           status: "pending" },
+        { id: "revisions", label: "Test Revisions",     r2Key: "test_revisions/all.json",  status: "pending" },
+        { id: "sorders",   label: "Step Orders",        r2Key: "step_orders/{rev}.json",   status: "pending" },
+        { id: "tsteps",    label: "Test Steps",         r2Key: "test_steps/{rev}.json",    status: "pending" },
+      ])
+      setStage("ready")
+    } catch (e: any) {
+      setError(e.message)
+      setStage("error")
+    }
   }
 
-  // ── Direct upload ──────────────────────────────────────────────────────────
-  const handleDirectUpload = async (t: MigrationType) => {
-    setStage("uploading")
-    const labelMap: Partial<Record<MigrationType, string>> = {
-      modules: "Modules", tests: "Tests", revisions: "Revisions",
-    }
-    const label = labelMap[t] ?? t
-    setProgress([{ label, status: "running" }])
-    const done: { label: string; count: number }[] = []
+  // ── Step helper ──────────────────────────────────────────────────────────────
+  const setStepStatus = (
+    id: string,
+    status: MigrationStep["status"],
+    extras?: Partial<MigrationStep>
+  ) => {
+    setSteps(prev =>
+      prev.map(s => s.id === id ? { ...s, status, ...extras } : s)
+    )
+  }
+
+  // ── Step 2: Migrate ──────────────────────────────────────────────────────────
+  const handleMigrate = async () => {
+    setStage("migrating")
+    setError(null)
+
     try {
-      const token = await getToken()
-      if (t === "modules") {
-        const { data, error: e } = await supabase.from("modules").select("*")
-        if (e) throw new Error(e.message)
-        await r2Write(token, "modules/all.json", data)
-        patch(label, { status: "done", count: data?.length ?? 0 })
-        done.push({ label, count: data?.length ?? 0 })
-      } else if (t === "tests") {
-        const { data, error: e } = await supabase.from("tests").select("*")
-        if (e) throw new Error(e.message)
-        await r2Write(token, "tests/all.json", data)
-        patch(label, { status: "done", count: data?.length ?? 0 })
-        done.push({ label, count: data?.length ?? 0 })
-      } else if (t === "revisions") {
-        const { data, error: e } = await supabase.from("test_revisions").select("*").order("tests_serial_no")
-        if (e) throw new Error(e.message)
-        await r2Write(token, "revisions/all.json", data)
-        patch(label, { status: "done", count: data?.length ?? 0 })
-        done.push({ label, count: data?.length ?? 0 })
+      // ── Modules ──
+      setCurrent("Uploading Modules…")
+      setStepStatus("modules", "running")
+      const { data: modules, error: modErr } = await supabase.from(TABLE_MODULES).select("*")
+      if (modErr) throw new Error(`Modules: ${modErr.message}`)
+      await r2Write(token, "modules/all.json", modules)
+      setStepStatus("modules", "done", { count: modules?.length ?? 0 })
+
+      // ── Tests ──
+      setCurrent("Uploading Tests…")
+      setStepStatus("tests", "running")
+      const { data: tests, error: testErr } = await supabase.from(TABLE_TESTS).select("*")
+      if (testErr) throw new Error(`Tests: ${testErr.message}`)
+      await r2Write(token, "tests/all.json", tests)
+      setStepStatus("tests", "done", { count: tests?.length ?? 0 })
+
+      // ── Test Revisions (without step_order column) ──
+      setCurrent("Uploading Test Revisions…")
+      setStepStatus("revisions", "running")
+      const { data: revisions, error: revErr } = await supabase
+        .from(TABLE_REVISIONS)
+        .select("*, step_order:false")   // exclude step_order if it's a column
+        .order("id")
+      if (revErr) {
+        // Fallback: fetch all columns, strip step_order client-side
+        const { data: revAll, error: revErr2 } = await supabase.from(TABLE_REVISIONS).select("*")
+        if (revErr2) throw new Error(`Revisions: ${revErr2.message}`)
+        const cleaned = revAll?.map(({ step_order, ...rest }) => rest) ?? []
+        await r2Write(token, "test_revisions/all.json", cleaned)
+        setStepStatus("revisions", "done", { count: cleaned.length })
+      } else {
+        await r2Write(token, "test_revisions/all.json", revisions)
+        setStepStatus("revisions", "done", { count: revisions?.length ?? 0 })
       }
-      r2InvalidateAll()
-      setSummary(done)
+
+      const revIds: string[] = (revisions ?? []).map((r: any) => r.id)
+
+      // ── Step Orders (one file per revision) ──
+      setCurrent("Uploading Step Orders…")
+      setStepStatus("sorders", "running")
+      let sorderCount = 0
+      for (const revId of revIds) {
+        const { data: so, error: soErr } = await supabase
+          .from(TABLE_STEP_ORDERS)
+          .select("*")
+          .eq(REVISION_FK, revId)
+          .order("serial_no", { ascending: true })
+        if (soErr) throw new Error(`StepOrders[${revId}]: ${soErr.message}`)
+        await r2Write(token, `step_orders/${revId}.json`, so)
+        sorderCount += so?.length ?? 0
+      }
+      setStepStatus("sorders", "done", { count: sorderCount, label: `Step Orders (${revIds.length} revisions)` })
+
+      // ── Test Steps (one file per revision) ──
+      setCurrent("Uploading Test Steps…")
+      setStepStatus("tsteps", "running")
+      let tstepCount = 0
+      for (const revId of revIds) {
+        const { data: ts, error: tsErr } = await supabase
+          .from(TABLE_TEST_STEPS)
+          .select("*")
+          .eq(REVISION_FK, revId)
+          .order("serial_no", { ascending: true })
+        if (tsErr) throw new Error(`TestSteps[${revId}]: ${tsErr.message}`)
+        await r2Write(token, `test_steps/${revId}.json`, ts)
+        tstepCount += ts?.length ?? 0
+      }
+      setStepStatus("tsteps", "done", { count: tstepCount, label: `Test Steps (${revIds.length} revisions)` })
+
       setStage("done")
     } catch (e: any) {
       setError(e.message)
@@ -633,265 +181,12 @@ const R2MigrationModal: React.FC<Props> = ({ onClose, onBack }) => {
     }
   }
 
-  // ── Revision upload ────────────────────────────────────────────────────────
-  const handleRevisionUpload = async () => {
-    const chosenRevs = revisions.filter(r => selected.has(r.id))
-    if (!chosenRevs.length) return
-    setStage("uploading")
-    const label = migrType === "step_orders" ? "Step Orders" : "Test Steps"
-    setProgress(chosenRevs.map(r => ({ label: `${label} — ${r.revision || r.id.slice(0, 8)}`, status: "pending" as const })))
-    const done: { label: string; count: number }[] = []
-    let token: string
-    try { token = await getToken() } catch (e: any) { setError(e.message); setStage("error"); return }
-
-    for (const rev of chosenRevs) {
-      const rowLabel = `${label} — ${rev.revision || rev.id.slice(0, 8)}`
-      patch(rowLabel, { status: "running" })
-      try {
-        if (migrType === "step_orders") {
-          let order: string[] = []
-          if (rev.step_order && rev.step_order.length > 0) {
-            order = rev.step_order
-          } else {
-            const { data: steps, error: se } = await supabase.from("test_steps").select("id").eq("tests_serial_no", rev.tests_serial_no).order("serial_no")
-            if (se) throw new Error(se.message)
-            order = (steps ?? []).map((s: any) => s.id)
-          }
-          await r2Write(token, `step_orders/${rev.id}.json`, order)
-          patch(rowLabel, { status: "done", count: order.length })
-          done.push({ label: rowLabel, count: order.length })
-        } else {
-          const { data: steps, error: se } = await supabase.from("test_steps").select("*").eq("tests_serial_no", rev.tests_serial_no).order("serial_no")
-          if (se) throw new Error(se.message)
-          await r2Write(token, `test_steps/${rev.id}.json`, steps)
-          patch(rowLabel, { status: "done", count: steps?.length ?? 0 })
-          done.push({ label: rowLabel, count: steps?.length ?? 0 })
-        }
-      } catch (e: any) {
-        patch(rowLabel, { status: "error", error: e.message })
-      }
-    }
-    r2InvalidateAll()
-    setSummary(done)
-    setStage("done")
-  }
-
-  // ── Revision delete ────────────────────────────────────────────────────────
-  const handleRevisionDelete = async () => {
-    const chosenRevs = revisions.filter(r => selected.has(r.id))
-    if (!chosenRevs.length) return
-    setStage("deleting")
-    const prefix = r2Prefix(migrType)
-    const label  = migrType === "delete_step_orders" ? "Delete Step Order" : "Delete Test Steps"
-    setProgress(chosenRevs.map(r => ({ label: `${label} — ${r.revision || r.id.slice(0, 8)}`, status: "pending" as const })))
-    const done: { label: string; count: number }[] = []
-    let token: string
-    try { token = await getToken() } catch (e: any) { setError(e.message); setStage("error"); return }
-
-    for (const rev of chosenRevs) {
-      const rowLabel = `${label} — ${rev.revision || rev.id.slice(0, 8)}`
-      patch(rowLabel, { status: "running" })
-      try {
-        await r2Delete(token, `${prefix}/${rev.id}.json`)
-        patch(rowLabel, { status: "done", count: 0 })
-        done.push({ label: rowLabel, count: 0 })
-      } catch (e: any) {
-        patch(rowLabel, { status: "error", error: e.message })
-      }
-    }
-    r2InvalidateAll()
-    setSummary(done)
-    setStage("done")
-  }
-
-  // ── 3-Tier Validation ──────────────────────────────────────────────────────
-  //
-  //  Tier 0  → R2 full fetch (always, all in parallel — single GET per key)
-  //  Tier 1  → Supabase COUNT only (HEAD request, zero rows transferred)
-  //            If count mismatches → mark "count_mismatch", stop DB calls here
-  //  Tier 1.5→ Supabase PKs only (one column, minimal payload)
-  //            Compare ID sets → detect replaced/swapped rows
-  //  Tier 2  → Full Supabase SELECT * + JSON.stringify row comparison
-  //            Only triggered on-demand by user clicking "Deep diff"
-  //
-  const handleValidate = async () => {
-    setStage("validating")
-    setValidationError(null)
-
-    const entries: ValidationEntry[] = VALIDATION_TARGETS.map(t => ({
-      ...t,
-      r2Data:  null,
-      r2Count: null,
-      r2Ids:   null,
-      dbCount: null,
-      dbIds:   null,
-      diff:    null,
-      tier2:   "idle",
-      status:  "checking_r2",
-    }))
-    setValidationEntries([...entries])
-
-    let token: string
-    try { token = await getToken() }
-    catch (e: any) { setValidationError(e.message); setStage("error"); return }
-
-    // ── Tier 0: Fetch all R2 simultaneously ──────────────────────────────────
-    await Promise.all(entries.map(async (_, i) => {
-      try {
-        const data = await r2Read(token, entries[i].key)
-        const arr  = Array.isArray(data) ? data as Record<string, unknown>[] : []
-        entries[i] = {
-          ...entries[i],
-          r2Data:  arr,
-          r2Count: arr.length,
-          r2Ids:   new Set(arr.map(r => String(r[entries[i].pkField]))),
-          status:  "checking_db",
-        }
-      } catch {
-        entries[i] = { ...entries[i], status: "missing_r2" }
-      }
-      setValidationEntries([...entries])
-    }))
-
-    // ── Tier 1: DB count only (HEAD, zero rows) ──────────────────────────────
-    await Promise.all(entries.map(async (_, i) => {
-      if (entries[i].status !== "checking_db") return
-      try {
-        const { count, error: ce } = await supabase
-          .from(entries[i].table)
-          .select("*", { count: "exact", head: true })
-        if (ce) throw new Error(ce.message)
-
-        entries[i] = { ...entries[i], dbCount: count ?? 0 }
-
-        if ((count ?? 0) !== entries[i].r2Count) {
-          // Count mismatch → no need for ID fetch, already know it's drifted
-          entries[i] = { ...entries[i], status: "count_mismatch" }
-          setValidationEntries([...entries])
-          return
-        }
-
-        // ── Tier 1.5: Fetch PKs only ─────────────────────────────────────────
-        const { data: pkRows, error: pe } = await supabase
-          .from(entries[i].table)
-          .select(entries[i].pkField)
-        if (pe) throw new Error(pe.message)
-
-        const dbIds = new Set((pkRows ?? []).map((r: any) => String(r[entries[i].pkField])))
-        entries[i] = { ...entries[i], dbIds }
-
-        const r2Ids       = entries[i].r2Ids!
-        const extraInDb   = [...dbIds].filter(id => !r2Ids.has(id))
-        const missingInDb = [...r2Ids].filter(id => !dbIds.has(id))
-
-        entries[i] = {
-          ...entries[i],
-          status: (extraInDb.length > 0 || missingInDb.length > 0) ? "id_mismatch" : "in_sync",
-        }
-      } catch (e: any) {
-        entries[i] = { ...entries[i], status: "error", error: e.message }
-      }
-      setValidationEntries([...entries])
-    }))
-
-    setStage("validation_done")
-  }
-
-  // ── Tier 2: Full row comparison (on demand) ────────────────────────────────
-  const handleTier2 = async (idx: number) => {
-    const entry = validationEntries[idx]
-    if (!entry.r2Data) return
-    patchEntry(idx, { tier2: "running" })
-    try {
-      const { data: fullRows, error: fe } = await supabase.from(entry.table).select("*")
-      if (fe) throw new Error(fe.message)
-
-      const r2Map = new Map(entry.r2Data.map(r => [String(r[entry.pkField]), JSON.stringify(r)]))
-      const dbMap = new Map((fullRows ?? []).map((r: any) => [String(r[entry.pkField]), JSON.stringify(r)]))
-
-      const added    = [...dbMap.keys()].filter(k => !r2Map.has(k))
-      const removed  = [...r2Map.keys()].filter(k => !dbMap.has(k))
-      const modified = [...r2Map.keys()].filter(k => dbMap.has(k) && r2Map.get(k) !== dbMap.get(k))
-
-      patchEntry(idx, { tier2: "done", diff: { added, removed, modified } })
-    } catch (e: any) {
-      patchEntry(idx, { tier2: "error", error: e.message })
-    }
-  }
-
-  // ── Trigger upload for a drifted validation entry ─────────────────────────
-  const handleSyncFromValidation = (entry: ValidationEntry) => {
-    const map: Partial<Record<string, MigrationType>> = {
-      "modules/all.json":   "modules",
-      "tests/all.json":     "tests",
-      "revisions/all.json": "revisions",
-    }
-    const t = map[entry.key]
-    if (!t) return
-    setMigrType(t as MigrationType)
-    handleDirectUpload(t as MigrationType)
-  }
-
-  // ── R2 Reader ──────────────────────────────────────────────────────────────
-  const handleRead = async () => {
-    if (!readerKey.trim()) return
-    setReaderLoading(true)
-    setReaderError(null)
-    setReaderData(null)
-    try {
-      const token = await getToken()
-      const data  = await r2Read(token, readerKey.trim())
-      setReaderData(data)
-    } catch (e: any) {
-      setReaderError(e.message)
-    } finally {
-      setReaderLoading(false)
-    }
-  }
-
   const handleBack = () => {
-    if (stage === "selecttype")      return onBack()
-    if (stage === "selectrevisions") { setStage("selecttype"); setSelected(new Set()); setRevisions([]); setR2Status(new Map()) }
-    if (stage === "done")            { setStage("selecttype"); setSummary([]) }
-    if (stage === "error")           { setStage("selecttype"); setError(null) }
-    if (stage === "reader")          { setStage("selecttype"); setReaderData(null); setReaderKey("") }
-    if (stage === "validation_done" || stage === "validating") {
-      setStage("selecttype"); setValidationEntries([]); setValidationError(null)
-    }
+    if (stage === "connect" || stage === "error") return onBack()
+    if (stage === "ready") return setStage("connect")
   }
 
-  const allSelected  = revisions.length > 0 && selected.size === revisions.length
-  const noneSelected = selected.size === 0
-  const toggleAll    = () => setSelected(allSelected ? new Set() : new Set(revisions.map(r => r.id)))
-  const toggleOne    = async (rev: TestRevision) => {
-    const next = new Set(selected)
-    if (next.has(rev.id)) {
-      next.delete(rev.id)
-    } else {
-      next.add(rev.id)
-      if (r2Status.get(rev.id) === "unknown" || !r2Status.has(rev.id)) checkOne(rev)
-    }
-    setSelected(next)
-  }
-
-  const isDeleteFlow = migrType === "delete_step_orders" || migrType === "delete_test_steps"
-  const totalRows    = summary.reduce((a, s) => a + s.count, 0)
-  const previewJson  = readerData ? JSON.stringify(readerData, null, 2) : ""
-  const previewLines = previewJson.split("\n")
-  const isLong       = previewLines.length > 30
-
-  const checkedCount = [...r2Status.values()].filter(s => s !== "unknown" && s !== "checking").length
-  const existsCount  = [...r2Status.values()].filter(s => s === "exists").length
-  const missingCount = [...r2Status.values()].filter(s => s === "missing").length
-
-  // Validation summary
-  const inSyncCount  = validationEntries.filter(e => e.status === "in_sync").length
-  const driftCount   = validationEntries.filter(e => e.status === "count_mismatch" || e.status === "id_mismatch" || e.status === "missing_r2").length
-
-  // Group types for display
-  const syncTypes    = TYPE_META.filter(m => m.group === "sync")
-  const manageTypes  = TYPE_META.filter(m => m.group === "manage")
-  const utilTypes    = TYPE_META.filter(m => m.group === "util")
+  const totalRows = steps.reduce((a, s) => a + (s.count ?? 0), 0)
 
   return (
     <ModalShell
@@ -900,8 +195,8 @@ const R2MigrationModal: React.FC<Props> = ({ onClose, onBack }) => {
       subtitle={subtitle[stage]}
       onClose={onClose}
     >
-      {/* Back */}
-      {stage !== "uploading" && stage !== "deleting" && stage !== "validating" && (
+      {/* Back button */}
+      {(stage === "connect" || stage === "ready" || stage === "error") && (
         <button
           onClick={handleBack}
           className="-mt-2 self-start flex items-center gap-1 text-xs text-t-muted hover:text-t-primary transition-colors"
@@ -910,406 +205,130 @@ const R2MigrationModal: React.FC<Props> = ({ onClose, onBack }) => {
         </button>
       )}
 
-      {/* ── Select type ── */}
-      {stage === "selecttype" && (
+      {/* ── Connect stage ── */}
+      {stage === "connect" && (
         <div className="flex flex-col gap-3">
-
-          {/* Sync & Validate group */}
-          <div className="flex flex-col gap-1.5">
-            <p className="text-[10px] font-bold uppercase tracking-widest text-t-muted px-1">Sync & Validate</p>
-            {syncTypes.map(m => (
-              <button
-                key={m.id}
-                onClick={() => handleTypeSelect(m.id)}
-                className={`flex items-center gap-3 px-4 py-3 rounded-xl border text-left transition-all
-                  ${m.id === "validate"
-                    ? "border-c-brand/30 bg-c-brand/5 hover:bg-c-brand/10"
-                    : "border-(--border-color) bg-bg-card hover:bg-bg-base"}`}
-              >
-                <span className={`shrink-0 ${m.id === "validate" ? "text-c-brand" : "text-t-muted"}`}>{m.icon}</span>
-                <div className="flex-1">
-                  <p className={`text-sm font-semibold ${m.id === "validate" ? "text-c-brand" : "text-t-primary"}`}>{m.label}</p>
-                  <p className="text-xs text-t-muted">{m.desc}</p>
-                </div>
-                {m.id === "validate" && <Zap size={12} className="text-c-brand shrink-0 opacity-70" />}
-              </button>
-            ))}
-          </div>
-
-          {/* Manage group */}
-          <div className="flex flex-col gap-1.5">
-            <p className="text-[10px] font-bold uppercase tracking-widest text-t-muted px-1">Per-Revision Upload</p>
-            {manageTypes.map(m => (
-              <button
-                key={m.id}
-                onClick={() => handleTypeSelect(m.id)}
-                className="flex items-center gap-3 px-4 py-3 rounded-xl border border-(--border-color) bg-bg-card hover:bg-bg-base text-left transition-all"
-              >
-                <span className="shrink-0 text-t-muted">{m.icon}</span>
-                <div>
-                  <p className="text-sm font-semibold text-t-primary">{m.label}</p>
-                  <p className="text-xs text-t-muted">{m.desc}</p>
-                </div>
-              </button>
-            ))}
-          </div>
-
-          {/* Util group */}
-          <div className="flex flex-col gap-1.5">
-            <p className="text-[10px] font-bold uppercase tracking-widest text-t-muted px-1">Utilities</p>
-            {utilTypes.map(m => (
-              <button
-                key={m.id}
-                onClick={() => handleTypeSelect(m.id)}
-                className={`flex items-center gap-3 px-4 py-3 rounded-xl border text-left transition-all
-                  ${m.danger
-                    ? "border-red-500/20 bg-red-500/5 hover:bg-red-500/10"
-                    : "border-(--border-color) bg-bg-card hover:bg-bg-base"}`}
-              >
-                <span className={`shrink-0 ${m.danger ? "text-red-400" : "text-t-muted"}`}>{m.icon}</span>
-                <div>
-                  <p className={`text-sm font-semibold ${m.danger ? "text-red-400" : "text-t-primary"}`}>{m.label}</p>
-                  <p className="text-xs text-t-muted">{m.desc}</p>
-                </div>
-              </button>
-            ))}
-          </div>
-
-          <p className="text-xs text-t-muted text-center pt-1">
-            Run <span className="font-medium text-t-primary">Modules → Tests → Revisions → Step Orders → Test Steps</span> for a full migration.
-          </p>
-        </div>
-      )}
-
-      {/* ── Select revisions ── */}
-      {stage === "selectrevisions" && (
-        <div className="flex flex-col gap-3">
-          <p className="text-xs text-t-muted">
-            {isDeleteFlow
-              ? "Select revisions to delete from R2"
-              : migrType === "step_orders"
-              ? "Select revisions to upload their step_order array"
-              : "Select revisions to upload their test_steps"}
-          </p>
-
-          {revLoading ? (
-            <div className="flex items-center justify-center py-6">
-              <div className="w-6 h-6 border-2 border-c-brand border-t-transparent rounded-full animate-spin" />
-            </div>
-          ) : (
-            <>
-              {/* Differential toolbar */}
-              <div className="flex flex-wrap items-center gap-1.5 p-2.5 rounded-xl border border-(--border-color) bg-bg-card">
-                <span className="text-[10px] font-semibold text-t-muted uppercase tracking-wider mr-1">Differential</span>
-                <button
-                  onClick={checkAll}
-                  disabled={checkingAll || revLoading}
-                  className="flex items-center gap-1 text-[10px] font-semibold px-2 py-1 rounded-lg
-                    bg-c-brand/10 hover:bg-c-brand/20 text-c-brand border border-c-brand/20
-                    disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-                >
-                  <RefreshCw size={10} className={checkingAll ? "animate-spin" : ""} />
-                  Check all R2
-                </button>
-                {missingCount > 0 && (
-                  <button
-                    onClick={selectMissing}
-                    className="flex items-center gap-1 text-[10px] font-semibold px-2 py-1 rounded-lg
-                      bg-yellow-500/10 hover:bg-yellow-500/20 text-yellow-400 border border-yellow-500/20 transition-colors"
-                  >
-                    <MinusSquare size={10} /> Select missing ({missingCount})
-                  </button>
-                )}
-                {existsCount > 0 && (
-                  <button
-                    onClick={selectExisting}
-                    className="flex items-center gap-1 text-[10px] font-semibold px-2 py-1 rounded-lg
-                      bg-green-500/10 hover:bg-green-500/20 text-green-400 border border-green-500/20 transition-colors"
-                  >
-                    <CheckSquare2 size={10} /> Select existing ({existsCount})
-                  </button>
-                )}
-                {checkedCount > 0 && (
-                  <span className="ml-auto text-[10px] text-t-muted">{existsCount} in R2 · {missingCount} missing</span>
-                )}
-              </div>
-
-              {/* Select all */}
-              <div className="flex items-center justify-between">
-                <button
-                  onClick={toggleAll}
-                  className="flex items-center gap-2 text-xs text-t-muted hover:text-t-primary transition-colors px-1"
-                >
-                  {allSelected
-                    ? <CheckSquare size={14} className="text-c-brand" />
-                    : noneSelected
-                    ? <Square size={14} />
-                    : <MinusSquare size={14} className="text-t-muted" />}
-                  {allSelected ? "Deselect all" : "Select all"} ({revisions.length})
-                </button>
-                <span className="text-xs text-t-muted">{selected.size} selected</span>
-              </div>
-
-              {/* Revision list */}
-              <div className="flex flex-col gap-1 max-h-64 overflow-y-auto">
-                {revisions.map(r => {
-                  const status = r2Status.get(r.id) ?? "unknown"
-                  return (
-                    <button
-                      key={r.id}
-                      onClick={() => toggleOne(r)}
-                      className={`flex items-center gap-2.5 px-3 py-2 rounded-xl border text-left text-sm transition-all
-                        ${selected.has(r.id)
-                          ? isDeleteFlow
-                            ? "border-red-500/30 bg-red-500/5 text-t-primary"
-                            : "border-c-brand/40 bg-c-brand-bg text-t-primary"
-                          : "border-(--border-color) bg-bg-card text-t-muted hover:bg-bg-base"}`}
-                    >
-                      {selected.has(r.id)
-                        ? <CheckSquare size={14} className={isDeleteFlow ? "text-red-400 shrink-0" : "text-c-brand shrink-0"} />
-                        : <Square size={14} className="shrink-0" />}
-                      <span className="flex-1 truncate font-mono text-xs">{r.id}</span>
-                      <span className="text-xs text-t-muted shrink-0">{r.revision || `sno:${r.tests_serial_no}`}</span>
-                      <R2StatusBadge status={status} />
-                      {migrType === "step_orders" && selected.has(r.id) && (
-                        <span className={`text-xs shrink-0 ${r.step_order?.length ? "text-green-400" : "text-yellow-400"}`}>
-                          {r.step_order?.length ? `${r.step_order.length} local` : "fallback"}
-                        </span>
-                      )}
-                    </button>
-                  )
-                })}
-              </div>
-
-              {/* Action button */}
-              {isDeleteFlow ? (
-                <button
-                  onClick={handleRevisionDelete}
-                  disabled={selected.size === 0}
-                  className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold
-                    bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/20
-                    disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-                >
-                  <Trash2 size={14} />
-                  Delete {selected.size} file{selected.size !== 1 ? "s" : ""} from R2
-                </button>
-              ) : (
-                <button
-                  onClick={handleRevisionUpload}
-                  disabled={selected.size === 0}
-                  className="btn-primary text-sm flex items-center justify-center gap-2 disabled:opacity-50"
-                >
-                  <CloudUpload size={14} />
-                  Upload {selected.size} revision{selected.size !== 1 ? "s" : ""}
-                </button>
-              )}
-            </>
-          )}
-        </div>
-      )}
-
-      {/* ── Uploading / Deleting ── */}
-      {(stage === "uploading" || stage === "deleting") && (
-        <div className="rounded-xl border border-(--border-color) bg-bg-card divide-y divide-(--border-color) overflow-hidden max-h-80 overflow-y-auto">
-          {progress.map(p => <ProgressRow key={p.label} item={p} />)}
-        </div>
-      )}
-
-      {/* ── Validating ── */}
-      {stage === "validating" && (
-        <div className="flex flex-col gap-3">
-          {/* Algorithm legend */}
-          <div className="flex items-start gap-2 px-3 py-2.5 rounded-xl bg-c-brand/5 border border-c-brand/15">
-            <Zap size={13} className="text-c-brand mt-0.5 shrink-0" />
-            <div className="flex flex-col gap-0.5">
-              <p className="text-xs font-semibold text-c-brand">3-Tier validation running</p>
-              <p className="text-[11px] text-t-muted leading-relaxed">
-                R2 fetched in parallel · DB queried by count first, then PKs only · Full rows only if you ask
-              </p>
-            </div>
-          </div>
-          <div className="flex flex-col gap-2">
-            {validationEntries.map((entry, i) => (
-              <ValidationCard
-                key={entry.key}
-                entry={entry}
-                onDeepDiff={() => handleTier2(i)}
-                onSyncNow={() => handleSyncFromValidation(entry)}
-              />
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* ── Validation done ── */}
-      {stage === "validation_done" && (
-        <div className="flex flex-col gap-3">
-          {/* Summary header */}
-          <div className={`flex items-center gap-3 px-3 py-2.5 rounded-xl border
-            ${driftCount > 0
-              ? "border-yellow-500/20 bg-yellow-500/5"
-              : "border-green-500/20 bg-green-500/5"}`}
-          >
-            {driftCount > 0
-              ? <AlertTriangle size={15} className="text-yellow-400 shrink-0" />
-              : <CheckCircle   size={15} className="text-green-400  shrink-0" />}
-            <div className="flex-1">
-              <p className={`text-sm font-semibold ${driftCount > 0 ? "text-yellow-400" : "text-green-400"}`}>
-                {driftCount > 0
-                  ? `${driftCount} source${driftCount > 1 ? "s" : ""} out of sync`
-                  : "All sources in sync"}
-              </p>
-              <p className="text-xs text-t-muted">
-                {inSyncCount}/{validationEntries.length} keys matched · Supabase rows fetched only where needed
-              </p>
-            </div>
-            <button
-              onClick={handleValidate}
-              className="flex items-center gap-1 text-[10px] font-semibold px-2 py-1 rounded-lg
-                bg-bg-base hover:bg-bg-card text-t-muted border border-(--border-color) transition-colors shrink-0"
-            >
-              <RotateCcw size={10} /> Re-run
-            </button>
-          </div>
-
-          {/* Result cards */}
-          <div className="flex flex-col gap-2">
-            {validationEntries.map((entry, i) => (
-              <ValidationCard
-                key={entry.key}
-                entry={entry}
-                onDeepDiff={() => handleTier2(i)}
-                onSyncNow={() => handleSyncFromValidation(entry)}
-              />
-            ))}
-          </div>
-
-          {/* Tier legend */}
-          <div className="flex flex-wrap gap-x-3 gap-y-1 px-1">
+          <div className="rounded-xl border border-(--border-color) bg-bg-card p-4 flex flex-col gap-2.5 text-xs text-t-muted">
+            <p className="text-t-primary font-semibold text-sm">What this will do</p>
             {[
-              { icon: <Zap size={9} />,  color: "text-c-brand",   label: "Tier 0: R2 fetch (always)" },
-              { icon: <Rows size={9} />, color: "text-t-muted",   label: "Tier 1: DB count only" },
-              { icon: <Hash size={9} />, color: "text-t-muted",   label: "Tier 1.5: PKs only" },
-              { icon: <Diff size={9} />, color: "text-t-muted",   label: "Tier 2: Full rows (on demand)" },
-            ].map(l => (
-              <span key={l.label} className={`flex items-center gap-1 text-[9px] ${l.color}`}>
-                {l.icon} {l.label}
-              </span>
+              ["modules/all.json",              "All modules"],
+              ["tests/all.json",                "All tests"],
+              ["test_revisions/all.json",       "All revisions (no step_order col)"],
+              ["step_orders/{revision_id}.json","Step order per revision"],
+              ["test_steps/{revision_id}.json", "Test steps per revision"],
+            ].map(([key, label]) => (
+              <div key={key} className="flex items-start gap-2">
+                <CloudUpload size={12} className="mt-0.5 shrink-0 text-c-brand" />
+                <span>
+                  <span className="text-t-primary font-medium">{label}</span>
+                  <span className="ml-1 opacity-60">→ {key}</span>
+                </span>
+              </div>
             ))}
           </div>
+          <button onClick={handleConnect} className="btn-primary text-sm flex items-center justify-center gap-2">
+            <Wifi size={14} /> Test Connection & Continue
+          </button>
+        </div>
+      )}
 
-          <div className="flex gap-2">
-            <button onClick={() => { setStage("selecttype"); setValidationEntries([]) }} className="flex-1 btn-ghost text-sm">Back</button>
-            <button onClick={onClose} className="flex-1 btn-primary text-sm">Close</button>
+      {/* ── Connecting spinner ── */}
+      {stage === "connecting" && (
+        <div className="flex items-center justify-center py-8">
+          <div className="w-8 h-8 border-4 border-c-brand border-t-transparent rounded-full animate-spin" />
+        </div>
+      )}
+
+      {/* ── Ready stage ── */}
+      {stage === "ready" && (
+        <div className="flex flex-col gap-3">
+          <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-green-500/10 border border-green-500/20">
+            <Wifi size={14} className="text-green-400" />
+            <span className="text-xs text-green-400 font-medium">Worker connected successfully</span>
+          </div>
+          <div className="rounded-xl border border-(--border-color) bg-bg-card divide-y divide-(--border-color) text-xs overflow-hidden">
+            {steps.map(s => (
+              <div key={s.id} className="flex items-center justify-between px-3 py-2.5">
+                <span className="text-t-primary">{s.label}</span>
+                <span className="text-t-muted font-mono">{s.r2Key}</span>
+              </div>
+            ))}
+          </div>
+          <button onClick={handleMigrate} className="btn-primary text-sm flex items-center justify-center gap-2">
+            <CloudUpload size={14} /> Start Migration
+          </button>
+        </div>
+      )}
+
+      {/* ── Migrating stage ── */}
+      {stage === "migrating" && (
+        <div className="flex flex-col gap-3">
+          <div className="rounded-xl border border-(--border-color) bg-bg-card divide-y divide-(--border-color) overflow-hidden text-sm">
+            {steps.map(s => (
+              <div key={s.id} className="flex items-center gap-3 px-3 py-2.5">
+                {/* Status icon */}
+                {s.status === "pending" && (
+                  <div className="w-4 h-4 rounded-full border-2 border-(--border-color) shrink-0" />
+                )}
+                {s.status === "running" && (
+                  <div className="w-4 h-4 border-2 border-c-brand border-t-transparent rounded-full animate-spin shrink-0" />
+                )}
+                {s.status === "done" && (
+                  <CheckCircle size={16} className="text-green-400 shrink-0" />
+                )}
+                {s.status === "error" && (
+                  <AlertCircle size={16} className="text-red-400 shrink-0" />
+                )}
+                <span className={
+                  s.status === "done"    ? "text-t-primary" :
+                  s.status === "running" ? "text-c-brand font-medium" :
+                  "text-t-muted"
+                }>
+                  {s.label}
+                </span>
+                {s.status === "done" && s.count !== undefined && (
+                  <span className="ml-auto text-xs text-t-muted">{s.count} rows</span>
+                )}
+              </div>
+            ))}
           </div>
         </div>
       )}
 
-      {/* ── Done ── */}
+      {/* ── Done stage ── */}
       {stage === "done" && (
-        <div className="flex flex-col items-center gap-3 py-2">
+        <div className="flex flex-col items-center gap-3 py-4">
           <CheckCircle size={32} className="text-green-400" />
-          <p className="text-sm font-semibold text-t-primary">
-            {isDeleteFlow ? "Deletion complete" : "Upload complete"}
-          </p>
-          <div className="rounded-xl border border-(--border-color) bg-bg-card w-full divide-y divide-(--border-color) overflow-hidden text-xs max-h-64 overflow-y-auto">
-            {summary.map(s => (
-              <div key={s.label} className="flex items-center justify-between px-3 py-2">
-                <span className="text-t-primary truncate flex-1">{s.label}</span>
-                {!isDeleteFlow && <span className="text-t-muted shrink-0 ml-2">{s.count} rows</span>}
+          <p className="text-sm font-semibold text-t-primary">Migration complete</p>
+          <div className="rounded-xl border border-(--border-color) bg-bg-card w-full divide-y divide-(--border-color) overflow-hidden text-xs">
+            {steps.map(s => (
+              <div key={s.id} className="flex items-center justify-between px-3 py-2">
+                <span className="text-t-primary">{s.label}</span>
+                <span className="text-t-muted">{s.count ?? 0} rows</span>
               </div>
             ))}
-            {!isDeleteFlow && (
-              <div className="flex items-center justify-between px-3 py-2 bg-bg-base sticky bottom-0">
-                <span className="text-t-primary font-semibold">Total</span>
-                <span className="text-c-brand font-semibold">{totalRows} rows</span>
-              </div>
-            )}
+            <div className="flex items-center justify-between px-3 py-2 bg-bg-base">
+              <span className="text-t-primary font-semibold">Total</span>
+              <span className="text-c-brand font-semibold">{totalRows} rows</span>
+            </div>
           </div>
-          <p className="text-xs text-t-muted text-center">
-            R2 cache cleared — live reads will pick up fresh data immediately.
-          </p>
-          <div className="flex gap-2 w-full">
-            <button onClick={() => { setStage("selecttype"); setSummary([]) }} className="flex-1 btn-ghost text-sm">Do more</button>
-            <button onClick={onClose} className="flex-1 btn-primary text-sm">Close</button>
-          </div>
+          <button onClick={onClose} className="btn-primary text-sm px-6">Close</button>
         </div>
       )}
 
-      {/* ── Error ── */}
+      {/* ── Error stage ── */}
       {stage === "error" && (
         <div className="flex flex-col gap-3">
           <div className="flex items-start gap-2 px-3 py-3 rounded-xl bg-red-500/10 border border-red-500/20">
-            <AlertCircle size={14} className="text-red-400 mt-0.5 shrink-0" />
-            <p className="text-xs text-red-400 break-all">{error || validationError}</p>
+            <WifiOff size={14} className="text-red-400 mt-0.5 shrink-0" />
+            <p className="text-xs text-red-400">{error}</p>
           </div>
           <div className="flex gap-2">
             <button onClick={onBack} className="flex-1 btn-ghost text-sm">Back</button>
-            <button onClick={() => { setStage("selecttype"); setError(null); setValidationError(null) }} className="flex-1 btn-primary text-sm">Retry</button>
-          </div>
-        </div>
-      )}
-
-      {/* ── R2 Reader ── */}
-      {stage === "reader" && (
-        <div className="flex flex-col gap-3">
-          <p className="text-xs text-t-muted">Enter the R2 key to fetch and inspect its contents</p>
-
-          <div className="flex flex-wrap gap-1.5">
-            {["modules/all.json", "tests/all.json", "revisions/all.json"].map(k => (
-              <button
-                key={k}
-                onClick={() => setReaderKey(k)}
-                className="text-xs px-2 py-1 rounded-lg border border-(--border-color) bg-bg-card hover:bg-bg-base text-t-muted hover:text-t-primary transition-colors font-mono"
-              >
-                {k}
-              </button>
-            ))}
-          </div>
-
-          <div className="flex gap-2">
-            <input
-              value={readerKey}
-              onChange={e => setReaderKey(e.target.value)}
-              onKeyDown={e => e.key === "Enter" && handleRead()}
-              placeholder="e.g. step_orders/T001-R0-1.json"
-              className="input text-sm font-mono flex-1"
-            />
-            <button
-              onClick={handleRead}
-              disabled={!readerKey.trim() || readerLoading}
-              className="btn-primary text-sm px-4 disabled:opacity-50 shrink-0"
-            >
-              {readerLoading
-                ? <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                : "Fetch"}
+            <button onClick={() => { setStage("connect"); setError(null) }} className="flex-1 btn-primary text-sm">
+              Retry
             </button>
           </div>
-
-          {readerError && <p className="text-xs text-red-400 px-1">{readerError}</p>}
-
-          {readerData !== null && (
-            <div className="flex flex-col gap-1">
-              <div className="flex items-center justify-between">
-                <span className="text-xs text-t-muted">
-                  {Array.isArray(readerData) ? `${(readerData as unknown[]).length} items` : "object"}
-                </span>
-                {isLong && (
-                  <button
-                    onClick={() => setShowFull(p => !p)}
-                    className="flex items-center gap-1 text-xs text-c-brand hover:underline"
-                  >
-                    {showFull ? <><ChevronUp size={12} /> Collapse</> : <><ChevronDown size={12} /> Expand all</>}
-                  </button>
-                )}
-              </div>
-              <pre className={`text-xs bg-bg-card border border-(--border-color) rounded-xl p-3
-                overflow-auto font-mono text-t-primary
-                ${showFull ? "max-h-[60vh]" : "max-h-48"}`}>
-                {isLong && !showFull ? previewLines.slice(0, 30).join("\n") + "\n\n…" : previewJson}
-              </pre>
-            </div>
-          )}
         </div>
       )}
     </ModalShell>
