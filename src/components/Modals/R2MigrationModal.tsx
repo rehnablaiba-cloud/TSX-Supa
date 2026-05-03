@@ -233,25 +233,29 @@ async function chunkedDeepDiff(
     return { result: "failed", dbCount: dbRows.length, detail: `Count mismatch: R2=${r2Rows.length} DB=${dbRows.length}` }
   }
 
-  const r2Map = new Map(r2Rows.map(r => [String(r["id"]), r]))
+  const normalize = (row: Record<string, unknown>): Record<string, unknown> => {
+    const out: Record<string, unknown> = {}
+    for (const [k, v] of Object.entries(row)) {
+      if (k === "action_image_urls" || k === "expected_image_urls") {
+        out[k] = Array.isArray(v) ? v : []
+      } else {
+        out[k] = v ?? null
+      }
+    }
+    return out
+  }
+
+  const r2Map = new Map(r2Rows.map(r => [String(r["id"]), JSON.stringify(normalize(r))]))
 
   for (const row of dbRows) {
     const id    = String((row as any).id)
-    const r2Row = r2Map.get(id)
-    if (!r2Row) return { result: "failed", dbCount: dbRows.length, detail: `Row ${id} in DB but not in R2` }
-
-    // Find the first key that differs
-    const allKeys = new Set([...Object.keys(r2Row), ...Object.keys(row as any)])
-    for (const key of allKeys) {
-      const r2Val = JSON.stringify((r2Row as any)[key])
-      const dbVal = JSON.stringify((row as any)[key])
-      if (r2Val !== dbVal) {
-        return { 
-          result: "failed", 
-          dbCount: dbRows.length, 
-          detail: `Row ${id} key "${key}": R2=${r2Val} DB=${dbVal}` 
-        }
-      }
+    const r2Val = r2Map.get(id)
+    if (!r2Val) return { result: "failed", dbCount: dbRows.length, detail: `Row ${id} in DB but not in R2` }
+    const dbNorm = normalize(row as any)
+    if (r2Val !== JSON.stringify(dbNorm)) {
+      const r2Parsed = JSON.parse(r2Val)
+      const diffKey  = Object.keys({ ...r2Parsed, ...dbNorm }).find(k => JSON.stringify(r2Parsed[k]) !== JSON.stringify(dbNorm[k]))
+      return { result: "failed", dbCount: dbRows.length, detail: `Row ${id} key "${diffKey}": R2=${JSON.stringify(r2Parsed[diffKey!])} DB=${JSON.stringify(dbNorm[diffKey!])}` }
     }
   }
 
