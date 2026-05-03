@@ -14,6 +14,7 @@
  *   7.  Admin           — tables, modules, tests, steps
  */
 
+import { useMemo } from "react";
 import {
   useQuery,
   useMutation,
@@ -21,7 +22,6 @@ import {
   type UseQueryOptions,
   type UseMutationOptions,
 } from "@tanstack/react-query";
-
 import { queryClient, QK, STALE, GC } from "./queryClient";
 import {
   // Dashboard
@@ -43,7 +43,6 @@ import {
   heartbeatLock,
   updateStepResult,
   resetAllStepResults,
-  fetchSignedUrls,
   // Test Report
   fetchSessionHistory,
   fetchModuleOptions,
@@ -72,6 +71,7 @@ import {
   deleteStepWithResults,
   replaceCsvSteps,
   releaseLocksAndSignOut,
+  fetchBatchStepImageUrls,
   // Types (re-export so callers only need one import)
   type DashboardModuleSummary,
   type ActiveLock,
@@ -94,6 +94,7 @@ import {
   type ActiveRevision,
   type ModuleTestItem,
   type TableName,
+  type StepImageUrls,
 } from "./rpc";
 
 // Re-export all types so consumers only need: `import { … } from "~/lib/hooks"`
@@ -119,6 +120,7 @@ export type {
   ActiveRevision,
   ModuleTestItem,
   TableName,
+  StepImageUrls,
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -334,19 +336,47 @@ export function useTestExecutionData(
  * Signed storage URLs for step images.
  * Cached for 50 min (URLs are valid for 60 min, leaving a 10 min buffer).
  */
+/**
+ * R2 image URLs for a batch of steps, split into action / expected sets.
+ *
+ * Pass the non-divider steps from stepResults — the hook is a no-op when
+ * the array is empty (no revision loaded yet).
+ *
+ * Stable cache key derived from sorted step IDs so adding/removing a single
+ * step only busts the right cache entry.
+ */
+export function useStepImageUrls(
+  steps:   { id: string; serial_no: number }[],
+  options?: Partial<UseQueryOptions<Record<string, StepImageUrls>>>
+) {
+  // Stable key — sort so order in stepResults doesn't matter
+  const key = useMemo(
+    () => [...steps].sort((a, b) => a.id.localeCompare(b.id)).map(s => s.id).join(","),
+    [steps]
+  )
+
+  return useQuery<Record<string, StepImageUrls>>({
+    queryKey:  ["r2StepImages", key],
+    queryFn:   () => fetchBatchStepImageUrls(steps),
+    enabled:   steps.length > 0,
+    staleTime: 30 * 60 * 1000,   // 30 min — images don't change during a session
+    gcTime:    60 * 60 * 1000,
+    ...options,
+  })
+}
+
+/** @deprecated Migrate to useStepImageUrls. */
 export function useSignedUrls(
   paths:   string[],
   options?: Partial<UseQueryOptions<Record<string, string>>>
 ) {
-  const sorted = [...paths].sort();
+  console.warn("[useSignedUrls] deprecated")
   return useQuery<Record<string, string>>({
-    queryKey:  ["signedUrls", ...sorted],
-    queryFn:   () => fetchSignedUrls(sorted),
-    enabled:   sorted.length > 0,
-    staleTime: 50 * 60 * 1000,
-    gcTime:    60 * 60 * 1000,
+    queryKey: ["signedUrls_deprecated"],
+    queryFn:  () => Promise.resolve({}),
+    enabled:  false,
     ...options,
-  });
+  })
 }
 
 // ── Lock mutations ────────────────────────────────────────────────────────────

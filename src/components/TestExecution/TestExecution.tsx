@@ -34,12 +34,12 @@ import type { FlatData } from "../../utils/export";
 
 // ─── All data access goes through hooks.ts — never rpc.ts or supabase directly ───
 import {
-  useTestExecutionData, useModuleLocks, useSignedUrls,
+  useTestExecutionData, useModuleLocks, useStepImageUrls,
   useAcquireLock, useReleaseLock, useForceReleaseLock,
   useHeartbeatLock, useUpdateStepResult, useResetAllStepResults,
   invalidateModuleLocks, insertTestFinished,
 } from "../../lib/hooks";
-import type { ActiveRevision, LockRow } from "../../lib/hooks";
+import type { ActiveRevision, LockRow, StepImageUrls } from "../../lib/hooks";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Types
@@ -59,7 +59,8 @@ interface ExecutionStep {
   stepResultId: string;
   module_test_id: string;
   /** Display serial number — derived from step_order array position, NOT step.serial_no */
-  serial_no: number;
+  serial_no: number;           // display serial (computed from step_order position)
+  originalSerialNo: number; 
   action: string;
   expected_result: string;
   action_image_urls: string[];
@@ -361,19 +362,19 @@ const TesterBadge: React.FC<{ name: string; status: "pass" | "fail" | "pending" 
 interface TableStepRowProps {
   step: ExecutionStep;
   initialRemarks: string;
-  signedImageUrls: Record<string, string>;
+  actionImageUrls:   string[];   // ← replaces signedImageUrls
+  expectedImageUrls: string[];   // ← replaces signedImageUrls
   isFocused: boolean;
   isUpdating: boolean;
   isReadOnly: boolean;
   onUpdate:       (stepId: string, status: "pass" | "fail" | "pending", remarks: string) => void;
   onFocus:        (stepId: string) => void;
   onRemarksChange:(stepId: string, val: string) => void;
-  onImageClick:   (paths: string[], idx: number, label: string) => void;
+  onImageClick:   (urls: string[], idx: number, label: string) => void;
   onRegisterRef:  (stepId: string, el: HTMLTableRowElement | null) => void;
 }
-
 const TableStepRow = memo<TableStepRowProps>(({
-  step, initialRemarks, signedImageUrls, isFocused,
+  step, initialRemarks, actionImageUrls, expectedImageUrls, isFocused,
   isUpdating, isReadOnly, onUpdate, onFocus, onRemarksChange, onImageClick, onRegisterRef,
 }) => {
   const [remarks, setRemarks] = useState(initialRemarks);
@@ -402,31 +403,27 @@ const TableStepRow = memo<TableStepRowProps>(({
       </td>
       <td className="px-4 py-3 border-r border-(--border-color) align-top">
         <p className="text-sm text-t-primary leading-snug wrap-break-word whitespace-pre-wrap">{step.action}</p>
-        {!!step.action_image_urls?.length && (
-          <div className="mt-2 flex flex-wrap gap-2">
-            {step.action_image_urls.map((path, i) =>
-              signedImageUrls[path] ? (
-                <img key={path} src={signedImageUrls[path]} alt={`Action ${i + 1}`}
-                  onClick={(e) => { e.stopPropagation(); onImageClick(step.action_image_urls, i, "Action"); }}
-                  className="w-16 h-16 rounded-lg object-cover border border-(--border-color) cursor-zoom-in hover:opacity-90 hover:scale-105 transition-transform" />
-              ) : null
-            )}
-          </div>
-        )}
+        {!!actionImageUrls.length && (
+    <div className="mt-2 flex flex-wrap gap-2">
+      {actionImageUrls.map((url, i) => (
+        <img key={url} src={url} alt={`Action ${i + 1}`}
+          onClick={(e) => { e.stopPropagation(); onImageClick(actionImageUrls, i, "Action"); }}
+          className="w-16 h-16 rounded-lg object-cover border border-(--border-color) cursor-zoom-in hover:opacity-90 hover:scale-105 transition-transform" />
+      ))}
+    </div>
+  )}
       </td>
       <td className="px-4 py-3 border-r border-(--border-color) align-top">
         <p className="text-sm text-t-secondary leading-snug wrap-break-word whitespace-pre-wrap">{step.expected_result}</p>
-        {!!step.expected_image_urls?.length && (
-          <div className="mt-2 flex flex-wrap gap-2">
-            {step.expected_image_urls.map((path, i) =>
-              signedImageUrls[path] ? (
-                <img key={path} src={signedImageUrls[path]} alt={`Expected ${i + 1}`}
-                  onClick={(e) => { e.stopPropagation(); onImageClick(step.expected_image_urls, i, "Expected"); }}
-                  className="w-16 h-16 rounded-lg object-cover border border-(--border-color) cursor-zoom-in hover:opacity-90 hover:scale-105 transition-transform" />
-              ) : null
-            )}
-          </div>
-        )}
+        {!!expectedImageUrls.length && (
+    <div className="mt-2 flex flex-wrap gap-2">
+      {expectedImageUrls.map((url, i) => (
+        <img key={url} src={url} alt={`Expected ${i + 1}`}
+          onClick={(e) => { e.stopPropagation(); onImageClick(expectedImageUrls, i, "Expected"); }}
+          className="w-16 h-16 rounded-lg object-cover border border-(--border-color) cursor-zoom-in hover:opacity-90 hover:scale-105 transition-transform" />
+      ))}
+    </div>
+  )}
       </td>
       <td className="px-3 py-3 border-r border-(--border-color)">
         <textarea
@@ -499,7 +496,8 @@ const TableStepRow = memo<TableStepRowProps>(({
 interface MobileStepCardProps {
   step: ExecutionStep;
   initialRemarks: string;
-  signedImageUrls: Record<string, string>;
+  actionImageUrls:   string[];   // ← replaces signedImageUrls
+  expectedImageUrls: string[];   // ← replaces signedImageUrls
   isFocused: boolean;
   isUpdating: boolean;
   isReadOnly: boolean;
@@ -511,7 +509,7 @@ interface MobileStepCardProps {
 }
 
 const MobileStepCard = memo<MobileStepCardProps>(({
-  step, initialRemarks, signedImageUrls, isFocused,
+  step, initialRemarks, actionImageUrls, expectedImageUrls, isFocused,
   isUpdating, isReadOnly, onUpdate, onFocus, onRemarksChange, onImageClick, onRegisterRef,
 }) => {
   const [remarks, setRemarks] = useState(initialRemarks);
@@ -641,39 +639,46 @@ const MobileStepCard = memo<MobileStepCardProps>(({
           </div>
           <div className="px-3 py-2.5 min-w-0">
             <p className="text-sm leading-snug wrap-break-word text-t-primary whitespace-pre-wrap">{step.action}</p>
-            {!!step.action_image_urls?.length && (
-              <div className="mt-2 flex flex-wrap gap-2">
-                {step.action_image_urls.map((path, i) =>
-                  signedImageUrls[path] ? (
-                    <img key={path} src={signedImageUrls[path]} alt={`Action ${i + 1}`}
-                      onClick={(e) => { e.stopPropagation(); onImageClick(step.action_image_urls, i, "Action"); }}
-                      className="w-[72px] h-[72px] rounded-lg object-cover border border-(--border-color) cursor-zoom-in hover:opacity-90 hover:scale-105 transition-transform" />
-                  ) : null
-                )}
-              </div>
-            )}
+            {!!actionImageUrls.length && (
+    <div className="mt-2 flex flex-wrap gap-2">
+      {actionImageUrls.map((url, i) => (
+        <img key={url} src={url} alt={`Action ${i + 1}`}
+          onClick={(e) => { e.stopPropagation(); onImageClick(actionImageUrls, i, "Action"); }}
+          className="w-[72px] h-[72px] rounded-lg object-cover border border-(--border-color) cursor-zoom-in hover:opacity-90 hover:scale-105 transition-transform" />
+      ))}
+    </div>
+  )}
           </div>
         </div>
 
         <div className="grid grid-cols-[80px_1fr] border-b border-(--border-color)">
-          <div className="px-3 py-2.5 border-r border-(--border-color) bg-bg-card flex items-start">
-            <span className="text-[10px] font-semibold text-t-muted uppercase tracking-wider mt-0.5">Expected</span>
-          </div>
-          <div className="px-3 py-2.5 min-w-0">
-            <p className="text-sm leading-snug wrap-break-word text-t-secondary whitespace-pre-wrap">{step.expected_result}</p>
-            {!!step.expected_image_urls?.length && (
-              <div className="mt-2 flex flex-wrap gap-2">
-                {step.expected_image_urls.map((path, i) =>
-                  signedImageUrls[path] ? (
-                    <img key={path} src={signedImageUrls[path]} alt={`Expected ${i + 1}`}
-                      onClick={(e) => { e.stopPropagation(); onImageClick(step.expected_image_urls, i, "Expected"); }}
-                      className="w-[72px] h-[72px] rounded-lg object-cover border border-(--border-color) cursor-zoom-in hover:opacity-90 hover:scale-105 transition-transform" />
-                  ) : null
-                )}
-              </div>
-            )}
-          </div>
-        </div>
+  <div className="px-3 py-2.5 border-r border-(--border-color) bg-bg-card flex items-start">
+    <span className="text-[10px] font-semibold text-t-muted uppercase tracking-wider mt-0.5">
+      Expected
+    </span>
+  </div>
+  <div className="px-3 py-2.5 min-w-0">
+    <p className="text-sm leading-snug wrap-break-word text-t-secondary whitespace-pre-wrap">
+      {step.expected_result}
+    </p>
+    {!!expectedImageUrls.length && (
+      <div className="mt-2 flex flex-wrap gap-2">
+        {expectedImageUrls.map((url, i) => (
+          <img
+            key={url}
+            src={url}
+            alt={`Expected ${i + 1}`}
+            onClick={(e) => {
+              e.stopPropagation();
+              onImageClick(expectedImageUrls, i, "Expected");
+            }}
+            className="w-[72px] h-[72px] rounded-lg object-cover border border-(--border-color) cursor-zoom-in hover:opacity-90 hover:scale-105 transition-transform"
+          />
+        ))}
+      </div>
+    )}
+  </div>
+</div>
 
         <div className="flex items-center gap-2 px-3 py-2 bg-bg-card">
           <button onClick={openDialog} disabled={isUpdating || isReadOnly}
@@ -776,18 +781,15 @@ const TestExecution: React.FC<Props> = ({
   const updateStepMutation   = useUpdateStepResult(currentMtId, module_name);
   const resetStepsMutation   = useResetAllStepResults(currentMtId);
 
-  // ── Signed image URLs ─────────────────────────────────────────────────────
-  const stepIdsStr = steps.map((s) => s.stepId).join(",");
-  const allImagePaths = useMemo(
+////R2 Imagae//
+  const imageSteps = useMemo(
     () =>
-      steps.flatMap((s) => [
-        ...(s.action_image_urls  || []),
-        ...(s.expected_image_urls || []),
-      ]),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [stepIdsStr]
+      steps
+        .filter((s) => !s.is_divider)
+        .map((s) => ({ id: s.stepId, serial_no: s.originalSerialNo })),
+    [steps]
   );
-  const { data: signedImageUrls = {} } = useSignedUrls(allImagePaths);
+  const { data: stepImageUrls = {} } = useStepImageUrls(imageSteps);
 
   // ── Stable refs ───────────────────────────────────────────────────────────
   const stepsRef      = useRef<ExecutionStep[]>([]);
@@ -820,18 +822,11 @@ const TestExecution: React.FC<Props> = ({
   isReadOnlyRef.current    = isRevisionReadOnly;
 
   const openImagePreview = useCallback(
-    (paths: string[], clickedIdx: number, label: string) => {
-      const urls: string[] = [];
-      let newIdx = 0;
-      paths.forEach((p, i) => {
-        const url = signedImageUrls[p];
-        if (url) { if (i === clickedIdx) newIdx = urls.length; urls.push(url); }
-      });
-      if (urls.length) setImagePreview({ urls, idx: newIdx, label });
+    (urls: string[], clickedIdx: number, label: string) => {
+      if (urls.length) setImagePreview({ urls, idx: clickedIdx, label });
     },
-    [signedImageUrls]
+    []
   );
-
   // ── 1. Reset state on test change ─────────────────────────────────────────
   useEffect(() => {
     hasInitializedForRef.current       = null;
@@ -853,20 +848,22 @@ const TestExecution: React.FC<Props> = ({
     const displaySerials = computeDisplaySerials(
       ordered.map((sr) => ({ is_divider: sr.step!.is_divider }))
     );
-    const merged: ExecutionStep[] = ordered.map((sr, idx) => ({
-      stepId:              sr.step!.id,
-      stepResultId:        sr.id,
-      module_test_id:      currentMtId,
-      serial_no:           displaySerials[idx],
-      action:              sr.step!.action,
-      expected_result:     sr.step!.expected_result,
-      action_image_urls:   sr.step!.action_image_urls  || [],
-      expected_image_urls: sr.step!.expected_image_urls || [],
-      is_divider:          sr.step!.is_divider,
-      status:              sr.status,
-      remarks:             sr.remarks,
-      display_name:        sr.display_name ?? "",
-    }));
+    // In: "── 2. Derive local steps from query data ──"
+const merged: ExecutionStep[] = ordered.map((sr, idx) => ({
+  stepId:              sr.step!.id,
+  stepResultId:        sr.id,
+  module_test_id:      currentMtId,
+  serial_no:           displaySerials[idx],
+  originalSerialNo:    sr.step!.serial_no,   // ← ADD
+  action:              sr.step!.action,
+  expected_result:     sr.step!.expected_result,
+  action_image_urls:   sr.step!.action_image_urls  || [],
+  expected_image_urls: sr.step!.expected_image_urls || [],
+  is_divider:          sr.step!.is_divider,
+  status:              sr.status,
+  remarks:             sr.remarks,
+  display_name:        sr.display_name ?? "",
+}));
 
     stepIdSetRef.current = new Set(merged.map((s) => s.stepId));
     setModuleTests(execData.module_tests as unknown as ModuleTestItem[]);
@@ -1395,19 +1392,20 @@ const TestExecution: React.FC<Props> = ({
                     })()
                   ) : (
                     <TableStepRow
-                      key={step.stepId}
-                      step={step}
-                      initialRemarks={remarksMap.current[step.stepId] ?? step.remarks ?? ""}
-                      signedImageUrls={signedImageUrls}
-                      isFocused={focusedStepId === step.stepId}
-                      isUpdating={updatingStepIds.has(step.stepId)}
-                      isReadOnly={isRevisionReadOnly}
-                      onUpdate={handleStepUpdate}
-                      onFocus={handleFocus}
-                      onRemarksChange={handleRemarksChange}
-                      onImageClick={openImagePreview}
-                      onRegisterRef={registerTrRef}
-                    />
+                    key={step.stepId}
+                    step={step}
+                    initialRemarks={remarksMap.current[step.stepId] ?? step.remarks ?? ""}
+                    actionImageUrls={stepImageUrls[step.stepId]?.actionUrls   ?? []}   // ← new
+                    expectedImageUrls={stepImageUrls[step.stepId]?.expectedUrls ?? []} // ← new
+                    isFocused={focusedStepId === step.stepId}
+                    isUpdating={updatingStepIds.has(step.stepId)}
+                    isReadOnly={isRevisionReadOnly}
+                    onUpdate={handleStepUpdate}
+                    onFocus={handleFocus}
+                    onRemarksChange={handleRemarksChange}
+                    onImageClick={openImagePreview}
+                    onRegisterRef={registerTrRef}
+                  />
                   )
                 )}
               </tbody>
@@ -1440,19 +1438,20 @@ const TestExecution: React.FC<Props> = ({
                     })()
                   ) : (
                     <MobileStepCard
-                      key={step.stepId}
-                      step={step}
-                      initialRemarks={remarksMap.current[step.stepId] ?? step.remarks ?? ""}
-                      signedImageUrls={signedImageUrls}
-                      isFocused={focusedStepId === step.stepId}
-                      isUpdating={updatingStepIds.has(step.stepId)}
-                      isReadOnly={isRevisionReadOnly}
-                      onUpdate={handleStepUpdate}
-                      onFocus={handleFocus}
-                      onRemarksChange={handleRemarksChange}
-                      onImageClick={openImagePreview}
-                      onRegisterRef={registerCardRef}
-                    />
+                    key={step.stepId}
+                    step={step}
+                    initialRemarks={remarksMap.current[step.stepId] ?? step.remarks ?? ""}
+                    actionImageUrls={stepImageUrls[step.stepId]?.actionUrls   ?? []}   // ← new
+                    expectedImageUrls={stepImageUrls[step.stepId]?.expectedUrls ?? []} // ← new
+                    isFocused={focusedStepId === step.stepId}
+                    isUpdating={updatingStepIds.has(step.stepId)}
+                    isReadOnly={isRevisionReadOnly}
+                    onUpdate={handleStepUpdate}
+                    onFocus={handleFocus}
+                    onRemarksChange={handleRemarksChange}
+                    onImageClick={openImagePreview}
+                    onRegisterRef={registerCardRef}
+                  />
                   )
                 )}
               </div>

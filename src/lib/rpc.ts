@@ -30,6 +30,7 @@ import {
   r2GetTestSteps,
   type R2Step,
 } from "./r2";
+import { r2ListStepImages, type StepImageUrls } from "./r2Images"
 
 // ═════════════════════════════════════════════════════════════════════════════
 // Session Expired Signal  (merged from rpc.interceptor.ts)
@@ -51,6 +52,13 @@ class SessionExpiredSignal {
 }
 
 export const sessionExpiredSignal = new SessionExpiredSignal();
+
+// ── Internal: session token for R2 worker calls ───────────────────────────────
+async function getWorkerToken(): Promise<string> {
+  const { data: { session } } = await supabase.auth.getSession()
+  if (!session?.access_token) throw new Error("Not authenticated")
+  return session.access_token
+}
 
 // ═════════════════════════════════════════════════════════════════════════════
 // callRpc — global 401 interceptor
@@ -967,28 +975,46 @@ export function resetAllStepResults(
 
 // ── Signed image URLs ─────────────────────────────────────────────────────────
 
-export function fetchSignedUrls(
-  paths: string[]
-): Promise<Record<string, string>> {
+// ── R2 step image URLs  (replaces Supabase fetchSignedUrls) ───────────────────
+
+export type { StepImageUrls }
+
+/**
+ * Fetch action + expected image URLs for a batch of steps from R2.
+ *
+ * Uses a single token acquisition followed by parallel list calls —
+ * one request per step. Fine for typical test sizes (20–60 steps).
+ *
+ * Returns: stepId → { actionUrls, expectedUrls }
+ *
+ * Cache key : ["r2StepImages", ...stepIds.sort()]
+ * staleTime : 30 min  |  gcTime : 60 min
+ */
+export function fetchBatchStepImageUrls(
+  steps: { id: string; serial_no: number }[]
+): Promise<Record<string, StepImageUrls>> {
   return callRpc(async () => {
-    const unique = Array.from(new Set(paths.filter(Boolean)));
-    if (!unique.length) return {};
+    if (!steps.length) return {}
 
-    const batches    = chunkArray(unique, 500);
-    const allEntries: [string, string][] = [];
+    const token = await getWorkerToken()
 
-    for (const batch of batches) {
-      const { data, error } = await supabase.storage
-        .from("test_steps")
-        .createSignedUrls(batch, 3600);
-      if (error || !data) continue;
-      for (const entry of data) {
-        if (entry.signedUrl) allEntries.push([entry.path!, entry.signedUrl]);
-      }
-    }
+    const entries = await Promise.all(
+      steps.map(async ({ id, serial_no }) => {
+        const urls = await r2ListStepImages(token, id, serial_no)
+        return [id, urls] as const
+      })
+    )
 
-    return Object.fromEntries(allEntries);
-  });
+    return Object.fromEntries(entries)
+  })
+}
+
+/** @deprecated Use fetchBatchStepImageUrls — Supabase storage no longer used for images. */
+export function fetchSignedUrls(
+  _paths: string[]
+): Promise<Record<string, string>> {
+  console.warn("[fetchSignedUrls] deprecated — migrate to fetchBatchStepImageUrls")
+  return Promise.resolve({})
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
