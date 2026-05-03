@@ -261,7 +261,7 @@ async function chunkedDeepDiff(
     if (r2Val !== dbNorm) {
       const r2Parsed = JSON.parse(r2Val)
       const dbParsed = JSON.parse(dbNorm)
-      const diffKey  = Object.keys(r2Parsed).find(k => JSON.stringify(r2Parsed[k]) !== JSON.stringify(dbParsed[k]))
+      const diffKey  = Object.keys({ ...r2Parsed, ...dbParsed }).find(k => JSON.stringify(r2Parsed[k]) !== JSON.stringify(dbParsed[k]))
       return { result: "failed", dbCount: dbRows.length, detail: `Row ${(row as any).id} key "${diffKey}": R2=${JSON.stringify(r2Parsed[diffKey!])} DB=${JSON.stringify(dbParsed[diffKey!])}` }
     }
   }
