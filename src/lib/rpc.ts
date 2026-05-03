@@ -730,7 +730,9 @@ export function fetchTestExecutionData(
         .maybeSingle();
 
       if (revError) throw new Error(revError.message);
+      
       current_revision = revData as ActiveRevision | null;
+      console.log("[debug] current_revision:", current_revision); 
     }
 
     // active_revisions map for nav badges — still from R2 (cached, cheap)
@@ -750,12 +752,22 @@ export function fetchTestExecutionData(
       ]);
 
       // ── Round 4: step_results scoped to this revision's steps only ──────────
-      const { data: srData, error: srError } = await supabase
-        .from("step_results")
-        .select("id, status, remarks, display_name, test_steps_id")
-        .in("test_steps_id", stepOrder);
+      // ── Round 4: step_results scoped to this revision's steps only ──────────
+const chunks = chunkArray(stepOrder, 200);
+const chunkResults = await Promise.all(
+  chunks.map((chunk) =>
+    supabase
+      .from("step_results")
+      .select("id, status, remarks, display_name, test_steps_id")
+      .in("test_steps_id", chunk)
+  )
+);
 
-      if (srError) throw new Error(srError.message);
+const srData: any[] = [];
+for (const { data, error } of chunkResults) {
+  if (error) throw new Error(error.message);
+  srData.push(...(data ?? []));
+}
 
       const stepMap   = new Map<string, R2Step>(r2Steps.map((s) => [s.id, s]));
       const resultMap = new Map<string, any>(
