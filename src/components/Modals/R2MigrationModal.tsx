@@ -225,34 +225,25 @@ async function countStepsByIds(ids: string[]): Promise<number> {
 // ── Chunked Tier-2 deep diff (fail-fast, 50 rows/page) ───────────────────────
 async function chunkedDeepDiff(
   r2Rows: Record<string, unknown>[],
-  stepIds: string[],  // from step_order — defines scope, never serial_no
-): Promise<{ result: "ok" | "failed"; detail?: string }> {
+  revisionId: string,
+): Promise<{ result: "ok" | "failed"; dbCount: number; detail?: string }> {
+  const dbRows = await fetchOrderedStepsRpc(revisionId)
+
+  if (dbRows.length !== r2Rows.length) {
+    return { result: "failed", dbCount: dbRows.length, detail: `Count mismatch: R2=${r2Rows.length} DB=${dbRows.length}` }
+  }
+
   const r2Map = new Map(r2Rows.map(r => [String(r["id"]), JSON.stringify(r)]))
 
-  for (let offset = 0; offset < stepIds.length; offset += TIER2_CHUNK_SIZE) {
-    const chunk = stepIds.slice(offset, offset + TIER2_CHUNK_SIZE)
-    const { data, error: ce } = await supabase
-      .from("test_steps")
-      .select("*")
-      .in("id", chunk)         // ← exact IDs, chunked
-    if (ce) return { result: "failed", detail: ce.message }
-
-    for (const row of (data ?? [])) {
-      const id    = String((row as any).id)
-      const r2Val = r2Map.get(id)
-      if (!r2Val)                        return { result: "failed", detail: `Row ${id} in DB but not in R2` }
-      if (r2Val !== JSON.stringify(row)) return { result: "failed", detail: `Row ${id} values differ` }
-    }
+  for (const row of dbRows) {
+    const id    = String((row as any).id)
+    const r2Val = r2Map.get(id)
+    if (!r2Val)                        return { result: "failed", dbCount: dbRows.length, detail: `Row ${id} in DB but not in R2` }
+    if (r2Val !== JSON.stringify(row)) return { result: "failed", dbCount: dbRows.length, detail: `Row ${id} values differ` }
   }
 
-  const dbIds = new Set(stepIds)
-  for (const id of r2Map.keys()) {
-    if (!dbIds.has(id)) return { result: "failed", detail: `Row ${id} in R2 but not in DB` }
-  }
-
-  return { result: "ok" }
+  return { result: "ok", dbCount: dbRows.length }
 }
-
 // ── Sub-components ────────────────────────────────────────────────────────────
 function ProgressRow({ item }: { item: ProgressItem }) {
   return (
@@ -948,23 +939,14 @@ const R2MigrationModal: React.FC<Props> = ({ onClose, onBack }) => {
         const tsR2: Record<string, unknown>[] = Array.isArray(tsData) ? tsData : []
         const tsR2Count = tsR2.length
 
-        // step_order = exact expected IDs — no serial_no query
-        const stepOrder = await fetchStepOrder(rev.id)
+        items[i] = { ...items[i], tsStatus: "deep_diff_running", tsR2Count, tsDbCount: null }
+        setRevValidation([...items])
 
-        // RPC B: count(*)  where id = any(stepOrder) — returns 1 bigint
-        const tsDbCount = await countStepsByIds(stepOrder)
-
-        if (tsR2Count !== tsDbCount || tsR2Count !== stepOrder.length) {
-          items[i] = { ...items[i], tsStatus: "count_mismatch", tsR2Count, tsDbCount }
-        } else {
-          // Chunked deep diff — .in("id", chunk), 50/page, fail-fast
-          items[i] = { ...items[i], tsStatus: "deep_diff_running", tsR2Count, tsDbCount }
-          setRevValidation([...items])
-
-          const { result, detail } = await chunkedDeepDiff(tsR2, stepOrder)
-          items[i] = { ...items[i],
-            tsStatus: result === "ok" ? "deep_diff_ok" : "deep_diff_failed",
-            tsError:  detail }
+        const { result, dbCount: tsDbCount, detail } = await chunkedDeepDiff(tsR2, rev.id)
+        items[i] = { ...items[i],
+          tsStatus:  result === "ok" ? "deep_diff_ok" : "deep_diff_failed",
+          tsDbCount,
+          tsError:   detail }
         }
       } catch (e: any) {
         const msg = String(e.message ?? "")
