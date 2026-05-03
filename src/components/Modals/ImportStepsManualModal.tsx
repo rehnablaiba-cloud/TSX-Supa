@@ -1,169 +1,227 @@
 // src/components/Modals/ImportStepsManualModal.tsx
 import React, { useEffect, useState } from "react";
-import {
-  Hash,
-  Plus,
-  Pencil,
-  Trash2,
-  CheckCircle,
-  ArrowLeft,
-} from "lucide-react";
+import { Hash, ArrowLeft, CheckCircle, AlertCircle } from "lucide-react";
 import ModalShell from "../UI/ModalShell";
-
 import { supabase } from "../../supabase";
-import { Row, DiffRow } from "../UI/ReviewRow";
+import {
+  r2GetRevisions,
+  r2GetStepOrder,
+  r2GetTestSteps,
+  r2Invalidate,
+} from "../../lib/r2";
+import type { R2Revision, R2Step } from "../../lib/r2";
 
-type StepOp = "create" | "update" | "delete";
+// ── R2 write helper ───────────────────────────────────────────────────────────
+const WORKER_URL = "https://shrill-thunder-6fdf.rehnab-rk.workers.dev";
+
+async function r2Write(key: string, data: unknown): Promise<void> {
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session?.access_token) throw new Error("Not authenticated");
+
+  const res = await fetch(WORKER_URL, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${session.access_token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ type: "write", key, data }),
+  });
+
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error((err as any).error ?? `R2 write failed: ${res.status}`);
+  }
+}
+
+// ── Types ─────────────────────────────────────────────────────────────────────
 type Stage =
-  | "selectop"
-  | "selecttest"
-  | "selectstep"
-  | "fillform"
-  | "confirm"
-  | "submitting"
-  | "done";
+  | "loadingRevisions"
+  | "selectRevision"
+  | "loadingSteps"
+  | "selectStep"
+  | "edit"
+  | "saving"
+  | "done"
+  | "error";
 
-interface ExistingStep {
-  id: string;
-  serial_no: number;
-  action: string | null;
-  expected_result: string | null;
-  is_divider: boolean;
+interface Props { onClose: () => void; onBack: () => void }
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+/** Rebuild a step-order array from a steps list sorted by serial_no. */
+function buildStepOrder(steps: R2Step[]): string[] {
+  return [...steps]
+    .sort((a, b) => a.serial_no - b.serial_no)
+    .map((s) => s.id);
 }
 
-interface Props {
-  onClose: () => void;
-  onBack: () => void;
-}
-
+// ── Component ─────────────────────────────────────────────────────────────────
 const ImportStepsManualModal: React.FC<Props> = ({ onClose, onBack }) => {
-  const [stage, setStage] = useState<Stage>("selectop");
-  const [op, setOp] = useState<StepOp>("create");
-  const [tests, setTests] = useState<{ id: string; name: string }[]>([]);
-  const [steps, setSteps] = useState<ExistingStep[]>([]);
-  const [loadingSteps, setLoadingSteps] = useState(false);
-  const [selTest, setSelTest] = useState("");
-  const [selStep, setSelStep] = useState<ExistingStep | null>(null);
-  const [sn, setSn] = useState("");
-  const [action, setAction] = useState("");
-  const [expected, setExpected] = useState("");
-  const [is_divider, setIsDivider] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [stage,        setStage]        = useState<Stage>("loadingRevisions");
+  const [revisions,    setRevisions]    = useState<R2Revision[]>([]);
+  const [selRevision,  setSelRevision]  = useState<R2Revision | null>(null);
+  const [allSteps,     setAllSteps]     = useState<R2Step[]>([]);   // full list for this revision
+  const [stepOrder,    setStepOrder]    = useState<string[]>([]);   // current ordered IDs
+  const [original,     setOriginal]     = useState<R2Step | null>(null);
+  const [serialNo,     setSerialNo]     = useState("");
+  const [action,       setAction]       = useState("");
+  const [expected,     setExpected]     = useState("");
+  const [isDivider,    setIsDivider]    = useState(false);
+  const [error,        setError]        = useState<string | null>(null);
 
-  useEffect(() => {
-    supabase.from("tests").select("id, name").order("name")
-      .then(({ data }) => setTests((data ?? []) as { id: string; name: string }[]));
- }, []);
-  const handleBack = () => {
-    switch (stage) {
-      case "selectop":
-        return onBack();
-      case "selecttest":
-        return setStage("selectop");
-      case "selectstep":
-        return setStage("selecttest");
-      case "fillform":
-        return setStage(op === "create" ? "selecttest" : "selectstep");
-      case "confirm":
-        return setStage(op === "delete" ? "selectstep" : "fillform");
-      default:
-        break;
-    }
-  };
-
-  const handleTestSelect = async (tests_name: string) => {
-    setSelTest(tests_name);
-    if (op !== "create") {
-      // Navigate immediately so the user sees the stage change,
-      // then fetch steps in the background.
-      setSteps([]);
-      setError(null);
-      setStage("selectstep");
-      setLoadingSteps(true);
-      const { data, error: fetchError } = await supabase
-        .from("test_steps")
-        .select("id, serial_no, action, expected_result, is_divider")
-        .eq("tests_name", tests_name)
-        .order("serial_no");
-      setLoadingSteps(false);
-      if (fetchError) {
-        setError(fetchError.message);
-      } else {
-        setSteps((data ?? []) as ExistingStep[]);
-      }
-    } else {
-      setStage("fillform");
-    }
-  };
-
-  const handleStepSelect = (step: ExistingStep) => {
-    setSelStep(step);
-    if (op === "update") {
-      setSn(String(step.serial_no));
-      setAction(step.action ?? "");
-      setExpected(step.expected_result ?? "");
-      setIsDivider(step.is_divider);
-    }
-    setStage(op === "delete" ? "confirm" : "fillform");
-  };
-
-  const handleSubmit = async () => {
-    setStage("submitting");
+  // ── 1. Load active revisions from R2 ────────────────────────────────────────
+  const loadRevisions = async () => {
+    setStage("loadingRevisions");
     setError(null);
     try {
-      if (op === "create") {
-        const { error: e } = await supabase.from("test_steps").insert({
-          serial_no: parseFloat(sn),
-          action,
-          expected_result: expected,
-          is_divider,
-          tests_name: selTest,
-        });
-        if (e) throw new Error(e.message);
-      } else if (op === "update" && selStep) {
-        const { error: e } = await supabase
-          .from("test_steps")
-          .update({
-            serial_no: parseFloat(sn),
-            action,
-            expected_result: expected,
-            is_divider,
-          })
-          .eq("id", selStep.id);
-        if (e) throw new Error(e.message);
-      } else if (op === "delete" && selStep) {
-        const { error: e } = await supabase
-          .from("test_steps")
-          .delete()
-          .eq("id", selStep.id);
-        if (e) throw new Error(e.message);
-      }
-      setStage("done");
+      const all = await r2GetRevisions();
+      const active = all.filter((r) => r.status === "active");
+      setRevisions(active);
+      setStage("selectRevision");
     } catch (e: any) {
-      setError(e.message);
-      setStage("confirm");
+      setError(e.message ?? "Failed to fetch revisions from R2");
+      setStage("error");
     }
   };
 
-  const subtitle: Record<Stage, string> = {
-    selectop: "Choose operation",
-    selecttest: "Pick test",
-    selectstep: "Pick step",
-    fillform: "Enter details",
-    confirm: "Review & confirm",
-    submitting: "...",
-    done: "Done!",
+  useEffect(() => { loadRevisions(); }, []);
+
+  // ── 2. Load steps + step order for selected revision ────────────────────────
+  const handleRevisionSelect = async (revId: string) => {
+    const rev = revisions.find((r) => r.id === revId) ?? null;
+    if (!rev) return;
+    setSelRevision(rev);
+    setStage("loadingSteps");
+    setError(null);
+    try {
+      const [steps, order] = await Promise.all([
+        r2GetTestSteps(rev.id),
+        r2GetStepOrder(rev.id),
+      ]);
+      setAllSteps(steps);
+      setStepOrder(order);
+      setStage("selectStep");
+    } catch (e: any) {
+      setError(e.message ?? "Failed to fetch steps from R2");
+      setStage("error");
+    }
+  };
+
+  // ── 3. Select step → pre-fill edit form ─────────────────────────────────────
+  const handleStepSelect = (step: R2Step) => {
+    setOriginal(step);
+    setSerialNo(String(step.serial_no));
+    setAction(step.action ?? "");
+    setExpected(step.expected_result ?? "");
+    setIsDivider(step.is_divider);
+    setStage("edit");
+  };
+
+  // ── 4-8. Save ────────────────────────────────────────────────────────────────
+  const handleSave = async () => {
+    if (!original || !selRevision) return;
+    setStage("saving");
+    setError(null);
+
+    const newSn       = parseFloat(serialNo);
+    const newAction   = action.trim();
+    const newExpected = expected.trim();
+
+    try {
+      // 4. Build updated step
+      const updatedStep: R2Step = {
+        ...original,
+        serial_no:       newSn,
+        action:          newAction,
+        expected_result: newExpected,
+        is_divider:      isDivider,
+      };
+
+      // 4. Build updated steps list and recalculate step order
+      const updatedSteps: R2Step[] = allSteps.map((s) =>
+        s.id === original.id ? updatedStep : s
+      );
+      const newStepOrder: string[] = buildStepOrder(updatedSteps);
+
+      // 5+6. Push updated test_steps and step_order to R2
+      await Promise.all([
+        r2Write(`test_steps/${selRevision.id}.json`,  updatedSteps),
+        r2Write(`step_orders/${selRevision.id}.json`, newStepOrder),
+      ]);
+      r2Invalidate(`test_steps/${selRevision.id}.json`);
+      r2Invalidate(`step_orders/${selRevision.id}.json`);
+
+      // 7. Push new step order to Supabase revisions table
+      const { error: revErr } = await supabase
+        .from("revisions")
+        .update({ step_order: newStepOrder })
+        .eq("id", selRevision.id);
+      if (revErr) throw new Error(`Supabase revisions: ${revErr.message}`);
+
+      // 8. Patch only changed fields on the specific step in Supabase test_steps
+      const patch: Partial<R2Step> = {};
+      if (newSn       !== original.serial_no)                              patch.serial_no       = newSn;
+      if (newAction   !== (original.action ?? ""))                         patch.action          = newAction;
+      if (newExpected !== (original.expected_result ?? ""))                patch.expected_result = newExpected;
+      if (isDivider   !== original.is_divider)                             patch.is_divider      = isDivider;
+
+      if (Object.keys(patch).length > 0) {
+        const { error: stepErr } = await supabase
+          .from("test_steps")
+          .update(patch)
+          .eq("id", original.id);
+        if (stepErr) throw new Error(`Supabase test_steps: ${stepErr.message}`);
+      }
+
+      setStage("done");
+    } catch (e: any) {
+      setError(e.message ?? "Save failed");
+      setStage("edit");
+    }
+  };
+
+  // ── Derived ──────────────────────────────────────────────────────────────────
+
+  /** Steps displayed in step-order sequence */
+  const orderedSteps: R2Step[] = stepOrder
+    .map((id) => allSteps.find((s) => s.id === id))
+    .filter((s): s is R2Step => s !== undefined);
+
+  const isDirty =
+    original !== null && (
+      parseFloat(serialNo) !== original.serial_no ||
+      action.trim()        !== (original.action ?? "") ||
+      expected.trim()      !== (original.expected_result ?? "") ||
+      isDivider            !== original.is_divider
+    );
+
+  const subtitles: Record<Stage, string> = {
+    loadingRevisions: "Fetching revisions…",
+    selectRevision:   "Select revision",
+    loadingSteps:     "Fetching steps…",
+    selectStep:       "Select step",
+    edit:             "Edit step",
+    saving:           "Saving…",
+    done:             "Done!",
+    error:            "Error",
+  };
+
+  // ── Back navigation ──────────────────────────────────────────────────────────
+  const handleBack = () => {
+    if (stage === "selectRevision") return onBack();
+    if (stage === "selectStep")     return setStage("selectRevision");
+    if (stage === "edit")           return setStage("selectStep");
   };
 
   return (
     <ModalShell
       title="Steps (Manual)"
       icon={<Hash size={16} />}
-      subtitle={subtitle[stage]}
+      subtitle={subtitles[stage]}
       onClose={onClose}
     >
-      {/* back button */}
-      {stage !== "submitting" && stage !== "done" && (
+      {/* Back */}
+      {(stage === "selectRevision" || stage === "selectStep" || stage === "edit") && (
         <button
           onClick={handleBack}
           className="-mt-2 self-start flex items-center gap-1 text-xs text-t-muted
@@ -173,98 +231,83 @@ const ImportStepsManualModal: React.FC<Props> = ({ onClose, onBack }) => {
         </button>
       )}
 
-      {stage === "selectop" && (
-        <div className="flex flex-col gap-2">
-          {(["create", "update", "delete"] as StepOp[]).map((o) => (
-            <button
-              key={o}
-              onClick={() => {
-                setOp(o);
-                setStage("selecttest");
-              }}
-              className="flex items-center gap-3 px-4 py-3 rounded-xl border border-(--border-color)
-                bg-bg-card hover:bg-bg-base text-left transition-all"
-            >
-              <span className="text-t-muted">
-                {o === "create" ? (
-                  <Plus size={20} />
-                ) : o === "update" ? (
-                  <Pencil size={20} />
-                ) : (
-                  <Trash2 size={20} />
-                )}
-              </span>
-              <p className="text-sm font-semibold text-t-primary capitalize">
-                {o}
-              </p>
-            </button>
-          ))}
+      {/* Loading revisions */}
+      {(stage === "loadingRevisions" || stage === "loadingSteps") && (
+        <div className="flex flex-col items-center gap-3 py-10">
+          <div className="w-8 h-8 border-4 border-c-brand border-t-transparent rounded-full animate-spin" />
+          <p className="text-xs text-t-muted">
+            {stage === "loadingRevisions" ? "Fetching revisions from R2…" : "Fetching steps from R2…"}
+          </p>
         </div>
       )}
 
-      {stage === "selecttest" && (
-        <div className="flex flex-col gap-1.5 max-h-60 overflow-y-auto">
-          {tests.length === 0 && (
-            <p className="text-sm text-t-muted text-center py-4">
-              No tests found.
-            </p>
-          )}
-          {tests.map((t) => (
-            <button key={t.id} onClick={() => handleTestSelect(t.name)}
-              className="text-left px-3 py-2 rounded-xl border border-(--border-color)
-                bg-bg-card hover:bg-bg-base text-sm text-t-primary">
-              {t.name}
-            </button>
-          ))}
+      {/* Select revision */}
+      {stage === "selectRevision" && (
+        <div className="flex flex-col gap-3">
+          <p className="text-xs text-t-muted">
+            {revisions.length} active revision{revisions.length !== 1 ? "s" : ""} in R2
+          </p>
+          <select
+            defaultValue=""
+            onChange={(e) => handleRevisionSelect(e.target.value)}
+            className="input text-sm"
+          >
+            <option value="" disabled>Choose a revision…</option>
+            {revisions
+              .slice()
+              .sort((a, b) =>
+                a.tests_serial_no.localeCompare(b.tests_serial_no, undefined, { numeric: true })
+              )
+              .map((r) => (
+                <option key={r.id} value={r.id}>
+                  {r.tests_serial_no} — Rev {r.revision}
+                </option>
+              ))}
+          </select>
         </div>
       )}
 
-      {stage === "selectstep" && (
-        <div className="flex flex-col gap-1.5 max-h-60 overflow-y-auto">
-          {loadingSteps && (
-            <div className="flex items-center justify-center py-6">
-              <div className="w-6 h-6 border-2 border-c-brand border-t-transparent rounded-full animate-spin" />
-            </div>
-          )}
-          {!loadingSteps && error && (
-            <p className="text-xs text-red-400 text-center py-4">{error}</p>
-          )}
-          {!loadingSteps && !error && steps.length === 0 && (
-            <p className="text-sm text-t-muted text-center py-4">
-              No steps found.
-            </p>
-          )}
-          {!loadingSteps &&
-            steps.map((s) => (
+      {/* Select step */}
+      {stage === "selectStep" && (
+        <div className="flex flex-col gap-1.5">
+          <p className="text-xs text-t-muted mb-1">
+            {orderedSteps.length} step{orderedSteps.length !== 1 ? "s" : ""} — ordered by step array
+          </p>
+          <div className="flex flex-col gap-1 max-h-64 overflow-y-auto">
+            {orderedSteps.length === 0 && (
+              <p className="text-sm text-t-muted text-center py-4">No steps found.</p>
+            )}
+            {orderedSteps.map((s, idx) => (
               <button
                 key={s.id}
                 onClick={() => handleStepSelect(s)}
                 className="text-left px-3 py-2 rounded-xl border border-(--border-color)
-                bg-bg-card hover:bg-bg-base text-xs text-t-primary"
+                  bg-bg-card hover:bg-bg-base text-xs text-t-primary transition-colors"
               >
                 <span className="font-mono text-c-brand mr-2">
-                  {s.serial_no}
+                  {String(idx + 1).padStart(2, "0")} · {s.serial_no}
                 </span>
-                {s.is_divider ? (
-                  <em className="text-t-muted">divider</em>
-                ) : (
-                  s.action
-                )}
+                {s.is_divider
+                  ? <em className="text-t-muted">— divider —</em>
+                  : <span className="truncate">{s.action}</span>
+                }
               </button>
             ))}
+          </div>
         </div>
       )}
 
-      {stage === "fillform" && (
+      {/* Edit */}
+      {stage === "edit" && original && (
         <div className="flex flex-col gap-3">
           <div>
             <label className="block text-xs text-t-muted mb-1">Serial No</label>
             <input
-              value={sn}
-              onChange={(e) => setSn(e.target.value)}
-              className="input text-sm"
               type="number"
               step="0.01"
+              value={serialNo}
+              onChange={(e) => setSerialNo(e.target.value)}
+              className="input text-sm font-mono"
             />
           </div>
           <div>
@@ -277,9 +320,7 @@ const ImportStepsManualModal: React.FC<Props> = ({ onClose, onBack }) => {
             />
           </div>
           <div>
-            <label className="block text-xs text-t-muted mb-1">
-              Expected Result
-            </label>
+            <label className="block text-xs text-t-muted mb-1">Expected Result</label>
             <textarea
               value={expected}
               onChange={(e) => setExpected(e.target.value)}
@@ -287,98 +328,64 @@ const ImportStepsManualModal: React.FC<Props> = ({ onClose, onBack }) => {
               rows={3}
             />
           </div>
-          <label className="flex items-center gap-2 text-xs text-t-secondary cursor-pointer">
+          <label className="flex items-center gap-2 text-xs text-t-secondary cursor-pointer select-none">
             <input
               type="checkbox"
-              checked={is_divider}
+              checked={isDivider}
               onChange={(e) => setIsDivider(e.target.checked)}
               className="rounded"
             />
             Is Divider
           </label>
+
+          {error && (
+            <p className="flex items-center gap-1.5 text-xs text-red-400">
+              <AlertCircle size={13} /> {error}
+            </p>
+          )}
+
           <button
-            onClick={() => setStage("confirm")}
-            disabled={!sn.trim()}
-            className="btn-primary text-sm disabled:opacity-50"
+            onClick={handleSave}
+            disabled={!serialNo || !isDirty}
+            className="btn-primary text-sm disabled:opacity-40"
           >
-            Review
+            Save &amp; Upload
           </button>
         </div>
       )}
 
-      {stage === "confirm" && (
-        <div className="flex flex-col gap-3">
-          <div className="rounded-xl border border-(--border-color) bg-bg-card p-3 flex flex-col gap-1.5 text-xs">
-            <Row label="Op" value={op.toUpperCase()} brand />
-            <Row label="Test" value={selTest} />
-            {op === "delete" && selStep && (
-              <Row label="Step S/N" value={String(selStep.serial_no)} mono />
-            )}
-            {op === "create" && (
-              <>
-                <Row label="S/N" value={sn} mono />
-                <Row label="Action" value={action} />
-                <Row label="Expected" value={expected} />
-              </>
-            )}
-            {op === "update" && selStep && (
-              <>
-                <DiffRow
-                  label="S/N"
-                  before={String(selStep.serial_no)}
-                  after={sn}
-                />
-                <DiffRow
-                  label="Action"
-                  before={selStep.action ?? ""}
-                  after={action}
-                />
-                <DiffRow
-                  label="Expected"
-                  before={selStep.expected_result ?? ""}
-                  after={expected}
-                />
-                <DiffRow
-                  label="Divider"
-                  before={String(selStep.is_divider)}
-                  after={String(is_divider)}
-                />
-              </>
-            )}
-          </div>
-          {error && <p className="text-xs text-red-400">{error}</p>}
-          <div className="flex gap-2">
-            <button onClick={handleBack} className="flex-1 btn-ghost text-sm">
-              Back
-            </button>
-            <button
-              onClick={handleSubmit}
-              className={
-                "flex-1 px-4 py-2.5 rounded-xl text-sm font-semibold text-white " +
-                (op === "delete"
-                  ? "bg-red-500 hover:bg-red-600"
-                  : "btn-primary")
-              }
-            >
-              Confirm {op}
-            </button>
-          </div>
-        </div>
-      )}
-
-      {stage === "submitting" && (
-        <div className="flex items-center justify-center py-8">
+      {/* Saving */}
+      {stage === "saving" && (
+        <div className="flex flex-col items-center gap-3 py-8">
           <div className="w-8 h-8 border-4 border-c-brand border-t-transparent rounded-full animate-spin" />
+          <p className="text-xs text-t-muted text-center">
+            R2 test_steps · R2 step_order · Supabase revisions · Supabase test_steps
+          </p>
         </div>
       )}
 
+      {/* Done */}
       {stage === "done" && (
         <div className="flex flex-col items-center gap-3 py-6">
           <CheckCircle size={32} className="text-green-400" />
-          <p className="text-sm font-semibold text-t-primary">Done!</p>
-          <button onClick={onClose} className="btn-primary text-sm px-6">
-            Close
-          </button>
+          <p className="text-sm font-semibold text-t-primary">Saved!</p>
+          <p className="text-xs text-t-muted text-center">
+            R2 updated · step order recalculated · Supabase patched
+          </p>
+          <button onClick={onClose} className="btn-primary text-sm px-6">Close</button>
+        </div>
+      )}
+
+      {/* Error */}
+      {stage === "error" && (
+        <div className="flex flex-col items-center gap-3 py-6">
+          <AlertCircle size={32} className="text-red-400" />
+          <p className="text-sm font-semibold text-t-primary">Failed to load</p>
+          <p className="text-xs text-t-muted text-center break-all">{error}</p>
+          <div className="flex gap-2">
+            <button onClick={onBack}          className="btn-ghost text-sm px-4">Cancel</button>
+            <button onClick={loadRevisions}   className="btn-primary text-sm px-4">Retry</button>
+          </div>
         </div>
       )}
     </ModalShell>
