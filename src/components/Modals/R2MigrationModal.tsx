@@ -947,8 +947,8 @@ const R2MigrationModal: React.FC<Props> = ({ onClose, onBack }) => {
           tsStatus:  result === "ok" ? "deep_diff_ok" : "deep_diff_failed",
           tsDbCount,
           tsError:   detail }
-        }
       } catch (e: any) {
+    
         const msg = String(e.message ?? "")
         items[i] = { ...items[i],
           tsStatus: msg.includes("404") || msg.toLowerCase().includes("not found") ? "missing_r2" : "error",
