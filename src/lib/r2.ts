@@ -128,14 +128,20 @@ export type R2Step = {
 // Public API
 // ─────────────────────────────────────────────────────────────────────────────
 
-/** All modules. Cached 5 min. */
-export function r2GetModules(): Promise<R2Module[]> {
-  return cachedFetch<R2Module[]>("modules/all.json");
+/** All modules, sorted naturally by name (e.g. TS#01, TS#02 … TS#10). Cached 5 min. */
+export async function r2GetModules(): Promise<R2Module[]> {
+  const modules = await cachedFetch<R2Module[]>("modules/all.json");
+  return modules.sort((a, b) =>
+    a.name.localeCompare(b.name, undefined, { numeric: true })
+  );
 }
 
-/** All tests. Cached 5 min. */
-export function r2GetTests(): Promise<R2Test[]> {
-  return cachedFetch<R2Test[]>("tests/all.json");
+/** All tests, sorted naturally by name (e.g. T001, T002 … T010). Cached 5 min. */
+export async function r2GetTests(): Promise<R2Test[]> {
+  const tests = await cachedFetch<R2Test[]>("tests/all.json");
+  return tests.sort((a, b) =>
+    a.name.localeCompare(b.name, undefined, { numeric: true })
+  );
 }
 
 /**
