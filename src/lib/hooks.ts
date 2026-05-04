@@ -72,6 +72,8 @@ import {
   replaceCsvSteps,
   releaseLocksAndSignOut,
   fetchBatchStepImageUrls,
+  fetchTestExecutionContext,
+  fetchTestExecutionStepResults,
   // Types (re-export so callers only need one import)
   type DashboardModuleSummary,
   type ActiveLock,
@@ -95,6 +97,7 @@ import {
   type ModuleTestItem,
   type TableName,
   type StepImageUrls,
+  type TestExecutionContext,
 } from "./rpc";
 
 // Re-export all types so consumers only need: `import { … } from "~/lib/hooks"`
@@ -304,32 +307,72 @@ export function useActiveRevisions(
 // ─────────────────────────────────────────────────────────────────────────────
 
 // ── Context query ─────────────────────────────────────────────────────────────
+// ── Context query (structural — cached aggressively) ──────────────────────────
 
 /**
- * All data for the TestExecution view.
- * Disabled when either param is empty — prevents the wrong RPC call that
- * silently returns results for a different module.
+ * Module layout + active revision. Doesn't include step results.
  *
- * Additionally gated externally: callers pass `enabled: false` until the lock
- * check resolves, ensuring the heavy execution fetch never runs when another
- * user already holds the lock.
+ * staleTime: Infinity — only changes when an admin publishes a new revision.
+ * Callers must pass enabled:false until the lock check resolves.
  */
+export function useTestExecutionContext(
+  module_test_id: string,
+  module_name:    string,
+  options?: Partial<UseQueryOptions<TestExecutionContext>>
+) {
+  return useQuery<TestExecutionContext>({
+    queryKey:             QK.executionContext(module_test_id),
+    queryFn:              () => fetchTestExecutionContext(module_test_id, module_name),
+    enabled:              !!module_test_id && !!module_name,
+    staleTime:            Infinity,
+    gcTime:               GC.execution,
+    refetchOnWindowFocus: false,
+    ...options,
+  });
+}
+
+// ── Step results query (live — always re-fetches on mount) ────────────────────
+
+/**
+ * Step results for a specific revision, keyed by revision_id + module_name.
+ *
+ * staleTime: 0 — every mount triggers a fresh Supabase read, so a tester
+ * returning to a test always sees the current DB state, never a cached snapshot.
+ *
+ * Disabled until revision_id is resolved from useTestExecutionContext.
+ */
+export function useTestExecutionStepResults(
+  revision_id: string | null | undefined,
+  module_name: string,
+  options?: Partial<UseQueryOptions<RawStepResult[]>>
+) {
+  return useQuery<RawStepResult[]>({
+    queryKey:             ["executionStepResults", revision_id ?? "", module_name],
+    queryFn:              () => fetchTestExecutionStepResults(revision_id!, module_name),
+    enabled:              !!revision_id && !!module_name,
+    staleTime:            0,          // ← always stale — re-fetches on every visit
+    gcTime:               5 * 60 * 1000,
+    refetchOnWindowFocus: false,
+    ...options,
+  });
+}
+
+/** @deprecated Use useTestExecutionContext + useTestExecutionStepResults. */
 export function useTestExecutionData(
   module_test_id: string,
   module_name:    string,
   options?: Partial<UseQueryOptions<TestExecutionData>>
 ) {
   return useQuery<TestExecutionData>({
-    queryKey:            QK.executionContext(module_test_id),
-    queryFn:             () => fetchTestExecutionData(module_test_id, module_name),
-    enabled:             !!module_test_id && !!module_name,
-    staleTime:           STALE.execution,   // optimistic after first load — never refetch
-    gcTime:              GC.execution,
-    refetchOnWindowFocus: false,     // override global — remount must not re-fetch
+    queryKey:             QK.executionContext(module_test_id),
+    queryFn:              () => fetchTestExecutionData(module_test_id, module_name),
+    enabled:              !!module_test_id && !!module_name,
+    staleTime:            STALE.execution,
+    gcTime:               GC.execution,
+    refetchOnWindowFocus: false,
     ...options,
   });
 }
-
 // ── Signed image URLs ─────────────────────────────────────────────────────────
 
 /**

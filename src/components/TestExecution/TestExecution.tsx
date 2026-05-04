@@ -23,10 +23,18 @@ import ExportModal from "../UI/ExportModal";
 import { exportExecutionCSV, exportExecutionPDF } from "../../utils/export";
 import type { FlatData } from "../../utils/export";
 import {
-  useTestExecutionData, useModuleLocks, useStepImageUrls,
-  useAcquireLock, useReleaseLock, useForceReleaseLock,
-  useHeartbeatLock, useUpdateStepResult, useResetAllStepResults,
-  invalidateModuleLocks, insertTestFinished,
+  useTestExecutionContext,
+  useTestExecutionStepResults,
+  useModuleLocks,
+  useStepImageUrls,
+  useAcquireLock,
+  useReleaseLock,
+  useForceReleaseLock,
+  useHeartbeatLock,
+  useUpdateStepResult,
+  useResetAllStepResults,
+  invalidateModuleLocks,
+  insertTestFinished,
 } from "../../lib/hooks";
 import type { ActiveRevision, LockRow } from "../../lib/hooks";
 
@@ -34,8 +42,9 @@ import type { ActiveRevision, LockRow } from "../../lib/hooks";
 // Constants
 // ─────────────────────────────────────────────────────────────────────────────
 
-/** Stable empty array so memo'd row components don't see a new reference. */
 const EMPTY_URLS: string[] = [];
+const FLUSH_BATCH_SIZE      = 5;
+const FLUSH_DELAY_MS        = 10_000;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Types
@@ -51,20 +60,18 @@ interface Props {
 type Filter = "all" | "pass" | "fail" | "pending";
 
 interface ExecutionStep {
-  stepId:            string;
-  stepResultId:      string;
-  module_test_id:    string;
-  /** Computed from step_order position — shown in UI */
-  serial_no:         number;
-  /** Raw DB serial_no — used to build R2 image key prefix */
-  originalSerialNo:  number;
-  action:            string;
-  expected_result:   string;
+  stepId:              string;
+  stepResultId:        string;
+  module_test_id:      string;
+  serial_no:           number;
+  originalSerialNo:    number;
+  action:              string;
+  expected_result:     string;
   action_image_urls:   string[];
   expected_image_urls: string[];
-  is_divider:  boolean;
-  status:      "pass" | "fail" | "pending";
-  remarks:     string;
+  is_divider:   boolean;
+  status:       "pass" | "fail" | "pending";
+  remarks:      string;
   display_name: string;
 }
 
@@ -80,26 +87,30 @@ interface ImagePreviewState {
   label: string;
 }
 
+// Shape of a queued write — mirrors UpdateStepResultVars from hooks
+interface PendingWrite {
+  test_steps_id: string;
+  module_name:   string;
+  status:        "pass" | "fail" | "pending";
+  remarks:       string;
+  display_name:  string;
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
-// computeDisplaySerials  — O(n), single backward pass for dividers
+// computeDisplaySerials
 // ─────────────────────────────────────────────────────────────────────────────
 
 function computeDisplaySerials(steps: { is_divider: boolean }[]): number[] {
   const result = new Array<number>(steps.length).fill(0);
   let counter  = 0;
-
-  // Forward: assign incrementing serials to non-dividers
   for (let i = 0; i < steps.length; i++) {
     if (!steps[i].is_divider) result[i] = ++counter;
   }
-
-  // Backward: each divider gets the serial of the next non-divider
   let nextSn = counter + 1;
   for (let i = steps.length - 1; i >= 0; i--) {
     if (!steps[i].is_divider) nextSn = result[i];
     else result[i] = nextSn;
   }
-
   return result;
 }
 
@@ -111,9 +122,9 @@ const DIVIDER_LEVELS: Record<number, {
   dot: string; text: string; bgStyle: React.CSSProperties;
   border: string; indent: string; size: string;
 }> = {
-  1: { dot: "bg-c-brand", text: "text-c-brand", bgStyle: { backgroundColor: "var(--color-brand-bg)" },      border: "border-l-[3px] border-c-brand", indent: "px-4",  size: "text-xs font-bold tracking-widest uppercase" },
-  2: { dot: "bg-divider-2", text: "text-divider-2", bgStyle: { backgroundColor: "color-mix(in srgb, var(--color-divider-2) 5%, transparent)" }, border: "border-l-2 border-divider-2",  indent: "px-8",  size: "text-xs font-semibold tracking-wider uppercase" },
-  3: { dot: "bg-divider-3", text: "text-divider-3", bgStyle: { backgroundColor: "color-mix(in srgb, var(--color-divider-3) 5%, transparent)" }, border: "border-l-2 border-divider-3",  indent: "px-12", size: "text-[11px] font-medium tracking-wide" },
+  1: { dot: "bg-c-brand",    text: "text-c-brand",    bgStyle: { backgroundColor: "var(--color-brand-bg)" }, border: "border-l-[3px] border-c-brand", indent: "px-4",  size: "text-xs font-bold tracking-widest uppercase" },
+  2: { dot: "bg-divider-2",  text: "text-divider-2",  bgStyle: { backgroundColor: "color-mix(in srgb, var(--color-divider-2) 5%, transparent)" }, border: "border-l-2 border-divider-2", indent: "px-8",  size: "text-xs font-semibold tracking-wider uppercase" },
+  3: { dot: "bg-divider-3",  text: "text-divider-3",  bgStyle: { backgroundColor: "color-mix(in srgb, var(--color-divider-3) 5%, transparent)" }, border: "border-l-2 border-divider-3", indent: "px-12", size: "text-[11px] font-medium tracking-wide" },
 };
 
 const MOBILE_DIVIDER_LEVELS: Record<number, {
@@ -328,28 +339,10 @@ interface TableStepRowProps {
   isFocused:   boolean;
   isUpdating:  boolean;
   isReadOnly:  boolean;
-  onUpdate:       (stepId: string, status: "pass" | "fail" | "pending", remarks: string) => void;
-  onFocus:        (stepId: string) => void;
-  onRemarksChange:(stepId: string, val: string) => void;
-  onImageClick:   (urls: string[], idx: number, label: string) => void;
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Desktop Table Row
-// ─────────────────────────────────────────────────────────────────────────────
-
-interface TableStepRowProps {
-  step:              ExecutionStep;
-  initialRemarks:    string;
-  actionImageUrls:   string[];
-  expectedImageUrls: string[];
-  isFocused:   boolean;
-  isUpdating:  boolean;
-  isReadOnly:  boolean;
-  onUpdate:       (stepId: string, status: "pass" | "fail" | "pending", remarks: string) => void;
-  onFocus:        (stepId: string) => void;
-  onRemarksChange:(stepId: string, val: string) => void;
-  onImageClick:   (urls: string[], idx: number, label: string) => void;
+  onUpdate:        (stepId: string, status: "pass" | "fail" | "pending", remarks: string) => void;
+  onFocus:         (stepId: string) => void;
+  onRemarksChange: (stepId: string, val: string) => void;
+  onImageClick:    (urls: string[], idx: number, label: string) => void;
 }
 
 const TableStepRow = memo(
@@ -362,7 +355,7 @@ const TableStepRow = memo(
     const [remarks, setRemarks] = useState(initialRemarks);
     useEffect(() => { setRemarks(initialRemarks); }, [initialRemarks]);
 
-    const rowBg     = step.status === "pass" ? "bg-[color-mix(in_srgb,var(--color-pass)_5%,transparent)]" : step.status === "fail" ? "bg-fail/5" : "";
+    const rowBg      = step.status === "pass" ? "bg-[color-mix(in_srgb,var(--color-pass)_5%,transparent)]" : step.status === "fail" ? "bg-fail/5" : "";
     const focusStyle = isFocused ? { outline: "2px solid var(--color-brand)", outlineOffset: "-2px" } : {};
 
     return (
@@ -447,23 +440,7 @@ const TableStepRow = memo(
       </tr>
     );
   })
-);// ─────────────────────────────────────────────────────────────────────────────
-// Mobile Step Card
-// ─────────────────────────────────────────────────────────────────────────────
-
-interface MobileStepCardProps {
-  step:              ExecutionStep;
-  initialRemarks:    string;
-  actionImageUrls:   string[];
-  expectedImageUrls: string[];
-  isFocused:   boolean;
-  isUpdating:  boolean;
-  isReadOnly:  boolean;
-  onUpdate:       (stepId: string, status: "pass" | "fail" | "pending", remarks: string) => void;
-  onFocus:        (stepId: string) => void;
-  onRemarksChange:(stepId: string, val: string) => void;
-  onImageClick:   (urls: string[], idx: number, label: string) => void;
-}
+);
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Mobile Step Card
@@ -477,10 +454,10 @@ interface MobileStepCardProps {
   isFocused:   boolean;
   isUpdating:  boolean;
   isReadOnly:  boolean;
-  onUpdate:       (stepId: string, status: "pass" | "fail" | "pending", remarks: string) => void;
-  onFocus:        (stepId: string) => void;
-  onRemarksChange:(stepId: string, val: string) => void;
-  onImageClick:   (urls: string[], idx: number, label: string) => void;
+  onUpdate:        (stepId: string, status: "pass" | "fail" | "pending", remarks: string) => void;
+  onFocus:         (stepId: string) => void;
+  onRemarksChange: (stepId: string, val: string) => void;
+  onImageClick:    (urls: string[], idx: number, label: string) => void;
 }
 
 const MobileStepCard = memo(
@@ -514,7 +491,7 @@ const MobileStepCard = memo(
       return () => { document.body.style.overflow = original; };
     }, [showRemarksDialog]);
 
-    const rowBg      = step.status === "pass" ? "bg-[color-mix(in_srgb,var(--color-pass)_5%,transparent)]" : step.status === "fail" ? "bg-fail/5" : "";
+    const rowBg       = step.status === "pass" ? "bg-[color-mix(in_srgb,var(--color-pass)_5%,transparent)]" : step.status === "fail" ? "bg-fail/5" : "";
     const accentColor = isFocused ? "var(--color-brand)" : step.status === "pass" ? "var(--color-pass)" : step.status === "fail" ? "var(--color-fail)" : "var(--border-color)";
 
     return (
@@ -548,16 +525,10 @@ const MobileStepCard = memo(
 
         <div onClick={() => onFocus(step.stepId)}
           className={`rounded-xl overflow-hidden border w-full cursor-pointer transition-shadow ${rowBg} ${isFocused ? "ring-2 ring-[color-mix(in_srgb,var(--color-brand),white_30%)]" : ""}`}
-          style={{
-            backgroundColor: "var(--bg-surface)",
-            borderLeftColor: accentColor,
-            borderLeftWidth: 3,
-            borderColor: "var(--border-color)",
-            isolation: "isolate",
-          }}>
+          style={{ backgroundColor: "var(--bg-surface)", borderLeftColor: accentColor, borderLeftWidth: 3, borderColor: "var(--border-color)", isolation: "isolate" }}>
+
           {/* Header */}
-          <div className="flex items-center justify-between px-3 py-2 border-b border-(--border-color)"
-            style={{ backgroundColor: "var(--bg-card)" }}>
+          <div className="flex items-center justify-between px-3 py-2 border-b border-(--border-color)" style={{ backgroundColor: "var(--bg-card)" }}>
             <span className="text-xs font-mono text-t-muted tracking-wide">#{step.serial_no}</span>
             <div className="flex items-center gap-2 min-w-0">
               {isFocused && !isReadOnly && (
@@ -579,8 +550,7 @@ const MobileStepCard = memo(
 
           {/* Action */}
           <div className="grid grid-cols-[72px_1fr] border-b border-(--border-color)">
-            <div className="px-3 py-2.5 border-r border-(--border-color) flex items-start"
-              style={{ backgroundColor: "var(--bg-card)" }}>
+            <div className="px-3 py-2.5 border-r border-(--border-color) flex items-start" style={{ backgroundColor: "var(--bg-card)" }}>
               <span className="text-[10px] font-semibold text-t-muted uppercase tracking-wider mt-0.5">Action</span>
             </div>
             <div className="px-3 py-2.5 min-w-0" style={{ backgroundColor: "var(--bg-surface)" }}>
@@ -599,8 +569,7 @@ const MobileStepCard = memo(
 
           {/* Expected */}
           <div className="grid grid-cols-[72px_1fr] border-b border-(--border-color)">
-            <div className="px-3 py-2.5 border-r border-(--border-color) flex items-start"
-              style={{ backgroundColor: "var(--bg-card)" }}>
+            <div className="px-3 py-2.5 border-r border-(--border-color) flex items-start" style={{ backgroundColor: "var(--bg-card)" }}>
               <span className="text-[10px] font-semibold text-t-muted uppercase tracking-wider mt-0.5">Expected</span>
             </div>
             <div className="px-3 py-2.5 min-w-0" style={{ backgroundColor: "var(--bg-surface)" }}>
@@ -651,15 +620,17 @@ const MobileStepCard = memo(
       </div>
     );
   })
-);// ─────────────────────────────────────────────────────────────────────────────
+);
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Main Component
 // ─────────────────────────────────────────────────────────────────────────────
 
 const TestExecution: React.FC<Props> = ({
   module_name, initialmodule_test_id, isAdmin = false, onBack,
 }) => {
-  const { user }                        = useAuth();
-  const { addToast }                    = useToast();
+  const { user }                           = useAuth();
+  const { addToast }                       = useToast();
   const { setActiveLock, clearActiveLock } = useActiveLock();
 
   const currentMtId = initialmodule_test_id;
@@ -668,8 +639,8 @@ const TestExecution: React.FC<Props> = ({
   useEffect(() => { if (user != null) userRef.current = user; }, [user]);
 
   // ── UI state ──────────────────────────────────────────────────────────────
-  const [filter,         setFilter]         = useState<Filter>("all");
-  const [search,         setSearch]         = useState("");
+  const [filter,          setFilter]          = useState<Filter>("all");
+  const [search,          setSearch]          = useState("");
   const [showExportModal, setShowExportModal] = useState(false);
   const [showUndoModal,   setShowUndoModal]   = useState(false);
   const [scrollTarget,    setScrollTarget]    = useState<string | null>(null);
@@ -683,15 +654,28 @@ const TestExecution: React.FC<Props> = ({
   const [isVisible,       setIsVisible]       = useState<boolean>(true);
 
   // ── Loading gates ─────────────────────────────────────────────────────────
-  const [dataInitialized,    setDataInitialized]    = useState(false);
+  const [dataInitialized,      setDataInitialized]      = useState(false);
   const [lockAcquireAttempted, setLockAcquireAttempted] = useState(false);
 
   // ── Mutation state ────────────────────────────────────────────────────────
   const [updatingStepIds, setUpdatingStepIds] = useState<Set<string>>(new Set());
   const [isUndoingAll,    setIsUndoingAll]    = useState(false);
 
+  // ─────────────────────────────────────────────────────────────────────────
+  // Composite write queue
+  //
+  // pendingFlushRef  — keyed by stepId so N updates to the same step coalesce
+  //                    into one DB write (last write wins)
+  // rollbackStateRef — pre-optimistic snapshot captured on FIRST enqueue for
+  //                    each step; used to roll back on batch flush failure
+  // flushTimerRef    — 10 s debounce timer; restarted on every new enqueue
+  // ─────────────────────────────────────────────────────────────────────────
+  const pendingFlushRef  = useRef<Map<string, PendingWrite>>(new Map());
+  const rollbackStateRef = useRef<Map<string, { status: ExecutionStep["status"]; remarks: string }>>(new Map());
+  const flushTimerRef    = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   // ── TanStack Query: lock check ────────────────────────────────────────────
-  const lockQuery     = useModuleLocks([currentMtId], module_name);
+  const lockQuery      = useModuleLocks([currentMtId], module_name);
   const lockRecord: LockRow | null = lockQuery.data?.[currentMtId] ?? null;
   const isLockedByOther = !!(lockRecord && lockRecord.user_id !== user?.id);
 
@@ -703,11 +687,13 @@ const TestExecution: React.FC<Props> = ({
   const updateStepMutation   = useUpdateStepResult(currentMtId, module_name);
   const resetStepsMutation   = useResetAllStepResults(currentMtId);
 
-  // Stable mutation refs to avoid stale closure issues in intervals/effects
+  // Stable mutation refs
   const heartbeatMutateRef    = useRef(heartbeatMutation.mutate);
   const releaseLockMutateRef  = useRef(releaseLockMutation.mutate);
-  useEffect(() => { heartbeatMutateRef.current   = heartbeatMutation.mutate;   }, [heartbeatMutation.mutate]);
-  useEffect(() => { releaseLockMutateRef.current = releaseLockMutation.mutate; }, [releaseLockMutation.mutate]);
+  const updateStepMutateAsync = useRef(updateStepMutation.mutateAsync);
+  useEffect(() => { heartbeatMutateRef.current    = heartbeatMutation.mutate;      }, [heartbeatMutation.mutate]);
+  useEffect(() => { releaseLockMutateRef.current  = releaseLockMutation.mutate;    }, [releaseLockMutation.mutate]);
+  useEffect(() => { updateStepMutateAsync.current = updateStepMutation.mutateAsync; }, [updateStepMutation.mutateAsync]);
 
   // ── Guard refs ────────────────────────────────────────────────────────────
   const hasInitializedForRef       = useRef<string | null>(null);
@@ -715,6 +701,17 @@ const TestExecution: React.FC<Props> = ({
 
   // ── 1. Reset all local state when the test changes ────────────────────────
   useEffect(() => {
+    // Flush any pending writes for the outgoing test before resetting
+    const pendingCount = pendingFlushRef.current.size;
+    if (pendingCount > 0) {
+      if (flushTimerRef.current) { clearTimeout(flushTimerRef.current); flushTimerRef.current = null; }
+      const batch = [...pendingFlushRef.current.values()];
+      pendingFlushRef.current.clear();
+      rollbackStateRef.current.clear();
+      // Fire-and-forget — navigating away; errors are silent here
+      Promise.allSettled(batch.map((v) => updateStepMutateAsync.current(v)));
+    }
+
     hasInitializedForRef.current       = null;
     lockAcquireAttemptedForRef.current = null;
     setDataInitialized(false);
@@ -722,21 +719,16 @@ const TestExecution: React.FC<Props> = ({
     setFocusedStepId(null);
     setSteps([]);
     setSeenStepIds(new Set());
-    remarksMap.current   = {};
+    remarksMap.current = {};
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentMtId]);
 
-  // ── 2. Acquire lock as soon as lock-check resolves (BEFORE data fetch) ────
-  //
-  // Previously this happened AFTER execData arrived (Effect 3 in old code),
-  // meaning 5k steps were fetched before we even held the lock.
-  // Now: lock check resolves → try to acquire → setLockAcquireAttempted
-  //                                           → execQuery becomes enabled
+  // ── 2. Acquire lock as soon as lock-check resolves ────────────────────────
   useEffect(() => {
     if (lockQuery.isLoading) return;
     if (lockAcquireAttemptedForRef.current === currentMtId) return;
     lockAcquireAttemptedForRef.current = currentMtId;
 
-    // Someone else holds it — don't attempt, just open the gate
     if (isLockedByOther) {
       setLockAcquireAttempted(true);
       return;
@@ -758,46 +750,56 @@ const TestExecution: React.FC<Props> = ({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [lockQuery.isLoading, currentMtId]);
 
-  // ── TanStack Query: execution data ───────────────────────────────────────
-  // Gated on lockAcquireAttempted — data never fetches before we hold the lock.
-  const execQuery = useTestExecutionData(currentMtId, module_name, {
+  // ── TanStack Query: structural context (staleTime: Infinity) ─────────────
+  const execContextQuery = useTestExecutionContext(currentMtId, module_name, {
     enabled: lockAcquireAttempted && !isLockedByOther,
   });
-  const execData = execQuery.data;
+  const contextData = execContextQuery.data;
 
-  // ── 3. Derive local steps from query data ─────────────────────────────────
+  // ── TanStack Query: step results (staleTime: 0, gated on revision_id) ────
+  const revisionId = contextData?.current_revision?.id ?? null;
+  const execStepResultsQuery = useTestExecutionStepResults(
+    revisionId,
+    module_name,
+    {
+      enabled: lockAcquireAttempted && !isLockedByOther && !!revisionId,
+    }
+  );
+  const stepResultsData = execStepResultsQuery.data;
+
+  // ── 3. Derive local steps once both queries have settled ──────────────────
   useEffect(() => {
-    if (!execData || hasInitializedForRef.current === currentMtId) return;
+    if (!contextData || !stepResultsData) return;
+    if (hasInitializedForRef.current === currentMtId) return;
     hasInitializedForRef.current = currentMtId;
 
-    const ordered        = execData.step_results.filter((sr) => sr.step !== null);
+    const ordered        = stepResultsData.filter((sr) => sr.step !== null);
     const displaySerials = computeDisplaySerials(ordered.map((sr) => ({ is_divider: sr.step!.is_divider })));
 
     const merged: ExecutionStep[] = ordered.map((sr, idx) => ({
-      stepId:             sr.step!.id,
-      stepResultId:       sr.id,
-      module_test_id:     currentMtId,
-      serial_no:          displaySerials[idx],
-      originalSerialNo:   sr.step!.serial_no,
-      action:             sr.step!.action,
-      expected_result:    sr.step!.expected_result,
-      action_image_urls:  sr.step!.action_image_urls  || [],
-      expected_image_urls:sr.step!.expected_image_urls || [],
-      is_divider:         sr.step!.is_divider,
-      status:             sr.status,
-      remarks:            sr.remarks,
-      display_name:       sr.display_name ?? "",
+      stepId:              sr.step!.id,
+      stepResultId:        sr.id,
+      module_test_id:      currentMtId,
+      serial_no:           displaySerials[idx],
+      originalSerialNo:    sr.step!.serial_no,
+      action:              sr.step!.action,
+      expected_result:     sr.step!.expected_result,
+      action_image_urls:   sr.step!.action_image_urls   || [],
+      expected_image_urls: sr.step!.expected_image_urls || [],
+      is_divider:          sr.step!.is_divider,
+      status:              sr.status,
+      remarks:             sr.remarks,
+      display_name:        sr.display_name ?? "",
     }));
 
-    setModuleTests(execData.module_tests as unknown as ModuleTestItem[]);
-    setCurrentRevision(execData.current_revision);
+    setModuleTests(contextData.module_tests as unknown as ModuleTestItem[]);
+    setCurrentRevision(contextData.current_revision);
 
-    const isVisibleNow = execData.is_visible ?? true;
+    const isVisibleNow = contextData.is_visible ?? true;
     setIsVisible(isVisibleNow);
     setSteps(merged);
     setDataInitialized(true);
 
-    // If the test is archived (read-only), release the lock we just acquired
     if (!isVisibleNow) {
       const u = userRef.current;
       if (u) releaseLockMutateRef.current({ module_test_id: currentMtId, user_id: u.id });
@@ -812,7 +814,7 @@ const TestExecution: React.FC<Props> = ({
       }
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [execData, currentMtId]);
+  }, [contextData, stepResultsData, currentMtId]);
 
   // ── Derived flags ─────────────────────────────────────────────────────────
   const isRevisionReadOnly = !isVisible;
@@ -830,6 +832,75 @@ const TestExecution: React.FC<Props> = ({
 
   const handleFocus         = useCallback((stepId: string) => setFocusedStepId(stepId), []);
   const handleRemarksChange = useCallback((stepId: string, val: string) => { remarksMap.current[stepId] = val; }, []);
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // Composite flush
+  //
+  // Drains pendingFlushRef in one Promise.allSettled call.
+  // Each resolved mutation triggers the hook's own onSuccess (cache inval).
+  // Failed writes are individually rolled back to their rollback snapshot.
+  // ─────────────────────────────────────────────────────────────────────────
+  const flushPending = useCallback(async (): Promise<void> => {
+    if (flushTimerRef.current) {
+      clearTimeout(flushTimerRef.current);
+      flushTimerRef.current = null;
+    }
+
+    const batch = [...pendingFlushRef.current.values()];
+    if (batch.length === 0) return;
+
+    // Drain the queue before the async work so new updates that arrive
+    // during the flush are enqueued fresh (not lost)
+    pendingFlushRef.current.clear();
+
+    const results = await Promise.allSettled(
+      batch.map((vars) => updateStepMutateAsync.current(vars))
+    );
+
+    const failed: PendingWrite[] = [];
+    results.forEach((result, i) => {
+      if (result.status === "rejected") {
+        failed.push(batch[i]);
+      } else {
+        // Success — safe to drop the rollback snapshot for this step
+        rollbackStateRef.current.delete(batch[i].test_steps_id);
+      }
+    });
+
+    if (failed.length > 0) {
+      // Roll back only the failed steps to their pre-optimistic state
+      setSteps((prev) =>
+        prev.map((s) => {
+          const wasFailedWrite = failed.some((f) => f.test_steps_id === s.stepId);
+          if (!wasFailedWrite) return s;
+          const snap = rollbackStateRef.current.get(s.stepId);
+          if (!snap) return s;
+          rollbackStateRef.current.delete(s.stepId);
+          return { ...s, status: snap.status, remarks: snap.remarks };
+        })
+      );
+      addToast(
+        failed.length === 1
+          ? "1 step result failed to save. Please re-submit."
+          : `${failed.length} step results failed to save. Please re-submit.`,
+        "error"
+      );
+    }
+  }, [addToast]);
+
+  // ── Unmount: flush any remaining pending writes ───────────────────────────
+  useEffect(() => {
+    return () => {
+      if (flushTimerRef.current) clearTimeout(flushTimerRef.current);
+      const batch = [...pendingFlushRef.current.values()];
+      if (batch.length === 0) return;
+      pendingFlushRef.current.clear();
+      rollbackStateRef.current.clear();
+      // Fire-and-forget on unmount
+      Promise.allSettled(batch.map((v) => updateStepMutateAsync.current(v)));
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // ── 4. Heartbeat ──────────────────────────────────────────────────────────
   const heartbeatIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -852,7 +923,7 @@ const TestExecution: React.FC<Props> = ({
     const lockChannel = supabase
       .channel(`lock:${currentMtId}:${uid}`)
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "test_locks", filter: `module_test_id=eq.${currentMtId}` }, () => invalidateModuleLocks(module_name))
-      .on("postgres_changes", { event: "DELETE", schema: "public", table: "test_locks", filter: `module_test_id=eq.${currentMtId}` }, () => invalidateModuleLocks(module_name))
+      .on("postgres_changes", { event: "DELETE",  schema: "public", table: "test_locks", filter: `module_test_id=eq.${currentMtId}` }, () => invalidateModuleLocks(module_name))
       .subscribe();
     return () => { supabase.removeChannel(lockChannel); };
   }, [module_name, currentMtId, user?.id]);
@@ -873,25 +944,22 @@ const TestExecution: React.FC<Props> = ({
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const rowVirtualizer = useVirtualizer({
-    count:           filtered.length,
-    getScrollElement:() => scrollRef.current,
-    estimateSize:    (index) => {
+    count:            filtered.length,
+    getScrollElement: () => scrollRef.current,
+    estimateSize: (index) => {
       const step = filtered[index];
       if (!step) return 200;
       if (step.is_divider) return 36;
-      // Mobile cards need larger estimates; desktop rows are more uniform
-      const actionLines = Math.max(1, Math.ceil(step.action.length / 42));
+      const actionLines   = Math.max(1, Math.ceil(step.action.length / 42));
       const expectedLines = Math.max(1, Math.ceil(step.expected_result.length / 42));
-      const actionImgH = step.action_image_urls?.length ? 84 : 0;
-      const expectedImgH = step.expected_image_urls?.length ? 84 : 0;
-      // header(36) + action label(20) + text + images + expected label(20) + text + images + controls(44) + padding(20)
+      const actionImgH    = step.action_image_urls?.length ? 84 : 0;
+      const expectedImgH  = step.expected_image_urls?.length ? 84 : 0;
       return Math.max(200, 36 + 20 + actionLines * 20 + actionImgH + 20 + expectedLines * 20 + expectedImgH + 44 + 20);
     },
     overscan:        5,
     measureElement:  (el) => el.getBoundingClientRect().height,
   });
 
-  // Stable ref to virtualizer for effects that shouldn't re-run on every render
   const virtualizerRef = useRef(rowVirtualizer);
   useEffect(() => { virtualizerRef.current = rowVirtualizer; }, [rowVirtualizer]);
 
@@ -906,13 +974,7 @@ const TestExecution: React.FC<Props> = ({
   useEffect(() => {
     if (!scrollTarget || !dataInitialized) return;
     const idx = filtered.findIndex((s) => s.stepId === scrollTarget);
-    if (idx === -1) {
-      setScrollTarget(null);
-      return;
-    }
-    // Defer scroll so the virtualizer has time to measure elements first
-    // (critical when measureElement is active). We use rAF + setTimeout
-    // to ensure React has flushed the DOM and the virtualizer has measured.
+    if (idx === -1) { setScrollTarget(null); return; }
     let timeout: ReturnType<typeof setTimeout> | null = null;
     const raf = requestAnimationFrame(() => {
       timeout = setTimeout(() => {
@@ -920,21 +982,11 @@ const TestExecution: React.FC<Props> = ({
         setScrollTarget(null);
       }, 50);
     });
-    return () => {
-      cancelAnimationFrame(raf);
-      if (timeout) clearTimeout(timeout);
-    };
-    // NOTE: rowVirtualizer is intentionally omitted from deps to prevent
-    // the effect from re-running (and cancelling its pending timeout) on
-    // every render. We use virtualizerRef to always access the latest instance.
+    return () => { cancelAnimationFrame(raf); if (timeout) clearTimeout(timeout); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [scrollTarget, dataInitialized, filtered]);
 
-  // ── Lazy image loading — only fetch for steps seen by the virtualizer ─────
-  //
-  // Each time new items scroll into view, add their IDs to the "seen" set.
-  // The set only grows (never shrinks), so TanStack Query's cache is hit for
-  // previously seen steps. On test change, reset clears the set.
+  // ── Lazy image loading ────────────────────────────────────────────────────
   const [seenStepIds, setSeenStepIds] = useState<Set<string>>(new Set());
 
   useEffect(() => {
@@ -948,10 +1000,9 @@ const TestExecution: React.FC<Props> = ({
           changed = true;
         }
       }
-      return changed ? next : prev;   // stable reference if nothing new
+      return changed ? next : prev;
     });
-  // virtualItems reference changes on scroll; that's intentional here
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [virtualItems, filtered]);
 
   const imageSteps = useMemo(
@@ -964,7 +1015,6 @@ const TestExecution: React.FC<Props> = ({
 
   const { data: stepImageUrls = {} } = useStepImageUrls(imageSteps);
 
-  // ── Image preview ─────────────────────────────────────────────────────────
   const openImagePreview = useCallback(
     (urls: string[], clickedIdx: number, label: string) => {
       if (urls.length) setImagePreview({ urls, idx: clickedIdx, label });
@@ -972,21 +1022,31 @@ const TestExecution: React.FC<Props> = ({
     []
   );
 
-  // ── Handle step update (optimistic) ──────────────────────────────────────
+  // ─────────────────────────────────────────────────────────────────────────
+  // handleStepUpdate — optimistic UI + enqueue write
+  //
+  // 1. Apply optimistic update to local steps state immediately
+  // 2. Capture rollback snapshot if this is the step's first pending write
+  // 3. Overwrite any existing pending write for the same step (coalesce)
+  // 4. If queue reaches FLUSH_BATCH_SIZE → flush now
+  //    Otherwise → (re)start the 10 s debounce timer
+  //    The timer only runs while there are pending writes; if the queue is
+  //    empty, the timer is never started.
+  // ─────────────────────────────────────────────────────────────────────────
   const handleStepUpdate = useCallback(
     (stepId: string, status: "pass" | "fail" | "pending", remarks: string) => {
       if (isLockedRef.current || isReadOnlyRef.current) return;
-      if (updatingRef.current.has(stepId)) return;
 
       const currentSteps = stepsRef.current;
-      const originalStep = currentSteps.find((s) => s.stepId === stepId) ?? null;
       const idx          = currentSteps.findIndex((s) => s.stepId === stepId);
       const nextPending  = currentSteps.slice(idx + 1).find((s) => !s.is_divider && s.status === "pending");
       const u            = userRef.current;
       const display_name = u?.display_name ?? u?.email ?? "User";
 
-      setUpdatingStepIds((prev) => new Set(prev).add(stepId));
-      setSteps((prev) => prev.map((s) => s.stepId === stepId ? { ...s, status, remarks, display_name } : s));
+      // ── Optimistic UI ───────────────────────────────────────────────────
+      setSteps((prev) =>
+        prev.map((s) => (s.stepId === stepId ? { ...s, status, remarks, display_name } : s))
+      );
 
       if (status !== "pending") {
         if (nextPending) { setFocusedStepId(nextPending.stepId); setScrollTarget(nextPending.stepId); }
@@ -996,24 +1056,38 @@ const TestExecution: React.FC<Props> = ({
         setScrollTarget(stepId);
       }
 
-      updateStepMutation.mutate(
-        { test_steps_id: stepId, module_name, status, remarks, display_name },
-        {
-          onError: () => {
-            if (originalStep) {
-              setSteps((prev) => prev.map((s) =>
-                s.stepId === stepId ? { ...s, status: originalStep.status, remarks: originalStep.remarks } : s
-              ));
-            }
-            addToast("Failed to save step result. Please try again.", "error");
-          },
-          onSettled: () => {
-            setUpdatingStepIds((prev) => { const next = new Set(prev); next.delete(stepId); return next; });
-          },
+      // ── Enqueue write ───────────────────────────────────────────────────
+      // Capture rollback state only on the FIRST enqueue for this step
+      // (subsequent updates for the same step update the write, not the snap)
+      if (!pendingFlushRef.current.has(stepId)) {
+        const original = currentSteps[idx];
+        if (original) {
+          rollbackStateRef.current.set(stepId, { status: original.status, remarks: original.remarks });
         }
-      );
+      }
+
+      pendingFlushRef.current.set(stepId, {
+        test_steps_id: stepId,
+        module_name,
+        status,
+        remarks,
+        display_name,
+      });
+
+      // ── Flush or schedule ───────────────────────────────────────────────
+      if (pendingFlushRef.current.size >= FLUSH_BATCH_SIZE) {
+        // Threshold reached — flush immediately
+        flushPending();
+      } else {
+        // (Re)start the inactivity timer — 10 s from this update
+        if (flushTimerRef.current) clearTimeout(flushTimerRef.current);
+        flushTimerRef.current = setTimeout(() => {
+          flushTimerRef.current = null;
+          flushPending();
+        }, FLUSH_DELAY_MS);
+      }
     },
-    [module_name, addToast, updateStepMutation]
+    [module_name, flushPending]
   );
 
   // ── Keyboard shortcuts ────────────────────────────────────────────────────
@@ -1049,6 +1123,11 @@ const TestExecution: React.FC<Props> = ({
 
     setSteps((prev) => prev.map((s) => s.is_divider ? s : { ...s, status: "pending", remarks: "", display_name }));
     remarksMap.current = {};
+    // Discard any pending batch writes — reset supersedes them
+    if (flushTimerRef.current) { clearTimeout(flushTimerRef.current); flushTimerRef.current = null; }
+    pendingFlushRef.current.clear();
+    rollbackStateRef.current.clear();
+
     const first = currentSteps.filter((s) => !s.is_divider)[0];
     if (first) { setFocusedStepId(first.stepId); setScrollTarget(first.stepId); }
 
@@ -1056,12 +1135,14 @@ const TestExecution: React.FC<Props> = ({
       { module_name, stepResultIds, display_name },
       {
         onSuccess: () => addToast("All steps reset to pending.", "info"),
-        onError:   () => {
-          setSteps((prev) => prev.map((s) => {
-            if (s.is_divider) return s;
-            const orig = currentSteps.find((os) => os.stepId === s.stepId);
-            return orig ? { ...s, status: orig.status, remarks: orig.remarks } : s;
-          }));
+        onError: () => {
+          setSteps((prev) =>
+            prev.map((s) => {
+              if (s.is_divider) return s;
+              const orig = currentSteps.find((os) => os.stepId === s.stepId);
+              return orig ? { ...s, status: orig.status, remarks: orig.remarks } : s;
+            })
+          );
           addToast("Failed to reset steps. Please try again.", "error");
         },
         onSettled: () => setIsUndoingAll(false),
@@ -1081,12 +1162,14 @@ const TestExecution: React.FC<Props> = ({
     );
   }, [isAdmin, currentMtId, forceReleaseMutation, addToast]);
 
-  // ── Finish test ───────────────────────────────────────────────────────────
+  // ── Finish test — flush pending writes before releasing lock ──────────────
   const currentMt   = moduleTests.find((mt) => mt.id === currentMtId);
   const currentTest = currentMt?.test;
 
-  const handleFinish = useCallback(() => {
+  const handleFinish = useCallback(async () => {
     const u = userRef.current;
+    // Flush any queued writes first — ensures nothing is lost on exit
+    await flushPending();
     if (u && isVisible) {
       releaseLockMutation.mutate({ module_test_id: currentMtId, user_id: u.id });
       clearActiveLock();
@@ -1094,7 +1177,7 @@ const TestExecution: React.FC<Props> = ({
     }
     addToast(`Test "${currentTest?.name}" completed!`, "success");
     onBack();
-  }, [isVisible, currentMtId, releaseLockMutation, clearActiveLock, currentTest?.name, module_name, addToast, onBack]);
+  }, [isVisible, currentMtId, releaseLockMutation, clearActiveLock, currentTest?.name, module_name, addToast, onBack, flushPending]);
 
   // ── Derived stats ─────────────────────────────────────────────────────────
   const { passCount, failCount, totalCount, doneCount, passPct, failPct, progressPct } = useMemo(() => {
@@ -1105,9 +1188,9 @@ const TestExecution: React.FC<Props> = ({
     const done  = pass + fail;
     return {
       passCount: pass, failCount: fail, totalCount: total, doneCount: done,
-      progressPct: total > 0 ? Math.round((done  / total) * 100) : 0,
-      passPct:     total > 0 ? Math.round((pass  / total) * 100) : 0,
-      failPct:     total > 0 ? Math.round((fail  / total) * 100) : 0,
+      progressPct: total > 0 ? Math.round((done / total) * 100) : 0,
+      passPct:     total > 0 ? Math.round((pass / total) * 100) : 0,
+      failPct:     total > 0 ? Math.round((fail / total) * 100) : 0,
     };
   }, [steps]);
 
@@ -1126,14 +1209,27 @@ const TestExecution: React.FC<Props> = ({
   // ── Loading gate ──────────────────────────────────────────────────────────
   const isGlobalLoading =
     lockQuery.isLoading ||
-    (!isLockedByOther && (execQuery.isLoading || !dataInitialized || !lockAcquireAttempted));
+    (!isLockedByOther && (
+      !lockAcquireAttempted        ||
+      execContextQuery.isLoading   ||
+      execStepResultsQuery.isLoading ||
+      !dataInitialized
+    ));
 
   if (isGlobalLoading)
     return (
       <div className="flex flex-col items-center justify-center gap-3" style={{ height: "100dvh" }}>
         <Spinner />
         <p className="text-xs text-t-muted">
-          {lockQuery.isLoading ? "Checking lock status…" : !lockAcquireAttempted ? "Acquiring lock…" : execQuery.isLoading || !dataInitialized ? "Loading test…" : "Checking lock status…"}
+          {lockQuery.isLoading
+            ? "Checking lock status…"
+            : !lockAcquireAttempted
+            ? "Acquiring lock…"
+            : execContextQuery.isLoading
+            ? "Loading test structure…"
+            : execStepResultsQuery.isLoading || !dataInitialized
+            ? "Loading results…"
+            : "Preparing…"}
         </p>
       </div>
     );
@@ -1258,7 +1354,7 @@ const TestExecution: React.FC<Props> = ({
           <div className="text-center text-t-muted py-20 text-sm">No steps match your filter.</div>
         ) : (
           <>
-            {/* ── Desktop table (virtualised with spacer rows) ─────────── */}
+            {/* ── Desktop table ────────────────────────────────────────── */}
             <table className="hidden md:table w-full text-sm border-collapse table-fixed">
               <thead className="sticky top-0 z-10">
                 <tr className="bg-bg-surface border-b border-(--border-color)">
@@ -1271,7 +1367,6 @@ const TestExecution: React.FC<Props> = ({
                 </tr>
               </thead>
               <tbody>
-                {/* Top spacer */}
                 {paddingTop > 0 && (
                   <tr aria-hidden><td colSpan={6} style={{ height: paddingTop, padding: 0 }} /></tr>
                 )}
@@ -1321,14 +1416,13 @@ const TestExecution: React.FC<Props> = ({
                   );
                 })}
 
-                {/* Bottom spacer */}
                 {paddingBottom > 0 && (
                   <tr aria-hidden><td colSpan={6} style={{ height: paddingBottom, padding: 0 }} /></tr>
                 )}
               </tbody>
             </table>
 
-                        {/* ── Mobile cards (virtualised with absolute positioning) ──── */}
+            {/* ── Mobile cards ─────────────────────────────────────────── */}
             <div className="md:hidden flex flex-col">
               <div className="sticky top-0 z-10 grid grid-cols-[72px_1fr] border-b border-(--border-color)"
                 style={{ backgroundColor: "var(--bg-surface)" }}>
@@ -1353,15 +1447,7 @@ const TestExecution: React.FC<Props> = ({
                         ref={rowVirtualizer.measureElement}
                         data-index={vItem.index}
                         key={step.stepId}
-                        style={{
-                          position: "absolute",
-                          top: 0,
-                          left: 0,
-                          width: "100%",
-                          transform: `translateY(${vItem.start}px)`,
-                          padding: "0 12px",
-                          zIndex: 1,
-                        }}>
+                        style={{ position: "absolute", top: 0, left: 0, width: "100%", transform: `translateY(${vItem.start}px)`, padding: "0 12px", zIndex: 1 }}>
                         <div className={`flex items-center gap-2 ${ms.py} pl-3 pr-3 rounded-r-lg ${ms.ml}`}
                           style={{ ...ms.bgStyle, ...ms.borderStyle, backgroundColor: "var(--bg-surface)" }}>
                           <span className={`rounded-full shrink-0 ${ms.dotClass}`} style={{ width: ms.dotSize, height: ms.dotSize }} />
@@ -1376,15 +1462,7 @@ const TestExecution: React.FC<Props> = ({
                       ref={rowVirtualizer.measureElement}
                       data-index={vItem.index}
                       key={step.stepId}
-                      style={{
-                        position: "absolute",
-                        top: 0,
-                        left: 0,
-                        width: "100%",
-                        transform: `translateY(${vItem.start}px)`,
-                        padding: "0 12px 8px",
-                        zIndex: 2,
-                      }}>
+                      style={{ position: "absolute", top: 0, left: 0, width: "100%", transform: `translateY(${vItem.start}px)`, padding: "0 12px 8px", zIndex: 2 }}>
                       <MobileStepCard
                         step={step}
                         initialRemarks={remarksMap.current[step.stepId] ?? step.remarks ?? ""}
@@ -1402,7 +1480,9 @@ const TestExecution: React.FC<Props> = ({
                   );
                 })}
               </div>
-            </div>            {/* Undo All — admin only */}
+            </div>
+
+            {/* Undo All — admin only */}
             {isAdmin && doneCount > 0 && !isRevisionReadOnly && (
               <div className="flex items-center justify-center py-6 px-4">
                 <div className="flex items-center gap-3 px-4 py-3 rounded-xl border border-dashed border-[color-mix(in_srgb,var(--color-pend)_30%,transparent)] bg-[color-mix(in_srgb,var(--color-pend)_5%,transparent)]">

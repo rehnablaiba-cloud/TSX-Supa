@@ -197,13 +197,20 @@ export type RawModuleTestItem = {
   test: { serial_no: string; name: string } | null;
 };
 
-export type TestExecutionData = {
-  module_name:       string;
-  is_visible:        boolean;
-  current_revision:  ActiveRevision | null;
-  active_revisions:  Record<string, ActiveRevision>;
-  module_tests:      RawModuleTestItem[];
-  step_results:      RawStepResult[];
+/**
+ * Structural half of the execution view — everything except live step results.
+ * Cached aggressively; only changes when an admin publishes a new revision.
+ */
+export type TestExecutionContext = {
+  module_name:      string;
+  is_visible:       boolean;
+  current_revision: ActiveRevision | null;
+  active_revisions: Record<string, ActiveRevision>;
+  module_tests:     RawModuleTestItem[];
+};
+
+export type TestExecutionData = TestExecutionContext & {
+  step_results: RawStepResult[];
 };
 
 // ── Test Report ───────────────────────────────────────────────────────────────
@@ -686,33 +693,23 @@ export function fetchModuleStepDetails(
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * All data for TestExecution.
- *
- * Replaces the former get_test_execution RPC with a split approach:
- *   Static  (R2)      → active revisions · step_order · test_steps
- *   Dynamic (Supabase) → module_tests (is_visible) · step_results (tester state)
+ * Structural data for TestExecution — module layout + active revision.
+ * Does NOT include step results (fetched separately via fetchTestExecutionStepResults).
  *
  * Round 1 — parallel:
- *   - module_tests            (Supabase)
- *   - step_results by module  (Supabase)
- *   - active revisions        (R2 — typically a warm cache hit)
+ *   - module_tests   (Supabase — is_visible + test assignments)
+ *   - test_revisions (Supabase — active revision for this test)
+ *   - all revisions  (R2 — nav badge map, typically a warm cache hit)
  *
- * Round 2 — parallel, after resolving current revision from round 1:
- *   - step_order/{revId}.json  (R2)
- *   - test_steps/{revId}.json  (R2)
- *   Both are immutable keys — near-certain cache hits after first migration.
- *
- * Cache key: ['executionContext', module_test_id]
- * staleTime: 0  |  gcTime: 10 min
+ * Cache key : ['executionContext', module_test_id]
+ * staleTime : Infinity  — invalidated only on admin revision publish
+ * gcTime    : 10 min
  */
-// ── Round 1: parallel ──────────────────────────────────────────────
-export function fetchTestExecutionData(
+export function fetchTestExecutionContext(
   module_test_id: string,
-  module_name: string
-): Promise<TestExecutionData> {
+  module_name:    string
+): Promise<TestExecutionContext> {
   return callRpc(async () => {
-
-    // ── Round 1: module_tests ────────────────────────────────────────────────
     const { data: mtData, error: mtError } = await supabase
       .from("module_tests")
       .select("id, tests_name, is_visible, test:tests!module_tests_tests_name_fkey(serial_no, name)")
@@ -721,12 +718,11 @@ export function fetchTestExecutionData(
 
     if (mtError) throw new Error(mtError.message);
 
-    const module_tests = (mtData ?? []) as unknown as RawModuleTestItem[];
+    const module_tests    = (mtData ?? []) as unknown as RawModuleTestItem[];
     const currentMt       = module_tests.find((mt) => mt.id === module_test_id);
     const is_visible      = currentMt?.is_visible ?? true;
     const currentSerialNo = (currentMt as any)?.test?.serial_no as string | undefined;
 
-    // ── Round 2: active revision from Supabase + nothing else yet ────────────
     let current_revision: ActiveRevision | null = null;
 
     if (currentSerialNo) {
@@ -738,77 +734,106 @@ export function fetchTestExecutionData(
         .maybeSingle();
 
       if (revError) throw new Error(revError.message);
-      
       current_revision = revData as ActiveRevision | null;
-      console.log("[debug] current_revision:", current_revision); 
+      console.log("[debug] current_revision:", current_revision);
     }
 
-    // active_revisions map for nav badges — still from R2 (cached, cheap)
+    // Nav-badge revision map — R2 cached, cheap
     const allRevisions = await r2GetActiveRevisions();
     const active_revisions: Record<string, ActiveRevision> = {};
     for (const [sno, rev] of Object.entries(allRevisions)) {
       active_revisions[sno] = rev as ActiveRevision;
     }
 
-    // ── Round 3: step_order + test_steps from R2 (parallel) ─────────────────
-    let step_results: RawStepResult[] = [];
-
-    if (current_revision) {
-      const [stepOrder, r2Steps] = await Promise.all([
-        r2GetStepOrder(current_revision.id),
-        r2GetTestSteps(current_revision.id),
-      ]);
-
-      // ── Round 4: step_results scoped to this revision's steps only ──────────
-      // ── Round 4: step_results scoped to this revision's steps only ──────────
-      const { data: srData, error: srError } = await supabase
-      .rpc("get_step_results", {
-        p_module_name: module_name,
-        p_step_ids:    stepOrder,
-      });
-    
-    if (srError) throw new Error(srError.message);
-
-      const stepMap   = new Map<string, R2Step>(r2Steps.map((s) => [s.id, s]));
-      const resultMap = new Map<string, any>(
-        ((srData ?? []) as any[]).map((r) => [r.test_steps_id, r])
-      );
-
-      step_results = stepOrder
-        .map((stepId): RawStepResult | null => {
-          const step   = stepMap.get(stepId);
-          const result = resultMap.get(stepId);
-          if (!step || !result) return null;
-          return {
-            id:           result.id,
-            status:       result.status as "pass" | "fail" | "pending",
-            remarks:      result.remarks      ?? "",
-            display_name: result.display_name ?? "",
-            step: {
-              id:                  step.id,
-              serial_no:           step.serial_no,
-              action:              step.action,
-              expected_result:     step.expected_result,
-              is_divider:          step.is_divider,
-              action_image_urls:   step.action_image_urls   ?? [],
-              expected_image_urls: step.expected_image_urls ?? [],
-              tests_serial_no:     step.tests_serial_no,
-            },
-          };
-        })
-        .filter((r): r is RawStepResult => r !== null);
-    }
-
-    return {
-      module_name,
-      is_visible,
-      current_revision,
-      active_revisions,
-      module_tests,
-      step_results,
-    };
+    return { module_name, is_visible, current_revision, active_revisions, module_tests };
   });
 }
+
+/**
+ * Live step results for a specific revision + module.
+ *
+ * Fetch order:
+ *   1. R2: step_order/{revision_id}.json  → ordered array of step UUIDs
+ *   2. R2: test_steps/{revision_id}.json  → step metadata keyed by UUID
+ *   3. Supabase RPC get_step_results      → step_results rows filtered by
+ *        module_name = p_module_name
+ *        test_steps_id IN (stepOrder)     ← revision + test scoped via R2 IDs
+ *   4. JS merge: walk stepOrder, zip step metadata + result row
+ *
+ * Filters in effect:
+ *   - module_name  : explicit RPC param
+ *   - test_steps_id: explicit IN list from R2 step_order (revision + test scoped)
+ *   - revision     : implicit — stepOrder UUIDs belong to exactly one revision
+ *   - test         : implicit — each revision belongs to exactly one test
+ *
+ * Cache key : ['executionStepResults', revision_id, module_name]
+ * staleTime : 0   — always re-fetches on mount; returning users never see stale state
+ * gcTime    : 5 min
+ */
+export function fetchTestExecutionStepResults(
+  revision_id: string,
+  module_name: string
+): Promise<RawStepResult[]> {
+  return callRpc(async () => {
+    const [stepOrder, r2Steps] = await Promise.all([
+      r2GetStepOrder(revision_id),
+      r2GetTestSteps(revision_id),
+    ]);
+
+    const { data: srData, error: srError } = await supabase.rpc("get_step_results", {
+      p_module_name: module_name,
+      p_step_ids:    stepOrder,
+    });
+    if (srError) throw new Error(srError.message);
+
+    const stepMap   = new Map<string, R2Step>(r2Steps.map((s) => [s.id, s]));
+    const resultMap = new Map<string, any>(
+      ((srData ?? []) as any[]).map((r) => [r.test_steps_id, r])
+    );
+
+    return stepOrder
+      .map((stepId): RawStepResult | null => {
+        const step   = stepMap.get(stepId);
+        const result = resultMap.get(stepId);
+        if (!step || !result) return null;
+        return {
+          id:           result.id,
+          status:       result.status as "pass" | "fail" | "pending",
+          remarks:      result.remarks      ?? "",
+          display_name: result.display_name ?? "",
+          step: {
+            id:                  step.id,
+            serial_no:           step.serial_no,
+            action:              step.action,
+            expected_result:     step.expected_result,
+            is_divider:          step.is_divider,
+            action_image_urls:   step.action_image_urls   ?? [],
+            expected_image_urls: step.expected_image_urls ?? [],
+            tests_serial_no:     step.tests_serial_no,
+          },
+        };
+      })
+      .filter((r): r is RawStepResult => r !== null);
+  });
+}
+
+/**
+ * @deprecated Split into fetchTestExecutionContext + fetchTestExecutionStepResults.
+ * Retained for backward compatibility — remove once TestExecution.tsx is migrated.
+ */
+export function fetchTestExecutionData(
+  module_test_id: string,
+  module_name:    string
+): Promise<TestExecutionData> {
+  return callRpc(async () => {
+    const context = await fetchTestExecutionContext(module_test_id, module_name);
+    const step_results = context.current_revision
+      ? await fetchTestExecutionStepResults(context.current_revision.id, module_name)
+      : [];
+    return { ...context, step_results };
+  });
+}
+
 // ── Lock check ────────────────────────────────────────────────────────────────
 
 export function checkTestLock(module_test_id: string): Promise<LockStatus> {
@@ -973,19 +998,12 @@ export function resetAllStepResults(
   });
 }
 
-// ── Signed image URLs ─────────────────────────────────────────────────────────
-
 // ── R2 step image URLs  (replaces Supabase fetchSignedUrls) ───────────────────
 
 export type { StepImageUrls }
 
 /**
  * Fetch action + expected image URLs for a batch of steps from R2.
- *
- * Uses a single token acquisition followed by parallel list calls —
- * one request per step. Fine for typical test sizes (20–60 steps).
- *
- * Returns: stepId → { actionUrls, expectedUrls }
  *
  * Cache key : ["r2StepImages", ...stepIds.sort()]
  * staleTime : 30 min  |  gcTime : 60 min
@@ -1023,9 +1041,6 @@ export function fetchSignedUrls(
 
 /**
  * Session history for the current user since sessionStart.
- *
- * step_results — Supabase (dynamic)
- * revision labels — R2 via getActiveRevisions (static, typically cached)
  *
  * Cache key: ['sessionHistory', username, sessionStart]
  * staleTime: 0  |  gcTime: 5 min
