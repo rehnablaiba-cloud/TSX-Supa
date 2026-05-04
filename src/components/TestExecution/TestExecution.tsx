@@ -643,7 +643,6 @@ const TestExecution: React.FC<Props> = ({
   const [search,          setSearch]          = useState("");
   const [showExportModal, setShowExportModal] = useState(false);
   const [showUndoModal,   setShowUndoModal]   = useState(false);
-  const [scrollTarget,    setScrollTarget]    = useState<string | null>(null);
   const [focusedStepId,   setFocusedStepId]   = useState<string | null>(null);
   const [imagePreview,    setImagePreview]    = useState<ImagePreviewState | null>(null);
 
@@ -658,18 +657,10 @@ const TestExecution: React.FC<Props> = ({
   const [lockAcquireAttempted, setLockAcquireAttempted] = useState(false);
 
   // ── Mutation state ────────────────────────────────────────────────────────
-  const [updatingStepIds, setUpdatingStepIds] = useState<Set<string>>(new Set());
+  const [updatingStepIds, setUpdatingStepIds] = useState<Set<string>>(new Set()); // eslint-disable-line
   const [isUndoingAll,    setIsUndoingAll]    = useState(false);
 
-  // ─────────────────────────────────────────────────────────────────────────
-  // Composite write queue
-  //
-  // pendingFlushRef  — keyed by stepId so N updates to the same step coalesce
-  //                    into one DB write (last write wins)
-  // rollbackStateRef — pre-optimistic snapshot captured on FIRST enqueue for
-  //                    each step; used to roll back on batch flush failure
-  // flushTimerRef    — 10 s debounce timer; restarted on every new enqueue
-  // ─────────────────────────────────────────────────────────────────────────
+  // ── Write queue ───────────────────────────────────────────────────────────
   const pendingFlushRef  = useRef<Map<string, PendingWrite>>(new Map());
   const rollbackStateRef = useRef<Map<string, { status: ExecutionStep["status"]; remarks: string }>>(new Map());
   const flushTimerRef    = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -684,7 +675,7 @@ const TestExecution: React.FC<Props> = ({
   const releaseLockMutation  = useReleaseLock(module_name);
   const forceReleaseMutation = useForceReleaseLock(module_name);
   const heartbeatMutation    = useHeartbeatLock();
-  const bulkUpdateMutation    = useBulkUpdateStepResults(module_name);
+  const bulkUpdateMutation   = useBulkUpdateStepResults(module_name);
   const resetStepsMutation   = useResetAllStepResults(currentMtId);
 
   // Stable mutation refs
@@ -695,26 +686,67 @@ const TestExecution: React.FC<Props> = ({
   useEffect(() => { heartbeatMutateRef.current    = heartbeatMutation.mutate;      }, [heartbeatMutation.mutate]);
   useEffect(() => { releaseLockMutateRef.current  = releaseLockMutation.mutate;    }, [releaseLockMutation.mutate]);
 
-
   // ── Guard refs ────────────────────────────────────────────────────────────
   const hasInitializedForRef       = useRef<string | null>(null);
   const lockAcquireAttemptedForRef = useRef<string | null>(null);
 
-  // ── 1. Reset all local state when the test changes ────────────────────────
+  // ─────────────────────────────────────────────────────────────────────────
+  // Scroll machinery
+  //
+  // WHY imperative instead of scrollTarget state:
+  //   State → re-render → effect → scroll adds an unnecessary render cycle.
+  //   More critically, on initial mount the virtualizer hasn't measured items
+  //   yet, so one scrollToIndex call lands at an estimated position.
+  //   We call it twice: immediately (estimates), then +120ms after items are
+  //   measured, so the second call lands at the exact pixel.
+  //
+  // filteredRef   — always holds the current filtered array so scrollToStep
+  //                 never closes over a stale snapshot.
+  // pendingInitScrollRef — stores the stepId to scroll to after data init.
+  //                 Set synchronously during the data-init effect, consumed
+  //                 by a separate useEffect that gates on dataInitialized.
+  // initScrollFiredRef   — ensures the init scroll fires exactly once per
+  //                 test. Reset alongside the other per-test guards when
+  //                 currentMtId changes.
+  // ─────────────────────────────────────────────────────────────────────────
+  const filteredRef         = useRef<ExecutionStep[]>([]);
+  const pendingInitScrollRef = useRef<string | null>(null);
+  const initScrollFiredRef   = useRef(false);
+
+  // scrollToStep — imperative, safe to call at any time.
+  // Fires an immediate scroll (position from estimates) then a corrective
+  // scroll 120 ms later once TanStack Virtual has measured rendered items.
+  const scrollToStep = useCallback((stepId: string) => {
+    const tryScroll = () => {
+      const idx = filteredRef.current.findIndex((s) => s.stepId === stepId);
+      if (idx === -1) return; // step not visible under current filter — skip
+      virtualizerRef.current?.scrollToIndex(idx, { align: "start" });
+    };
+
+    // First pass: jump using estimated sizes so the target row is rendered
+    requestAnimationFrame(() => {
+      tryScroll();
+      // Second pass: after 120 ms items are measured → correct final position
+      setTimeout(tryScroll, 120);
+    });
+  }, []);
+
+  // ── 1. Reset all per-test state when the test changes ────────────────────
   useEffect(() => {
-    // Flush any pending writes for the outgoing test before resetting
     const pendingCount = pendingFlushRef.current.size;
     if (pendingCount > 0) {
       if (flushTimerRef.current) { clearTimeout(flushTimerRef.current); flushTimerRef.current = null; }
       const batch = [...pendingFlushRef.current.values()];
       pendingFlushRef.current.clear();
       rollbackStateRef.current.clear();
-      // Fire-and-forget — navigating away; errors are silent here
-      bulkUpdateMutateAsync.current(batch);
+      bulkUpdateMutateAsync.current(batch); // fire-and-forget on nav away
     }
 
     hasInitializedForRef.current       = null;
     lockAcquireAttemptedForRef.current = null;
+    pendingInitScrollRef.current       = null;   // ← reset scroll state
+    initScrollFiredRef.current         = false;  // ← allow init scroll again
+
     setDataInitialized(false);
     setLockAcquireAttempted(false);
     setFocusedStepId(null);
@@ -751,20 +783,18 @@ const TestExecution: React.FC<Props> = ({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [lockQuery.isLoading, currentMtId]);
 
-  // ── TanStack Query: structural context (staleTime: Infinity) ─────────────
+  // ── TanStack Query: structural context ───────────────────────────────────
   const execContextQuery = useTestExecutionContext(currentMtId, module_name, {
     enabled: lockAcquireAttempted && !isLockedByOther,
   });
   const contextData = execContextQuery.data;
 
-  // ── TanStack Query: step results (staleTime: 0, gated on revision_id) ────
+  // ── TanStack Query: step results ──────────────────────────────────────────
   const revisionId = contextData?.current_revision?.id ?? null;
   const execStepResultsQuery = useTestExecutionStepResults(
     revisionId,
     module_name,
-    {
-      enabled: lockAcquireAttempted && !isLockedByOther && !!revisionId,
-    }
+    { enabled: lockAcquireAttempted && !isLockedByOther && !!revisionId }
   );
   const stepResultsData = execStepResultsQuery.data;
 
@@ -805,17 +835,42 @@ const TestExecution: React.FC<Props> = ({
       const u = userRef.current;
       if (u) releaseLockMutateRef.current({ module_test_id: currentMtId, user_id: u.id });
       clearActiveLock();
+      return; // read-only — no focus/scroll needed
     }
 
-    if (isVisibleNow) {
-      const firstPending = merged.find((s) => !s.is_divider && s.status === "pending");
-      if (firstPending) {
-        setFocusedStepId(firstPending.stepId);
-        setScrollTarget(firstPending.stepId);
-      }
+    // Store scroll target for the post-init effect to consume.
+    // We deliberately do NOT call scrollToStep here: the virtualizer's scroll
+    // container hasn't rendered any rows yet at this point.
+    const firstPending = merged.find((s) => !s.is_divider && s.status === "pending");
+    if (firstPending) {
+      setFocusedStepId(firstPending.stepId);
+      pendingInitScrollRef.current = firstPending.stepId;
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [contextData, stepResultsData, currentMtId]);
+
+  // ── 4. Initial scroll — fires once after dataInitialized becomes true ─────
+  //
+  // By the time this effect runs, React has committed the DOM update that
+  // included the virtualizer's scroll container with its first batch of rows.
+  // Two RAFs ensure the browser has painted before we call scrollToIndex,
+  // and scrollToStep adds a 120 ms corrective pass after item measurement.
+  useEffect(() => {
+    if (!dataInitialized || initScrollFiredRef.current) return;
+    const stepId = pendingInitScrollRef.current;
+    if (!stepId) return;
+
+    initScrollFiredRef.current   = true;
+    pendingInitScrollRef.current = null;
+
+    // Double-RAF: first ensures layout is committed; second ensures paint.
+    // scrollToStep then fires its own corrective pass at +120 ms.
+    let r1: number, r2: number;
+    r1 = requestAnimationFrame(() => {
+      r2 = requestAnimationFrame(() => scrollToStep(stepId));
+    });
+    return () => { cancelAnimationFrame(r1); cancelAnimationFrame(r2); };
+  }, [dataInitialized, scrollToStep]);
 
   // ── Derived flags ─────────────────────────────────────────────────────────
   const isRevisionReadOnly = !isVisible;
@@ -827,50 +882,40 @@ const TestExecution: React.FC<Props> = ({
   // ── Stable refs ───────────────────────────────────────────────────────────
   const stepsRef      = useRef<ExecutionStep[]>([]);
   stepsRef.current    = steps;
-  const updatingRef   = useRef<Set<string>>(new Set());
-  updatingRef.current = updatingStepIds;
   const remarksMap    = useRef<Record<string, string>>({});
 
   const handleFocus         = useCallback((stepId: string) => setFocusedStepId(stepId), []);
   const handleRemarksChange = useCallback((stepId: string, val: string) => { remarksMap.current[stepId] = val; }, []);
 
-  // ─────────────────────────────────────────────────────────────────────────
-  // Composite flush
-  //
-  // Drains pendingFlushRef in one Promise.allSettled call.
-  // Each resolved mutation triggers the hook's own onSuccess (cache inval).
-  // Failed writes are individually rolled back to their rollback snapshot.
-  // ─────────────────────────────────────────────────────────────────────────
-  // flushPending — now ONE request regardless of batch size
-const flushPending = useCallback(async (): Promise<void> => {
-  if (flushTimerRef.current) {
-    clearTimeout(flushTimerRef.current);
-    flushTimerRef.current = null;
-  }
+  // ── flushPending ──────────────────────────────────────────────────────────
+  const flushPending = useCallback(async (): Promise<void> => {
+    if (flushTimerRef.current) {
+      clearTimeout(flushTimerRef.current);
+      flushTimerRef.current = null;
+    }
 
-  const batch = [...pendingFlushRef.current.values()];
-  if (batch.length === 0) return;
+    const batch = [...pendingFlushRef.current.values()];
+    if (batch.length === 0) return;
 
-  pendingFlushRef.current.clear();
+    pendingFlushRef.current.clear();
 
-  try {
-    await bulkUpdateMutateAsync.current(batch); // 1 URL for N steps ✓
-    batch.forEach((v) => rollbackStateRef.current.delete(v.test_steps_id));
-  } catch {
-    // Roll back all steps in this batch
-    setSteps((prev) =>
-      prev.map((s) => {
-        const snap = rollbackStateRef.current.get(s.stepId);
-        if (!snap) return s;
-        rollbackStateRef.current.delete(s.stepId);
-        return { ...s, status: snap.status, remarks: snap.remarks };
-      })
-    );
-    addToast(`${batch.length} step result(s) failed to save. Please re-submit.`, "error");
-  }
-}, [addToast]);
+    try {
+      await bulkUpdateMutateAsync.current(batch);
+      batch.forEach((v) => rollbackStateRef.current.delete(v.test_steps_id));
+    } catch {
+      setSteps((prev) =>
+        prev.map((s) => {
+          const snap = rollbackStateRef.current.get(s.stepId);
+          if (!snap) return s;
+          rollbackStateRef.current.delete(s.stepId);
+          return { ...s, status: snap.status, remarks: snap.remarks };
+        })
+      );
+      addToast(`${batch.length} step result(s) failed to save. Please re-submit.`, "error");
+    }
+  }, [addToast]);
 
-  // ── Unmount: flush any remaining pending writes ───────────────────────────
+  // ── Unmount flush ─────────────────────────────────────────────────────────
   useEffect(() => {
     return () => {
       if (flushTimerRef.current) clearTimeout(flushTimerRef.current);
@@ -878,13 +923,12 @@ const flushPending = useCallback(async (): Promise<void> => {
       if (batch.length === 0) return;
       pendingFlushRef.current.clear();
       rollbackStateRef.current.clear();
-      // Fire-and-forget on unmount
       bulkUpdateMutateAsync.current(batch);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // ── 4. Heartbeat ──────────────────────────────────────────────────────────
+  // ── 5. Heartbeat ──────────────────────────────────────────────────────────
   const heartbeatIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   useEffect(() => {
     if (heartbeatIntervalRef.current) { clearInterval(heartbeatIntervalRef.current); heartbeatIntervalRef.current = null; }
@@ -899,7 +943,7 @@ const flushPending = useCallback(async (): Promise<void> => {
     return () => { if (heartbeatIntervalRef.current) { clearInterval(heartbeatIntervalRef.current); heartbeatIntervalRef.current = null; } };
   }, [currentMtId, isLockedByOther, isRevisionReadOnly, lockAcquireAttempted]);
 
-  // ── 5. Realtime: lock changes ─────────────────────────────────────────────
+  // ── 6. Realtime: lock changes ─────────────────────────────────────────────
   useEffect(() => {
     const uid = user?.id ?? "anon";
     const lockChannel = supabase
@@ -910,7 +954,7 @@ const flushPending = useCallback(async (): Promise<void> => {
     return () => { supabase.removeChannel(lockChannel); };
   }, [module_name, currentMtId, user?.id]);
 
-  // ── Filtered list (virtualizer input) ────────────────────────────────────
+  // ── Filtered list ─────────────────────────────────────────────────────────
   const filtered = useMemo(
     () =>
       steps.filter((s) => {
@@ -921,6 +965,9 @@ const flushPending = useCallback(async (): Promise<void> => {
       }),
     [steps, filter, search]
   );
+
+  // Keep filteredRef in sync so scrollToStep never closes over a stale array
+  filteredRef.current = filtered;
 
   // ── Virtualizer ───────────────────────────────────────────────────────────
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -951,22 +998,6 @@ const flushPending = useCallback(async (): Promise<void> => {
   const paddingBottom = virtualItems.length > 0
     ? totalSize - (virtualItems[virtualItems.length - 1]?.end ?? totalSize)
     : 0;
-
-  // ── 6. Scroll to target via virtualizer ──────────────────────────────────
-  useEffect(() => {
-    if (!scrollTarget || !dataInitialized) return;
-    const idx = filtered.findIndex((s) => s.stepId === scrollTarget);
-    if (idx === -1) { setScrollTarget(null); return; }
-    let timeout: ReturnType<typeof setTimeout> | null = null;
-    const raf = requestAnimationFrame(() => {
-      timeout = setTimeout(() => {
-        virtualizerRef.current.scrollToIndex(idx, { align: "center" });
-        setScrollTarget(null);
-      }, 50);
-    });
-    return () => { cancelAnimationFrame(raf); if (timeout) clearTimeout(timeout); };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [scrollTarget, dataInitialized, filtered]);
 
   // ── Lazy image loading ────────────────────────────────────────────────────
   const [seenStepIds, setSeenStepIds] = useState<Set<string>>(new Set());
@@ -1005,15 +1036,12 @@ const flushPending = useCallback(async (): Promise<void> => {
   );
 
   // ─────────────────────────────────────────────────────────────────────────
-  // handleStepUpdate — optimistic UI + enqueue write
+  // handleStepUpdate
   //
-  // 1. Apply optimistic update to local steps state immediately
-  // 2. Capture rollback snapshot if this is the step's first pending write
-  // 3. Overwrite any existing pending write for the same step (coalesce)
-  // 4. If queue reaches FLUSH_BATCH_SIZE → flush now
-  //    Otherwise → (re)start the 10 s debounce timer
-  //    The timer only runs while there are pending writes; if the queue is
-  //    empty, the timer is never started.
+  // After optimistic UI update, we find the next pending step from the
+  // UNFILTERED steps list (stepsRef) so we never miss a step that's hidden
+  // by the active filter. Focus is always set. Scroll only fires if the
+  // target step exists in the current filtered view.
   // ─────────────────────────────────────────────────────────────────────────
   const handleStepUpdate = useCallback(
     (stepId: string, status: "pass" | "fail" | "pending", remarks: string) => {
@@ -1021,26 +1049,32 @@ const flushPending = useCallback(async (): Promise<void> => {
 
       const currentSteps = stepsRef.current;
       const idx          = currentSteps.findIndex((s) => s.stepId === stepId);
-      const nextPending  = currentSteps.slice(idx + 1).find((s) => !s.is_divider && s.status === "pending");
       const u            = userRef.current;
       const display_name = u?.display_name ?? u?.email ?? "User";
 
-      // ── Optimistic UI ───────────────────────────────────────────────────
+      // ── Optimistic UI ────────────────────────────────────────────────────
       setSteps((prev) =>
         prev.map((s) => (s.stepId === stepId ? { ...s, status, remarks, display_name } : s))
       );
 
+      // ── Focus + scroll next target ───────────────────────────────────────
       if (status !== "pending") {
-        if (nextPending) { setFocusedStepId(nextPending.stepId); setScrollTarget(nextPending.stepId); }
-        else setFocusedStepId(null);
+        // Find next pending from the full (unfiltered) step list
+        const nextPending = currentSteps.slice(idx + 1).find((s) => !s.is_divider && s.status === "pending");
+        if (nextPending) {
+          setFocusedStepId(nextPending.stepId);
+          // scrollToStep is a no-op if nextPending isn't in the filtered view
+          scrollToStep(nextPending.stepId);
+        } else {
+          setFocusedStepId(null);
+        }
       } else {
+        // Undo: refocus the step itself
         setFocusedStepId(stepId);
-        setScrollTarget(stepId);
+        scrollToStep(stepId);
       }
 
-      // ── Enqueue write ───────────────────────────────────────────────────
-      // Capture rollback state only on the FIRST enqueue for this step
-      // (subsequent updates for the same step update the write, not the snap)
+      // ── Enqueue write ────────────────────────────────────────────────────
       if (!pendingFlushRef.current.has(stepId)) {
         const original = currentSteps[idx];
         if (original) {
@@ -1048,20 +1082,11 @@ const flushPending = useCallback(async (): Promise<void> => {
         }
       }
 
-      pendingFlushRef.current.set(stepId, {
-        test_steps_id: stepId,
-        module_name,
-        status,
-        remarks,
-        display_name,
-      });
+      pendingFlushRef.current.set(stepId, { test_steps_id: stepId, module_name, status, remarks, display_name });
 
-      // ── Flush or schedule ───────────────────────────────────────────────
       if (pendingFlushRef.current.size >= FLUSH_BATCH_SIZE) {
-        // Threshold reached — flush immediately
         flushPending();
       } else {
-        // (Re)start the inactivity timer — 10 s from this update
         if (flushTimerRef.current) clearTimeout(flushTimerRef.current);
         flushTimerRef.current = setTimeout(() => {
           flushTimerRef.current = null;
@@ -1069,7 +1094,7 @@ const flushPending = useCallback(async (): Promise<void> => {
         }, FLUSH_DELAY_MS);
       }
     },
-    [module_name, flushPending]
+    [module_name, flushPending, scrollToStep]
   );
 
   // ── Keyboard shortcuts ────────────────────────────────────────────────────
@@ -1105,13 +1130,17 @@ const flushPending = useCallback(async (): Promise<void> => {
 
     setSteps((prev) => prev.map((s) => s.is_divider ? s : { ...s, status: "pending", remarks: "", display_name }));
     remarksMap.current = {};
-    // Discard any pending batch writes — reset supersedes them
+
     if (flushTimerRef.current) { clearTimeout(flushTimerRef.current); flushTimerRef.current = null; }
     pendingFlushRef.current.clear();
     rollbackStateRef.current.clear();
 
-    const first = currentSteps.filter((s) => !s.is_divider)[0];
-    if (first) { setFocusedStepId(first.stepId); setScrollTarget(first.stepId); }
+    // Scroll & focus back to first step
+    const first = currentSteps.find((s) => !s.is_divider);
+    if (first) {
+      setFocusedStepId(first.stepId);
+      scrollToStep(first.stepId);
+    }
 
     resetStepsMutation.mutate(
       { module_name, stepResultIds, display_name },
@@ -1130,7 +1159,7 @@ const flushPending = useCallback(async (): Promise<void> => {
         onSettled: () => setIsUndoingAll(false),
       }
     );
-  }, [module_name, addToast, isUndoingAll, resetStepsMutation]);
+  }, [module_name, addToast, isUndoingAll, resetStepsMutation, scrollToStep]);
 
   // ── Force release (admin) ─────────────────────────────────────────────────
   const handleForceRelease = useCallback(() => {
@@ -1144,13 +1173,12 @@ const flushPending = useCallback(async (): Promise<void> => {
     );
   }, [isAdmin, currentMtId, forceReleaseMutation, addToast]);
 
-  // ── Finish test — flush pending writes before releasing lock ──────────────
+  // ── Finish test ───────────────────────────────────────────────────────────
   const currentMt   = moduleTests.find((mt) => mt.id === currentMtId);
   const currentTest = currentMt?.test;
 
   const handleFinish = useCallback(async () => {
     const u = userRef.current;
-    // Flush any queued writes first — ensures nothing is lost on exit
     await flushPending();
     if (u && isVisible) {
       releaseLockMutation.mutate({ module_test_id: currentMtId, user_id: u.id });
