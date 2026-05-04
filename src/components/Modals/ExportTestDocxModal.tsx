@@ -5,7 +5,8 @@
 //           pick revision → fetch step_results from Supabase → export DOCX with status + images
 
 import React, { useEffect, useState, useCallback } from "react";
-import { FileText, ChevronRight, Loader2, AlertCircle, CheckCircle2 } from "lucide-react";
+import { useQueryClient } from "@tanstack/react-query";
+import { FileText, ChevronRight, Loader2, AlertCircle } from "lucide-react";
 import ModalShell from "../Layout/ModalShell";
 import { supabase } from "../../supabase";
 import {
@@ -15,10 +16,8 @@ import {
   r2GetStepOrder,
   type R2Step,
 } from "../../lib/r2";
-import { fetchTestsForModule, type TestOption } from "../../lib/rpc";
+import { fetchTestsForModule, fetchBatchStepImageUrls, type TestOption } from "../../lib/rpc";
 import { exportTestDocx, type StepRow } from "../../utils/exportTestDocx";
-// add to imports from rpc
-import { fetchBatchStepImageUrls } from "../../lib/rpc";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -29,12 +28,11 @@ interface R2Module {
   description?: string | null;
 }
 
-// Shape returned by r2GetActiveRevisions() — Record<tests_serial_no, RevisionEntry>
 interface RevisionEntry {
   id:              string;
   revision:        string;
   tests_serial_no: string;
-  tests_name?:      string; // enriched locally
+  tests_name?:     string;
 }
 
 interface Props {
@@ -59,7 +57,6 @@ async function fetchStepResultStatuses(
 }
 
 /** Convert R2 steps (ordered) + optional status map into StepRow[]. */
-// In ExportTestDocxModal.tsx — replace the old buildStepRows
 function buildStepRows(
   stepOrder:   string[],
   stepMap:     Map<string, R2Step>,
@@ -71,13 +68,13 @@ function buildStepRows(
     if (!s) return acc;
     const resolved = imageUrlMap[id];
     acc.push({
-      action:               s.action,
-      expected_result:      s.expected_result,
-      serial_no:            s.serial_no,
-      is_divider:           s.is_divider ? parseInt(s.expected_result, 10) || 1 : null,
-      status:               statusMap?.get(id) ?? null,
-      action_image_urls:    resolved?.actionUrls   ?? [],
-      expected_image_urls:  resolved?.expectedUrls ?? [],
+      action:              s.action,
+      expected_result:     s.expected_result,
+      serial_no:           s.serial_no,
+      is_divider:          s.is_divider ? parseInt(s.expected_result, 10) || 1 : null,
+      status:              statusMap?.get(id) ?? null,
+      action_image_urls:   resolved?.actionUrls   ?? [],
+      expected_image_urls: resolved?.expectedUrls ?? [],
     });
     return acc;
   }, []);
@@ -86,39 +83,45 @@ function buildStepRows(
 // ── Component ──────────────────────────────────────────────────────────────────
 
 const ExportTestDocxModal: React.FC<Props> = ({ onClose }) => {
+  const queryClient = useQueryClient();
   const [mode, setMode] = useState<Mode>("no-results");
 
   // ── Shared state ────────────────────────────────────────────────────────────
-  const [allRevisions, setAllRevisions] = useState<RevisionEntry[]>([]);
+  const [allRevisions, setAllRevisions]       = useState<RevisionEntry[]>([]);
   const [loadingRevisions, setLoadingRevisions] = useState(true);
 
   // ── Mode 1 state ────────────────────────────────────────────────────────────
   const [selectedRevId, setSelectedRevId] = useState<string>("");
 
   // ── Mode 2 state ────────────────────────────────────────────────────────────
-  const [modules, setModules]                 = useState<R2Module[]>([]);
-  const [loadingModules, setLoadingModules]   = useState(false);
-  const [selectedModule, setSelectedModule]   = useState<string>("");
+  const [modules, setModules]                     = useState<R2Module[]>([]);
+  const [loadingModules, setLoadingModules]       = useState(false);
+  const [selectedModule, setSelectedModule]       = useState<string>("");
   const [filteredRevisions, setFilteredRevisions] = useState<RevisionEntry[]>([]);
-  const [loadingFiltered, setLoadingFiltered] = useState(false);
-  const [selectedRevIdM2, setSelectedRevIdM2] = useState<string>("");
+  const [loadingFiltered, setLoadingFiltered]     = useState(false);
+  const [selectedRevIdM2, setSelectedRevIdM2]     = useState<string>("");
 
   // ── Export state ─────────────────────────────────────────────────────────────
   const [exporting, setExporting] = useState(false);
   const [error, setError]         = useState<string | null>(null);
 
-  // ── Load all revisions once (used by both modes) ───────────────────────────
+  // ── Load all revisions once ────────────────────────────────────────────────
   useEffect(() => {
     setLoadingRevisions(true);
-    r2GetActiveRevisions()
+    // Use queryClient so the result is cached and shared with other consumers
+    queryClient
+      .fetchQuery({
+        queryKey: ["activeRevisions"],
+        queryFn:  () => r2GetActiveRevisions(),
+        staleTime: 5 * 60 * 1000,
+      })
       .then((raw) => {
         const entries: RevisionEntry[] = Object.values(raw).map((r: any) => ({
           id:              r.id,
           revision:        r.revision,
           tests_serial_no: r.tests_serial_no,
-          tests_name:       r.tests_name ?? r.tests_serial_no,
+          tests_name:      r.tests_name ?? r.tests_serial_no,
         }));
-        // Sort by tests_serial_no numerically
         entries.sort((a, b) =>
           a.tests_serial_no.localeCompare(b.tests_serial_no, undefined, {
             numeric: true, sensitivity: "base",
@@ -130,21 +133,26 @@ const ExportTestDocxModal: React.FC<Props> = ({ onClose }) => {
         setError(e instanceof Error ? e.message : "Failed to load revisions.")
       )
       .finally(() => setLoadingRevisions(false));
-  }, []);
+  }, [queryClient]);
 
-  // ── Load R2 modules when switching to Mode 2 ───────────────────────────────
+  // ── Load R2 modules when switching to Mode 2 ──────────────────────────────
   useEffect(() => {
     if (mode !== "with-results") return;
     setLoadingModules(true);
-    r2GetModules()
+    queryClient
+      .fetchQuery({
+        queryKey: ["modules"],
+        queryFn:  () => r2GetModules(),
+        staleTime: 5 * 60 * 1000,
+      })
       .then(setModules)
       .catch((e: unknown) =>
         setError(e instanceof Error ? e.message : "Failed to load modules.")
       )
       .finally(() => setLoadingModules(false));
-  }, [mode]);
+  }, [mode, queryClient]);
 
-  // ── When module selected in Mode 2: filter revisions to tests in that module ─
+  // ── Module selected in Mode 2 ─────────────────────────────────────────────
   const handleSelectModule = useCallback(async (moduleName: string) => {
     setSelectedModule(moduleName);
     setSelectedRevIdM2("");
@@ -154,21 +162,21 @@ const ExportTestDocxModal: React.FC<Props> = ({ onClose }) => {
 
     setLoadingFiltered(true);
     try {
-      // Get tests for this module from Supabase (source of truth for module_tests)
-      const tests: TestOption[] = await fetchTestsForModule(moduleName);
+      const tests: TestOption[] = await queryClient.fetchQuery({
+        queryKey: ["moduleTests", moduleName],
+        queryFn:  () => fetchTestsForModule(moduleName),
+        staleTime: 2 * 60 * 1000,
+      });
       const serialNoSet = new Set(tests.map((t) => t.serial_no));
-
-      // Filter all revisions to those whose test is in this module
-      const filtered = allRevisions.filter((r) => serialNoSet.has(r.tests_serial_no));
-      setFilteredRevisions(filtered);
+      setFilteredRevisions(allRevisions.filter((r) => serialNoSet.has(r.tests_serial_no)));
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Failed to filter tests for module.");
     } finally {
       setLoadingFiltered(false);
     }
-  }, [allRevisions]);
+  }, [allRevisions, queryClient]);
 
-  // ── Reset mode-specific selections on tab switch ───────────────────────────
+  // ── Reset on tab switch ───────────────────────────────────────────────────
   const handleSetMode = (m: Mode) => {
     setMode(m);
     setSelectedRevId("");
@@ -180,8 +188,8 @@ const ExportTestDocxModal: React.FC<Props> = ({ onClose }) => {
 
   // ── Export ─────────────────────────────────────────────────────────────────
   const handleExport = async () => {
-    const isMode1  = mode === "no-results";
-    const revId    = isMode1 ? selectedRevId : selectedRevIdM2;
+    const isMode1    = mode === "no-results";
+    const revId      = isMode1 ? selectedRevId : selectedRevIdM2;
     const moduleName = isMode1 ? null : selectedModule;
 
     if (!revId) return;
@@ -194,9 +202,18 @@ const ExportTestDocxModal: React.FC<Props> = ({ onClose }) => {
       const rev = allRevisions.find((r) => r.id === revId);
       if (!rev) throw new Error("Revision not found.");
 
+      // ── Cache-aware fetches — hits TanStack cache if warm ─────────────────
       const [stepOrder, r2Steps] = await Promise.all([
-        r2GetStepOrder(revId),
-        r2GetTestSteps(revId),
+        queryClient.fetchQuery({
+          queryKey: ["stepOrder", revId],
+          queryFn:  () => r2GetStepOrder(revId),
+          staleTime: 5 * 60 * 1000,
+        }),
+        queryClient.fetchQuery({
+          queryKey: ["testSteps", revId],
+          queryFn:  () => r2GetTestSteps(revId),
+          staleTime: 5 * 60 * 1000,
+        }),
       ]);
 
       if (!stepOrder.length || !r2Steps.length) {
@@ -207,20 +224,26 @@ const ExportTestDocxModal: React.FC<Props> = ({ onClose }) => {
       const stepMap = new Map<string, R2Step>(r2Steps.map((s) => [s.id, s]));
 
       const nonDividerSteps = stepOrder
-  .map((id) => stepMap.get(id))
-  .filter((s): s is R2Step => !!s && !s.is_divider)
-  .map((s) => ({ id: s.id, serial_no: s.serial_no }));
+        .map((id) => stepMap.get(id))
+        .filter((s): s is R2Step => !!s && !s.is_divider)
+        .map((s) => ({ id: s.id, serial_no: s.serial_no }));
 
-const imageUrlMap = nonDividerSteps.length
-  ? await fetchBatchStepImageUrls(nonDividerSteps)
-  : {};
+      // ── Image URLs — matches key used by useStepImageUrls in hooks.ts ──────
+      const imageUrlMap = nonDividerSteps.length
+        ? await queryClient.fetchQuery({
+            queryKey: ["r2StepImages", ...nonDividerSteps.map((s) => s.id).sort()],
+            queryFn:  () => fetchBatchStepImageUrls(nonDividerSteps),
+            staleTime: 30 * 60 * 1000,
+          })
+        : {};
 
+      // ── Step result statuses (Mode 2 only) — always fresh ─────────────────
       let statusMap: Map<string, string> | undefined;
       if (!isMode1 && moduleName) {
         statusMap = await fetchStepResultStatuses(stepOrder, moduleName);
       }
-// ✅ fix — pass imageUrlMap as the 4th argument
-const steps = buildStepRows(stepOrder, stepMap, statusMap, imageUrlMap);
+
+      const steps = buildStepRows(stepOrder, stepMap, statusMap, imageUrlMap);
       if (!steps.length) {
         setError("No steps could be built for this revision.");
         return;
@@ -241,8 +264,8 @@ const steps = buildStepRows(stepOrder, stepMap, statusMap, imageUrlMap);
   };
 
   // ── Derived ────────────────────────────────────────────────────────────────
-  const activeRevId  = mode === "no-results" ? selectedRevId : selectedRevIdM2;
-  const canExport =
+  const activeRevId = mode === "no-results" ? selectedRevId : selectedRevIdM2;
+  const canExport   =
     !exporting &&
     !!activeRevId &&
     (mode === "no-results" || !!selectedModule);
@@ -334,7 +357,7 @@ const steps = buildStepRows(stepOrder, stepMap, statusMap, imageUrlMap);
 
       <div className="flex flex-col gap-4">
 
-        {/* ── Mode 1: pick any revision ─────────────────────────────────────── */}
+        {/* ── Mode 1: pick any revision ──────────────────────────────────────── */}
         {mode === "no-results" && (
           <div className="flex flex-col gap-2">
             <p className="text-[10px] font-bold text-t-muted uppercase tracking-widest px-1">
@@ -350,10 +373,9 @@ const steps = buildStepRows(stepOrder, stepMap, statusMap, imageUrlMap);
           </div>
         )}
 
-        {/* ── Mode 2: module → filtered revision ───────────────────────────── */}
+        {/* ── Mode 2: module → filtered revision ────────────────────────────── */}
         {mode === "with-results" && (
           <>
-            {/* Step 1: Module */}
             <div className="flex flex-col gap-2">
               <p className="text-[10px] font-bold text-t-muted uppercase tracking-widest px-1">
                 1 · Module
@@ -380,9 +402,7 @@ const steps = buildStepRows(stepOrder, stepMap, statusMap, imageUrlMap);
                         }`}
                       >
                         <span className="text-sm font-medium">{m.name}</span>
-                        {active && (
-                          <ChevronRight size={14} className="opacity-60 shrink-0" />
-                        )}
+                        {active && <ChevronRight size={14} className="opacity-60 shrink-0" />}
                       </button>
                     );
                   })}
@@ -390,7 +410,6 @@ const steps = buildStepRows(stepOrder, stepMap, statusMap, imageUrlMap);
               )}
             </div>
 
-            {/* Step 2: Revision filtered by module's tests */}
             {selectedModule && (
               <div className="flex flex-col gap-2">
                 <p className="text-[10px] font-bold text-t-muted uppercase tracking-widest px-1">
@@ -435,4 +454,4 @@ const steps = buildStepRows(stepOrder, stepMap, statusMap, imageUrlMap);
   );
 };
 
-export default ExportTestDocxModal;
+export default ExportTestDocxM
