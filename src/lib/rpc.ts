@@ -1040,19 +1040,24 @@ export function fetchBatchStepImageUrls(
   steps: { id: string; serial_no: number }[]
 ): Promise<Record<string, StepImageUrls>> {
   return callRpc(async () => {
-    if (!steps.length) return {}
+    if (!steps.length) return {};
+    const token = await getWorkerToken();
 
-    const token = await getWorkerToken()
+    const res = await fetch(WORKER_URL, {   // import WORKER_URL from r2.ts or redeclare
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        type:  "list-batch",
+        steps: steps.map(({ id, serial_no }) => ({ id, serial_no })),
+      }),
+    });
 
-    const entries = await Promise.all(
-      steps.map(async ({ id, serial_no }) => {
-        const urls = await r2ListStepImages(token, id, serial_no)
-        return [id, urls] as const
-      })
-    )
-
-    return Object.fromEntries(entries)
-  })
+    if (!res.ok) throw new Error(`R2 batch image fetch failed: ${res.status}`);
+    return res.json() as Promise<Record<string, StepImageUrls>>;
+  });
 }
 
 /** @deprecated Use fetchBatchStepImageUrls — Supabase storage no longer used for images. */
