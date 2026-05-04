@@ -42,6 +42,7 @@ import {
   forceReleaseLock,
   heartbeatLock,
   updateStepResult,
+  bulkUpdateStepResults,          // ← add this line
   resetAllStepResults,
   // Test Report
   fetchSessionHistory,
@@ -528,15 +529,17 @@ type UpdateStepResultVars = {
  * local state once and manages it optimistically. A refetch would be discarded
  * by the hasInitializedForRef guard — pure wasted bandwidth.
  */
-export function useUpdateStepResult(
-  module_test_id: string,
-  module_name:    string,
-  options?: UseMutationOptions<void, Error, UpdateStepResultVars>
+// ── Bulk upsert (one DB round-trip for N steps) ───────────────────────────
+
+
+export function useBulkUpdateStepResults(
+  module_name: string,
+  options?: UseMutationOptions<void, Error, UpdateStepResultVars[]>
 ) {
   const qc = useQueryClient();
-  return useMutation<void, Error, UpdateStepResultVars>({
-    mutationFn: updateStepResult,
-    onSuccess:  () => {
+  return useMutation<void, Error, UpdateStepResultVars[]>({
+    mutationFn: bulkUpdateStepResults,
+    onSuccess: () => {
       qc.invalidateQueries({ queryKey: QK.dashboardSummaries() });
       qc.invalidateQueries({ queryKey: QK.moduleCounts(module_name) });
     },

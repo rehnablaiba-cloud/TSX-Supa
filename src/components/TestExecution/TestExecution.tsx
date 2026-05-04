@@ -31,7 +31,7 @@ import {
   useReleaseLock,
   useForceReleaseLock,
   useHeartbeatLock,
-  useUpdateStepResult,
+  useBulkUpdateStepResults,
   useResetAllStepResults,
   invalidateModuleLocks,
   insertTestFinished,
@@ -684,16 +684,17 @@ const TestExecution: React.FC<Props> = ({
   const releaseLockMutation  = useReleaseLock(module_name);
   const forceReleaseMutation = useForceReleaseLock(module_name);
   const heartbeatMutation    = useHeartbeatLock();
-  const updateStepMutation   = useUpdateStepResult(currentMtId, module_name);
+  const bulkUpdateMutation    = useBulkUpdateStepResults(module_name);
   const resetStepsMutation   = useResetAllStepResults(currentMtId);
 
   // Stable mutation refs
   const heartbeatMutateRef    = useRef(heartbeatMutation.mutate);
   const releaseLockMutateRef  = useRef(releaseLockMutation.mutate);
-  const updateStepMutateAsync = useRef(updateStepMutation.mutateAsync);
+  const bulkUpdateMutateAsync = useRef(bulkUpdateMutation.mutateAsync);
+  useEffect(() => { bulkUpdateMutateAsync.current = bulkUpdateMutation.mutateAsync; }, [bulkUpdateMutation.mutateAsync]);
   useEffect(() => { heartbeatMutateRef.current    = heartbeatMutation.mutate;      }, [heartbeatMutation.mutate]);
   useEffect(() => { releaseLockMutateRef.current  = releaseLockMutation.mutate;    }, [releaseLockMutation.mutate]);
-  useEffect(() => { updateStepMutateAsync.current = updateStepMutation.mutateAsync; }, [updateStepMutation.mutateAsync]);
+
 
   // ── Guard refs ────────────────────────────────────────────────────────────
   const hasInitializedForRef       = useRef<string | null>(null);
@@ -709,7 +710,7 @@ const TestExecution: React.FC<Props> = ({
       pendingFlushRef.current.clear();
       rollbackStateRef.current.clear();
       // Fire-and-forget — navigating away; errors are silent here
-      Promise.allSettled(batch.map((v) => updateStepMutateAsync.current(v)));
+      bulkUpdateMutateAsync.current(batch);
     }
 
     hasInitializedForRef.current       = null;
@@ -878,7 +879,7 @@ const flushPending = useCallback(async (): Promise<void> => {
       pendingFlushRef.current.clear();
       rollbackStateRef.current.clear();
       // Fire-and-forget on unmount
-      Promise.allSettled(batch.map((v) => updateStepMutateAsync.current(v)));
+      bulkUpdateMutateAsync.current(batch);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);

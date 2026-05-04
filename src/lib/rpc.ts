@@ -974,6 +974,32 @@ export function updateStepResult(payload: {
 
 const BATCH_SIZE = 500;
 
+export function bulkUpdateStepResults(
+  batch: Array<{
+    test_steps_id: string;
+    module_name:   string;
+    status:        "pass" | "fail" | "pending";
+    remarks:       string;
+    display_name:  string;
+  }>
+): Promise<void> {
+  return callRpc(async () => {
+    const { error } = await supabase
+      .from("step_results")
+      .upsert(
+        batch.map((v) => ({
+          test_steps_id: v.test_steps_id,
+          module_name:   v.module_name,
+          status:        v.status,
+          remarks:       v.remarks,
+          display_name:  v.display_name,
+        })),
+        { onConflict: "test_steps_id,module_name" }  // ← adjust to match your unique constraint
+      );
+    if (error) throw error;
+  });
+}
+
 export function resetAllStepResults(
   module_name:   string,
   stepResultIds: string[],
