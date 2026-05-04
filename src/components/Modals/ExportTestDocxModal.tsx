@@ -454,4 +454,4 @@ const ExportTestDocxModal: React.FC<Props> = ({ onClose }) => {
   );
 };
 
-export default ExportTestDocxM
+export default ExportTestDocx;
