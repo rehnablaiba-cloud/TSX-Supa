@@ -219,8 +219,8 @@ const imageUrlMap = nonDividerSteps.length
       if (!isMode1 && moduleName) {
         statusMap = await fetchStepResultStatuses(stepOrder, moduleName);
       }
-
-      const steps = buildStepRows(stepOrder, stepMap, statusMap);
+// ✅ fix — pass imageUrlMap as the 4th argument
+const steps = buildStepRows(stepOrder, stepMap, statusMap, imageUrlMap);
       if (!steps.length) {
         setError("No steps could be built for this revision.");
         return;

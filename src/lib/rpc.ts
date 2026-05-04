@@ -983,19 +983,21 @@ export function bulkUpdateStepResults(
     display_name:  string;
   }>
 ): Promise<void> {
+  if (!batch.length) return Promise.resolve();
+  // All rows in a batch share the same module_name (enforced by the queue
+  // in TestExecution), so we pass it once as a scalar param and keep the
+  // jsonb payload lean.
+  const module_name = batch[0].module_name;
   return callRpc(async () => {
-    const { error } = await supabase
-      .from("step_results")
-      .upsert(
-        batch.map((v) => ({
-          test_steps_id: v.test_steps_id,
-          module_name:   v.module_name,
-          status:        v.status,
-          remarks:       v.remarks,
-          display_name:  v.display_name,
-        })),
-        { onConflict: "test_steps_id,module_name" }  // ← adjust to match your unique constraint
-      );
+    const { error } = await supabase.rpc("bulk_update_step_results", {
+      p_updates:     batch.map((v) => ({
+        test_steps_id: v.test_steps_id,
+        status:        v.status,
+        remarks:       v.remarks,
+        display_name:  v.display_name,
+      })),
+      p_module_name: module_name,
+    });
     if (error) throw error;
   });
 }
