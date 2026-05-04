@@ -840,53 +840,34 @@ const TestExecution: React.FC<Props> = ({
   // Each resolved mutation triggers the hook's own onSuccess (cache inval).
   // Failed writes are individually rolled back to their rollback snapshot.
   // ─────────────────────────────────────────────────────────────────────────
-  const flushPending = useCallback(async (): Promise<void> => {
-    if (flushTimerRef.current) {
-      clearTimeout(flushTimerRef.current);
-      flushTimerRef.current = null;
-    }
+  // flushPending — now ONE request regardless of batch size
+const flushPending = useCallback(async (): Promise<void> => {
+  if (flushTimerRef.current) {
+    clearTimeout(flushTimerRef.current);
+    flushTimerRef.current = null;
+  }
 
-    const batch = [...pendingFlushRef.current.values()];
-    if (batch.length === 0) return;
+  const batch = [...pendingFlushRef.current.values()];
+  if (batch.length === 0) return;
 
-    // Drain the queue before the async work so new updates that arrive
-    // during the flush are enqueued fresh (not lost)
-    pendingFlushRef.current.clear();
+  pendingFlushRef.current.clear();
 
-    const results = await Promise.allSettled(
-      batch.map((vars) => updateStepMutateAsync.current(vars))
+  try {
+    await bulkUpdateMutateAsync.current(batch); // 1 URL for N steps ✓
+    batch.forEach((v) => rollbackStateRef.current.delete(v.test_steps_id));
+  } catch {
+    // Roll back all steps in this batch
+    setSteps((prev) =>
+      prev.map((s) => {
+        const snap = rollbackStateRef.current.get(s.stepId);
+        if (!snap) return s;
+        rollbackStateRef.current.delete(s.stepId);
+        return { ...s, status: snap.status, remarks: snap.remarks };
+      })
     );
-
-    const failed: PendingWrite[] = [];
-    results.forEach((result, i) => {
-      if (result.status === "rejected") {
-        failed.push(batch[i]);
-      } else {
-        // Success — safe to drop the rollback snapshot for this step
-        rollbackStateRef.current.delete(batch[i].test_steps_id);
-      }
-    });
-
-    if (failed.length > 0) {
-      // Roll back only the failed steps to their pre-optimistic state
-      setSteps((prev) =>
-        prev.map((s) => {
-          const wasFailedWrite = failed.some((f) => f.test_steps_id === s.stepId);
-          if (!wasFailedWrite) return s;
-          const snap = rollbackStateRef.current.get(s.stepId);
-          if (!snap) return s;
-          rollbackStateRef.current.delete(s.stepId);
-          return { ...s, status: snap.status, remarks: snap.remarks };
-        })
-      );
-      addToast(
-        failed.length === 1
-          ? "1 step result failed to save. Please re-submit."
-          : `${failed.length} step results failed to save. Please re-submit.`,
-        "error"
-      );
-    }
-  }, [addToast]);
+    addToast(`${batch.length} step result(s) failed to save. Please re-submit.`, "error");
+  }
+}, [addToast]);
 
   // ── Unmount: flush any remaining pending writes ───────────────────────────
   useEffect(() => {
