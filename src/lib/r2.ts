@@ -76,7 +76,7 @@ async function cachedFetch<T>(key: string, ttl = CACHE_TTL_MS): Promise<T> {
   return data;
 }
 
-export const WORKER_URL = "https://shrill-thunder-6fdf.rehnab-rk.workers.dev";
+
 /**
  * Force-invalidate a single cache entry.
  * Call after a migration upload to ensure the next read picks up fresh data.

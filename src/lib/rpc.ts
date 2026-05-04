@@ -1043,7 +1043,7 @@ export function fetchBatchStepImageUrls(
     if (!steps.length) return {};
     const token = await getWorkerToken();
 
-    const res = await fetch(WORKER_URL, {   // import WORKER_URL from r2.ts or redeclare
+    const res = await fetch("https://shrill-thunder-6fdf.rehnab-rk.workers.dev", {   // import WORKER_URL from r2.ts or redeclare
       method: "POST",
       headers: {
         "Authorization": `Bearer ${token}`,
