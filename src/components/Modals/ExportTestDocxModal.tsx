@@ -17,6 +17,8 @@ import {
 } from "../../lib/r2";
 import { fetchTestsForModule, type TestOption } from "../../lib/rpc";
 import { exportTestDocx, type StepRow } from "../../utils/exportTestDocx";
+// add to imports from rpc
+import { fetchBatchStepImageUrls } from "../../lib/rpc";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -59,21 +61,23 @@ async function fetchStepResultStatuses(
 /** Convert R2 steps (ordered) + optional status map into StepRow[]. */
 // In ExportTestDocxModal.tsx — replace the old buildStepRows
 function buildStepRows(
-  stepOrder: string[],
-  stepMap:   Map<string, R2Step>,
-  statusMap?: Map<string, string>
+  stepOrder:   string[],
+  stepMap:     Map<string, R2Step>,
+  statusMap?:  Map<string, string>,
+  imageUrlMap: Record<string, { actionUrls: string[]; expectedUrls: string[] }> = {}
 ): StepRow[] {
   return stepOrder.reduce<StepRow[]>((acc, id) => {
     const s = stepMap.get(id);
     if (!s) return acc;
+    const resolved = imageUrlMap[id];
     acc.push({
       action:               s.action,
       expected_result:      s.expected_result,
       serial_no:            s.serial_no,
       is_divider:           s.is_divider ? parseInt(s.expected_result, 10) || 1 : null,
       status:               statusMap?.get(id) ?? null,
-      action_image_urls:    s.action_image_urls   ?? [],   // pass through to exporter
-      expected_image_urls:  s.expected_image_urls ?? [],
+      action_image_urls:    resolved?.actionUrls   ?? [],
+      expected_image_urls:  resolved?.expectedUrls ?? [],
     });
     return acc;
   }, []);
@@ -201,6 +205,15 @@ const ExportTestDocxModal: React.FC<Props> = ({ onClose }) => {
       }
 
       const stepMap = new Map<string, R2Step>(r2Steps.map((s) => [s.id, s]));
+
+      const nonDividerSteps = stepOrder
+  .map((id) => stepMap.get(id))
+  .filter((s): s is R2Step => !!s && !s.is_divider)
+  .map((s) => ({ id: s.id, serial_no: s.serial_no }));
+
+const imageUrlMap = nonDividerSteps.length
+  ? await fetchBatchStepImageUrls(nonDividerSteps)
+  : {};
 
       let statusMap: Map<string, string> | undefined;
       if (!isMode1 && moduleName) {
