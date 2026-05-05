@@ -70,7 +70,6 @@ interface ValidationEntry {
   error?:  string
 }
 
-// Light revision — NO step_order, NO heavy columns
 interface TestRevision {
   id:              string
   revision:        string
@@ -112,11 +111,10 @@ interface RevisionValidationItem {
 
 const TIER2_CHUNK_SIZE = 50
 
-// ── Validation targets (modules / tests / revisions bulk) ─────────────────────
 const VALIDATION_TARGETS: Pick<ValidationEntry, "key" | "label" | "table" | "pkField" | "icon">[] = [
   { key: "modules/all.json",   label: "Modules",   table: "modules",        pkField: "name", icon: <Package size={15} /> },
   { key: "tests/all.json",     label: "Tests",     table: "tests",          pkField: "name", icon: <FlaskConical size={15} /> },
-  { key: "revisions/all.json", label: "Revisions", table: "test_revisions", pkField: "id", icon: <GitBranch size={15} /> },
+  { key: "revisions/all.json", label: "Revisions", table: "test_revisions", pkField: "id",   icon: <GitBranch size={15} /> },
 ]
 
 // ── R2 helpers ────────────────────────────────────────────────────────────────
@@ -168,12 +166,10 @@ async function r2Check(token: string, key: string): Promise<boolean> {
 }
 
 // ── Supabase helpers ──────────────────────────────────────────────────────────
-
-// Light revision list — no step_order, no heavy columns, optional status filter
 async function fetchRevisionList(status?: string): Promise<TestRevision[]> {
   let q = supabase
     .from("test_revisions")
-    .select("id, revision, tests_serial_no, status")  // ← NO step_order
+    .select("id, revision, tests_serial_no, status")
     .order("tests_serial_no")
   if (status) q = q.eq("status", status)
   const { data, error } = await q
@@ -181,7 +177,6 @@ async function fetchRevisionList(status?: string): Promise<TestRevision[]> {
   return (data ?? []) as TestRevision[]
 }
 
-// Fetch step_order for ONE revision by ID — single row, one column
 async function fetchStepOrder(revisionId: string): Promise<string[]> {
   const { data, error } = await supabase
     .from("test_revisions")
@@ -192,20 +187,6 @@ async function fetchStepOrder(revisionId: string): Promise<string[]> {
   return (data?.step_order as string[]) ?? []
 }
 
-// Fetch test_steps by exact IDs from step_order (PK .in() — no serial_no)
-async function fetchStepsByIds(ids: string[]): Promise<any[]> {
-  if (ids.length === 0) return []
-  const { data, error } = await supabase
-    .from("test_steps")
-    .select("*")
-    .in("id", ids)           // ← exact IDs only, never serial_no
-  if (error) throw new Error(error.message)
-  // Re-sort to match step_order sequence (.in does not guarantee order)
-  const idxMap = new Map(ids.map((id, i) => [id, i]))
-  return (data ?? []).sort((a: any, b: any) => (idxMap.get(a.id) ?? 0) - (idxMap.get(b.id) ?? 0))
-}
-
-// RPC A — ordered steps via unnest join (1 round-trip, server-sorted)
 async function fetchOrderedStepsRpc(revisionId: string): Promise<any[]> {
   const { data, error } = await supabase
     .rpc("get_ordered_steps", { p_revision_id: revisionId })
@@ -213,16 +194,6 @@ async function fetchOrderedStepsRpc(revisionId: string): Promise<any[]> {
   return data ?? []
 }
 
-// RPC B — count how many of the expected step IDs actually exist in DB
-async function countStepsByIds(ids: string[]): Promise<number> {
-  if (ids.length === 0) return 0
-  const { data, error } = await supabase
-    .rpc("count_steps_by_ids", { p_ids: ids })
-  if (error) throw new Error(error.message)
-  return Number(data ?? 0)
-}
-
-// ── Chunked Tier-2 deep diff (fail-fast, 50 rows/page) ───────────────────────
 async function chunkedDeepDiff(
   r2Rows: Record<string, unknown>[],
   revisionId: string,
@@ -239,7 +210,6 @@ async function chunkedDeepDiff(
       "action_image_urls",
       "expected_image_urls",
     ])).sort()
-
     const out: Record<string, unknown> = {}
     for (const k of allKeys) {
       if (k === "action_image_urls" || k === "expected_image_urls") {
@@ -268,6 +238,52 @@ async function chunkedDeepDiff(
 
   return { result: "ok", dbCount: dbRows.length }
 }
+
+// ── ManualUuidDelete — bypasses Supabase entirely ─────────────────────────────
+const ManualUuidDelete: React.FC<{
+  prefix:   string;
+  onDelete: (ids: string[]) => void;
+}> = ({ prefix, onDelete }) => {
+  const [raw, setRaw] = useState("")
+
+  const ids = raw
+    .split(/[\n,\s]+/)
+    .map(s => s.trim())
+    .filter(Boolean)
+
+  return (
+    <div className="flex flex-col gap-2 p-3 rounded-xl border border-red-500/20 bg-red-500/5">
+      <p className="text-[10px] font-semibold text-red-400 uppercase tracking-wider">
+        Direct delete — bypasses Supabase
+      </p>
+      <p className="text-[10px] text-t-muted">
+        Use this to delete orphaned R2 files whose revision rows no longer exist in the DB.
+      </p>
+      <textarea
+        value={raw}
+        onChange={e => setRaw(e.target.value)}
+        placeholder={"Paste UUIDs, one per line or comma-separated\ne.g. abc123-...\ndef456-..."}
+        rows={4}
+        className="input text-xs font-mono resize-none w-full"
+      />
+      <div className="flex items-center justify-between">
+        <span className="text-[10px] text-t-muted font-mono">
+          {ids.length > 0 ? `${ids.length} ID${ids.length > 1 ? "s" : ""} → ${prefix}/{id}.json` : `${prefix}/{id}.json`}
+        </span>
+        <button
+          onClick={() => onDelete(ids)}
+          disabled={ids.length === 0}
+          className="flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 rounded-lg
+            bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/20
+            disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+        >
+          <Trash2 size={12} /> Delete {ids.length > 0 ? ids.length : ""} from R2
+        </button>
+      </div>
+    </div>
+  )
+}
+
 // ── Sub-components ────────────────────────────────────────────────────────────
 function ProgressRow({ item }: { item: ProgressItem }) {
   return (
@@ -312,7 +328,6 @@ function R2StatusBadge({ status }: { status: R2FileStatus }) {
   )
 }
 
-// ── Revision Validation Row ───────────────────────────────────────────────────
 function RevisionValidationRow({ item }: { item: RevisionValidationItem }) {
   const pill = (
     status: RevValSubStatus,
@@ -384,7 +399,6 @@ function RevisionValidationRow({ item }: { item: RevisionValidationItem }) {
       </span>
       {pill(item.soStatus, item.soR2Count, item.soDbCount, "SO", item.soError)}
       {pill(item.tsStatus, item.tsR2Count, item.tsDbCount, "TS", item.tsError)}
-
       {hasError && (
         <span className="w-full text-[9px] font-mono text-orange-400 break-all mt-0.5 px-1">
           {item.tsError || item.soError}
@@ -394,11 +408,8 @@ function RevisionValidationRow({ item }: { item: RevisionValidationItem }) {
   )
 }
 
-// ── Validation Card ───────────────────────────────────────────────────────────
 function ValidationCard({
-  entry,
-  onDeepDiff,
-  onSyncNow,
+  entry, onDeepDiff, onSyncNow,
 }: {
   entry:      ValidationEntry
   onDeepDiff: () => void
@@ -433,7 +444,6 @@ function ValidationCard({
       <div className="flex items-center gap-3 px-3 py-2.5">
         <span className="text-t-muted shrink-0">{entry.icon}</span>
         <span className="text-sm font-semibold text-t-primary flex-1">{entry.label}</span>
-
         <div className="flex items-center gap-1 text-[10px] font-mono">
           {entry.r2Count !== null ? (
             <span className="px-1.5 py-0.5 rounded-md bg-c-brand/10 text-c-brand border border-c-brand/20">
@@ -444,7 +454,6 @@ function ValidationCard({
               <div className="w-2 h-2 border border-c-brand border-t-transparent rounded-full animate-spin" /> R2
             </span>
           ) : null}
-
           {entry.dbCount !== null ? (
             <span className={`px-1.5 py-0.5 rounded-md border
               ${entry.dbCount !== entry.r2Count
@@ -458,7 +467,6 @@ function ValidationCard({
             </span>
           ) : null}
         </div>
-
         <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full shrink-0 ${cfg.badge} ${cfg.badgeBg}`}>
           {isChecking
             ? <span className="flex items-center gap-1">
@@ -498,7 +506,6 @@ function ValidationCard({
               <AlertCircle size={10} /> {entry.error || "Unknown error"}
             </span>
           )}
-
           {(isInSync || isDrifted) && entry.r2Data && (
             <>
               {entry.tier2 === "idle" && (
@@ -550,7 +557,6 @@ function ValidationCard({
               )}
             </>
           )}
-
           {(isDrifted || isMissing) && (
             <button onClick={onSyncNow}
               className="flex items-center gap-1 text-[10px] font-bold px-2.5 py-1 rounded-lg ml-auto
@@ -574,16 +580,16 @@ const TYPE_META: {
   danger?: boolean
   group:   "sync" | "manage" | "util"
 }[] = [
-  { id: "validate",           label: "Validate",           icon: <ShieldCheck size={18} />, desc: "Compare R2 snapshots vs live Supabase — tiered, zero-waste checks",                    flow: "validate",           group: "sync" },
-  { id: "validate_revisions", label: "Validate Steps",     icon: <ShieldCheck size={18} />, desc: "Per-revision step_orders & test_steps R2 vs DB — button-triggered, chunked diff",    flow: "validate_revisions", group: "sync" },
-  { id: "modules",            label: "Modules",            icon: <Package size={18} />,     desc: "Upload all modules → modules/all.json",                                               flow: "direct",             group: "sync" },
-  { id: "tests",              label: "Tests",              icon: <FlaskConical size={18} />,desc: "Upload all tests → tests/all.json",                                                   flow: "direct",             group: "sync" },
-  { id: "revisions",         label: "Revisions",           icon: <GitBranch size={18} />,   desc: "Upload all test revisions → revisions/all.json",                                     flow: "direct",             group: "sync" },
-  { id: "step_orders",       label: "Step Orders",         icon: <ListOrdered size={18} />, desc: "Upload step_order per revision → step_orders/{id}.json",                             flow: "revision",           group: "manage" },
-  { id: "test_steps",        label: "Test Steps",          icon: <Layers size={18} />,      desc: "Upload test_steps per revision → test_steps/{id}.json",                              flow: "revision",           group: "manage" },
-  { id: "delete_step_orders",label: "Delete Step Orders",  icon: <Trash2 size={18} />,      desc: "Delete step_orders/{id}.json files from R2",     flow: "delete_revision", group: "util", danger: true },
-  { id: "delete_test_steps", label: "Delete Test Steps",   icon: <Trash2 size={18} />,      desc: "Delete test_steps/{id}.json files from R2",      flow: "delete_revision", group: "util", danger: true },
-  { id: "reader",            label: "Read from R2",        icon: <Eye size={18} />,         desc: "Fetch any R2 key and inspect its JSON",                                              flow: "reader",             group: "util" },
+  { id: "validate",            label: "Validate",          icon: <ShieldCheck size={18} />, desc: "Compare R2 snapshots vs live Supabase — tiered, zero-waste checks",                 flow: "validate",           group: "sync"   },
+  { id: "validate_revisions",  label: "Validate Steps",    icon: <ShieldCheck size={18} />, desc: "Per-revision step_orders & test_steps R2 vs DB — button-triggered, chunked diff", flow: "validate_revisions", group: "sync"   },
+  { id: "modules",             label: "Modules",           icon: <Package size={18} />,     desc: "Upload all modules → modules/all.json",                                            flow: "direct",             group: "sync"   },
+  { id: "tests",               label: "Tests",             icon: <FlaskConical size={18} />,desc: "Upload all tests → tests/all.json",                                                flow: "direct",             group: "sync"   },
+  { id: "revisions",          label: "Revisions",          icon: <GitBranch size={18} />,   desc: "Upload all test revisions → revisions/all.json",                                  flow: "direct",             group: "sync"   },
+  { id: "step_orders",        label: "Step Orders",        icon: <ListOrdered size={18} />, desc: "Upload step_order per revision → step_orders/{id}.json",                          flow: "revision",           group: "manage" },
+  { id: "test_steps",         label: "Test Steps",         icon: <Layers size={18} />,      desc: "Upload test_steps per revision → test_steps/{id}.json",                           flow: "revision",           group: "manage" },
+  { id: "delete_step_orders", label: "Delete Step Orders", icon: <Trash2 size={18} />,      desc: "Delete step_orders/{id}.json files from R2",                                      flow: "delete_revision",    group: "util",  danger: true },
+  { id: "delete_test_steps",  label: "Delete Test Steps",  icon: <Trash2 size={18} />,      desc: "Delete test_steps/{id}.json files from R2",                                       flow: "delete_revision",    group: "util",  danger: true },
+  { id: "reader",             label: "Read from R2",       icon: <Eye size={18} />,         desc: "Fetch any R2 key and inspect its JSON",                                           flow: "reader",             group: "util"   },
 ]
 
 // ── Component ─────────────────────────────────────────────────────────────────
@@ -637,7 +643,7 @@ const R2MigrationModal: React.FC<Props> = ({ onClose, onBack }) => {
   const patchEntry = (idx: number, changes: Partial<ValidationEntry>) =>
     setValidationEntries(prev => prev.map((e, i) => i === idx ? { ...e, ...changes } : e))
 
-  // ── Load revision list (button-triggered, NOT useEffect) ───────────────────
+  // ── Load revision list ─────────────────────────────────────────────────────
   const loadRevisions = async () => {
     setRevLoading(true)
     setSelected(new Set())
@@ -706,11 +712,11 @@ const R2MigrationModal: React.FC<Props> = ({ onClose, onBack }) => {
   const selectMissing  = useCallback(() => setSelected(new Set(revisions.filter(r => r2Status.get(r.id) === "missing").map(r => r.id))), [revisions, r2Status])
   const selectExisting = useCallback(() => setSelected(new Set(revisions.filter(r => r2Status.get(r.id) === "exists").map(r => r.id))),  [revisions, r2Status])
 
-  // ── Type select ──────────────────────────────────────────────────────────────
+  // ── Type select ────────────────────────────────────────────────────────────
   const handleTypeSelect = (t: MigrationType) => {
     setMigrType(t)
     setError(null)
-    setRevisions([])       // always clear stale list — user must click Load
+    setRevisions([])
     const meta = TYPE_META.find(m => m.id === t)
     if (meta?.flow === "reader")             { setStage("reader");                   return }
     if (meta?.flow === "validate")           { handleValidate();                     return }
@@ -760,8 +766,6 @@ const R2MigrationModal: React.FC<Props> = ({ onClose, onBack }) => {
   }
 
   // ── Revision upload ────────────────────────────────────────────────────────
-  // step_orders: fetchStepOrder (1 row, 1 col) → write directly — no test_steps query
-  // test_steps:  fetchOrderedStepsRpc (RPC A) — 1 round-trip, server-sorted, no serial_no
   const handleRevisionUpload = async () => {
     const chosenRevs = revisions.filter(r => selected.has(r.id))
     if (!chosenRevs.length) return
@@ -777,14 +781,12 @@ const R2MigrationModal: React.FC<Props> = ({ onClose, onBack }) => {
       patch(rowLabel, { status: "running" })
       try {
         if (migrType === "step_orders") {
-          // 1 row, 1 column — PK filter, no serial_no
           const order = await fetchStepOrder(rev.id)
           if (order.length === 0) throw new Error("step_order is empty for this revision")
           await r2Write(token, `step_orders/${rev.id}.json`, order)
           patch(rowLabel, { status: "done", count: order.length })
           done.push({ label: rowLabel, count: order.length })
         } else {
-          // RPC A: get_ordered_steps — server-sorted, 1 round-trip, no serial_no
           const steps = await fetchOrderedStepsRpc(rev.id)
           await r2Write(token, `test_steps/${rev.id}.json`, steps)
           patch(rowLabel, { status: "done", count: steps.length })
@@ -800,8 +802,9 @@ const R2MigrationModal: React.FC<Props> = ({ onClose, onBack }) => {
   }
 
   // ── Revision delete ────────────────────────────────────────────────────────
-  const handleRevisionDelete = async () => {
-    const chosenRevs = revisions.filter(r => selected.has(r.id))
+  // Works for both Supabase-loaded revisions AND synthetic ones from ManualUuidDelete
+  const handleRevisionDelete = async (overrideRevs?: TestRevision[]) => {
+    const chosenRevs = overrideRevs ?? revisions.filter(r => selected.has(r.id))
     if (!chosenRevs.length) return
     setStage("deleting")
     const prefix = r2Prefix(migrType)
@@ -915,8 +918,6 @@ const R2MigrationModal: React.FC<Props> = ({ onClose, onBack }) => {
   }
 
   // ── Per-revision validation ────────────────────────────────────────────────
-  // SO: fetchStepOrder (1 row, 1 col) vs R2 array — no serial_no
-  // TS: countStepsByIds RPC B (1 bigint) → chunkedDeepDiff .in("id", chunk) — no serial_no
   const handleValidateRevisions = async () => {
     const chosenRevs = revisions.filter(r => revValSelected.has(r.id))
     if (!chosenRevs.length) return
@@ -937,20 +938,15 @@ const R2MigrationModal: React.FC<Props> = ({ onClose, onBack }) => {
     for (let i = 0; i < chosenRevs.length; i++) {
       const rev = chosenRevs[i]
 
-      // ── step_order validation ───────────────────────────────────────────────
       items[i] = { ...items[i], soStatus: "running" }
       setRevValidation([...items])
       try {
         const soR2: string[] = await r2Read(token, `step_orders/${rev.id}.json`)
           .then(d => Array.isArray(d) ? d : [])
           .catch((e: any) => { throw new Error(e.message) })
-
-        // 1 row, 1 column — PK filter — never serial_no
-        const soDb = await fetchStepOrder(rev.id)
-
+        const soDb      = await fetchStepOrder(rev.id)
         const soR2Count = soR2.length
         const soDbCount = soDb.length
-
         if (soR2Count !== soDbCount) {
           items[i] = { ...items[i], soStatus: "count_mismatch", soR2Count, soDbCount }
         } else {
@@ -965,24 +961,20 @@ const R2MigrationModal: React.FC<Props> = ({ onClose, onBack }) => {
       }
       setRevValidation([...items])
 
-      // ── test_steps validation ───────────────────────────────────────────────
       items[i] = { ...items[i], tsStatus: "running" }
       setRevValidation([...items])
       try {
-        const tsData = await r2Read(token, `test_steps/${rev.id}.json`)
+        const tsData    = await r2Read(token, `test_steps/${rev.id}.json`)
         const tsR2: Record<string, unknown>[] = Array.isArray(tsData) ? tsData : []
         const tsR2Count = tsR2.length
-
         items[i] = { ...items[i], tsStatus: "deep_diff_running", tsR2Count, tsDbCount: null }
         setRevValidation([...items])
-
         const { result, dbCount: tsDbCount, detail } = await chunkedDeepDiff(tsR2, rev.id)
         items[i] = { ...items[i],
           tsStatus:  result === "ok" ? "deep_diff_ok" : "deep_diff_failed",
           tsDbCount,
           tsError:   detail }
       } catch (e: any) {
-    
         const msg = String(e.message ?? "")
         items[i] = { ...items[i],
           tsStatus: msg.includes("404") || msg.toLowerCase().includes("not found") ? "missing_r2" : "error",
@@ -992,7 +984,9 @@ const R2MigrationModal: React.FC<Props> = ({ onClose, onBack }) => {
     }
 
     setStage("revision_validation_done")
-  }  // ── R2 Reader ──────────────────────────────────────────────────────────────
+  }
+
+  // ── R2 Reader ──────────────────────────────────────────────────────────────
   const handleRead = async () => {
     if (!readerKey.trim()) return
     setReaderLoading(true); setReaderError(null); setReaderData(null)
@@ -1133,12 +1127,38 @@ const R2MigrationModal: React.FC<Props> = ({ onClose, onBack }) => {
               : "Select revisions to upload their test_steps"}
           </p>
 
-          {/* Load button — NOT auto-fetched */}
+          {/* Load button OR manual UUID input for delete flows */}
           {revisions.length === 0 && !revLoading && (
-            <button onClick={loadRevisions}
-              className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl border border-(--border-color) bg-bg-card hover:bg-bg-base text-sm text-t-muted transition-colors">
-              <Search size={13} /> Load Revisions
-            </button>
+            <div className="flex flex-col gap-2">
+              <button onClick={loadRevisions}
+                className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl border border-(--border-color) bg-bg-card hover:bg-bg-base text-sm text-t-muted transition-colors">
+                <Search size={13} /> Load from Supabase
+              </button>
+
+              {isDeleteFlow && (
+                <>
+                  <div className="flex items-center gap-2 text-xs text-t-muted">
+                    <div className="flex-1 h-px bg-(--border-color)" />
+                    or enter UUIDs directly
+                    <div className="flex-1 h-px bg-(--border-color)" />
+                  </div>
+                  <ManualUuidDelete
+                    prefix={r2Prefix(migrType)}
+                    onDelete={(ids) => {
+                      const syntheticRevs: TestRevision[] = ids.map(id => ({
+                        id,
+                        revision:        id.slice(0, 8),
+                        tests_serial_no: 0,
+                        status:          "active",
+                      }))
+                      setRevisions(syntheticRevs)
+                      setSelected(new Set(ids))
+                      handleRevisionDelete(syntheticRevs)
+                    }}
+                  />
+                </>
+              )}
+            </div>
           )}
 
           {revLoading && (
@@ -1149,31 +1169,33 @@ const R2MigrationModal: React.FC<Props> = ({ onClose, onBack }) => {
 
           {!revLoading && revisions.length > 0 && (
             <>
-              {/* Differential toolbar */}
-              <div className="flex flex-wrap items-center gap-1.5 p-2.5 rounded-xl border border-(--border-color) bg-bg-card">
-                <span className="text-[10px] font-semibold text-t-muted uppercase tracking-wider mr-1">Differential</span>
-                <button onClick={checkAll} disabled={checkingAll}
-                  className="flex items-center gap-1 text-[10px] font-semibold px-2 py-1 rounded-lg
-                    bg-c-brand/10 hover:bg-c-brand/20 text-c-brand border border-c-brand/20
-                    disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
-                  <RefreshCw size={10} className={checkingAll ? "animate-spin" : ""} /> Check all R2
-                </button>
-                {missingCount > 0 && (
-                  <button onClick={selectMissing}
+              {/* Differential toolbar — only for upload flows */}
+              {!isDeleteFlow && (
+                <div className="flex flex-wrap items-center gap-1.5 p-2.5 rounded-xl border border-(--border-color) bg-bg-card">
+                  <span className="text-[10px] font-semibold text-t-muted uppercase tracking-wider mr-1">Differential</span>
+                  <button onClick={checkAll} disabled={checkingAll}
                     className="flex items-center gap-1 text-[10px] font-semibold px-2 py-1 rounded-lg
-                      bg-yellow-500/10 hover:bg-yellow-500/20 text-yellow-400 border border-yellow-500/20 transition-colors">
-                    <MinusSquare size={10} /> Select missing ({missingCount})
+                      bg-c-brand/10 hover:bg-c-brand/20 text-c-brand border border-c-brand/20
+                      disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
+                    <RefreshCw size={10} className={checkingAll ? "animate-spin" : ""} /> Check all R2
                   </button>
-                )}
-                {existsCount > 0 && (
-                  <button onClick={selectExisting}
-                    className="flex items-center gap-1 text-[10px] font-semibold px-2 py-1 rounded-lg
-                      bg-green-500/10 hover:bg-green-500/20 text-green-400 border border-green-500/20 transition-colors">
-                    <CheckSquare2 size={10} /> Select existing ({existsCount})
-                  </button>
-                )}
-                {checkedCount > 0 && <span className="ml-auto text-[10px] text-t-muted">{existsCount} in R2 · {missingCount} missing</span>}
-              </div>
+                  {missingCount > 0 && (
+                    <button onClick={selectMissing}
+                      className="flex items-center gap-1 text-[10px] font-semibold px-2 py-1 rounded-lg
+                        bg-yellow-500/10 hover:bg-yellow-500/20 text-yellow-400 border border-yellow-500/20 transition-colors">
+                      <MinusSquare size={10} /> Select missing ({missingCount})
+                    </button>
+                  )}
+                  {existsCount > 0 && (
+                    <button onClick={selectExisting}
+                      className="flex items-center gap-1 text-[10px] font-semibold px-2 py-1 rounded-lg
+                        bg-green-500/10 hover:bg-green-500/20 text-green-400 border border-green-500/20 transition-colors">
+                      <CheckSquare2 size={10} /> Select existing ({existsCount})
+                    </button>
+                  )}
+                  {checkedCount > 0 && <span className="ml-auto text-[10px] text-t-muted">{existsCount} in R2 · {missingCount} missing</span>}
+                </div>
+              )}
 
               <div className="flex items-center justify-between">
                 <button onClick={toggleAll}
@@ -1200,14 +1222,14 @@ const R2MigrationModal: React.FC<Props> = ({ onClose, onBack }) => {
                         : <Square size={14} className="shrink-0" />}
                       <span className="flex-1 truncate font-mono text-xs">{r.id}</span>
                       <span className="text-xs text-t-muted shrink-0">{r.revision || `sno:${r.tests_serial_no}`}</span>
-                      <R2StatusBadge status={status} />
+                      {!isDeleteFlow && <R2StatusBadge status={status} />}
                     </button>
                   )
                 })}
               </div>
 
               {isDeleteFlow ? (
-                <button onClick={handleRevisionDelete} disabled={selected.size === 0}
+                <button onClick={() => handleRevisionDelete()} disabled={selected.size === 0}
                   className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold
                     bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/20
                     disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
@@ -1235,7 +1257,6 @@ const R2MigrationModal: React.FC<Props> = ({ onClose, onBack }) => {
             R2 files will be compared against the DB.
           </p>
 
-          {/* Load button — NOT auto-fetched */}
           {revisions.length === 0 && !revLoading && (
             <button onClick={loadRevisionsForValidate}
               className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl border border-(--border-color) bg-bg-card hover:bg-bg-base text-sm text-t-muted transition-colors">
@@ -1382,7 +1403,6 @@ const R2MigrationModal: React.FC<Props> = ({ onClose, onBack }) => {
               </p>
             </div>
           )}
-
           {stage === "revision_validation_done" && (
             <div className={`flex items-center gap-3 px-3 py-2.5 rounded-xl border
               ${rvAllGood ? "border-green-500/20 bg-green-500/5" : "border-yellow-500/20 bg-yellow-500/5"}`}>
@@ -1402,11 +1422,9 @@ const R2MigrationModal: React.FC<Props> = ({ onClose, onBack }) => {
               </button>
             </div>
           )}
-
           <div className="flex flex-col gap-1 max-h-96 overflow-y-auto">
             {revValidation.map(item => <RevisionValidationRow key={item.revId} item={item} />)}
           </div>
-
           {stage === "revision_validation_done" && (
             <div className="flex gap-2">
               <button onClick={() => { setStage("selecttype"); setRevValidation([]); setRevValSelected(new Set()) }} className="flex-1 btn-ghost text-sm">Back</button>
