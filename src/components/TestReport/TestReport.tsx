@@ -11,7 +11,6 @@ import { useAuth } from "../../context/AuthContext";
 import { useTheme } from "../../context/ThemeContext";
 import { useInjectStyle } from "../../utils/animation";
 import { exportReportCSV, exportReportPDF } from "../../utils/export";
-import type { FlatData } from "../../utils/export";
 import { getChartTheme } from "../../utils/chartTheme";
 import { RBarChart } from "../ModuleDashboard/charts";
 import type { ChartRow } from "../ModuleDashboard/charts/types";
@@ -28,12 +27,12 @@ import {
   Upload,
 } from "lucide-react";
 import {
-  fetchSessionHistory,
-  fetchModuleOptions,
+  useSessionHistory,
+  useModuleOptions,
   type SessionHistoryEntry,
   type SessionGroup,
   type ModuleOption,
-} from "../../lib/rpc.ts";
+} from "../../lib/hooks";
 
 // ─── Constants ─────────────────────────────────────────────────────────────────
 const SESSION_STORAGE_KEY = "testreport_session_start";
@@ -94,15 +93,16 @@ const RevisionTag: React.FC<{ revision: string }> = ({ revision }) => (
 
 // ─── Session Detail Modal ──────────────────────────────────────────────────────
 interface SessionModalProps {
-  group:    SessionGroup;
-  onClose:  () => void;
+  group:   SessionGroup;
+  onClose: () => void;
 }
 
 const SessionDetailModal: React.FC<SessionModalProps> = ({ group, onClose }) => {
   const sorted = useMemo(
-    () => [...group.steps].sort((a, b) =>
-      new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()
-    ),
+    () =>
+      [...group.steps].sort(
+        (a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()
+      ),
     [group.steps]
   );
 
@@ -111,7 +111,7 @@ const SessionDetailModal: React.FC<SessionModalProps> = ({ group, onClose }) => 
       className="fixed inset-0 z-50 flex items-center justify-center p-4"
       style={{
         backgroundColor: "rgba(0,0,0,0.6)",
-        backdropFilter:  `blur(var(--glass-blur))`,
+        backdropFilter:  "blur(var(--glass-blur))",
       }}
       onClick={onClose}
     >
@@ -189,16 +189,11 @@ const SessionDetailModal: React.FC<SessionModalProps> = ({ group, onClose }) => 
             </thead>
             <tbody className="divide-y divide-(--border-color)">
               {sorted.map((step) => (
-                <tr
-                  key={step.id}
-                  className="hover:bg-bg-surface transition-colors"
-                >
+                <tr key={step.id} className="hover:bg-bg-surface transition-colors">
                   <td className="px-4 py-2.5 text-t-muted font-mono text-[11px]">
                     {new Date(step.updated_at).toLocaleTimeString()}
                   </td>
-                  <td className="px-4 py-2.5 text-t-primary">
-                    {step.test_name}
-                  </td>
+                  <td className="px-4 py-2.5 text-t-primary">{step.test_name}</td>
                   <td className="px-4 py-2.5 text-center">
                     <span
                       className="inline-flex items-center gap-1 font-bold px-2 py-0.5 rounded-full"
@@ -236,50 +231,29 @@ const TestReport: React.FC = () => {
   const sessionUser = user?.display_name ?? user?.email ?? null;
 
   // ── State ─────────────────────────────────────────────────────────────────
-  const [history, setHistory]             = useState<SessionHistoryEntry[]>([]);
-  const [moduleOptions, setModuleOptions] = useState<ModuleOption[]>([]);
   const [selectedModuleName, setSelectedModuleName] = useState<string | null>(null);
-  const [activeGroup, setActiveGroup]     = useState<SessionGroup | null>(null);
-  const [showExportModal, setShowExportModal] = useState(false);
-  const [loading, setLoading]             = useState(true);
-  const [error, setError]                 = useState<string | null>(null);
-
-  const mountedRef = useRef(true);
-  useEffect(() => {
-    mountedRef.current = true;
-    return () => { mountedRef.current = false; };
-  }, []);
+  const [activeGroup,        setActiveGroup]         = useState<SessionGroup | null>(null);
+  const [showExportModal,    setShowExportModal]     = useState(false);
 
   // ── Clear session on sign-out ─────────────────────────────────────────────
   useEffect(() => {
-    if (!user) {
-      clearSessionStart();
-      setHistory([]);
-    }
+    if (!user) clearSessionStart();
   }, [user]);
 
-  // ── Fetch session history ───────────────────────────────────────────────────
-  const loadSessionHistory = useCallback(async (username: string) => {
-    try {
-      const sessionStart = getOrCreateSessionStart();
-      const data = await fetchSessionHistory(username, sessionStart);
-      if (mountedRef.current) setHistory(data);
-    } catch (err: any) {
-      if (mountedRef.current) setError(err.message);
-    } finally {
-      if (mountedRef.current) setLoading(false);
-    }
-  }, []);
+  // ── Queries (cache — no manual fetches) ───────────────────────────────────
+  const sessionStart = useMemo(() => getOrCreateSessionStart(), []);
 
-  useEffect(() => {
-    if (sessionUser) {
-      setLoading(true);
-      loadSessionHistory(sessionUser);
-      fetchModuleOptions().then(setModuleOptions);
-    } else {
-      setLoading(false);
-    }
-  }, [sessionUser, loadSessionHistory]);
+  const historyQuery       = useSessionHistory(sessionUser ?? "", sessionStart, {
+    enabled: !!sessionUser,
+  });
+  const moduleOptionsQuery = useModuleOptions();
+
+  const history       = historyQuery.data      ?? [];
+  const moduleOptions = moduleOptionsQuery.data ?? [];
+  const loading       = historyQuery.isLoading;
+  const error         = historyQuery.isError
+    ? (historyQuery.error instanceof Error ? historyQuery.error.message : "Failed to load")
+    : null;
 
   // ── Group by test (module + serial_no) ────────────────────────────────────
   const sessionGroups = useMemo<SessionGroup[]>(() => {
@@ -307,13 +281,11 @@ const TestReport: React.FC = () => {
         const g = map.get(key)!;
         g.steps.push(s);
         g.total++;
-        if (s.status === "pass")    g.pass++;
-        else if (s.status === "fail") g.fail++;
+        if (s.status === "pass")         g.pass++;
+        else if (s.status === "fail")    g.fail++;
         else if (s.status === "pending") g.undo++;
-
-        if (new Date(s.updated_at) > new Date(g.last_updated)) {
+        if (new Date(s.updated_at) > new Date(g.last_updated))
           g.last_updated = s.updated_at;
-        }
       });
 
     return Array.from(map.values()).sort(
@@ -342,31 +314,15 @@ const TestReport: React.FC = () => {
     [displayGroups]
   );
 
-  // ── Export data ───────────────────────────────────────────────────────────
-  const sessionFlatData = useMemo<FlatData[]>(() => {
-    return history
-      .filter((s) => !s.is_divider)
-      .map((s) => ({
-        module:         s.module_name,
-        test:           s.test_name,
-        test_serial_no: s.tests_serial_no,
-        serial:         0,
-        action:         "",
-        expected:       "",
-        remarks:        "",
-        status:         s.status,
-        is_divider:     false,
-      }));
-  }, [history]);
-
-  const exportStats = () => {
-    const flat = sessionFlatData;
+  // ── Export stats — derived from cache, no FlatData shim ──────────────────
+  const exportStats = useMemo(() => {
+    const nd = history.filter((s) => !s.is_divider);
     return [
-      { label: "Total Steps", value: flat.length },
-      { label: "Pass",        value: flat.filter((s) => s.status === "pass").length },
-      { label: "Fail",        value: flat.filter((s) => s.status === "fail").length },
+      { label: "Total Steps", value: nd.length },
+      { label: "Pass",        value: nd.filter((s) => s.status === "pass").length },
+      { label: "Fail",        value: nd.filter((s) => s.status === "fail").length },
     ];
-  };
+  }, [history]);
 
   // ── Loading ───────────────────────────────────────────────────────────────
   if (loading)
@@ -389,7 +345,7 @@ const TestReport: React.FC = () => {
             {error}
           </p>
           <button
-            onClick={() => sessionUser && loadSessionHistory(sessionUser)}
+            onClick={() => historyQuery.refetch()}
             className="px-4 py-2 rounded-xl bg-bg-card hover:bg-bg-surface text-sm
               text-t-secondary border border-(--border-color) transition"
           >
@@ -414,15 +370,12 @@ const TestReport: React.FC = () => {
     );
 
   // ══════════════════════════════════════════════════════════════════════════
-  // RENDER — Session History Only
+  // RENDER
   // ══════════════════════════════════════════════════════════════════════════
   return (
     <>
       {activeGroup && (
-        <SessionDetailModal
-          group={activeGroup}
-          onClose={() => setActiveGroup(null)}
-        />
+        <SessionDetailModal group={activeGroup} onClose={() => setActiveGroup(null)} />
       )}
 
       <ExportModal
@@ -430,23 +383,21 @@ const TestReport: React.FC = () => {
         onClose={() => setShowExportModal(false)}
         title="Export Report"
         subtitle="Session Log"
-        stats={exportStats()}
+        stats={exportStats}
         options={[
           {
-            label: "CSV",
-            icon: <FileSpreadsheet size={16} />,
-            color:
-              "bg-(--bg-card) border border-(--border-color) text-(--text-primary)",
+            label:      "CSV",
+            icon:       <FileSpreadsheet size={16} />,
+            color:      "bg-(--bg-card) border border-(--border-color) text-(--text-primary)",
             hoverColor: "hover:bg-(--bg-surface) hover:border-(--color-brand)",
-            onConfirm: () => exportReportCSV([], sessionFlatData),
+            onConfirm:  () => exportReportCSV(history),
           },
           {
-            label: "PDF",
-            icon: <FileText size={16} />,
-            color:
-              "bg-(--bg-card) border border-(--border-color) text-(--text-primary)",
+            label:      "PDF",
+            icon:       <FileText size={16} />,
+            color:      "bg-(--bg-card) border border-(--border-color) text-(--text-primary)",
             hoverColor: "hover:bg-(--bg-surface) hover:border-(--color-brand)",
-            onConfirm: () => exportReportPDF([], sessionFlatData),
+            onConfirm:  () => exportReportPDF(history),
           },
         ]}
       />
@@ -458,7 +409,7 @@ const TestReport: React.FC = () => {
           <div className="flex items-center gap-3">
             <button
               onClick={() => setShowExportModal(true)}
-              disabled={sessionFlatData.length === 0}
+              disabled={history.length === 0}
               className="flex items-center gap-1.5 px-4 py-2 bg-bg-card hover:bg-bg-surface
                 disabled:opacity-40 disabled:cursor-not-allowed text-t-primary
                 text-sm font-semibold rounded-lg transition border border-(--border-color)"
@@ -492,7 +443,7 @@ const TestReport: React.FC = () => {
           </FadeWrapper>
         </div>
 
-        {/* ── Session Panel ───────────────────────────────────────────── */}
+        {/* ── Session Panel ─────────────────────────────────────────────── */}
         <div className="card flex flex-col gap-3">
           {/* Header */}
           <div className="flex items-center gap-2">
@@ -553,10 +504,7 @@ const TestReport: React.FC = () => {
                   transition-colors text-left group"
               >
                 {/* Module tag */}
-                <span
-                  className="text-[11px] font-bold px-2 py-0.5 rounded-md
-                  bg-c-brand-bg text-c-brand shrink-0"
-                >
+                <span className="text-[11px] font-bold px-2 py-0.5 rounded-md bg-c-brand-bg text-c-brand shrink-0">
                   {g.module_name}
                 </span>
 

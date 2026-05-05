@@ -21,7 +21,7 @@ import Topbar      from "../Layout/Topbar";
 import Spinner     from "../UI/Spinner";
 import ExportModal from "../UI/ExportModal";
 import { exportExecutionCSV, exportExecutionPDF } from "../../utils/export";
-import type { FlatData } from "../../utils/export";
+import type { RawStepResult } from "../../lib/hooks";
 import {
   useTestExecutionContext,
   useTestExecutionStepResults,
@@ -1204,16 +1204,33 @@ const TestExecution: React.FC<Props> = ({
     };
   }, [steps]);
 
-  const flatData = useMemo<FlatData[]>(
-    () => steps.map((s) =>
-      s.is_divider
-        ? { module: module_name, test: currentTest?.name ?? "", serial: 0, action: cleanDividerLabel(s.action), expected: s.expected_result, remarks: "", status: "", isdivider: true, dividerLevel: getDividerLevel(s) }
-        : { module: module_name, test: currentTest?.name ?? "", serial: s.serial_no, action: s.action, expected: s.expected_result, remarks: s.remarks || "", status: s.status }
-    ),
-    [steps, module_name, currentTest?.name]
+  const stepsAsRaw = useMemo<RawStepResult[]>(
+    () => steps.map((s) => ({
+      id:           s.stepResultId,
+      status:       s.status,
+      remarks:      s.remarks,
+      display_name: s.display_name,
+      step: {
+        id:                  s.stepId,
+        serial_no:           s.serial_no,
+        action:              s.action,
+        expected_result:     s.expected_result,
+        is_divider:          s.is_divider,
+        action_image_urls:   s.action_image_urls,
+        expected_image_urls: s.expected_image_urls,
+        tests_serial_no:     currentTest?.serial_no ?? "",
+      },
+    })),
+    [steps, currentTest?.serial_no]
   );
-
-  const exportStats    = useMemo(() => { const nd = flatData.filter((s) => !s.isdivider); return [{ label: "Total Steps", value: nd.length }, { label: "Pass", value: nd.filter((s) => s.status === "pass").length }, { label: "Fail", value: nd.filter((s) => s.status === "fail").length }]; }, [flatData]);
+  const exportStats = useMemo(() => {
+  const nd = steps.filter((s) => !s.is_divider);
+  return [
+    { label: "Total Steps", value: nd.length },
+    { label: "Pass",        value: nd.filter((s) => s.status === "pass").length },
+    { label: "Fail",        value: nd.filter((s) => s.status === "fail").length },
+  ];
+}, [steps]);
   const exportTestName = currentTest ? `${currentTest.serial_no}. ${currentTest.name}` : "test";
 
   // ── Loading gate ──────────────────────────────────────────────────────────
@@ -1274,8 +1291,8 @@ const TestExecution: React.FC<Props> = ({
         title="Export Test Results" subtitle={`${module_name} · ${currentTest?.name ?? ""}`}
         stats={exportStats}
         options={[
-          { label: "CSV", icon: <FileSpreadsheet size={16} />, color: "bg-(--bg-card) border border-(--border-color) text-(--text-primary)", hoverColor: "hover:bg-(--bg-surface) hover:border-(--color-brand)", onConfirm: () => exportExecutionCSV(module_name, exportTestName, flatData) },
-          { label: "PDF", icon: <FileText        size={16} />, color: "bg-(--bg-card) border border-(--border-color) text-(--text-primary)", hoverColor: "hover:bg-(--bg-surface) hover:border-(--color-brand)", onConfirm: () => exportExecutionPDF(module_name, exportTestName, flatData) },
+          { label: "CSV", icon: <FileSpreadsheet size={16} />, color: "bg-(--bg-card) border border-(--border-color) text-(--text-primary)", hoverColor: "hover:bg-(--bg-surface) hover:border-(--color-brand)", onConfirm: () => exportExecutionCSV(module_name, exportTestName, stepsAsRaw)},
+          { label: "PDF", icon: <FileText        size={16} />, color: "bg-(--bg-card) border border-(--border-color) text-(--text-primary)", hoverColor: "hover:bg-(--bg-surface) hover:border-(--color-brand)", onConfirm: () => exportExecutionPDF(module_name, exportTestName, stepsAsRaw)},
         ]}
       />
 

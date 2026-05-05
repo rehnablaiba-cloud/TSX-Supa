@@ -1,13 +1,4 @@
 // src/components/ModuleDashboard/ModuleDashboard.tsx
-//
-// MIGRATION CHANGES (hooks.ts):
-//   - useModuleData         replaces useQuery(fetchModuleData)
-//   - useModuleLocks        replaces useQuery(getModuleLocks)
-//   - useModuleStepDetails  replaces useQuery(fetchModuleStepDetails)
-//   - useForceReleaseLock   replaces useMutation(forceReleaseLock)
-//   - All rpc / QK / STALE / GC imports removed
-//   - QK kept only for the Realtime invalidateQueries call
-//
 import React, {
   useEffect,
   useLayoutEffect,
@@ -25,9 +16,8 @@ import { useAuth } from "../../context/AuthContext";
 import { useTheme } from "../../context/ThemeContext";
 import { FileSpreadsheet, FileText, RefreshCw, Upload } from "lucide-react";
 import {
-  exportModuleDetailCSV,
-  exportModuleDetailPDF,
-  FlatData,
+  exportModuleDashboardCSV,
+  exportModuleDashboardPDF,
 } from "../../utils/export";
 import {
   RBarChart,
@@ -42,7 +32,6 @@ import {
   useModuleLocks,
   useModuleStepDetails,
   useForceReleaseLock,
-  type TrimmedStepResult,
 } from "../../lib/hooks";
 import { QK } from "../../lib/queryClient";
 
@@ -142,20 +131,17 @@ const ModuleDashboard: React.FC<Props> = ({
   // ── Query 1: module tests + counts + revisions ────────────────────────────
   const moduleDataQuery = useModuleData(module_name);
 
-  // moduleTestIds — derived once data arrives
   const moduleTestIds = useMemo(
     () => (moduleDataQuery.data?.module_tests ?? []).map((mt) => mt.id),
     [moduleDataQuery.data]
   );
 
-  // ── Query 2: locks — separate, staleTime 0 ────────────────────────────────
-  // Enabled only after moduleTestIds are known from Query 1.
-  // Falls back to locks baked into moduleData until this resolves.
+  // ── Query 2: locks ────────────────────────────────────────────────────────
   const locksQuery = useModuleLocks(moduleTestIds, module_name, {
     enabled: moduleTestIds.length > 0,
   });
 
-  // ── Query 3: step details — disabled until export ─────────────────────────
+  // ── Query 3: step details — disabled until export modal triggers refetch ──
   const stepDetailsQuery = useModuleStepDetails(module_name, { enabled: false });
 
   // ── Mutation: force release lock ──────────────────────────────────────────
@@ -169,35 +155,29 @@ const ModuleDashboard: React.FC<Props> = ({
   // ── Realtime: test_locks ──────────────────────────────────────────────────
   useEffect(() => {
     if (moduleTestIds.length === 0) return;
-
     const channel = supabase
       .channel(`module-locks-${module_name}`)
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "test_locks" },
-        () => {
-          queryClient.invalidateQueries({ queryKey: QK.moduleLocks(module_name) });
-        }
+        () => queryClient.invalidateQueries({ queryKey: QK.moduleLocks(module_name) })
       )
       .subscribe();
-
     return () => { supabase.removeChannel(channel); };
   }, [module_name, moduleTestIds.length, queryClient]);
 
   // ── Derived data ──────────────────────────────────────────────────────────
   const module_tests = moduleDataQuery.data?.module_tests ?? [];
   const revisions    = moduleDataQuery.data?.revisions    ?? {};
-  // Prefer the fresh locksQuery result; fall back to locks baked into moduleData
-  const locks = locksQuery.data ?? moduleDataQuery.data?.locks ?? {};
+  const locks        = locksQuery.data ?? moduleDataQuery.data?.locks ?? {};
 
   const chartData = useMemo<ChartRow[]>(
-    () =>
-      module_tests.map((mt) => ({
-        name:    mt.test?.name ?? mt.tests_name ?? "Unnamed Test",
-        pass:    mt.pass,
-        fail:    mt.fail,
-        pending: mt.pending,
-      })),
+    () => module_tests.map((mt) => ({
+      name:    mt.test?.name ?? mt.tests_name ?? "Unnamed Test",
+      pass:    mt.pass,
+      fail:    mt.fail,
+      pending: mt.pending,
+    })),
     [module_tests]
   );
 
@@ -206,10 +186,7 @@ const ModuleDashboard: React.FC<Props> = ({
     const fail    = module_tests.reduce((a, mt) => a + mt.fail,    0);
     const pending = module_tests.reduce((a, mt) => a + mt.pending, 0);
     const total   = pass + fail + pending;
-    return {
-      pass, fail, pending, total,
-      passRate: total > 0 ? Math.round((pass / total) * 100) : 0,
-    };
+    return { pass, fail, pending, total, passRate: total > 0 ? Math.round((pass / total) * 100) : 0 };
   }, [module_tests]);
 
   const exportStats = useMemo(() => [
@@ -228,38 +205,20 @@ const ModuleDashboard: React.FC<Props> = ({
   );
 
   // ── Export ────────────────────────────────────────────────────────────────
+  // Pass moduleData directly; refetch stepDetails only so we have step rows.
+  // No FlatData construction — exportUtils consumes the cache types natively.
   const handleExport = useCallback(
     async (format: "csv" | "pdf") => {
+      const data = moduleDataQuery.data;
+      if (!data) return;
+
       setExporting(true);
       try {
-        const result   = await stepDetailsQuery.refetch();
-        const bySerial = result.data ?? {};
+        const result     = await stepDetailsQuery.refetch();
+        const stepDetails = result.data;   // Record<string, TrimmedStepResult[]> | undefined
 
-        const flat: FlatData[] = module_tests.flatMap((mt) => {
-          const serialNo = mt.test?.serial_no ?? "";
-          const results  = (bySerial[serialNo] ?? [])
-            .slice()
-            .sort((a: TrimmedStepResult, b: TrimmedStepResult) => {
-              const sa = a.step?.serial_no ?? 0;
-              const sb = b.step?.serial_no ?? 0;
-              if (sa !== sb) return sa - sb;
-              return (a.step?.is_divider ? 0 : 1) - (b.step?.is_divider ? 0 : 1);
-            });
-          return results.map((sr: TrimmedStepResult) => ({
-            module:         module_name,
-            test:           mt.test?.name ?? mt.tests_name ?? "Unnamed Test",
-            test_serial_no: mt.test?.serial_no ?? "",
-            serial:         sr.step?.serial_no ?? 0,
-            action:         (sr.step?.action ?? "").replace(/^[^a-zA-Z0-9]+/, ""),
-            expected:       sr.step?.expected_result ?? "",
-            remarks:        "",
-            status:         sr.status,
-            isdivider:      sr.step?.is_divider ?? false,
-          }));
-        });
-
-        if (format === "csv") exportModuleDetailCSV(flat);
-        else                  exportModuleDetailPDF(flat, module_name);
+        if (format === "csv") exportModuleDashboardCSV(module_name, data, stepDetails);
+        else                  exportModuleDashboardPDF(module_name, data, stepDetails);
       } catch (e: any) {
         setReleaseError(`Export failed: ${e?.message}`);
         setTimeout(() => setReleaseError(null), 5000);
@@ -268,7 +227,7 @@ const ModuleDashboard: React.FC<Props> = ({
         setShowExport(false);
       }
     },
-    [module_name, module_tests, stepDetailsQuery]
+    [module_name, moduleDataQuery.data, stepDetailsQuery]
   );
 
   // ── Loading / error guards ────────────────────────────────────────────────
@@ -276,9 +235,7 @@ const ModuleDashboard: React.FC<Props> = ({
     return (
       <div className="flex-1 flex flex-col">
         <Topbar title={module_name} onBack={onBack} />
-        <div className="flex items-center justify-center flex-1">
-          <Spinner />
-        </div>
+        <div className="flex items-center justify-center flex-1"><Spinner /></div>
       </div>
     );
 
@@ -352,8 +309,7 @@ const ModuleDashboard: React.FC<Props> = ({
                 onClick={() => setShowExport(true)}
                 className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg bg-bg-card hover:bg-bg-surface border border-(--border-color) text-t-primary transition"
               >
-                <Upload size={13} />
-                Export
+                <Upload size={13} /> Export
               </button>
             )}
           </div>
@@ -432,14 +388,12 @@ const ModuleDashboard: React.FC<Props> = ({
               No tests assigned to this module yet.
             </div>
           )}
-
           {module_tests.map((mt, idx) => {
             const lock        = locks[mt.id];
             const isMyLock    = !!lock && lock.user_id === user?.id;
             const isOtherLock = !!lock && !isMyLock;
             const isCompleted = !mt.is_visible;
             const activeRev   = mt.test?.serial_no ? revisions[mt.test.serial_no] ?? null : null;
-
             return (
               <StaggerRow key={mt.id} index={idx}>
                 <TestCard

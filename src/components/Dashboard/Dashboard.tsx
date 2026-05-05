@@ -1,11 +1,4 @@
 // src/components/Dashboard/Dashboard.tsx
-//
-// MIGRATION CHANGES (hooks.ts):
-//   - useDashboardSummaries / useActiveLocks / useOtherActiveLocks
-//     replace three inline useQuery calls — no QK / STALE / GC imports needed
-//   - invalidateModuleLocks helper replaces direct queryClient.invalidateQueries
-//   - All rpc / queryClient imports removed; types via "../../lib/hooks"
-//
 import React, {
   useEffect,
   useLayoutEffect,
@@ -33,7 +26,6 @@ import {
   exportDashboardPDF,
   exportDashboardDocx,
 } from "../../utils/export";
-import type { ModuleSummary } from "../../utils/export";
 import { getChartTheme } from "../../utils/chartTheme";
 import { useTheme } from "../../context/ThemeContext";
 import {
@@ -120,14 +112,12 @@ const Dashboard: React.FC<Props> = ({ onNavigate }) => {
   const gridRef         = useRef<HTMLDivElement>(null);
   const entranceDoneRef = useRef(false);
 
-  // ── Queries (via hooks.ts) ────────────────────────────────────────────────
+  // ── Queries ───────────────────────────────────────────────────────────────
   const summariesQuery  = useDashboardSummaries();
   const locksQuery      = useActiveLocks();
   const otherLocksQuery = useOtherActiveLocks();
 
   // ── Realtime — test_locks only ────────────────────────────────────────────
-  // Any change on test_locks invalidates both lock queries.
-  // summariesQuery is untouched — lock changes don't affect step counts.
   useEffect(() => {
     const channel = supabase
       .channel("dashboard-locks")
@@ -140,11 +130,10 @@ const Dashboard: React.FC<Props> = ({ onNavigate }) => {
         }
       )
       .subscribe();
-
     return () => { supabase.removeChannel(channel); };
   }, [queryClient]);
 
-  // ── GSAP entrance — fires once after first data arrives ──────────────────
+  // ── GSAP entrance ─────────────────────────────────────────────────────────
   useLayoutEffect(() => {
     if (
       !summariesQuery.isLoading &&
@@ -157,14 +146,7 @@ const Dashboard: React.FC<Props> = ({ onNavigate }) => {
         gsap.fromTo(
           gridRef.current!.children,
           { opacity: 0, y: 16 },
-          {
-            opacity:    1,
-            y:          0,
-            stagger:    0.06,
-            duration:   0.4,
-            ease:       "power2.out",
-            clearProps: "opacity,transform",
-          }
+          { opacity: 1, y: 0, stagger: 0.06, duration: 0.4, ease: "power2.out", clearProps: "opacity,transform" }
         );
       });
       return () => ctx.revert();
@@ -192,31 +174,14 @@ const Dashboard: React.FC<Props> = ({ onNavigate }) => {
   const chartTheme = useMemo(() => getChartTheme(theme), [theme]);
 
   const chartData = useMemo(() =>
-    modules.map((m) => ({
-      name:    m.name,
-      pass:    m.pass,
-      fail:    m.fail,
-      pending: m.pending,
-    })),
+    modules.map((m) => ({ name: m.name, pass: m.pass, fail: m.fail, pending: m.pending })),
     [modules]
   );
 
-  // ── Export ────────────────────────────────────────────────────────────────
-  const buildSummariesWithTests = useCallback((): ModuleSummary[] =>
-    modules.map((m) => ({
-      name:     m.name,
-      total:    m.total,
-      pass:     m.pass,
-      fail:     m.fail,
-      pending:  m.pending,
-      passRate: m.total > 0 ? Math.round((m.pass / m.total) * 100) : 0,
-    })),
-    [modules]
-  );
-
-  const handleExportCSV  = useCallback(() => exportDashboardCSV(buildSummariesWithTests()),  [buildSummariesWithTests]);
-  const handleExportPDF  = useCallback(() => exportDashboardPDF(buildSummariesWithTests()),  [buildSummariesWithTests]);
-  const handleExportDOCX = useCallback(() => exportDashboardDocx(buildSummariesWithTests()), [buildSummariesWithTests]);
+  // ── Export — pass DashboardModuleSummary[] straight through ───────────────
+  const handleExportCSV  = useCallback(() => exportDashboardCSV(modules),  [modules]);
+  const handleExportPDF  = useCallback(() => exportDashboardPDF(modules),  [modules]);
+  const handleExportDOCX = useCallback(() => exportDashboardDocx(modules), [modules]);
 
   // ── Loading / error states ────────────────────────────────────────────────
   const isInitialLoad = summariesQuery.isLoading;
@@ -378,15 +343,10 @@ const Dashboard: React.FC<Props> = ({ onNavigate }) => {
                       className="flex items-center justify-between px-4 py-3 rounded-xl border border-(--border-color) bg-bg-surface"
                     >
                       <div className="flex items-center gap-2">
-                        <span
-                          className="w-2.5 h-2.5 rounded-full shrink-0"
-                          style={{ background: stat.color }}
-                        />
+                        <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: stat.color }} />
                         <span className="text-sm text-t-muted">{stat.label}</span>
                       </div>
-                      <span className="text-sm font-bold text-t-primary tabular-nums">
-                        {stat.value}
-                      </span>
+                      <span className="text-sm font-bold text-t-primary tabular-nums">{stat.value}</span>
                     </div>
                   ))}
                 </div>
